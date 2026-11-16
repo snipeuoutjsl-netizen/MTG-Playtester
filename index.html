@@ -46,6 +46,7 @@
       <button id="btnCostFx">Cost effects…</button>
       <button id="btnStats">Deck stats</button>
       <button id="btnReading">How the app reads cards…</button>
+      <button id="btnWelcome">Welcome tour…</button>
       <button id="btnSettings">Settings</button>
     </div>
   </div>
@@ -60,6 +61,7 @@
         <div class="hudbox mana-hud" id="manaHud" title="Floating mana empties as each step/phase ends">
           <span class="hudlabel">Mana</span><div id="manaPool" class="mana-pool"><span class="mana-empty">—</span></div>
         </div>
+        <div class="hudbox states" id="gstates" hidden></div>
         <button id="btnFx" class="hudbtn" title="Lasting effects: until end of turn, delayed triggers…" hidden>⏳ Effects 0</button>
         <div class="hudbox opp" id="oppBox">
           <button data-opp="-1">−1</button>
@@ -97,12 +99,10 @@
           <div class="pile" id="pile-graveyard" data-drop="graveyard">
             <div class="pilelabel">Graveyard</div>
             <div class="stack" data-open="graveyard" title="Click to view"><div class="stacktop" id="top-graveyard"></div><span class="pcount" id="pcnt-graveyard">0</span></div>
-            <div class="zone-hover-list" id="hover-graveyard"></div>
           </div>
           <div class="pile" id="pile-exile" data-drop="exile">
             <div class="pilelabel">Exile</div>
             <div class="stack" data-open="exile" title="Click to view"><div class="stacktop" id="top-exile"></div><span class="pcount" id="pcnt-exile">0</span></div>
-            <div class="zone-hover-list" id="hover-exile"></div>
           </div>
         </div>
       </div>
@@ -117,6 +117,7 @@
       </div>
 
       <div id="boardstrip" hidden></div>
+      <div id="stackStage" data-drop="stack" hidden></div>
       <div id="toast"></div>
       <div id="overlay" hidden></div>
     </div>
@@ -129,9 +130,9 @@
 
   <aside id="right">
     <div class="box" id="preview"><div class="muted">Hover a card to see it here.</div></div>
-    <div class="box" id="stackBox"><div class="boxhead">Stack</div><div id="stackSummary" class="muted small">Empty</div><button id="btnResolveStack" class="primary" style="margin-top:6px">Open stack</button></div>
-    <div class="box grow">
-      <div class="boxhead">Game log</div>
+    <div class="box" id="stackBox"><div class="boxhead"><span>Stack</span><span id="stackCount" class="stk-count"></span></div><div id="stackBody"></div><div id="stackFoot" class="stk-foot"></div></div>
+    <div class="box" id="logBox">
+      <div class="boxhead"><span>Game log</span><button id="btnLogToggle" class="loglink" title="Show or hide the full game log">Show all ▾</button></div>
       <div id="log"></div>
     </div>
   </aside>

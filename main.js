@@ -166,9 +166,9 @@ else {
       { label: 'View', submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' }, { role: 'toggleDevTools' }] },
       { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'close' }] }
     ]));
-    // The app is opened from a file:// page, so let it read Scryfall's API and downloads.
+    // The app is opened from a file:// page, so let it read Scryfall's API and downloads, and the MTGJSON card files (backup source).
     const { session } = require('electron');
-    session.defaultSession.webRequest.onHeadersReceived({ urls: ['https://api.scryfall.com/*', 'https://*.scryfall.io/*'] }, (details, cb) => {
+    session.defaultSession.webRequest.onHeadersReceived({ urls: ['https://api.scryfall.com/*', 'https://*.scryfall.io/*', 'https://mtgjson.com/*', 'https://*.mtgjson.com/*'] }, (details, cb) => {
       const h = { ...details.responseHeaders };
       for (const k of Object.keys(h)) if (k.toLowerCase() === 'access-control-allow-origin') delete h[k];
       h['Access-Control-Allow-Origin'] = ['*'];
