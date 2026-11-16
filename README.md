@@ -1,4 +1,4 @@
-# MTG Playtester (offline) — v0.22
+# MTG Playtester (offline) — v0.22 (outdated)
 
 A solo "goldfish" playtester for Magic: The Gathering decks. Runs entirely in your
 browser, offline, on Windows (Edge, Chrome or Firefox). Nothing is uploaded anywhere.
