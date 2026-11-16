@@ -1105,6 +1105,18 @@ function effectOptions(tx, obj) {
   if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana in any combination of colors\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana in any combination of colors`, fn: () => { let left = nn; const next = () => { if (left <= 0) return; openManaChoice({ name: src + ` (${left} left)` }, col => { if (col) { snap(); addFloatingMana(col, 1); left--; render(); next(); } }, ['W', 'U', 'B', 'R', 'G']); }; next(); } }); }
   if (/\btake an extra turn after this one\b/i.test(tx)) opts.push({ label: 'Take an extra turn after this one', fn: () => { state.extraTurns = (state.extraTurns || 0) + 1; log(`${src}: you will take an extra turn after this one`); toast('Extra turn', 'You take another turn right after this one (rule 500.7). In a goldfish every turn is already yours; the log notes it.'); } });
   if (/\badd one mana of any color\b/i.test(txNq)) opts.push({ label: 'Add one mana of any color', fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col); render(); } }, ['W', 'U', 'B', 'R', 'G']) });
+  // v0.67.1 Thespian's Stage: "~ becomes a copy of target land, except it has this ability." (rule 707.9: it keeps counters and tapped state; no enter-the-battlefield event)
+  if (obj.sourceId && /\bbecomes a copy of target land, except it has this ability\b/i.test(tx)) return [{ label: `${src} becomes a copy of a land`, fn: () => {
+    const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; }
+    const c = f.card, own = c.origName || c.name;
+    const lands = state.battlefield.filter(x => x.id !== c.id && isLandName(x.name));
+    if (!lands.length) { toast('No target', 'There is no other land on the battlefield to copy.'); return; }
+    const seen = new Set(), cards = lands.filter(x => !seen.has(x.name) && seen.add(x.name));
+    openPickCards({ title: `${own}: copy which land?`, note: `${own} becomes a copy of the land you pick, except it keeps this ability. It keeps its counters and stays tapped or untapped. If it leaves the battlefield it is ${own} again.`, cards, max: 1, done: picked => {
+      if (!picked.length) return; snap(); const t = picked[0];
+      if (!c.origName) c.origName = c.name; c.name = t.name;
+      c.gained = [`{2}, {T}: ${own} becomes a copy of target land, except it has this ability.`];
+      log(`${own} became a copy of ${t.name}`); checkNoCounterTriggers(); render(); if (state.pendingTriggers.length) flushTriggers(); } }); } }];
   if (obj.sourceId && (mm = tx.match(/\bgains? \"([^\"]+(?:\"[^\"]*\"[^\"]*)?)\"\s*\.?\s*$/i)) && /^[^"]* gains? "/.test(tx.replace(new RegExp((obj.sourceName||'~').replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'),'~'))) { const gl = mm[1]; opts.push({ label: `${src} gains "${gl}"`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { snap(); f.card.gained = (f.card.gained || []).concat([gl]); log(`${src} gains "${gl}"`); render(); } } }); return [opts[opts.length - 1]]; }
   // v0.65 graveyard-based effects
   if (/\bshuffles? (?:your|their) graveyard into (?:your|their) library\b/i.test(tx)) opts.push({ label: 'Shuffle your graveyard into your library', fn: () => { snap(); state.library.push(...state.graveyard.splice(0)); shuffleLibrary(); log(`${src}: graveyard shuffled into the library`); render(); } });
@@ -1975,9 +1987,9 @@ function manaPaymentAllocation(parts, pool, sources, chosen) {
   for (const i of spare) { if (generic <= 0) break; used.push(i); generic--; }
   return { ok: generic <= 0, pool: p, used, poolUsed, needLands: pips.length + parts.generic + parts.flexible.length - (parts.generic + parts.flexible.length - Math.max(0, generic)) };
 }
-function openManaPayment(c, done, costOverride, verb) {
+function openManaPayment(c, done, costOverride, verb, skipId) {
   const ec = effectiveCost(c), mc = costOverride !== undefined ? costOverride : ec.cost;
-  const parts = manaCostParts(mc), sources = withCtx(c, manaSources);
+  const parts = manaCostParts(mc), sources = withCtx(c, manaSources).filter(x => x.card.id !== skipId);   // a {T} ability cannot also tap its own source for mana
   const pool = state && state.manaPool ? state.manaPool : { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
   if (!sources.length && manaTotal() === 0 && mc && symCmc(mc) > 0) { toast('No mana available', 'You cannot pay this spell’s cost.'); return; }
   const m = modal(`Pay ${c.name}`, { width: 620, sticky: true });
@@ -3777,8 +3789,11 @@ function cardEl(c, zone) {
   e.addEventListener('click', ev => { ev.stopPropagation(); onCardClick(c, zone); });
   e.addEventListener('dblclick', ev => { ev.stopPropagation(); onCardDbl(c, zone); });
   e.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); showCardMenu(c, zone, ev.clientX, ev.clientY); });
-  e.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', 'mtg:' + c.id); ev.dataTransfer.effectAllowed = 'move'; e.classList.add('dragging'); dragHand = zone === 'hand' ? c.id : null; });
-  e.addEventListener('dragend', () => { e.classList.remove('dragging'); dragHand = null; clearHandMarker(); });
+  if (animOn('cardDrag')) { e.removeAttribute('draggable'); e.addEventListener('pointerdown', ev => pointerDragBegin(ev, e, c, zone)); }
+  else {
+    e.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', 'mtg:' + c.id); ev.dataTransfer.effectAllowed = 'move'; e.classList.add('dragging'); dragHand = zone === 'hand' ? c.id : null; });
+    e.addEventListener('dragend', () => { e.classList.remove('dragging'); dragHand = null; clearHandMarker(); });
+  }
   return e;
 }
 
@@ -4495,10 +4510,12 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
     { const why=compsFeasible(ab.comps||[],f.card.id); if(why){ toast('Cannot pay the cost',why); return; } }
     gatherCosts({id:f.card.id,name:f.card.name,ability:true},ab.comps||[],picks=>{
       if(!ab.mana){ go(target,null,picks); return; }
-      if(teach('stackGuidance')){ openManaPayment(f.card,ids=>go(target,ids,picks),ab.mana,'Pay and activate'); return; }
-      const plan=manaPaymentAllocation(manaCostParts(ab.mana),state.manaPool||{},manaSources(),null);
+      const skip=ab.tap?f.card.id:undefined;
+      if(teach('stackGuidance')){ openManaPayment(f.card,ids=>go(target,ids,picks),ab.mana,'Pay and activate',skip); return; }
+      const srcs=manaSources().filter(x=>x.card.id!==skip);
+      const plan=manaPaymentAllocation(manaCostParts(ab.mana),state.manaPool||{},srcs,null);
       if(!plan.ok){ toast('Cannot pay the cost','Not enough mana.'); return; }
-      state.manaPool=plan.pool; go(target,plan.used.map(i=>manaSources()[i].card.id),picks);
+      state.manaPool=plan.pool; go(target,plan.used.map(i=>srcs[i].card.id),picks);
     });
   };
   { const specs=parseTargetSpecs(ab.effect);
@@ -4831,8 +4848,11 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.67.0';
+const APP_VERSION = '0.68.0';
 const CHANGELOG = [
+  { v: '0.68.0', title: 'Physical card drag', notes: ["Click and hold a card and the card itself follows your mouse, tilting as you move it, and rises above everything else.", "Release it on a zone that takes it and it happens: a land is played, a spell is cast, a battlefield card goes to the graveyard, exile, library or hand, and a hand card dropped in your hand reorders it.", "Release it anywhere else, or on a zone where the move is not allowed right now (wrong phase, land drop already used), and the card flies back to where it came from. Escape cancels a drag the same way.", "Switch: Settings > Animations > Physical card drag. Turned off, you get the old browser drag (and dropping anywhere on the table plays the card on the battlefield)."] },
+  { v: '0.67.2', title: 'Hand on top, drop anywhere, safer web update', notes: ["Hand cards now always rise above everything else on the table when you hover them. Before, the enlarged card was clipped under the battlefield.", "You can drop a card anywhere on the table: a drop that misses a specific zone or pile lands on the battlefield (a hand card is played, any other card is moved there). Dragging a battlefield card back onto the board does nothing.", "Update app: the web address button used to download and install immediately while being called Check online, which made the app seem updated. It is now called Download & install from this address, asks first, and the GitHub Check now button only ever looks."] },
+  { v: '0.67.1', title: "Thespian's Stage and {T} ability payment", notes: ["Thespian's Stage now works: its ability lets you pick a land and it becomes a copy of it, keeping its own copy ability, its counters and whether it is tapped. Copying Dark Depths makes the 'no ice counters' trigger fire (Marit Lage). It becomes Thespian's Stage again if it leaves the battlefield.", "Fixed: an ability with {T} in its cost could also tap its own permanent to pay for its mana cost. A permanent that is tapped as part of an ability cost can no longer be used as a mana source for that same ability."] },
   { v: '0.67.0', title: 'Board layout pass', notes: ["Six board changes, each with its own switch in Settings > Playmat & frame > Board layout.", "Zone depth: the three battlefield zones look like shelves with a soft inner shadow.", "Stack identical lands and tokens: identical cards pile into one with a count badge; click the badge to spread them out, and click it again to pile them up. Cards with counters, attachments or different states stay separate.", "Dim cards that cannot act: tapped lands and summoning-sick creatures are a little duller.", "Mana and phase strip: a slim strip on the board edge shows the current step, what comes next, floating mana, your land drop and the stack size.", "Combat lane: once attackers are declared, they move to a lit lane at the front of the creature zone.", "Fanned graveyard: the top three graveyard cards show fanned out."] },
   { v: '0.66.1', title: '3D hand and floating battlefield', notes: ["Your hand cards now tilt toward the mouse in 3D when you hover them, the same tilt as the big card preview. Switch: Settings > Animations > 3D hand tilt.", "Battlefield cards float: each drifts up and down a tiny amount at its own pace and has a deeper shadow, so the board feels layered. Switch: Settings > Animations > Floating battlefield. Both follow the master animation switch and the system reduced-motion setting."] },
   { v: '0.66.0', title: 'Online updates from GitHub', notes: ["Update app now has a From GitHub section: Check now shows the newest release and what changed, then Download & install fetches the files and checks each one against its published SHA-256 fingerprint before installing. Nothing is installed if a check fails.", "Optional switch: check for updates when the app starts (on by default, quiet if you are offline). A dot appears on the Update app button when a release is waiting.", "This version changes the desktop shell, so install the full package once (Build-Installer.bat or Run-Desktop.bat from the new folder). After that, updates arrive from GitHub."] },
@@ -4953,10 +4973,10 @@ async function openUpdate() {
     h('div', { class: 'fhead', text: 'From a folder' }),
     h('p', { class: 'small muted', text: 'Extract a new zip anywhere, then choose the folder that contains index.html. Your decks, card data and settings are kept.' }),
     h('button', { class: 'primary', text: 'Update from folder…', onclick: async () => { note.textContent = 'Working…'; report(await window.desktop.fromFolder()); if (note.textContent === 'Working…') note.textContent = ''; } }),
-    h('div', { class: 'fhead', text: 'From a web address (optional)' }),
-    h('p', { class: 'small muted', text: 'Put index.html, app.js, style.css and an update.json ({"version":"0.22.0"}) at one https address, such as a GitHub Pages site or any file host.' }),
+    h('div', { class: 'fhead', text: 'From a web address (optional, installs right away)' }),
+    h('p', { class: 'small muted', text: 'Put index.html, app.js, style.css and an update.json ({"version":"0.22.0"}) at one https address, such as a GitHub Pages site or any file host. The button below downloads and installs straight away. To only look, use Check now in the GitHub section above.' }),
     url,
-    h('div', { style: 'margin-top:6px' }, h('button', { text: 'Check online', onclick: async () => { lsSet('mtgpt.updateUrl', url.value); note.textContent = 'Checking…'; report(await window.desktop.fromUrl(url.value)); } })),
+    h('div', { style: 'margin-top:6px' }, h('button', { text: 'Download & install from this address', onclick: async () => { if (!url.value.trim()) { note.textContent = 'Type an address first.'; return; } if (!window.confirm('This downloads the files from that address and installs them now (you restart the app afterwards to use them). Continue?')) return; lsSet('mtgpt.updateUrl', url.value); note.textContent = 'Downloading…'; report(await window.desktop.fromUrl(url.value)); } })),
     note);
   m.foot.append(
     h('button', { class: 'danger', text: 'Go back to built-in version', onclick: async () => { await window.desktop.reset(); note.textContent = 'Downloaded update removed.'; restart.hidden = false; } }),
@@ -5641,6 +5661,7 @@ const ANIM_DEFS = [
   ['life', 'Life effects', 'Rolling life numbers, a colour flash, a shake on big hits and floating +/- numbers'],
   ['turn', 'Turn banner & phase flash', 'A banner at the start of each turn and a flash when the phase changes'],
   ['fan', 'Hand fan', 'Cards in your hand sit in a gentle arc and lift when you hover them'],
+  ['cardDrag', 'Physical card drag', 'Click and hold a card and it follows your mouse. Drop it on a zone it can go to; if it cannot be played or moved there it flies back to where it came from'],
   ['hand3d', '3D hand tilt', 'Cards in your hand tilt toward the mouse in 3D as you hover them, like the big card preview'],
   ['bfFloat', 'Floating battlefield', 'Cards on the battlefield drift up and down a tiny amount, each at its own pace, with a deeper shadow so the board has depth']
 ];
@@ -6130,7 +6151,7 @@ function sagaSacrifice(id) {
 const SET_DEFAULT = {
   bfs: 1, hs: 1, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c',
   layout: { zoneDepth: true, stackCards: true, dimIdle: true, boardStrip: true, combatLane: true, gyFan: true }, matMotion: 'off', matSpeed: 1, sleevePreset: '', matPreset: '', uiTheme: 'default',
-  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
+  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
   sound: { on: true, vol: 0.5, music: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
   teaching: { master: true, playability: true, phasePopups: true, phasePauses: true, stackGuidance: true,
     triggerPrompts: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
@@ -6464,7 +6485,8 @@ function openHandSortMenu(ev) {
 function setupDrop() {
   document.addEventListener('dragover', e => { if (dragHand == null) return; if (e.target.closest && e.target.closest('#handWrap')) { e.preventDefault(); showHandMarker(handSlotAt(e.clientX)); } else clearHandMarker(); });
   $('#btnHandSort').addEventListener('click', e => { e.stopPropagation(); if ($('#libMenu')) closeLibMenu(); else openHandSortMenu(e); });
-  const target = e => e.target.closest && e.target.closest('[data-drop]');
+  // Anywhere over the table counts: a drop that is not on a specific zone or pile lands on the battlefield (v0.67.2).
+  const target = e => e.target.closest && (e.target.closest('[data-drop]') || (e.target.closest('#stage') ? $('#mat') : null));
   document.addEventListener('dragover', e => { const t = target(e); if (t && !(dragHand != null && t.dataset.drop === 'hand')) { e.preventDefault(); t.classList.add('over'); } });
   document.addEventListener('dragleave', e => { const t = target(e); if (t && !t.contains(e.relatedTarget)) t.classList.remove('over'); });
   document.addEventListener('drop', e => {
@@ -6474,19 +6496,83 @@ function setupDrop() {
     for (const x of $$('.over')) x.classList.remove('over');
     const d = e.dataTransfer.getData('text/plain');
     if (!d.startsWith('mtg:') || !state) return;
-    const id = parseInt(d.slice(4), 10);
-    const f = findCard(id);
-    if (f && f.zone === 'hand' && t.dataset.drop === 'hand') { const slot = handSlotAt(e.clientX); clearHandMarker(); dragHand = null; reorderHand(id, slot); return; }
-    clearHandMarker();
-    if (f && f.zone === 'hand' && t.dataset.drop === 'battlefield') {
-      if (isLandName(f.card.name)) playLand(id);
-      else if (isSpellCard(f.card) || isInstantSpeed(f.card)) castSpell(id);
-      else if (canPlaySorcerySpeedNow()) moveCard(id, 'battlefield');
-      else toast('Wrong phase', 'This card can only be played during your main phase.');
-      return;
-    }
-    moveCard(id, t.dataset.drop, 'top');
+    dropCardOn(parseInt(d.slice(4), 10), t.dataset.drop, e.clientX);
   });
+}
+
+// What happens when a card is released on a zone (shared by the physical drag and the old browser drag).
+function dropCardOn(id, kind, x) {
+  const f = findCard(id);
+  if (f && f.zone === 'hand' && kind === 'hand') { const slot = handSlotAt(x); clearHandMarker(); dragHand = null; reorderHand(id, slot); return; }
+  clearHandMarker();
+  if (f && f.zone === 'hand' && kind === 'battlefield') {
+    if (isLandName(f.card.name)) playLand(id);
+    else if (isSpellCard(f.card) || isInstantSpeed(f.card)) castSpell(id);
+    else if (canPlaySorcerySpeedNow()) moveCard(id, 'battlefield');
+    else toast('Wrong phase', 'This card can only be played during your main phase.');
+    return;
+  }
+  if (f && f.zone === kind && kind === 'battlefield') return;   // already on the battlefield
+  moveCard(id, kind, 'top');
+}
+
+// Physical card drag (v0.68): the card itself follows the mouse. Released on a zone that takes it, the action happens;
+// released anywhere else, or on a zone where the move is not allowed right now, it flies back to where it came from.
+let dragJustEnded = false;
+document.addEventListener('click', ev => { if (dragJustEnded) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+function pointerDragBegin(ev, e, c, zone) {
+  if (ev.button !== 0 || !state || (ev.target.closest && ev.target.closest('button, input, select'))) return;
+  const sx = ev.clientX, sy = ev.clientY;
+  let clone = null, cx = 0, cy = 0, w = 0, h2 = 0, offX = 0, offY = 0, lx = sx, ly = sy, vx = 0, vy = 0, tapped = false;
+  const tr = (rx, ry, sc) => `${tapped ? 'rotate(90deg) ' : ''}perspective(700px) rotateX(${rx}deg) rotateY(${ry}deg) scale(${sc})`;
+  const targetAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest ? el.closest('[data-drop]') : null; };
+  const begin = () => {
+    const r = e.getBoundingClientRect(); tapped = e.classList.contains('tapped');
+    w = e.offsetWidth; h2 = e.offsetHeight; cx = r.left + r.width / 2; cy = r.top + r.height / 2; offX = sx - cx; offY = sy - cy;
+    clone = e.cloneNode(true); clone.removeAttribute('data-id'); clone.removeAttribute('title');
+    for (const k of ['sel', 'bsel', 'dragging', 'tapped', 'stackgrp', 'idle']) clone.classList.remove(k);
+    clone.classList.add('dragclone');
+    const cs = getComputedStyle(e); for (const v of ['--cw', '--ch', '--zone-scale', '--bfs', '--hs']) { const val = cs.getPropertyValue(v); if (val) clone.style.setProperty(v, val); }
+    clone.style.width = w + 'px'; clone.style.height = h2 + 'px'; clone.style.left = (cx - w / 2) + 'px'; clone.style.top = (cy - h2 / 2) + 'px'; clone.style.transform = tr(0, 0, 1.1);
+    document.body.append(clone); e.classList.add('dragging'); document.body.classList.add('dragging-card');
+    dragHand = zone === 'hand' ? c.id : null;
+    if (typeof hideCardPreview === 'function') { try { hideCardPreview(); } catch (x) { /* ignore */ } }
+  };
+  const update = m => {
+    const x = m.clientX, y = m.clientY;
+    vx = vx * .7 + (x - lx) * .3; vy = vy * .7 + (y - ly) * .3; lx = x; ly = y;
+    const cl = n => Math.max(-16, Math.min(16, n));
+    clone.style.left = (x - offX - w / 2) + 'px'; clone.style.top = (y - offY - h2 / 2) + 'px'; clone.style.transform = tr(cl(-vy * .8), cl(vx * .8), 1.1);
+    for (const o of $$('.over')) o.classList.remove('over');
+    const t = targetAt(x, y);
+    if (t && !(t.dataset.drop === 'battlefield' && zone === 'battlefield')) t.classList.add('over');
+    if (t && t.dataset.drop === 'hand' && zone === 'hand') showHandMarker(handSlotAt(x)); else clearHandMarker();
+  };
+  const cleanup = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cancel); window.removeEventListener('keydown', key, true); };
+  const end = () => { for (const o of $$('.over')) o.classList.remove('over'); clearHandMarker(); document.body.classList.remove('dragging-card'); dragHand = null; e.classList.remove('dragging'); dragJustEnded = true; setTimeout(() => { dragJustEnded = false; }, 60); };
+  const flyBack = () => {
+    const dest = document.querySelector(`.card[data-id="${c.id}"]:not(.dragclone)`);
+    if (!dest || !clone) { if (clone) clone.remove(); return; }
+    const r = dest.getBoundingClientRect(), dt = dest.classList.contains('tapped'); dest.style.visibility = 'hidden';
+    clone.classList.add('fly'); clone.style.left = (r.left + r.width / 2 - w / 2) + 'px'; clone.style.top = (r.top + r.height / 2 - h2 / 2) + 'px'; clone.style.transform = `${dt ? 'rotate(90deg) ' : ''}scale(1)`;
+    let done = false; const fin = () => { if (done) return; done = true; clone.remove(); dest.style.visibility = ''; }; clone.addEventListener('transitionend', fin); setTimeout(fin, 520);
+  };
+  const finish = m => {
+    const t = targetAt(m.clientX, m.clientY), kind = t && t.dataset.drop;
+    end();
+    if (!kind || (zone === 'battlefield' && kind === 'battlefield')) { flyBack(); return; }
+    const z0 = zone, st0 = state.stack.length, bd0 = document.querySelectorAll('#modalRoot .backdrop').length, tp0 = state.pendingTriggers.length;
+    dropCardOn(c.id, kind, m.clientX);
+    const f2 = findCard(c.id), reorder = zone === 'hand' && kind === 'hand';
+    const accepted = reorder || !f2 || f2.zone !== z0 || state.stack.length !== st0 || document.querySelectorAll('#modalRoot .backdrop').length > bd0 || state.pendingTriggers.length !== tp0;
+    if (accepted) { clone.classList.add('land'); clone.style.opacity = '0'; clone.style.transform = tr(0, 0, 1.25); setTimeout(() => clone.remove(), 180); }
+    else flyBack();
+  };
+  const move = m => { if (!clone) { if (Math.hypot(m.clientX - sx, m.clientY - sy) < 6) return; begin(); } update(m); };
+  const up = m => { cleanup(); if (clone) finish(m); };
+  const cancel = () => { cleanup(); if (clone) { end(); flyBack(); } };
+  const key = k => { if (k.key === 'Escape' && clone) { k.stopPropagation(); cancel(); } };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', cancel); window.addEventListener('keydown', key, true);
 }
 
 // ---------------------------------------------------------------- card model: how the app READS a card (v0.35)

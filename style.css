@@ -190,7 +190,7 @@ input[type=number] { width: 54px; padding: 4px 6px; }
 
 /* hand */
 #handWrap {
-  position: relative; flex: none; height: calc(var(--ch) + 56px); overflow: hidden;
+  position: relative; z-index: 40; flex: none; height: calc(var(--ch) + 56px); overflow: visible;   /* hovered hand cards rise above the battlefield instead of being clipped under it */
   background: linear-gradient(var(--hand-a, #171b21), var(--hand-b, #12161b)); border: 1px solid var(--line); border-radius: 14px; padding: 7px 14px 8px;
   --cw: calc(120px * var(--hs, 1)); --ch: calc(94px * var(--hs, 1));
 }
@@ -1048,3 +1048,13 @@ body.l-fangy .stacktop img, body.l-fangy .stacktop > .mini { border-radius: 6px;
 .fanbehind .mini { height: 100%; padding: 4px; font-size: 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .fanbehind.fb1 { transform: translate(-9px, -2px) rotate(-8deg); }
 .fanbehind.fb2 { transform: translate(-17px, -1px) rotate(-16deg); filter: brightness(.8); }
+
+#mat.over { box-shadow: inset 0 0 0 2px rgba(227,185,92,.45), inset 0 0 70px rgba(0,0,0,.5); }
+
+/* ---- v0.68 physical card drag */
+.card.dragclone { position: fixed; z-index: 9000; margin: 0; pointer-events: none; transition: none; animation: none !important; translate: none; transform-origin: 50% 50%; box-shadow: 0 26px 38px rgba(0,0,0,.6), 0 0 0 2px rgba(227,185,92,.55); will-change: transform, left, top; filter: none; }
+.card.dragclone.fly { transition: left .4s cubic-bezier(.2,.9,.25,1.12), top .4s cubic-bezier(.2,.9,.25,1.12), transform .4s ease-out, box-shadow .4s; box-shadow: 0 4px 10px rgba(0,0,0,.5); }
+.card.dragclone.land { transition: opacity .17s ease-out, transform .17s ease-out; }
+body.dragging-card, body.dragging-card * { cursor: grabbing !important; }
+body.dragging-card #row-hand .card:hover:not(.dragclone) { transform: none; box-shadow: none; }
+.card.dragging { opacity: .22; }
