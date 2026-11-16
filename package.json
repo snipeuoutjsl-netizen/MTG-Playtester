@@ -1,0 +1,52 @@
+{
+  "name": "mtg-playtester",
+  "productName": "MTG Playtester",
+  "version": "0.67.0",
+  "description": "Offline solo playtester for Magic: The Gathering decks",
+  "main": "main.js",
+  "author": "MTG Playtester",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "local.mtg.playtester",
+    "productName": "MTG Playtester",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "app.js",
+      "style.css",
+      "build/icon.png",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "MTG-Playtester-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "MTG-Playtester-Portable-${version}.${ext}"
+    }
+  }
+}

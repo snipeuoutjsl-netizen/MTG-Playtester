@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MTG Playtester</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+    <span class="brand-text"><b>MTG</b><span>Playtester</span></span>
+  </div>
+  <button class="deckpick" id="btnDecks" title="Choose a deck">
+    <span class="deckpick-l">Deck</span>
+    <b id="deckCur">…</b>
+    <svg class="ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+  <select id="deckSelect" hidden></select>
+  <span class="sep"></span>
+  <div class="tb-group tb-game">
+    <button id="btnNew" class="primary newgame"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New game</span></button>
+    <label class="chk playtoggle" title="Tick = you go first (no draw on turn 1)"><input type="checkbox" id="chkPlay" checked><span class="chk-box"></span><span>On the play</span></label>
+  </div>
+  <span class="sep"></span>
+  <div class="tb-group tb-actions" role="group" aria-label="Game actions">
+    <button id="btnUndo" title="Undo (Ctrl+Z)"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg><span class="lbl">Undo</span></button>
+    <button id="btnShuffle" title="Shuffle library (S)"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg><span class="lbl">Shuffle</span></button>
+    <button id="btnDraw" title="Draw a card (D)"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 8v8M9 13l3 3 3-3"/></svg><span class="lbl">Draw</span></button>
+    <button id="btnUntap" title="Untap all permanents (U)"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg><span class="lbl">Untap all</span></button>
+    <button id="btnToken" title="Create a token"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg><span class="lbl">Token</span></button>
+    <button id="btnStack" title="Open the stack"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg><span class="lbl">Stack</span></button>
+  </div>
+  <span class="status"><span id="imgStatus" class="chip"></span><span id="dbStatus" class="chip"></span></span>
+  <button id="btnVersion" class="verbadge" title="What's new"></button>
+  <div class="utility-wrap">
+    <button id="btnTools" class="iconbtn" title="Tools and settings" aria-label="Tools and settings" aria-expanded="false">⚙</button>
+    <div id="utilityMenu" class="utility-menu" hidden>
+      <div class="utility-title">Tools &amp; Settings</div>
+      <button id="btnDeckEdit">Import / edit deck</button>
+      <button id="btnCards">Card data…</button>
+      <button id="btnImages">Images…</button>
+      <button id="btnUpdate" hidden>Update app…</button>
+      <button id="btnFxMenu">Active effects…</button>
+      <button id="btnCostFx">Cost effects…</button>
+      <button id="btnStats">Deck stats</button>
+      <button id="btnReading">How the app reads cards…</button>
+      <button id="btnSettings">Settings</button>
+    </div>
+  </div>
+  <input type="file" id="fileCards" hidden>
+</header>
+
+<main id="table">
+  <section id="stage">
+    <div id="gamebar">
+      <div class="hud">
+        <div class="hudbox"><span class="hudlabel">Turn</span><b id="turnNum">–</b></div>
+        <div class="hudbox mana-hud" id="manaHud" title="Floating mana empties as each step/phase ends">
+          <span class="hudlabel">Mana</span><div id="manaPool" class="mana-pool"><span class="mana-empty">—</span></div>
+        </div>
+        <button id="btnFx" class="hudbtn" title="Lasting effects: until end of turn, delayed triggers…" hidden>⏳ Effects 0</button>
+        <div class="hudbox opp" id="oppBox">
+          <button data-opp="-1">−1</button>
+          <div class="lifewrap"><span class="hudlabel">Opp</span><b id="oppNum">20</b></div>
+          <button data-opp="1">+1</button><button id="btnOppDraw" title="Your opponent drew a card (triggers Orcish Bowmasters and similar)">🃏</button>
+        </div>
+        <div class="hudbox life">
+          <button data-life="-5">−5</button><button data-life="-1">−1</button>
+          <div class="lifewrap"><span class="hudlabel">Life</span><b id="lifeNum">20</b></div>
+          <button data-life="1">+1</button><button data-life="5">+5</button>
+        </div>
+      </div>
+      <div id="phases" aria-label="Turn phases"></div>
+      <div class="gbtns">
+        <button id="btnCombat" class="primary" hidden>Declare attackers</button>
+        <button id="btnNextPhase" class="primary" title="Shortcut: Space">Next phase ▸</button>
+        <button id="btnNext" title="Shortcut: N">Next turn ⏭</button>
+        <button id="btnTokens" title="Tokens your deck can make" hidden>Tokens (<span id="cnt-tokens">0</span>)</button>
+        <button id="btnSideboard" data-open="sideboard">Sideboard (<span id="cnt-sideboard">0</span>)</button>
+      </div>
+    </div>
+
+    <div id="mat">
+      <div class="zone" id="zone-creatures" data-drop="battlefield">
+        <div class="zlabel">Creatures <span id="zc-creatures"></span></div>
+        <div class="cardrow" id="row-creatures"></div>
+      </div>
+
+      <div id="piles">
+        <div class="pile" id="pile-library" data-drop="library">
+          <div class="pilelabel">Library</div>
+          <div class="stack lib" id="libstack" tabindex="0" role="button" aria-haspopup="menu" title="Click for draw, scry, search..."><div class="stacktop cardback"></div><span class="pcount" id="pcnt-library">0</span></div>
+        </div>
+        <div class="pile-zone-row">
+          <div class="pile" id="pile-graveyard" data-drop="graveyard">
+            <div class="pilelabel">Graveyard</div>
+            <div class="stack" data-open="graveyard" title="Click to view"><div class="stacktop" id="top-graveyard"></div><span class="pcount" id="pcnt-graveyard">0</span></div>
+            <div class="zone-hover-list" id="hover-graveyard"></div>
+          </div>
+          <div class="pile" id="pile-exile" data-drop="exile">
+            <div class="pilelabel">Exile</div>
+            <div class="stack" data-open="exile" title="Click to view"><div class="stacktop" id="top-exile"></div><span class="pcount" id="pcnt-exile">0</span></div>
+            <div class="zone-hover-list" id="hover-exile"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="zone" id="zone-noncreature" data-drop="battlefield">
+        <div class="zlabel">Artifacts · Enchantments · Planeswalkers</div>
+        <div class="cardrow" id="row-noncreature"></div>
+      </div>
+      <div class="zone" id="zone-lands" data-drop="battlefield">
+        <div class="zlabel">Lands <span id="zc-lands"></span></div>
+        <div class="cardrow" id="row-lands"></div>
+      </div>
+
+      <div id="boardstrip" hidden></div>
+      <div id="toast"></div>
+      <div id="overlay" hidden></div>
+    </div>
+
+    <section id="handWrap" data-drop="hand">
+      <div class="zlabel">Hand <span id="cnt-hand"></span><button id="btnHandSort" class="handsort" title="Sort the cards in your hand. You can also drag cards sideways to reorder them.">Sort ▾</button><span id="handLegend" class="handlegend"><span class="legend ready" title="Green: you can play or cast this right now.">Playable</span><span class="legend mana" title="Red: the timing is fine, but you cannot pay for it: not enough mana, or not the right colours. Hover the card to see which.">Can't pay</span><span class="legend timing" title="Gold: wrong timing. Wrong phase, the stack is busy, or you already played a land. Hover the card to see why.">Wrong timing</span><span class="legend instant" title="The lightning badge: instant speed or flash. It can be cast whenever you have priority.">⚡ Instant speed</span><span class="legend sel" title="White: the card you have selected.">Selected</span></span></div>
+      <div class="cardrow" id="row-hand"></div>
+    </section>
+  </section>
+
+  <aside id="right">
+    <div class="box" id="preview"><div class="muted">Hover a card to see it here.</div></div>
+    <div class="box" id="stackBox"><div class="boxhead">Stack</div><div id="stackSummary" class="muted small">Empty</div><button id="btnResolveStack" class="primary" style="margin-top:6px">Open stack</button></div>
+    <div class="box grow">
+      <div class="boxhead">Game log</div>
+      <div id="log"></div>
+    </div>
+  </aside>
+</main>
+
+<div id="modalRoot"></div>
+<div id="ctxMenu" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

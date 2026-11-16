@@ -1,0 +1,32 @@
+{
+  "version": "0.67.0",
+  "shell": 2,
+  "title": "Board layout pass",
+  "notes": [
+    "Six board changes, each with its own switch in Settings > Playmat & frame > Board layout.",
+    "Zone depth: the three battlefield zones look like shelves with a soft inner shadow.",
+    "Stack identical lands and tokens: identical cards pile into one with a count badge; click the badge to spread them out, and click it again to pile them up. Cards with counters, attachments or different states stay separate.",
+    "Dim cards that cannot act: tapped lands and summoning-sick creatures are a little duller.",
+    "Mana and phase strip: a slim strip on the board edge shows the current step, what comes next, floating mana, your land drop and the stack size.",
+    "Combat lane: once attackers are declared, they move to a lit lane at the front of the creature zone.",
+    "Fanned graveyard: the top three graveyard cards show fanned out."
+  ],
+  "files": {
+    "index.html": {
+      "sha256": "7a04ec0621a4a8c7bdcb4d2847c4b5aeaca99f2c175e300617d0be633d3ffeae",
+      "size": 9984
+    },
+    "app.js": {
+      "sha256": "384226209db026967bb267e07da27f4824b01988db315a74ff59c7565fa2f92e",
+      "size": 567890
+    },
+    "style.css": {
+      "sha256": "e28e7050442d169c41a7b2d6c3f210512ed8fbaae3b130a5dd05645dc4d741a2",
+      "size": 81771
+    },
+    "package.json": {
+      "sha256": "1f49ad263edea427ab5a193239b1a33546974c45fb0699ded74a953ccea78135",
+      "size": 1193
+    }
+  }
+}
