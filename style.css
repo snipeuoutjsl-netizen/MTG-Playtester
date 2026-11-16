@@ -1251,3 +1251,11 @@ body.responding #btnDraw, body.responding #btnUntap, body.responding #btnNextPha
 
 /* v0.82 a tapped attacker stays turned sideways in the combat lane (the lane's translate used to override the tapped rotation) */
 #zone-creatures.combat-on .cardrow .card.attacking.tapped { transform: rotate(90deg) translateX(12px); margin: calc((var(--card-w) - var(--card-h)) / 2) calc((var(--card-h) - var(--card-w)) / 2); }
+
+/* v0.85 small screens (Steam Deck 1280x800): tighter turn tracker so the step list and the mana / land-drop text never overlap */
+@media (max-width: 1340px) {
+  #boardstrip .bs-step { padding: 2px 5px; font-size: 10px; }
+  #boardstrip .bs-grp { padding: 1px 4px 2px; }
+  #boardstrip .bs-gl { font-size: 8px; }
+  #boardstrip .bs-info { gap: 6px; font-size: 10px; }
+}

@@ -1,7 +1,7 @@
 {
   "name": "mtg-playtester",
   "productName": "MTG Playtester",
-  "version": "0.83.0",
+  "version": "0.85.0",
   "description": "Offline solo playtester for Magic: The Gathering decks",
   "main": "main.js",
   "author": "MTG Playtester",
@@ -9,7 +9,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis portable"
+    "dist": "electron-builder --win nsis portable",
+    "dist:linux": "electron-builder --linux AppImage"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -47,6 +48,16 @@
     },
     "portable": {
       "artifactName": "MTG-Playtester-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "executableName": "mtg-playtester",
+      "artifactName": "MTG-Playtester-${version}-x86_64.${ext}",
+      "maintainer": "MTG Playtester"
     }
   }
 }

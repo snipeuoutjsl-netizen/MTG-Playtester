@@ -1070,6 +1070,7 @@ function parseTriggers(c) {
     if (!ev) {   // v0.64: graveyard, discard/cycle, mana, life loss
       let q;
       if ((q = cond.match(/^(?:when|whenever) (?:~|this \w+) is put into (?:your|a) graveyard from (anywhere|your library|your hand)/))) { ev = 'gy-self'; from = q[1]; zone = 'graveyard'; }
+      else if ((q = cond.match(/^(?:when|whenever) (?:a|an|one or more) (.+?) cards? leaves? your graveyard/))) { ev = 'gy-leave'; filter = q[1]; }
       else if ((q = cond.match(/^(?:when|whenever) (?:a|an|another|one or more) (.+?)(?: cards?| creatures?)? (?:is|are) put into your graveyard from (anywhere|the battlefield|your library|your hand)/))) { ev = 'gy-other'; filter = q[1] + (/creature/.test(cond.slice(q.index, q[0].length)) && !/creature/.test(q[1]) ? ' creature' : ''); from = q[2]; }
       else if ((q = cond.match(/^(?:when|whenever) you (cycle or discard|discard|cycle) (?:(?:a|an|another|one or more|this or another) )?(?:other )?(?:([a-z ]+?) )?cards?/))) { ev = 'discard'; cyc = /cycle/.test(q[1]); dis = /discard/.test(q[1]); another = /another|other/.test(cond); filter = (q[2] || '').trim(); }
       else if ((q = cond.match(/^(?:when|whenever) you tap (?:~|this \w+) for mana/))) ev = 'tap-self';
@@ -1133,6 +1134,9 @@ function fireTrigger(ev, ctx = {}) {
     for (const t of parseTriggers(d)) if (t.ev === 'leaves-self') add(d, t, `${d.name} left the battlefield.`);
   } else if (ev === 'lifegain') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'lifegain') add(c, t, `You gained ${ctx.amount || ''} life.`);
+  } else if (ev === 'gyleave') {
+    const d = ctx.card;
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'gy-leave' && filterMatches(t.filter, d)) add(c, t, `${d.name} left your graveyard (${ctx.to === 'stack' ? 'it was cast from there' : 'moved to ' + ctx.to}), which matches "${t.filter}".`);
   } else if (ev === 'gyenter') {
     const d = ctx.card, from = ctx.from;
     const fromOk = f => !f || f === 'anywhere' || (f === 'the battlefield' && from === 'battlefield') || (f === 'your library' && from === 'library') || (f === 'your hand' && from === 'hand');
@@ -1599,7 +1603,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   memNote('left', c);
   fxOnLeave(c);
   detachFrom(c);
-  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained']) delete c[k];
+  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
@@ -2070,8 +2074,8 @@ function applyPicks(src, picks) {
     switch (p.comp.k) {
       case 'sac': log(`${src.name}: sacrificed ${nm} as a cost`); moveCard(id, 'graveyard'); break;
       case 'discard': log(`${src.name}: discarded ${nm} as a cost`); moveCard(id, 'graveyard'); break;
-      case 'exile': log(`${src.name}: exiled ${nm} from your ${p.comp.zone} as a cost`); moveCard(id, 'exile'); break;
-      case 'delve': log(`${src.name}: delved ${nm} (exiled from your graveyard)`); moveCard(id, 'exile'); break;
+      case 'exile': log(`${src.name}: exiled ${nm} from your ${p.comp.zone} as a cost`); (src.exiledWith = src.exiledWith || []).push({ name: nm }); moveCard(id, 'exile'); break;
+      case 'delve': log(`${src.name}: delved ${nm} (exiled from your graveyard)`); (src.exiledWith = src.exiledWith || []).push({ name: nm }); moveCard(id, 'exile'); break;
       case 'tapOther': case 'convoke': case 'improvise': f.card.tapped = true; log(`${src.name}: tapped ${nm} as a cost${p.comp.k === 'tapOther' ? '' : ' (' + p.comp.k + ')'}`); break;
       case 'bounce': log(`${src.name}: returned ${nm} to your hand as a cost`); moveCard(id, 'hand'); break;
     }
@@ -2352,13 +2356,13 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   const f=findCard(id); if(!f||f.zone!=='hand'||isLandName(f.card.name))return;
   const fromC=centerOf(`#row-hand .card[data-id="${id}"]`);
   snap(); const [c]=state.hand.splice(f.idx,1); sfx('cast'); spotlight(c,'cast',fromC);
-  state.halfChosen=null; if(c.fromGy){ if(c.fromGy.kind!=='escape') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; }
+  state.halfChosen=null; let gyLeft=false; if(c.fromGy){ if(c.fromGy.kind!=='escape') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
   if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }
   if(modes){ const md=spellModal(c); if(md){ c.modes=modes; c.modeTexts=modes.map(i=>md.modes[i].text); log(`${c.name}: chosen ${md.spree?'extras':'modes'}: ${c.modeTexts.join(' | ')}`); } }
   withCtx(c,()=>tapManaIds(manaIds));
   if(ci) applyCostInfo(c,ci);
-  noteCast(c); state.stack.push(c); state.priority={active:true,passed:false};
+  noteCast(c); state.stack.push(c); state.priority={active:true,passed:false}; if(gyLeft) fireTrigger('gyleave',{card:c,to:'stack'});
   log(`Cast ${c.name}${c.targets&&c.targets.length?' targeting '+c.targets.map(t=>t.name).join(', '):''} — put it on the stack`); fireTrigger('cast',{card:c}); render();
   if(state.pendingTriggers.length) resolvePendingTrigger(); else if(reopen)openStack();
 }
@@ -3068,11 +3072,13 @@ function moveCard(id, to, pos) {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
     delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.evoked; delete c.kicked; delete c.fromGy; if (to !== 'exile') delete c.mayPlayTurn; if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });
     else if (to === 'library') { if (pos === 'bottom') state.library.push(c); else state.library.unshift(c); }
     else if (to === 'graveyard') gyPush(c, f.zone);
     else state[to].push(c);
+    if (f.zone === 'graveyard' && to !== 'graveyard') fireTrigger('gyleave', { card: c, to });   // v0.84 rule 603.10a: leaves-the-graveyard triggers (Murktide Regent)
   }
   log(`${c.name}: ${f.zone} → ${where}${where === 'library' ? ' (' + (pos === 'bottom' ? 'bottom' : 'top') + ')' : ''}`);
   if (selected === id && to !== 'hand' && to !== 'battlefield') selected = null;
@@ -4048,7 +4054,14 @@ function etbCounters(c) {
   const tx = cardText(c).replace(new RegExp(nm, 'gi'), '~');
   const m = tx.match(/\benters(?: the battlefield)? with (an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);
   if (!m) return;
-  const n = /^x$/i.test(m[1]) ? (+c.xValue || 0) : /^\d+$/.test(m[1]) ? +m[1] : (TOKEN_NUMW[m[1].toLowerCase()] || 1);
+  // v0.84 "...counter on it for each <type> card exiled with it" (Murktide Regent): one per matching card exiled while casting it (delve), not a flat one.
+  const fe = tx.match(/\bcounters? on it for each ([^.]+?)(?:\.|$)/im);
+  let n;
+  if (fe) {
+    const em = /^(.+?) cards? exiled with it$/i.exec(fe[1].trim());
+    if (em) { const phrase = em[1].replace(/\s+and\s+/g, ' or '); n = (c.exiledWith || []).filter(e => filterMatches(phrase, { name: e.name })).length; log(`${c.name}: ${n} ${em[1]} card${n === 1 ? '' : 's'} exiled with it while casting it: enters with ${n} counter${n === 1 ? '' : 's'}`); if (!n) return; }
+    else { log(`${c.name}: enters with counters "for each ${fe[1]}": count them yourself and add the counters by hand`); toast('Add counters by hand', `${c.name} gets one counter for each ${fe[1]}. The app cannot count that, so add them from the card menu.`); return; }
+  } else n = /^x$/i.test(m[1]) ? (+c.xValue || 0) : /^\d+$/.test(m[1]) ? +m[1] : (TOKEN_NUMW[m[1].toLowerCase()] || 1);
   if (!n) return;
   let kind = m[2].toLowerCase(); if (kind === 'loyalty') return;
   const key = kind === '+1/+1' ? 'plus' : /^[−-]1/.test(kind) ? 'minus' : kind;
@@ -5391,8 +5404,19 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.83.0';
+const APP_VERSION = '0.85.0';
 const CHANGELOG = [
+  { v: '0.85.0', title: 'Linux and Steam Deck support', notes: [
+    "MTG Playtester can now be built for Linux and the Steam Deck as a single AppImage file (Build-Linux.sh, or the new 'Build Linux app' action on GitHub). Run it in Desktop Mode, or add it to Steam as a non-Steam game.",
+    "Also new for Linux: Run-Linux.sh (runs it from the folder) and Start-Browser.sh (opens it in your browser with nothing to install).",
+    "The table was checked at 1280×800, the Steam Deck's screen size, and the turn tracker is tighter on small screens so its text no longer overlaps.",
+    "The game itself is unchanged. This update only matters if you want to run it on Linux."
+  ] },
+  { v: '0.84.0', title: 'Murktide Regent ruling fixes', notes: [
+    "Murktide Regent now enters with one +1/+1 counter for each instant or sorcery card exiled with it, meaning the cards you delved away while casting it. Before, it always got a single counter no matter what you delved. Lands and other card types you delve do not count, and casting it without delve gives no counters.",
+    "New 'leaves your graveyard' trigger support (rule 603.10a): whenever an instant or sorcery card leaves your graveyard while Murktide Regent is on the battlefield, it gets a +1/+1 counter. This fires when a card is exiled by delve for another spell, cast with flashback or escape, returned to hand, shuffled in, or moved by hand from the graveyard viewer. Cards entering the graveyard do not trigger it, and delving for Murktide itself does not either, because it is still on the stack.",
+    "Other 'enters with counters for each…' cards that the app cannot count now tell you to add the counters by hand, instead of silently giving one. The card scanner shows those lines as partly understood."
+  ] },
   { v: '0.83.0', title: 'Look-and-sort effects, adjustable numbers, longer tour', notes: [
     "New general 'look at the top N cards and sort them' tool. When a card says 'Look at the top three cards of your library. Put one into your hand, put one on the bottom, and exile one. You may play the exiled card this turn', the app now shows the top cards and lets you choose where each one goes, checks the counts, and marks the exiled card playable this turn. This fixes Expressive Iteration and works for any card worded the same way (for example 'put one into your hand and the rest on the bottom').",
     "Exile viewer: cards you may play this turn show a Cast or Play land button; lands use your land drop. They stop being playable when the turn ends.",
@@ -7661,6 +7685,7 @@ function compileCardOne(c) {
     const L = defLine(info.name, part) || defLine(info.name, l.text);
     if (L) { l.status = 'ok'; l.def = true; l.note = `Hand-written definition: ${L.note || 'the app applies this exactly as written.'}`; }
   }
+  for (const l of lines) if (l.status === 'ok' && !l.def && /counters? on it for each (?![^.]*\bexiled with it\b)/i.test(String(l.text))) { l.status = 'part'; l.note += ' NOT counted by the app: add the counters for the "for each" part by hand.'; }
   const counts = { ok: 0, part: 0, unk: 0, info: 0 };
   for (const l of lines) counts[l.status]++;
   const out = { name: info.name, type: info.t || '', mc: info.mc || '', pt: info.pt || '', lines, counts };

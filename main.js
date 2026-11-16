@@ -1,5 +1,7 @@
 // Electron shell for MTG Playtester. The game itself is plain HTML/JS (index.html + app.js).
 const { app, BrowserWindow, shell, Menu, ipcMain, dialog, net } = require('electron');
+// Linux / Steam Deck: an AppImage cannot use Chromium's setuid sandbox helper, so run without it (the game only loads its own local files).
+if (process.platform === 'linux' && process.env.APPIMAGE) require('electron').app.commandLine.appendSwitch('no-sandbox');
 const vm = require('vm');
 const crypto = require('crypto');
 const path = require('path');
