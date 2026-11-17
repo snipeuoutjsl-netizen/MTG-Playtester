@@ -897,6 +897,7 @@ function runDelayed(when) {
   for (const e of due) {
     const f = e.targetId ? findCard(e.targetId) : null, nm = e.targetName || (f && f.card.name) || 'it';
     if (e.mana) { for (const [k, n] of Object.entries(e.mana)) state.manaPool[k] = (state.manaPool[k] || 0) + n; log(`${e.srcName}: delayed trigger at the beginning of the ${where}: added ${Object.entries(e.mana).map(([k, n]) => '{' + k + '}'.repeat(1) + (n > 1 ? '×' + n : '')).join('')} to your mana pool`); toast('Delayed mana', `${e.srcName}: ${e.text}`); continue; }
+    if (e.action === 'unbecome') { if (f && f.zone === 'battlefield' && f.card.becomes) { delete f.card.becomes; log(`${e.srcName}: ${nm} is no longer a creature (the effect ended)`); } continue; }
     if (e.action === 'exile') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was exiled at the beginning of the ${where}`); delete f.card.exileInstead; leaveBattlefield(f.card, 'exile'); } }
     else if (e.action === 'sacrifice') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was sacrificed at the beginning of the ${where}`); leaveBattlefield(f.card, 'graveyard'); } }
     else if (e.action === 'returnHand') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} returned to its owner's hand at the beginning of the ${where}`); leaveBattlefield(f.card, 'hand'); } }
@@ -1599,7 +1600,18 @@ function runChain(steps, src, baseModals) {
 }
 function effectOptions(tx, obj) {
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
-  return res.filter(o => { const k = o && o.label && typeof o.fn === 'function' ? o.label : null; if (!k) return true; if (seen.has(k)) return false; seen.add(k); return true; });
+  // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
+  const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
+  const dup = new Set(); if (drawN.length > 1) { const keep = drawN.find(o => !/^Draw /i.test(o.label)) || drawN[0]; for (const o of drawN) if (o !== keep && String(o.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase() === String(keep.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase()) dup.add(o); }
+  const outList = res.filter(o => { if (dup.has(o)) return false; const k = o && o.label && typeof o.fn === 'function' ? o.label : null; if (!k) return true; if (seen.has(k)) return false; seen.add(k); return true; });
+  // CR 608.2c: effects happen in the order the text gives them, so list the suggestions in that order too.
+  try {
+    const low = String(tx || '').toLowerCase(), STEM = { scry: 'scr', create: 'creat', draw: 'draw', surveil: 'surveil', gain: 'gain', lose: 'lose', exile: 'exile', return: 'return', destroy: 'destroy', put: 'put', sacrifice: 'sacrifice' };
+    const rank = o => { const m = /^(?:you |target player |each opponent )?(\w+)/i.exec(o.label || ''); const st = m && STEM[m[1].toLowerCase()]; const i = st ? low.search(new RegExp('\\b' + st)) : -1; return i; };
+    const items = outList.filter(o => o && typeof o.fn === 'function' && !o.hidden);
+    if (items.length > 1 && items.every(o => rank(o) >= 0)) { const sorted = items.slice().sort((a, b) => rank(a) - rank(b)); let k = 0; return outList.map(o => (o && typeof o.fn === 'function' && !o.hidden) ? sorted[k++] : o); }
+  } catch (e) { /* ordering only */ }
+  return outList;
 }
 function effectOptionsInner(tx, obj) {
   const base = effectOptionsBase(tx, obj);
@@ -1626,7 +1638,7 @@ function effectOptionsInner(tx, obj) {
 function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
   if (obj.kw && KW_EFFECTS[obj.kw]) return KW_EFFECTS[obj.kw](obj);   // v0.96.1 a keyword trigger resolving (exalted, evolve ...)
-  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
+  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
   { const L = defLine(obj.sourceName, tx);
     if (L) {
       const o = L.options(obj, L._line || tx);
@@ -1723,7 +1735,7 @@ function effectOptionsBase(tx, obj) {
   if (!bound.length && (mm = tx.match(/\bdeals? (\d+) damage to (?:any target|target (?:opponent|player)|each opponent|target creature or (?:player|planeswalker)|target player or planeswalker)/i))) { const v = +mm[1]; opts.push({ label: `Deal ${v} damage to the opponent`, fn: () => changeOppLife(-v) }); }
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
   for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/)) { if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
-  if ((mm = tx.match(/\b(scry|surveil)\s+(\d+)/i))) { const w = mm[1], v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
+  if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
   // v0.86 amass (rule 701.47): "Then amass Orcs 1."
@@ -6212,8 +6224,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.97.3';
+const APP_VERSION = '0.97.4';
 const CHANGELOG = [
+  { v: '0.97.4', title: 'Glow fix, no duplicate draw, Karn the Great Creator', notes: ['Fixed: the green glow on cards with a usable activated ability was hidden by the "cards float" battlefield effect, so it never showed. Both now run together.', 'Fixed: an effect such as Kozilek\'s Command ("scries X, then draws a card") listed the draw twice ("Draw 1 card" and "You draw 1 card"), so applying both drew two cards. Each step is now listed once, in the order the text gives them, and "scries" is understood.', 'Karn, the Great Creator now works from its rules text: +1 makes up to one target noncreature artifact an artifact creature with power and toughness equal to its mana value until your next turn (it stops at the start of your next upkeep); −2 lets you put an artifact card from your sideboard or face up in exile into your hand.'] },
   { v: '0.97.3', title: 'Always yield', notes: ['New "Always yield" (like Magic Online): the first time each triggered ability goes on the stack in a game you are asked once whether to always do the same thing. Say yes and from then on it goes on the stack by itself with the same targets, applies the same effect you chose the first time, and resolves without asking (e.g. a creature that pings your opponent every time you cast a spell).', 'Manage or remove entries from ⚙ → Always yield. Everything resets when the game ends.'] },
   { v: '0.97.2', title: 'Soulbond and Reinforce', notes: ['Soulbond (CR 702.95): when a soulbond creature enters you may pair it with another unpaired creature, and when another creature enters while a soulbond creature is unpaired you may pair them. Paired creatures show a "Paired" badge, both gain the keywords or +N/+N the card\'s own "as long as this creature is paired with another creature, each of those creatures ..." line gives, and they unpair when either leaves the battlefield.', 'Reinforce (CR 702.77): right-click the card in your hand to pay the reinforce cost, discard it and put N +1/+1 counters on a target creature (the ability uses the stack).'] },
   { v: '0.97.1', title: 'Mana Drain delayed mana, interactive preview, Hand tab', notes: ['Delayed mana from rules text (CR 603.7): "At the beginning of your next precombat main phase, add an amount of {C} equal to that spell\'s mana value" (Mana Drain) is now set up when the counter resolves and adds the mana at the start of your next precombat main phase.', 'The enlarged card preview is interactive again: it only changes after the pointer rests on a card for a moment and never changes while the pointer is on it, so you can click to flip a double-faced card or hover its keyword chips.', 'The Hand / Key tab moved to the bottom right.'] },
@@ -10694,6 +10707,41 @@ function reinforceCard(id) {
     const plan = manaPaymentAllocation(manaCostParts(rf.cost), state.manaPool || {}, manaSources(), null);
     state.manaPool = plan.pool; finish(plan.used.map(i => manaSources()[i].card.id));
   }, { srcId: null, onCancel: () => {} });
+}
+// ---------------------------------------------------------------- v0.97.4 rules text: "becomes an artifact creature with P/T equal to its mana value" and "reveal a card from outside the game or choose a face-up card in exile"
+// CR 613.1d/613.4b  An effect that makes a permanent a creature adds the type and sets its power and toughness; CR 611.2b "until your next turn" ends as that turn begins.
+// CR 400.11 / 406  Outside the game = the sideboard; a face-up exiled card you own can be chosen.   (Karn, the Great Creator reads both lines.)
+function becomesCreatureEffect(tx, src, obj) {
+  const m = /^(?:(until your next turn|until end of turn),\s*)?(up to one )?target ([a-z ,]+?) becomes an? ((?:[a-z]+ )*?)creature with (?:base )?power and toughness (?:each )?equal to (?:its|that [a-z]+'s) mana value\.?$/i.exec(String(tx || '').replace(/’/g, "'").replace(/\n/g, ' ').trim());
+  if (!m) return null;
+  const dur = /your next turn/i.test(m[1] || '') ? 'upkeep' : 'end', phrase = m[3].toLowerCase(), extra = m[4].trim().split(/\s+/).filter(Boolean).map(x => x.toLowerCase());
+  const noncreature = /\bnoncreature\b/.test(phrase), words = phrase.replace(/\bnon\w+\b/g, '').split(/\s*(?:,|\bor\b)\s*/).map(w => singularWord(w.trim())).filter(Boolean);
+  const ok = c => (!noncreature || !/\bCreature\b/.test(frontType(c) || permTypeLine(c))) && (!words.length || permHasAny(c, words));
+  const apply = c => {
+    snap(); const info = c.token ? null : cardInfo(c.name), mv = info ? mvOf(info) : 0;
+    c.becomes = { pt: mv + '/' + mv, types: [...new Set([...extra, 'creature'])], subs: [] };
+    addFx({ kind: 'delayed', when: dur, action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name} stops being a creature.`, srcName: src });
+    log(`${src}: ${c.name} becomes a ${mv}/${mv} ${[...new Set([...extra, 'creature'])].join(' ')} (its mana value, ${dur === 'upkeep' ? 'until your next turn' : 'until end of turn'})`); render(); flushTriggers();
+  };
+  return { full: true, label: `Target ${phrase} becomes a ${extra.join(' ')} creature, power and toughness equal to its mana value`, fn: () => {
+    const tg = obj && (obj.targets || []).find(t => t.kind === 'perm' && !t.gone);
+    if (tg) { const f = findCard(tg.id); if (f && f.zone === 'battlefield') apply(f.card); else log(`${src}: its target is gone, so the ability does nothing (CR 608.2b)`); return; }
+    const cards = state.battlefield.filter(ok);
+    if (!cards.length) { log(`${src}: no ${phrase} to choose (the target is optional)`); toast('No legal target', `There is no ${phrase} on the battlefield.`); return; }
+    openPickCards({ title: `${src}: choose target ${phrase}`, note: 'Choose up to one.', cards, min: 0, max: 1, nothing: 'No target', done: p => { const x = p && p[0]; if (x) apply(x); } });
+  } };
+}
+function wishEffect(tx, src) {
+  const m = /^you may reveal an? ([a-z ]+?) cards? you own from outside the game or choose a face-up \1 cards? you own in exile\.\s*put that card into your hand\.?$/i.exec(String(tx || '').replace(/\n/g, ' ').trim());
+  if (!m) return null; const kind = m[1].toLowerCase();
+  const typeOk = c => { const t = c.token ? '' : (cardInfo(c.name) || {}).t || ''; return new RegExp('\\b' + kind + '\\b', 'i').test(t.split(' // ')[0]); };
+  return { full: true, label: `Put a ${kind} card from your sideboard or from exile (face up) into your hand`, fn: () => {
+    const cards = [...(state.sideboard || []).filter(typeOk).map(c => ({ c, z: 'sideboard' })), ...state.exile.filter(c => !c.faceDown && !c.token && typeOk(c)).map(c => ({ c, z: 'exile' }))];
+    if (!cards.length) { toast('Nothing to choose', `You have no ${kind} card outside the game (sideboard) or face up in exile.`); log(`${src}: no ${kind} card outside the game or in exile`); return; }
+    openPickCards({ title: `${src}: choose a ${kind} card`, note: 'From outside the game (your sideboard) or face up in exile. You may choose nothing.', cards: cards.map(x => x.c), min: 0, max: 1, nothing: 'Choose nothing', done: p => {
+      const x = p && p[0]; if (!x) return; snap(); const from = cards.find(y => y.c.id === x.id).z; const arr = from === 'sideboard' ? state.sideboard : state.exile, i = arr.findIndex(y => y.id === x.id); if (i < 0) return;
+      const [card] = arr.splice(i, 1); state.hand.push(card); log(`${src}: put ${card.name} into your hand (from ${from === 'sideboard' ? 'outside the game' : 'exile'})`); render(); flushTriggers(); } });
+  } };
 }
 init();
 

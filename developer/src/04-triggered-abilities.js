@@ -529,7 +529,18 @@ function runChain(steps, src, baseModals) {
 }
 function effectOptions(tx, obj) {
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
-  return res.filter(o => { const k = o && o.label && typeof o.fn === 'function' ? o.label : null; if (!k) return true; if (seen.has(k)) return false; seen.add(k); return true; });
+  // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
+  const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
+  const dup = new Set(); if (drawN.length > 1) { const keep = drawN.find(o => !/^Draw /i.test(o.label)) || drawN[0]; for (const o of drawN) if (o !== keep && String(o.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase() === String(keep.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase()) dup.add(o); }
+  const outList = res.filter(o => { if (dup.has(o)) return false; const k = o && o.label && typeof o.fn === 'function' ? o.label : null; if (!k) return true; if (seen.has(k)) return false; seen.add(k); return true; });
+  // CR 608.2c: effects happen in the order the text gives them, so list the suggestions in that order too.
+  try {
+    const low = String(tx || '').toLowerCase(), STEM = { scry: 'scr', create: 'creat', draw: 'draw', surveil: 'surveil', gain: 'gain', lose: 'lose', exile: 'exile', return: 'return', destroy: 'destroy', put: 'put', sacrifice: 'sacrifice' };
+    const rank = o => { const m = /^(?:you |target player |each opponent )?(\w+)/i.exec(o.label || ''); const st = m && STEM[m[1].toLowerCase()]; const i = st ? low.search(new RegExp('\\b' + st)) : -1; return i; };
+    const items = outList.filter(o => o && typeof o.fn === 'function' && !o.hidden);
+    if (items.length > 1 && items.every(o => rank(o) >= 0)) { const sorted = items.slice().sort((a, b) => rank(a) - rank(b)); let k = 0; return outList.map(o => (o && typeof o.fn === 'function' && !o.hidden) ? sorted[k++] : o); }
+  } catch (e) { /* ordering only */ }
+  return outList;
 }
 function effectOptionsInner(tx, obj) {
   const base = effectOptionsBase(tx, obj);
@@ -556,7 +567,7 @@ function effectOptionsInner(tx, obj) {
 function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
   if (obj.kw && KW_EFFECTS[obj.kw]) return KW_EFFECTS[obj.kw](obj);   // v0.96.1 a keyword trigger resolving (exalted, evolve ...)
-  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
+  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
   { const L = defLine(obj.sourceName, tx);
     if (L) {
       const o = L.options(obj, L._line || tx);
@@ -653,7 +664,7 @@ function effectOptionsBase(tx, obj) {
   if (!bound.length && (mm = tx.match(/\bdeals? (\d+) damage to (?:any target|target (?:opponent|player)|each opponent|target creature or (?:player|planeswalker)|target player or planeswalker)/i))) { const v = +mm[1]; opts.push({ label: `Deal ${v} damage to the opponent`, fn: () => changeOppLife(-v) }); }
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
   for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/)) { if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
-  if ((mm = tx.match(/\b(scry|surveil)\s+(\d+)/i))) { const w = mm[1], v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
+  if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
   // v0.86 amass (rule 701.47): "Then amass Orcs 1."
