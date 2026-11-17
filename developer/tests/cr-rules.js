@@ -453,6 +453,20 @@ const { setup } = require('./common.js');
     return { ok: !!r && r.win && /Next round/.test(r.t) && /Keep playing/.test(r.t), why: JSON.stringify(r) }; });
 
 
+  await T('613.1d', 'a static "as long as it has loyalty counters, he is a 3/4 Ninja creature with hexproof" is read from the rules text and applied (types, P/T, keyword)', async () => { await reset();
+    const [k] = await bfSet(['Kaito, Bane of Nightmares']);
+    const r = await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); c.loyalty = 4; const on = { t: __d.frontType(c), pt: __d.ptCalc(c).p + '/' + __d.ptCalc(c).t, hex: __d.hasKw(c, 'hexproof'), zone: __d.permZone(c) };
+      c.loyalty = 0; const off = { t: __d.frontType(c), hex: __d.hasKw(c, 'hexproof') }; return { on, off }; }, k);
+    return { ok: /Creature/.test(r.on.t) && /Ninja/.test(r.on.t) && /Planeswalker/.test(r.on.t) && r.on.pt === '3/4' && r.on.hex && r.on.zone === 'creatures' && !/Creature/.test(r.off.t) && !r.off.hex, why: JSON.stringify(r) }; });
+  await T('602.2', 'a permanent glows green only while one of its abilities can be activated right now (planeswalkers too)', async () => { await reset(); await toMain();
+    const [f, k] = await bfSet(['Psychic Frog', 'Kaito, Bane of Nightmares']);
+    const r = await ev(([fi, ki]) => { const s = __d.state; s.battlefield.find(x => x.id === ki).loyalty = 4; s.hand = s.library.splice(0, 2); __d.render(); const cl = id => /act-ready/.test(document.querySelector('[data-id="' + id + '"]').className);
+      const withHand = { frog: cl(fi), kaito: cl(ki) }; s.hand = []; s.stack.push(Object.assign(__d.newCard('Mock Monster'), { id: s.nextId++ })); __d.render(); const busy = { frog: cl(fi), kaito: cl(ki) }; return { withHand, busy }; }, [f, k]);
+    return { ok: r.withHand.frog && r.withHand.kaito && !r.busy.frog && !r.busy.kaito, why: JSON.stringify(r) }; });
+  await T('509.1b', 'a static "~ can\'t block" read from the rules text keeps the creature out of the blocker list; "has haste as long as an opponent has 10 or less life" follows the life total (611.3a)', async () => { await reset();
+    const [g] = await bfSet(['Bloodghast']);
+    const r = await ev(i => { const s = __d.state, c = s.battlefield.find(x => x.id === i); s.oppLife = 20; const a = { nb: __d.kwCantBlock(c), haste: __d.hasKw(c, 'haste') }; s.oppLife = 10; const b = { haste: __d.hasKw(c, 'haste') }; return { a, b }; }, g);
+    return { ok: r.a.nb && !r.a.haste && r.b.haste, why: JSON.stringify(r) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });

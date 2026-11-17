@@ -192,6 +192,7 @@ function compileCardOne(c) {
     }
     if (/^\+\s*(?:\{[^}]+\})+\s*\u2014/.test(stripped)) { const eff = recognizedEffects(stripped.replace(/^[^\u2014]*\u2014\s*/, '').replace(nameRe, '~')); push(text, 'spell', eff.length ? 'ok' : 'part', `Spree mode: you pick it as you cast, and its cost is added to the spell.` + (eff.length ? ` The app can apply: ${eff.join('; ')}.` : ' You apply its effect by hand.')); continue; }
     { const rl = rulingFor(norml); if (rl) { push(text, 'other', 'part', rl); continue; } }
+    { const sb = sbParseLine(stripped.replace(nameRe, '~')); if (sb) { push(text, 'static', 'ok', sb.becomes ? `Static ability: ${sb.cond ? 'as long as ' + sb.cond + ', ' : ''}it is a ${sb.pt || ''} ${sb.subs.join(' ')} creature${sb.kws.length ? ' with ' + sb.kws.join(', ') : ''}; the app applies the type, P/T and keywords while the condition holds.` : sb.cantBlock ? `Static ability: it can't block${sb.cond ? ' as long as ' + sb.cond : ''}; the app keeps it out of the blocker list.` : `Static ability: it has ${sb.kws.join(', ')}${sb.cond ? ' as long as ' + sb.cond : ''}; the app checks the condition each time it reads the card.`); continue; } }
     push(text, 'other', 'unk', 'Not understood: the app does nothing for this line. Handle it by hand.');
   }
   // modal lines ("Choose one \u2014 \u2022 ... \u2022 ...")

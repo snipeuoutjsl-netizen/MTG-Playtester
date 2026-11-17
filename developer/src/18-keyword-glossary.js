@@ -180,7 +180,7 @@ function showPreviewText(c) {
 }
 
 function permZone(c) {
-  if (c.becomes && c.becomes.types.includes('creature')) return 'creatures';
+  if ((c.becomes && c.becomes.types.includes('creature')) || selfBecomes(c)) return 'creatures';
   if (c.token) return c.tk && c.tk.pt ? 'creatures' : 'noncreature';
   const info = cardInfo(c.name);
   if (isLandName(c.name)) return 'lands';
