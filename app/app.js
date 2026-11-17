@@ -690,7 +690,7 @@ function hasKw(c, kw) {
   if (state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)) return true;   // "gains haste until end of turn"
   if (kw === 'haste' && c.suspHaste && state && state.battlefield.includes(c)) return true;   // cast from suspend
   if (kwLine(cardText(c), kw)) return true;
-  if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw)) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
+  if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
 const GRANTABLE = ['flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
@@ -792,7 +792,7 @@ function cdaValues(c) {
 }
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
-  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; }   // CR 613.4b: an effect that sets base power and toughness
+  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; }   // CR 613.4b: an effect that sets base power and toughness
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
@@ -897,6 +897,7 @@ function runDelayed(when) {
   for (const e of due) {
     const f = e.targetId ? findCard(e.targetId) : null, nm = e.targetName || (f && f.card.name) || 'it';
     if (e.mana) { for (const [k, n] of Object.entries(e.mana)) state.manaPool[k] = (state.manaPool[k] || 0) + n; log(`${e.srcName}: delayed trigger at the beginning of the ${where}: added ${Object.entries(e.mana).map(([k, n]) => '{' + k + '}'.repeat(1) + (n > 1 ? '×' + n : '')).join('')} to your mana pool`); toast('Delayed mana', `${e.srcName}: ${e.text}`); continue; }
+    if (e.action === 'unbase') { if (f && f.card.basePT) { delete f.card.basePT; log(`${e.srcName}: ${nm}'s base power and toughness are back to normal`); } continue; }
     if (e.action === 'unbecome') { if (f && f.zone === 'battlefield' && f.card.becomes) { delete f.card.becomes; log(`${e.srcName}: ${nm} is no longer a creature (the effect ended)`); } continue; }
     if (e.action === 'exile') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was exiled at the beginning of the ${where}`); delete f.card.exileInstead; leaveBattlefield(f.card, 'exile'); } }
     else if (e.action === 'sacrifice') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was sacrificed at the beginning of the ${where}`); leaveBattlefield(f.card, 'graveyard'); } }
@@ -1638,7 +1639,7 @@ function effectOptionsInner(tx, obj) {
 function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
   if (obj.kw && KW_EFFECTS[obj.kw]) return KW_EFFECTS[obj.kw](obj);   // v0.96.1 a keyword trigger resolving (exalted, evolve ...)
-  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
+  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || animateGeneralEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
   { const L = defLine(obj.sourceName, tx);
     if (L) {
       const o = L.options(obj, L._line || tx);
@@ -1977,7 +1978,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
   detachFrom(c);
-  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
@@ -4944,7 +4945,7 @@ function cardEl(c, zone) {
     h('div', { class: 'ctop' },
       h('span', { class: 'cname', text: c.name }),
       info && !info.land && info.mc ? (() => { const ec = zone === 'hand' || zone === 'stack' ? effectiveCost(c) : null; const red = ec && ec.reduced; return h('span', { class: 'cmc' + (red ? (ec.increased ? ' increased' : ' reduced') : ''), text: String(red ? symCmc(ec.cost) : Math.round(info.cmc)), title: red ? `Costs ${ec.cost.replace(/[{}]/g, '') || '0'} now (printed ${info.mc.replace(/[{}]/g, '')}; ${ec.why})` : '' }); })() : null),
-    h('div', { class: 'ctype', text: c.token ? ((c.tk && c.tk.type) || 'Token') : info ? info.t : '' }),
+    h('div', { class: 'ctype', text: c.token ? ((c.tk && c.tk.type) || 'Token') : info ? (c.becomes && zone === 'battlefield' ? frontType(c) : info.t) : '' }),
     pt ? (() => { const d = ptc ? ptDelta(ptc) : ''; const prev = lastPT.get(c.id); lastPT.set(c.id, pt); const flash = prev !== undefined && prev !== pt;
       return h('div', { class: 'cpt' + (ptc && (ptc.dynamic || ptc.modified) ? ' ptmod' : '') + (d ? ' pt-' + d + ' ptshow' : '') + (flash ? ' ptflash' : ''), text: pt, 'data-len': String(String(pt).length), title: ptc ? ptTitle(c, ptc) : '' }); })() : null,
     pw && zone === 'battlefield' ? h('div', { class: 'cloyalty', text: String(c.loyalty ?? '?'), title: 'Loyalty counters. Double-click to use loyalty abilities.' }) : null,
@@ -6224,8 +6225,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.97.4';
+const APP_VERSION = '0.97.5';
 const CHANGELOG = [
+  { v: '0.97.5', title: 'Becomes-a-creature and base P/T effects', notes: ['New rules-text readers (CR 613.1d, 613.4b, 611.2): "~ becomes a 2/2 creature [with flying] until end of turn. It\'s still a land" (manlands), "target land you control becomes a 4/4 Elemental creature with haste until end of turn", "target creature has base power and toughness 1/1 until end of turn" and "until your next turn" versions now apply the new type, power/toughness and keywords and end on time (before they were only a "Remember" note).', 'The card now shows its changed type line (for example Artifact Creature / Land Creature) and its P/T, and the effects end when the permanent leaves the battlefield.'] },
   { v: '0.97.4', title: 'Glow fix, no duplicate draw, Karn the Great Creator', notes: ['Fixed: the green glow on cards with a usable activated ability was hidden by the "cards float" battlefield effect, so it never showed. Both now run together.', 'Fixed: an effect such as Kozilek\'s Command ("scries X, then draws a card") listed the draw twice ("Draw 1 card" and "You draw 1 card"), so applying both drew two cards. Each step is now listed once, in the order the text gives them, and "scries" is understood.', 'Karn, the Great Creator now works from its rules text: +1 makes up to one target noncreature artifact an artifact creature with power and toughness equal to its mana value until your next turn (it stops at the start of your next upkeep); −2 lets you put an artifact card from your sideboard or face up in exile into your hand.'] },
   { v: '0.97.3', title: 'Always yield', notes: ['New "Always yield" (like Magic Online): the first time each triggered ability goes on the stack in a game you are asked once whether to always do the same thing. Say yes and from then on it goes on the stack by itself with the same targets, applies the same effect you chose the first time, and resolves without asking (e.g. a creature that pings your opponent every time you cast a spell).', 'Manage or remove entries from ⚙ → Always yield. Everything resets when the game ends.'] },
   { v: '0.97.2', title: 'Soulbond and Reinforce', notes: ['Soulbond (CR 702.95): when a soulbond creature enters you may pair it with another unpaired creature, and when another creature enters while a soulbond creature is unpaired you may pair them. Paired creatures show a "Paired" badge, both gain the keywords or +N/+N the card\'s own "as long as this creature is paired with another creature, each of those creatures ..." line gives, and they unpair when either leaves the battlefield.', 'Reinforce (CR 702.77): right-click the card in your hand to pay the reinforce cost, discard it and put N +1/+1 counters on a target creature (the ability uses the stack).'] },
@@ -10741,6 +10743,43 @@ function wishEffect(tx, src) {
     openPickCards({ title: `${src}: choose a ${kind} card`, note: 'From outside the game (your sideboard) or face up in exile. You may choose nothing.', cards: cards.map(x => x.c), min: 0, max: 1, nothing: 'Choose nothing', done: p => {
       const x = p && p[0]; if (!x) return; snap(); const from = cards.find(y => y.c.id === x.id).z; const arr = from === 'sideboard' ? state.sideboard : state.exile, i = arr.findIndex(y => y.id === x.id); if (i < 0) return;
       const [card] = arr.splice(i, 1); state.hand.push(card); log(`${src}: put ${card.name} into your hand (from ${from === 'sideboard' ? 'outside the game' : 'exile'})`); render(); flushTriggers(); } });
+  } };
+}
+// ---- the general family (CR 613.1d, 613.4b, 611.2): "~ becomes a 2/2 ... creature [with flying] until end of turn", "target land you control becomes a 4/4 Elemental creature with haste until end of turn. It's still a land.",
+// "target creature has base power and toughness 1/1 until end of turn", "...becomes an artifact creature with base power and toughness 5/5". Read from the words, no card names.
+const BECOMES_RE = /^(?:(until end of turn|until your next turn),\s*)?(?:(~|this [a-z]+|it)|(?:up to one )?target ([a-z ,\/-]+?)(?: you control)?) becomes? an? (?:(\d+)\/(\d+) )?((?:[a-z-]+ )*?)creature(?: with (?:base power and toughness (\d+)\/(\d+)|([a-z ,]+?)))?(?: in addition to its other types)?(?: (until end of turn|until your next turn))?\.?(?: it'?s still an? [a-z ]+\.?)?$/i;
+const BASEPT_RE = /^(?:(until end of turn|until your next turn),\s*)?(?:(~|this [a-z]+|it)|(?:up to one )?target ([a-z ,\/-]+?)(?: you control)?)(?:'s)? (?:has|have|(?:base )?power and toughness become) (?:base power and toughness )?(\d+)\/(\d+)(?:,? and loses all abilities)?(?: (until end of turn|until your next turn))?\.?$/i;
+function animateGeneralEffect(tx, src, obj) {
+  const T = String(tx || '').replace(/’/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').replace(selfNameRe(src), '~').trim();
+  let m = BECOMES_RE.exec(T), kind = 'becomes';
+  if (!m) { m = BASEPT_RE.exec(T); kind = 'base'; }
+  if (!m) return null;
+  const selfTok = kind === 'becomes' ? m[2] : m[2], phrase = (m[3] || '').toLowerCase();
+  const durTxt = kind === 'becomes' ? (m[1] || m[10] || '') : (m[1] || m[6] || ''), dur = /your next turn/i.test(durTxt) ? 'upkeep' : durTxt ? 'end' : null;
+  let pt, types = [], subs = [], kws = [];
+  if (kind === 'becomes') {
+    const ws = (m[6] || '').trim().split(/\s+/).filter(Boolean).map(w => w.toLowerCase()), COL = ['white', 'blue', 'black', 'red', 'green', 'colorless'];
+    for (const w of ws) { if (w === 'artifact') types.push('artifact'); else if (!COL.includes(w) && !/^legendary$/.test(w)) subs.push(w); }
+    types.push('creature');
+    pt = m[4] !== undefined ? m[4] + '/' + m[5] : m[7] !== undefined ? m[7] + '/' + m[8] : null;
+    if (m[9]) kws = m[9].split(/,\s*|\s+and\s+/).map(x => x.trim().toLowerCase()).filter(x => GRANTABLE.includes(x));
+    if (!pt) return null;   // no stated P/T: leave it to the card reader (e.g. a Vehicle's crew)
+  } else pt = m[4] + '/' + m[5];
+  const label = kind === 'becomes' ? `${selfTok ? 'It' : 'Target ' + phrase} becomes a ${pt} ${[...subs, ...types].join(' ')}${kws.length ? ' with ' + kws.join(', ') : ''}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''}`
+    : `${selfTok ? 'It' : 'Target ' + phrase} has base power and toughness ${pt}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''}`;
+  const apply = c => {
+    snap();
+    if (kind === 'becomes') { c.becomes = { pt, types: [...new Set(types)], subs, kws }; } else c.basePT = pt;
+    if (dur) addFx({ kind: 'delayed', when: dur, action: kind === 'becomes' ? 'unbecome' : 'unbase', targetId: c.id, targetName: c.name, text: `${c.name}: the effect ends.`, srcName: src });
+    log(`${src}: ${c.name} ${kind === 'becomes' ? 'becomes a ' + pt + ' ' + [...subs, ...types].join(' ') + (kws.length ? ' with ' + kws.join(', ') : '') : 'has base power and toughness ' + pt}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''} (CR ${kind === 'becomes' ? '613.1d' : '613.4b'})`); render(); flushTriggers();
+  };
+  return { full: true, label, fn: () => {
+    if (selfTok) { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null; if (f && f.zone === 'battlefield') { apply(f.card); return; } const c = state.battlefield.find(x => x.name === src); if (c) { apply(c); return; } toast('Not on the battlefield', `${src} is not on the battlefield.`); return; }
+    const tg = obj && (obj.targets || []).find(t => t.kind === 'perm' && !t.gone);
+    if (tg) { const f = findCard(tg.id); if (f && f.zone === 'battlefield') apply(f.card); else log(`${src}: its target is gone, so the ability does nothing (CR 608.2b)`); return; }
+    const words = phrase.split(/\s*(?:,|\bor\b)\s*/).map(w => singularWord(w.trim())).filter(Boolean), cards = state.battlefield.filter(c => !words.length || permHasAny(c, words));
+    if (!cards.length) { toast('No legal target', `There is no ${phrase} on the battlefield.`); return; }
+    openPickCards({ title: `${src}: choose target ${phrase}`, note: 'Choose the target.', cards, min: 1, max: 1, done: p => { const x = p && p[0]; if (x) apply(x); } });
   } };
 }
 init();

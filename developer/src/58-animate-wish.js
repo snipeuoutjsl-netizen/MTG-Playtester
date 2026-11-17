@@ -33,3 +33,40 @@ function wishEffect(tx, src) {
       const [card] = arr.splice(i, 1); state.hand.push(card); log(`${src}: put ${card.name} into your hand (from ${from === 'sideboard' ? 'outside the game' : 'exile'})`); render(); flushTriggers(); } });
   } };
 }
+// ---- the general family (CR 613.1d, 613.4b, 611.2): "~ becomes a 2/2 ... creature [with flying] until end of turn", "target land you control becomes a 4/4 Elemental creature with haste until end of turn. It's still a land.",
+// "target creature has base power and toughness 1/1 until end of turn", "...becomes an artifact creature with base power and toughness 5/5". Read from the words, no card names.
+const BECOMES_RE = /^(?:(until end of turn|until your next turn),\s*)?(?:(~|this [a-z]+|it)|(?:up to one )?target ([a-z ,\/-]+?)(?: you control)?) becomes? an? (?:(\d+)\/(\d+) )?((?:[a-z-]+ )*?)creature(?: with (?:base power and toughness (\d+)\/(\d+)|([a-z ,]+?)))?(?: in addition to its other types)?(?: (until end of turn|until your next turn))?\.?(?: it'?s still an? [a-z ]+\.?)?$/i;
+const BASEPT_RE = /^(?:(until end of turn|until your next turn),\s*)?(?:(~|this [a-z]+|it)|(?:up to one )?target ([a-z ,\/-]+?)(?: you control)?)(?:'s)? (?:has|have|(?:base )?power and toughness become) (?:base power and toughness )?(\d+)\/(\d+)(?:,? and loses all abilities)?(?: (until end of turn|until your next turn))?\.?$/i;
+function animateGeneralEffect(tx, src, obj) {
+  const T = String(tx || '').replace(/’/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').replace(selfNameRe(src), '~').trim();
+  let m = BECOMES_RE.exec(T), kind = 'becomes';
+  if (!m) { m = BASEPT_RE.exec(T); kind = 'base'; }
+  if (!m) return null;
+  const selfTok = kind === 'becomes' ? m[2] : m[2], phrase = (m[3] || '').toLowerCase();
+  const durTxt = kind === 'becomes' ? (m[1] || m[10] || '') : (m[1] || m[6] || ''), dur = /your next turn/i.test(durTxt) ? 'upkeep' : durTxt ? 'end' : null;
+  let pt, types = [], subs = [], kws = [];
+  if (kind === 'becomes') {
+    const ws = (m[6] || '').trim().split(/\s+/).filter(Boolean).map(w => w.toLowerCase()), COL = ['white', 'blue', 'black', 'red', 'green', 'colorless'];
+    for (const w of ws) { if (w === 'artifact') types.push('artifact'); else if (!COL.includes(w) && !/^legendary$/.test(w)) subs.push(w); }
+    types.push('creature');
+    pt = m[4] !== undefined ? m[4] + '/' + m[5] : m[7] !== undefined ? m[7] + '/' + m[8] : null;
+    if (m[9]) kws = m[9].split(/,\s*|\s+and\s+/).map(x => x.trim().toLowerCase()).filter(x => GRANTABLE.includes(x));
+    if (!pt) return null;   // no stated P/T: leave it to the card reader (e.g. a Vehicle's crew)
+  } else pt = m[4] + '/' + m[5];
+  const label = kind === 'becomes' ? `${selfTok ? 'It' : 'Target ' + phrase} becomes a ${pt} ${[...subs, ...types].join(' ')}${kws.length ? ' with ' + kws.join(', ') : ''}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''}`
+    : `${selfTok ? 'It' : 'Target ' + phrase} has base power and toughness ${pt}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''}`;
+  const apply = c => {
+    snap();
+    if (kind === 'becomes') { c.becomes = { pt, types: [...new Set(types)], subs, kws }; } else c.basePT = pt;
+    if (dur) addFx({ kind: 'delayed', when: dur, action: kind === 'becomes' ? 'unbecome' : 'unbase', targetId: c.id, targetName: c.name, text: `${c.name}: the effect ends.`, srcName: src });
+    log(`${src}: ${c.name} ${kind === 'becomes' ? 'becomes a ' + pt + ' ' + [...subs, ...types].join(' ') + (kws.length ? ' with ' + kws.join(', ') : '') : 'has base power and toughness ' + pt}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''} (CR ${kind === 'becomes' ? '613.1d' : '613.4b'})`); render(); flushTriggers();
+  };
+  return { full: true, label, fn: () => {
+    if (selfTok) { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null; if (f && f.zone === 'battlefield') { apply(f.card); return; } const c = state.battlefield.find(x => x.name === src); if (c) { apply(c); return; } toast('Not on the battlefield', `${src} is not on the battlefield.`); return; }
+    const tg = obj && (obj.targets || []).find(t => t.kind === 'perm' && !t.gone);
+    if (tg) { const f = findCard(tg.id); if (f && f.zone === 'battlefield') apply(f.card); else log(`${src}: its target is gone, so the ability does nothing (CR 608.2b)`); return; }
+    const words = phrase.split(/\s*(?:,|\bor\b)\s*/).map(w => singularWord(w.trim())).filter(Boolean), cards = state.battlefield.filter(c => !words.length || permHasAny(c, words));
+    if (!cards.length) { toast('No legal target', `There is no ${phrase} on the battlefield.`); return; }
+    openPickCards({ title: `${src}: choose target ${phrase}`, note: 'Choose the target.', cards, min: 1, max: 1, done: p => { const x = p && p[0]; if (x) apply(x); } });
+  } };
+}
