@@ -14,7 +14,7 @@ function linkedDependentOptions(tx, obj) {
   const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
   const j = sents.findIndex((x, i) => i > 0 && DEPENDENT_RE.test(x)); if (j < 1) return null;
-  const A = sents.slice(0, j).join(' '), B = sents[j].replace(DEPENDENT_RE, 'You '), rest = sents.slice(j + 1).join(' ');
+  const A = sents.slice(0, j).join(' '), B = sents[j].replace(DEPENDENT_RE, 'You ').replace(/\btheir (library|hand|graveyard)\b/gi, 'your $1'), rest = sents.slice(j + 1).join(' ');
   const needsTarget = /\btarget\b/i.test(A);
   if (needsTarget && obj && obj.ability && !(obj.targets || []).length) return [{ full: true, label: 'No target was chosen: nothing happens (its second part depends on it)', fn: () => { log(`${(obj && obj.sourceName) || 'Ability'}: no target was chosen, so nothing happens (its second part refers to that object, CR 608.2b)`); } }];
   const aO = effectOptionsBase(A, obj).filter(o => typeof o.fn === 'function' && !o.hidden), bO = effectOptionsBase(B, obj).filter(o => typeof o.fn === 'function' && !o.hidden);
