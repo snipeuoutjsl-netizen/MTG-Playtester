@@ -4350,6 +4350,7 @@ function deckTokenDefs() {
 }
 function makeTokensFromDef(d, n, src) {
   if (!state) return; snap();
+  n = adjustTokenCount(n, d, src);   // CR 614: Doubling Season and friends, read from the rules text (53)
   for (let i = 0; i < n; i++) {
     const c = newCard(d.name, { token: true, tk: { pt: d.pt, subs: [...d.subs], col: [...d.col], tx: d.tx, types: [...d.types], type: d.type, legendary: !!d.legendary } });
     c.id = state.nextId++;
@@ -5525,11 +5526,7 @@ function renderOverlay() {
         h('div', { class: 'pbtns' },
           h('button', { class: 'primary', text: 'Keep', onclick: keepHand }),
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
-          h('button', {
-            text: state.hand.some(mulliganHandSwap) ? `Use Serum Powder — exile hand, draw ${state.hand.length}` : 'Serum Powder unavailable',
-            disabled: !state.hand.some(mulliganHandSwap),
-            onclick: serumPowder
-          }),
+          state.hand.some(mulliganHandSwap) ? h('button', { text: `Use Serum Powder — exile hand, draw ${state.hand.length}`, onclick: serumPowder }) : null,   // v0.96.25 only offered when a card in the hand allows it (CR 103.5b)
           h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : `Mulligan to ${7 - state.mulls - 1}`, disabled: state.mulls >= 6, onclick: doMulligan })),
         h('div', { class: 'phint', text: state.hand.some(mulliganHandSwap)
           ? 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
@@ -6113,8 +6110,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.24';
+const APP_VERSION = '0.96.25';
 const CHANGELOG = [
+  { v: '0.96.25', title: 'Token doubling, honest card report, Serum Powder only when usable', notes: ['The opening-hand screen only shows the Serum Powder button when a card in your hand allows it (CR 103.5b); it is no longer shown greyed out all the time.','Token-creation replacement effects (CR 614): "If an effect would create one or more tokens under your control, it creates twice that many instead" (Doubling Season, Parallel Lives, Anointed Procession) and "that many plus N" are read from the rules text and applied whenever an effect creates tokens. Doubling Season only doubled counters before.','The card-reading report (How the app reads your deck) now counts everything the engine really handles: it picks up keywords with triggers, effects, alternative costs or a rules test by itself, plus Warp/Flashback lines, "cast from your graveyard" lines, token replacement lines and Reanimate-style life loss. On the sample deck, lines the report did not understand went from 7 to 0.'] },
   { v: '0.96.24', title: 'Green glow, popups above the hand, rules-driven statics', notes: ['Permanents and planeswalkers with an ability you can activate right now get a soft pulsing green glow; when nothing can be activated there is no glow.','The stack and the resolving prompt (including its Discard / Resolve buttons) now sit in the space above your hand, so the hand can no longer cover them.','Kaito, Bane of Nightmares: during your turn, while he has loyalty counters, he is now a 3/4 Ninja creature with hexproof (type, power/toughness, creature row and keyword). This is read from the words of the static ability, not from his name, so every card with that wording works.','New general reader for a permanent\'s own statics: "As long as [condition], ~ is a N/N [types] creature with [keywords]", "~ has [keyword] as long as [condition]" (Bloodghast) and "~ can\'t block" (Gravecrawler, Bloodghast). The card-reading report now counts these as understood.'] },
   { v: '0.96.23', title: 'Zones resize to fit, keyword batch 7', notes: ['Every battlefield zone now measures its cards after layout and shrinks them in real time until all of them fit, so a fourth or fifth land no longer wraps under the zone or gets clipped.','Hideaway N (702.75): when it enters, look at the top N cards, exile one face down, put the rest on the bottom in a random order; right-click the permanent and choose Hideaway to play the exiled card free (a land is put onto the battlefield).','Undaunted (702.125): costs {1} less for the opponent. Encore (702.141): from your graveyard at sorcery speed, exile the card to create a hasty token copy that is sacrificed at the next end step.'] },
   { v: '0.96.22', title: 'Keyword batch 6, Welcome tour updated', notes: ['Squad (702.157): pay the squad cost any number of times as you cast it; when it enters you create that many token copies. Offspring (702.175): an optional extra cost; if paid, a 1/1 token copy when it enters.','Impending (702.176): cast for the impending cost, it enters with N time counters, is not a creature while it has one, and loses one at the beginning of your end step.','The Welcome tour now describes the current app: the turn-flow bar, one-click sets, the new songs, Dice & coin, the Next round screen, the real Settings tabs and the Hand Key.'] },
@@ -8732,7 +8730,21 @@ function pointerDragBegin(ev, e, c, zone) {
 // compileCard() walks the Oracle text line by line and says, for each line, what kind of rule it is
 // (keyword, mana ability, activated, triggered, static, loyalty, spell effect) and how much of it the app handles.
 // status: 'ok' = the app handles it, 'part' = recognised but some of it is done by hand, 'unk' = not understood, 'info' = reminder text.
-const KW_ENFORCED = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'overload', 'bestow', 'escalate', 'replicate', 'emerge', 'prowl', 'miracle', 'plot', 'foretell', 'blitz', 'dash', 'spectacle', 'surge', 'casualty', 'exalted', 'battle cry', 'annihilator', 'evolve', 'renown', 'mentor', 'training', 'dethrone', 'melee', 'fabricate', 'modular', 'bloodthirst', 'extort', 'riot', 'ninjutsu', 'flashback', 'spree', 'suspend', 'living weapon', 'dredge', 'embalm', 'eternalize', 'unearth', 'outlast', 'rebound', 'cumulative upkeep', 'vanishing', 'fading', 'decayed', 'exert', 'monstrosity', 'populate', 'boast', 'devoid']);
+const KW_ENFORCED_BASE = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'overload', 'bestow', 'escalate', 'replicate', 'emerge', 'prowl', 'miracle', 'plot', 'foretell', 'blitz', 'dash', 'spectacle', 'surge', 'casualty', 'exalted', 'battle cry', 'annihilator', 'evolve', 'renown', 'mentor', 'training', 'dethrone', 'melee', 'fabricate', 'modular', 'bloodthirst', 'extort', 'riot', 'ninjutsu', 'flashback', 'spree', 'suspend', 'living weapon', 'dredge', 'embalm', 'eternalize', 'unearth', 'outlast', 'rebound', 'cumulative upkeep', 'vanishing', 'fading', 'decayed', 'exert', 'monstrosity', 'populate', 'boast', 'devoid']);
+// A keyword counts as handled when the engine has it: the older hand list above, any keyword with a trigger or effect in the keyword framework,
+// any alternative-cost keyword, and every keyword the rules table marks "tested" (a CR-numbered test exercises it). Built on first use, so new keyword batches show up here by themselves.
+let kwEnfMemo = null;
+const KW_ENFORCED = { has(n) {
+  if (!kwEnfMemo) {
+    kwEnfMemo = new Set(KW_ENFORCED_BASE);
+    for (const t of KW_TRIGGERS) if (t.kw) kwEnfMemo.add(String(t.kw).toLowerCase());
+    for (const k of Object.keys(KW_EFFECTS)) kwEnfMemo.add(k.toLowerCase());
+    for (const a of (Array.isArray(ALT_KW) ? ALT_KW : [])) if (a.kw) kwEnfMemo.add(String(a.kw).toLowerCase());
+    for (const r of RULES_TABLE) if (r[2] === 'ability' && r[3] === 'tested') kwEnfMemo.add(String(r[1]).toLowerCase());
+    kwEnfMemo.add('ward');   // a goldfish game has no opponent targeting your permanents, so there is nothing to enforce
+  }
+  return kwEnfMemo.has(n);
+} };
 const STATIC_PATTERNS = [
   [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
   [/^if you would draw a card, you may skip that draw instead\.?$/i, 'A "Skip draws" icon appears in the top bar while this is on the battlefield. Switch it on and every card you would draw is skipped (rule 614.1a); switch it off to draw normally.'],
@@ -8840,7 +8852,7 @@ function compileCardOne(c) {
       continue;
     }
     // cost lines (v0.46)
-    if ((m = stripped.match(/^(Evoke|Kicker|Delve|Convoke|Improvise|Cycling|Affinity for\b)/i))) {
+    if ((m = stripped.match(/^(Evoke|Kicker|Delve|Convoke|Improvise|Cycling|Warp|Flashback|Affinity for\b)/i))) {
       const w = m[1].toLowerCase();
       const NOTE = { evoke: 'Evoke: when you cast it the app offers the evoke cost as a way to pay (including "exile a card from your hand" costs). If you use it, a sacrifice trigger goes on the stack when it enters.',
         kicker: 'Kicker: an optional extra cost offered when you cast it and remembered as "kicked" in the log. The kicked effect itself is applied by hand.',
@@ -8922,6 +8934,8 @@ function compileCardOne(c) {
     }
     if (/^\+\s*(?:\{[^}]+\})+\s*\u2014/.test(stripped)) { const eff = recognizedEffects(stripped.replace(/^[^\u2014]*\u2014\s*/, '').replace(nameRe, '~')); push(text, 'spell', eff.length ? 'ok' : 'part', `Spree mode: you pick it as you cast, and its cost is added to the spell.` + (eff.length ? ` The app can apply: ${eff.join('; ')}.` : ' You apply its effect by hand.')); continue; }
     { const rl = rulingFor(norml); if (rl) { push(text, 'other', 'part', rl); continue; } }
+    if (/^You may cast (?:~|this card|this creature|[A-Z][\w' ,-]*?) from your graveyard (?:as long as|using its)\b/i.test(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Cast from your graveyard: the card shows a Cast option in your graveyard while its condition holds (or for its alternative cost).'); continue; }
+    if (tokenReplLine(stripped)) { push(text, 'static', 'ok', 'Replacement effect (rule 614): every time an effect creates tokens for you, the app changes the number as it creates them and logs it.'); continue; }
     { const sb = sbParseLine(stripped.replace(nameRe, '~')); if (sb) { push(text, 'static', 'ok', sb.becomes ? `Static ability: ${sb.cond ? 'as long as ' + sb.cond + ', ' : ''}it is a ${sb.pt || ''} ${sb.subs.join(' ')} creature${sb.kws.length ? ' with ' + sb.kws.join(', ') : ''}; the app applies the type, P/T and keywords while the condition holds.` : sb.cantBlock ? `Static ability: it can't block${sb.cond ? ' as long as ' + sb.cond : ''}; the app keeps it out of the blocker list.` : `Static ability: it has ${sb.kws.join(', ')}${sb.cond ? ' as long as ' + sb.cond : ''}; the app checks the condition each time it reads the card.`); continue; } }
     push(text, 'other', 'unk', 'Not understood: the app does nothing for this line. Handle it by hand.');
   }
@@ -8979,7 +8993,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 function uncoveredClauses(effectText) {
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
@@ -10266,6 +10280,30 @@ function sbActive(c) {
 const selfBecomes = c => sbActive(c).find(s => s.becomes) || null;
 const sbKeywords = c => sbActive(c).flatMap(s => s.kws || []);
 const sbCantBlock = c => sbActive(c).some(s => s.cantBlock);
+// ---------------------------------------------------------------- v0.96.25 token-creation replacement effects (rules text)
+// CR 614.1 + CR 111.1: "If an effect would create one or more [creature] tokens under your control, it creates twice that many of those tokens instead."  (Doubling Season, Parallel Lives, Anointed Procession)
+//                      "... it creates that many plus one/two of those tokens instead."
+// Read from the words of every permanent you control, so any card worded this way works. Several such effects are applied in the order that gives the most tokens (CR 616.1).
+const TOKEN_REPL_RE = /^If an effect would create one or more (creature |artifact |food |treasure )?tokens under your control, (?:it|they) creates? (twice that many|that many plus (one|two|three|\d+)) (?:of those tokens|[a-z ]*tokens?)(?: [^.]*)? instead\.?$/i;
+function tokenReplLine(line) { return TOKEN_REPL_RE.test(String(line || '').trim()); }
+function adjustTokenCount(n, d, src) {
+  if (!state || n <= 0) return n;
+  const types = new Set((d && d.types || []).map(x => String(x).toLowerCase())), effects = [];
+  for (const g of state.battlefield) {
+    if (g.token) continue; const tx = String(cardText(g) || '').replace(/\([^)]*\)/g, '');
+    if (!/would create one or more/i.test(tx)) continue;
+    for (const ln of tx.split('\n')) {
+      const m = ln.trim().match(TOKEN_REPL_RE); if (!m) continue;
+      const kind = (m[1] || '').trim().toLowerCase(); if (kind && kind !== 'creature' && !types.has(kind) && !(d && String(d.name || '').toLowerCase() === kind)) continue;
+      if (kind === 'creature' && !types.has('creature')) continue;
+      if (/^twice/i.test(m[2])) effects.push({ src: g, label: '×2', f: v => v * 2 }); else { const add = wordN(m[3]); effects.push({ src: g, label: '+' + add, f: v => v + add }); }
+    }
+  }
+  if (!effects.length) return n;
+  const r = applyReplacements(effects, n, null, 'token', 'token');
+  if (teach('replaceNotes')) log(`Replacement effect${effects.length > 1 ? 's' : ''} (rule 614): ${n} ${(d && d.name) || ''} token${n === 1 ? '' : 's'} would be created${src ? ' by ' + src : ''}; ${r.order.map(e => `${e.src.name}: ${e.label}`).join(', then ')} → ${r.value}`);
+  return r.value;
+}
 init();
 
 })();

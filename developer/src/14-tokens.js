@@ -71,6 +71,7 @@ function deckTokenDefs() {
 }
 function makeTokensFromDef(d, n, src) {
   if (!state) return; snap();
+  n = adjustTokenCount(n, d, src);   // CR 614: Doubling Season and friends, read from the rules text (53)
   for (let i = 0; i < n; i++) {
     const c = newCard(d.name, { token: true, tk: { pt: d.pt, subs: [...d.subs], col: [...d.col], tx: d.tx, types: [...d.types], type: d.type, legendary: !!d.legendary } });
     c.id = state.nextId++;

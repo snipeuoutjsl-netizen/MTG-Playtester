@@ -588,11 +588,7 @@ function renderOverlay() {
         h('div', { class: 'pbtns' },
           h('button', { class: 'primary', text: 'Keep', onclick: keepHand }),
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
-          h('button', {
-            text: state.hand.some(mulliganHandSwap) ? `Use Serum Powder — exile hand, draw ${state.hand.length}` : 'Serum Powder unavailable',
-            disabled: !state.hand.some(mulliganHandSwap),
-            onclick: serumPowder
-          }),
+          state.hand.some(mulliganHandSwap) ? h('button', { text: `Use Serum Powder — exile hand, draw ${state.hand.length}`, onclick: serumPowder }) : null,   // v0.96.25 only offered when a card in the hand allows it (CR 103.5b)
           h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : `Mulligan to ${7 - state.mulls - 1}`, disabled: state.mulls >= 6, onclick: doMulligan })),
         h('div', { class: 'phint', text: state.hand.some(mulliganHandSwap)
           ? 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
