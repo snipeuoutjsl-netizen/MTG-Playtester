@@ -114,7 +114,8 @@ function spellSubjTest(subj) {
   });
   return c => tests.some(t => t(c));
 }
-function costAdjustments(c) {
+function costAdjustments(c) { return c && c.id != null ? renderMemo('ca:' + c.id + ':' + c.name, () => costAdjustmentsRaw(c)).slice() : costAdjustmentsRaw(c); }
+function costAdjustmentsRaw(c) {
   const out = []; if (!state || !c) return out;
   const test = (src, dir, amt, subj) => { if (amt > 0 && spellSubjTest(subj)(c)) out.push({ src, dir, amt }); };
   for (const g of state.battlefield) {

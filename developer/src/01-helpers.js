@@ -37,7 +37,8 @@ function shuffle(arr) {
   return arr;
 }
 
-const norm = s => String(s).toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+const NORM_CACHE = new Map();   // v0.96.16 pure and called thousands of times per redraw: remember results (bounded)
+const norm = s => { const k = String(s); let v = NORM_CACHE.get(k); if (v === undefined) { v = k.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim(); if (NORM_CACHE.size > 20000) NORM_CACHE.clear(); NORM_CACHE.set(k, v); } return v; };
 
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode etc. */ } };

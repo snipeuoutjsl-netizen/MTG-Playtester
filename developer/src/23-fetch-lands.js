@@ -46,7 +46,8 @@ function baseLandTypesOf(name) {
 // Battlefield-wide land-type effects. These are evaluated from permanents
 // currently on the battlefield, so the effect updates immediately when the
 // source enters/leaves play.
-function landTypeEffects() {
+function landTypeEffects() { return renderMemo('lte', landTypeEffectsRaw); }
+function landTypeEffectsRaw() {
   const all = new Set();
   let bloodMoon = false;
   if (!state) return { all: false, add: [], override: false };

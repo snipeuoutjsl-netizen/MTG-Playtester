@@ -86,7 +86,8 @@ function openShockChoice(id, fetched) {
 }
 let stackDock=null, stackPanelDraw=null, stackUI=null;
 // The stack lives in a permanent panel on the right (v0.70.0), so it never covers the table. On narrow windows (no right column) it falls back to a floating tray.
-const stackPanelVisible=()=>{ const b=$('#stackBox'); return !!(b&&b.offsetParent); };
+let stackBoxShown = true;   // v0.96.16 measured once per frame in layoutPass(): reading offsetParent on every redraw forced a full re-measure
+const stackPanelVisible=()=>stackBoxShown;
 function buildStack(m, panel){
   if(!stackUI){
     stackUI={ oppName:h('input',{type:'text',placeholder:'Opponent casts… (card name)',style:'flex:1;min-width:0'}),

@@ -37,7 +37,8 @@ function noteFlightFrom(id, sel) {
 const flightCounter = new Set();   // ids of spells that were just countered: their flight to the graveyard is tinted red
 let animPrev = null;
 function animCapture() {
-  animPrev = null; if (!animOn('move') || !state) return;
+  if (animPrev) return;   // v0.96.16 several redraws inside one frame: keep the EARLIEST snapshot (the last settled layout); the animation is applied once, after layout
+  if (!animOn('move') || !state) return;
   const cards = new Map(), nodes = new Map(); let n = 0;
   for (const el of document.querySelectorAll(CARD_SEL)) {
     const r = el.getBoundingClientRect(); if (!r.width) continue;

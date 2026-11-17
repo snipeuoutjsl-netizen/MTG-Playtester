@@ -1219,8 +1219,7 @@ body.lay-side #table { grid-template-columns: minmax(0, 1fr) 286px; }
 #boardstrip .bs-stack { color: #ff9d6e; font-weight: 700; }
 
 /* v0.76.1 the tracker floats across the battlefield again (pill look), full width of the battlefield */
-body.strip-on #mat { row-gap: 46px; }
-#boardstrip { position: absolute; z-index: 5; flex: none; flex-wrap: nowrap; gap: 8px 12px; padding: 4px 14px; border-radius: 999px; background: rgba(8,12,14,.86); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 4px 14px rgba(0,0,0,.55); backdrop-filter: blur(3px); box-sizing: border-box; overflow: hidden; }
+#boardstrip { position: relative; z-index: 5; flex: none; flex-wrap: nowrap; gap: 8px 12px; padding: 4px 14px; border-radius: 999px; background: rgba(8,12,14,.86); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 4px 14px rgba(0,0,0,.55); backdrop-filter: blur(3px); box-sizing: border-box; overflow: hidden; }
 #boardstrip .bs-track { flex-wrap: nowrap; gap: 2px; }
 #boardstrip .bs-grp { padding: 1px 7px 2px; border-radius: 999px; }
 #boardstrip .bs-grp + .bs-grp { border-left: 1px solid rgba(255,255,255,.08); border-radius: 0; }
@@ -1519,7 +1518,7 @@ body.dragging-card #handWrap.over { background: rgba(227,185,92,.10) !important;
 @media (max-width: 800px) { #handLegend.open { display: flex !important; } }
 
 /* v0.96.9 floating hand: a slow hover, each card at its own pace, with a soft shadow that deepens as the card lifts */
-@keyframes handFloat { 0%, 100% { translate: 0 2px; filter: drop-shadow(0 6px 7px rgba(0,0,0,.50)); } 50% { translate: 0 -4px; filter: drop-shadow(0 12px 12px rgba(0,0,0,.38)); } }
+@keyframes handFloat { 0%, 100% { translate: 0 2px; } 50% { translate: 0 -4px; } }   /* v0.96.16 movement only: animating a filter repainted every card every frame */
 #row-hand .card { box-shadow: 0 8px 14px -4px rgba(0,0,0,.65), 0 2px 5px rgba(0,0,0,.5); }
 body.handfloat #row-hand .card { animation: handFloat 4.6s ease-in-out infinite; }
 body.handfloat #row-hand .card:nth-child(2n) { animation-duration: 5.4s; animation-delay: -1.6s; }
@@ -1545,12 +1544,23 @@ body.handfloat #row-hand .card:hover, body.handfloat #row-hand .card.dragging, b
 #row-hand .card.cast-ready  { box-shadow: 0 0 0 2px rgba(70,220,120,.95), 0 0 14px 3px rgba(70,220,120,.55), 0 0 30px 6px rgba(70,220,120,.25), 0 8px 14px -4px rgba(0,0,0,.65); }
 #row-hand .card.cast-mana   { box-shadow: 0 0 0 2px rgba(235,80,80,.9),  0 0 14px 3px rgba(235,80,80,.5),  0 0 28px 5px rgba(235,80,80,.22), 0 8px 14px -4px rgba(0,0,0,.65); }
 #row-hand .card.cast-timing { box-shadow: 0 0 0 2px rgba(235,178,70,.9), 0 0 14px 3px rgba(235,178,70,.5), 0 0 28px 5px rgba(235,178,70,.22), 0 8px 14px -4px rgba(0,0,0,.65); }
-@keyframes readyPulse { 0%, 100% { box-shadow: 0 0 0 2px rgba(70,220,120,.95), 0 0 12px 2px rgba(70,220,120,.45), 0 0 24px 4px rgba(70,220,120,.18), 0 8px 14px -4px rgba(0,0,0,.65); } 50% { box-shadow: 0 0 0 2px rgba(110,255,160,1), 0 0 20px 5px rgba(70,220,120,.7), 0 0 38px 9px rgba(70,220,120,.32), 0 8px 14px -4px rgba(0,0,0,.65); } }
-body.handfloat #row-hand .card.cast-ready { animation: handFloat 4.6s ease-in-out infinite, readyPulse 2.4s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { body.handfloat #row-hand .card.cast-ready { animation: none; } }
+@keyframes readyPulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }   /* v0.96.16 the pulse is an opacity change on a glow layer (cheap), not an animated box-shadow */
+#row-hand .card.cast-ready::before { content: ''; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none; box-shadow: 0 0 22px 7px rgba(70,255,140,.75); opacity: .25; z-index: -1; }
+body.handfloat #row-hand .card.cast-ready::before { animation: readyPulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { body.handfloat #row-hand .card.cast-ready::before { animation: none; opacity: .6; } }
 body.responding #row-hand .card.cast-ready { animation: respondGlow 1.4s ease-in-out infinite; }
 
 /* v0.96.14 rules-check panel (no card behind it): same look as the other pop-ups */
 .ss-rulebox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.5); text-align: left; overflow: hidden; margin-bottom: 8px; }
 .ss-rulebox .ss-rh { padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 700; }
 .ss-rulebox .ss-rt { padding: 12px 14px; font-size: 13px; color: var(--muted); }
+
+/* v0.96.16 the pre-game / mulligan / pause panel is centred in the space above the floating hand */
+#overlay { padding-bottom: calc(var(--handcover, 0px) + 28px); }
+
+#row-hand .card { will-change: translate; }
+
+/* v0.96.16 turn-flow bar: its own fixed row between the battlefield and the lower zones (never repositioned; the combat notice lives inside the creature zone) */
+#boardstrip { grid-area: strip; align-self: center; justify-self: stretch; width: auto; margin: 0; }
+body.strip-on #mat { grid-template-rows: minmax(0, 1fr) auto minmax(0, 40%); grid-template-areas: "creatures creatures piles" "strip strip piles" "noncreature lands piles"; }
+body.strip-on.lay-lanes #mat { grid-template-rows: minmax(0, 1fr) auto minmax(calc(var(--ch) + 44px), 44%); grid-template-areas: "creatures creatures piles" "strip strip piles" "lands noncreature piles"; }
