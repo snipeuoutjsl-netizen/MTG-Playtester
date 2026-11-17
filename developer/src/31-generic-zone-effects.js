@@ -17,6 +17,7 @@ function descMatchesCard(desc, name) {
   if ((m = d.match(/mana value (\d+)(?! or)/))) { if (mvOf(info) !== +m[1]) return false; any = true; }
   if ((m = d.match(/toughness (\d+) or less/))) { const pt = (info.pt || '').split('/')[1]; if (pt === undefined || parseInt(pt, 10) > +m[1]) return false; any = true; }
   if ((m = d.match(/power (\d+) or less/))) { const pt = (info.pt || '').split('/')[0]; if (pt === undefined || parseInt(pt, 10) > +m[1]) return false; any = true; }
+  if (/\bcolorless\b/.test(d)) { any = true; if (/\{[^}]*[WUBRG]/.test(String(info.mc || '').split(' // ')[0])) return false; }   // CR 105.2c: a colorless object has no color (no colored mana symbol in its cost)
   { const CM = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' }, mc0 = String(info.mc || '').split(' // ')[0];
     for (const [w, L] of Object.entries(CM)) { if (new RegExp('\\bnon-?' + w + '\\b').test(d)) { any = true; if (mc0.includes('{' + L)||mc0.includes('/' + L)) return false; } else if (new RegExp('\\b' + w + '\\b').test(d)) { any = true; if (!(mc0.includes('{' + L) || mc0.includes('/' + L))) return false; } } }
   if ((m = d.match(/named ([a-z' ,-]+)/))) { if (norm(info.name) !== norm(m[1].trim())) return false; any = true; }
@@ -45,19 +46,20 @@ function openPickCards(o) {
   m.body.append(h('div', { class: 'psub', text: o.note || '' }), status, out); draw();
   m.foot.append(...(o.min ? [] : [h('button', { text: o.nothing || 'Choose nothing', onclick: () => { m.close(); o.done([]); } })]), h('button', { class: 'primary', text: 'Confirm', onclick: () => { if (chosen.size < (o.min || 0)) { toast('Choose more', `You must choose ${o.min}.`); return; } m.close(); o.done(o.cards.filter(c => chosen.has(c.id))); } }));
 }
-function wordN(w) { w = String(w || 'a').toLowerCase(); return /^\d+$/.test(w) ? +w : (TOKEN_NUMW[w] || (w === 'any' ? 99 : 1)); }
+function wordN(w) { w = String(w || 'a').toLowerCase(); return /^\d+$/.test(w) ? +w : (TOKEN_NUMW[w] || (/^any\b/.test(w) ? 99 : 1)); }
 // "Search your library for a creature card with toughness 2 or less, reveal it, put it into your hand, then shuffle."
 function searchEffect(tx, src, obj) {
   const m = String(tx).replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').match(/search your library(?: and\/or graveyard)? for (up to (\w+)|an?|one|two|three|any number of|\w+) ([^.]*?)(?:,| and| then|\.)/i);
   if (!m || /\band (?:your )?graveyard for\b|and exile the rest/i.test(tx)) return null;
   const sentence = (tx.replace(/\n/g, ' ').match(/search your library[^.]*\.(?:[^.]*\.)?/i) || [''])[0];
-  let dest = /onto the battlefield/i.test(sentence) ? 'battlefield' : /into your graveyard/i.test(sentence) ? 'graveyard' : /(?:on top|top of your library)/i.test(sentence) ? 'top' : /into your hand|put (?:it|that card) into your hand/i.test(sentence) ? 'hand' : /\breveal\b/i.test(sentence) ? 'hand' : null;
+  const exileIt = /\bexile (?:them|it|that card|those cards|the cards?)\b/i.test(sentence), freeCast = exileIt && /you may cast (?:those cards|that card|it|them|the cards?) without paying (?:its|their) mana costs?/i.test(sentence);
+  let dest = exileIt ? 'exile' : /onto the battlefield/i.test(sentence) ? 'battlefield' : /into your graveyard/i.test(sentence) ? 'graveyard' : /(?:on top|top of your library)/i.test(sentence) ? 'top' : /into your hand|put (?:it|that card) into your hand/i.test(sentence) ? 'hand' : /\breveal\b/i.test(sentence) ? 'hand' : null;
   if (!dest) return null;
   const tapped = /battlefield tapped/i.test(sentence);
   const max = m[2] ? wordN(m[2]) : wordN(m[1]);
   const desc = m[3].replace(/^cards?\s*/i, '').trim() || m[3];
   const full = (sentence.match(/for [^,.]*?cards?\b[^,.]*/i) || [m[3]])[0];
-  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest}`, fn: () => {
+  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}`, fn: () => {
     if (!state.library.length) { toast('Library is empty', 'There is nothing to search.'); return; }
     openPickCards({ title: `${src}: search your library`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'}: ${full.replace(/^for /i, '')}. Highlighted cards match the description; you may also choose nothing (you can't be forced to find a card). ${/shuffle/i.test(sentence) || /shuffle/i.test(tx) ? 'Your library is shuffled afterwards.' : ''}`,
       cards: state.library.slice(), max, isOk: c => descMatchesCard(full.replace(/^for (?:up to \w+ |an? |one |two |three |any number of )?/i, ''), c.name), nothing: 'Find nothing',
@@ -65,6 +67,7 @@ function searchEffect(tx, src, obj) {
         for (const c of picked) { names.push(c.name);
           if (dest === 'hand') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) state.hand.push(...state.library.splice(i, 1)); }
           else if (dest === 'graveyard') moveCard(c.id, 'graveyard');
+          else if (dest === 'exile') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); if (freeCast) x.freeCastTurn = state.turn; state.exile.push(x); } }   // CR 701.23 search, 406 exile; "until end of turn, you may cast … without paying" (CR 118.9)
           else if (dest === 'top') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); state.library.unshift(x); } }
           else { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); enterBattlefield(x, { from: 'library', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped }); if (tapped) x.tapped = true; } } }
         if (/shuffle/i.test(tx)) shuffle(state.library);

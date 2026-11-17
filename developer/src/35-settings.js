@@ -150,7 +150,7 @@ function openSettings() {
   const drawSleeve = () => sleeveBox.replaceChildren(
     h('div',{class:'small muted',text:'Built-in sleeves for your library pile'}),
     gallery('sleeve', SLEEVES, settings.sleevePreset || '', id => { settings.sleevePreset = id; saveSettings(); applySleeve(); drawSleeve(); }),
-    h('div',{class:'setrow'},h('label',{text:'Custom card sleeve'}),h('button',{text:sleeveUrl?'Change sleeve…':'Upload sleeve…',onclick:()=>sleeveFile.click()}),sleeveFile),
+    h('div',{class:'setrow'},h('label',{text:'Custom card sleeve'}),h('button',{text:sleeveUrl?'Change sleeve':'Upload sleeve',onclick:()=>sleeveFile.click()}),sleeveFile),
     sleeveUrl ? h('div',{class:'setrow'},h('label',{text:'Status'}),h('button',{class:'tgl on',text:'Enabled',onclick:async()=>{try{URL.revokeObjectURL(sleeveUrl);}catch(e){} sleeveUrl=null;try{await idbDelete(['sleeve']);}catch(e){} applySleeve();drawSleeve();}})) : null
   );
   sleeveFile.addEventListener('change',async()=>{const f=sleeveFile.files[0];if(!f)return;if(sleeveUrl)URL.revokeObjectURL(sleeveUrl);sleeveUrl=URL.createObjectURL(f);try{await idbSet('sleeve',f);}catch(e){}applySleeve();drawSleeve();});
@@ -182,7 +182,7 @@ function openSettings() {
     matBox.append(
       h('div', { class: 'setrow' }, h('label', { text: 'Colour' }), sw),
       h('div', { class: 'setrow' }, h('label', { text: 'Custom playmat' }),
-        h('button', { text: matUrl ? 'Change image…' : 'Upload image…', onclick: () => file.click() }), file,
+        h('button', { text: matUrl ? 'Change image' : 'Upload image', onclick: () => file.click() }), file,
         matUrl ? h('button', { class: settings.custom ? 'tgl on' : 'tgl', text: settings.custom ? 'In use' : 'Use it', onclick: () => { settings.custom = !settings.custom; saveSettings(); drawMat(); } }) : '',
         matUrl ? h('button', { class: 'danger', text: 'Remove', onclick: async () => { settings.custom = false; if (matUrl) URL.revokeObjectURL(matUrl); matUrl = null; saveSettings(); try { await idbDelete(['playmat']); } catch (e) { /* ignore */ } drawMat(); } }) : ''),
       h('div', { class: 'setrow' }, h('label', { text: 'Image fit' }), fit),
@@ -302,7 +302,7 @@ function openSettings() {
     const hot=h('select'); for(const [v,l] of [['tl','Top-left corner'],['center','Centre']]) hot.append(h('option',{value:v,text:l})); hot.value=settings.cursorHot||'tl';
     hot.addEventListener('change',()=>{settings.cursorHot=hot.value;saveSettings();});
     curBox.replaceChildren(h('div',{class:'setrow'},h('label',{text:'Cursor'}),sel,sz),
-      settings.cursor==='custom'?h('div',{class:'setrow'},h('label',{text:'My image'}),h('button',{text:settings.cursorImg?'Change image…':'Choose image…',onclick:()=>file.click()}),file,h('label',{text:'Click point'}),hot,h('span',{class:'muted small',text:'Any picture; it is shrunk to a cursor. Transparent PNGs look best.'})):null);
+      settings.cursor==='custom'?h('div',{class:'setrow'},h('label',{text:'My image'}),h('button',{text:settings.cursorImg?'Change image':'Choose image',onclick:()=>file.click()}),file,h('label',{text:'Click point'}),hot,h('span',{class:'muted small',text:'Any picture; it is shrunk to a cursor. Transparent PNGs look best.'})):null);
   }; drawCursor();
   P.gfx.append(h('div',{class:'fhead',text:'Mouse cursor'}),curBox);
   const soundBox=h('div');
@@ -335,7 +335,7 @@ function openSettings() {
     h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Playmat images are stored in this browser only, so they work offline.' }));
   // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
   const tabbar = h('div', { class: 'setnav' }), stage = h('div', { class: 'setmain' });
-  const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings…' });
+  const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings' });
   const applyFilter = q => {
     q = q.trim().toLowerCase();
     for (const k of Object.keys(P)) { if (k === 'layout') continue;
@@ -364,7 +364,7 @@ function openSettings() {
   const shell = h('div', { class: 'setshell' }, tabbar, stage);
   body.append(shell); showTab(P[settingsTab] ? settingsTab : 'gfx');
   m.foot.append(
-    h('button', { text: 'Welcome tour…', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
+    h('button', { text: 'Welcome tour', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
     h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); saveSettings(); m.close(); openSettings(); } }),
     h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
 }

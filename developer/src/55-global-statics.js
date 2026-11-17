@@ -41,3 +41,15 @@ const GLOBAL_STATIC_RES = [
   /^If you would lose unspent mana, that mana becomes colorless instead\.?$/i, /^Each spell a player casts costs \{\d+\} more to cast for each other spell that player has cast this turn\.?$/i,
   /^(?:Lands|Permanents) you control enter untapped\.?$/i, /^~ can't be blocked by creatures with power \d+ or less\.?$/i];
 const globalStaticLine = line => GLOBAL_STATIC_RES.some(re => re.test(String(line || '').trim().replace(/[\u2019]/g, "'")));
+
+// CR 202.3: a spell's mana value, with X taken from the value chosen for it on the stack (CR 202.3e). "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
+function spellMV(sp) {
+  const info = sp && !sp.token ? cardInfo(sp.name) : null; if (!info) return 0; const mc = String(info.mc || '').split(' // ')[0], nx = (mc.match(/\{X\}/g) || []).length;
+  return symCmc(mc.replace(/\{X\}/g, '')) + nx * (sp.xValue || 0);
+}
+function castAnyOk(ca, sp, src) {
+  if (!ca) return false; const mv = spellMV(sp);
+  if (ca.counters) { const kk = ca.counters.toLowerCase() === '+1/+1' ? 'plus' : ca.counters.toLowerCase(); return mv === counterCount(src, kk); }
+  if (ca.mv === null) return true;
+  return ca.cmp === 'less' ? mv <= ca.mv : ca.cmp === 'greater' ? mv >= ca.mv : mv === ca.mv;
+}

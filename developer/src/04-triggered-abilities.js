@@ -26,7 +26,7 @@ function parseTriggers(c) {
     const cm = body.match(/^((?:When|Whenever|At)\b[^,]*),\s*(.*)$/s);
     if (!cm) continue;
     const cond = cm[1].toLowerCase(), word = lm[1] || '';
-    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false;
+    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false, castAny = null, cAny = null;
     if (/^at\b/.test(cond)) {
       if (!/opponent|\bnext\b/.test(cond)) {
         if (/end of combat/.test(cond)) ev = 'step:end_combat';
@@ -35,6 +35,8 @@ function parseTriggers(c) {
       }
     } else if (/^(?:when|whenever) you cast (?:this spell|~)/.test(cond)) ev = 'cast-self';
     else if (/^(?:when|whenever) you cast /.test(cond)) { ev = 'cast'; filter = cond.replace(/^(?:when|whenever) you cast /, ''); }
+    else if ((cAny = cond.match(/^(?:when|whenever) a player casts a spell(?: with mana value (equal to the number of ([a-z+\/-]+) counters on (?:~|this \w+)|(\d+)(?: or (less|greater))?))?$/)) && /^counter that spell\.?$/i.test(cm[2].trim())) {   // v0.96.31 Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
+      ev = 'cast-any'; castAny = { counters: cAny[2] || '', mv: cAny[3] !== undefined ? +cAny[3] : null, cmp: cAny[4] || 'equal' }; }
     else if (/^(?:when|whenever) (?:~|this \w+) enters/.test(cond)) ev = 'etb-self';
     else if (word === 'Landfall' || /\ba land (?:you control )?enters|land enters the battlefield under your control/.test(cond)) ev = 'landfall';
     else if (/^(?:when|whenever) (?:another|a|an|one or more) .*enters/.test(cond) && !/opponent/.test(cond)) { ev = 'etb-other'; filter = cond; }
@@ -66,7 +68,7 @@ function parseTriggers(c) {
     if (ev === 'cast') { const nm = /^if it'?s the (first|second|third|fourth) (?:(noncreature|creature|instant|sorcery|artifact|enchantment|land|instant or sorcery) )?spell you cast (?:this|each) turn,\s*/i.exec(cm[2]); if (nm) { nth = { n: ['first', 'second', 'third', 'fourth'].indexOf(nm[1].toLowerCase()) + 1, type: (nm[2] || '').toLowerCase() }; cm[2] = cm[2].slice(nm[0].length); } }
     if (/^if (?:~|this \w+) is in your graveyard\b/i.test(cm[2]) || (ev === 'gy-self')) zone = 'graveyard';
     if (ev !== 'gy-self' && /\breturn (?:~|this \w+|it) from your graveyard to the battlefield/i.test(cm[2])) zone = 'graveyard';   // v0.94.1 Bloodghast: Landfall \u2014 you may return ~ from your graveyard to the battlefield
-    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth });
+    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, castAny });
     if (ev === 'etb-self' && /enters(?: the battlefield)? or attacks/.test(cond)) out.push({ ev: 'attack-self', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ko) out.push({ ev: 'etb-other', cond: cm[1], effect: cm[2], line: body, filter: 'another ' + ko[1], optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
@@ -90,10 +92,11 @@ function frontType(c) {
 }
 function filterMatches(filter, card) {
   const t = frontType(card);
-  if (!t) return true;
   const f = filter.toLowerCase();
+  if (!t) return true;
   if (/\bnoncreature\b/.test(f) && /\bCreature\b/.test(t)) return false;
   const words = [['instant or sorcery', /\b(Instant|Sorcery)\b/], ['instant', /\bInstant\b/], ['sorcery', /\bSorcery\b/], ['artifact', /\bArtifact\b/], ['enchantment', /\bEnchantment\b/], ['planeswalker', /\bPlaneswalker\b/], ['land', /\bLand\b/], ['creature', /\bCreature\b/]];
+  { const cw = f.match(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/); if (cw && !colorWordOk(cw[1], cardColorSet(card))) return false; }
   const mentioned = words.filter(([w]) => new RegExp('(?<!non)\\b' + w + '\\b').test(f));
   if (!mentioned.length) return true;
   return mentioned.some(([, re]) => re.test(t));
@@ -118,6 +121,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'cast') {
     const sp = ctx.card;
     for (const t of parseTriggers(sp)) if (t.ev === 'cast-self') add(sp, t, `You cast ${sp.name}. "When you cast this spell" abilities trigger immediately and go on the stack above the spell, so they resolve first.`);
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast-any' && castAnyOk(t.castAny, sp, c)) { const n0 = state.pendingTriggers.length; add(c, t, `${sp.name} was cast with mana value ${spellMV(sp)}${t.castAny.counters ? ', equal to the number of ' + t.castAny.counters + ' counters on ' + c.name : ''}.`); if (state.pendingTriggers.length > n0) Object.assign(state.pendingTriggers[state.pendingTriggers.length - 1], { special: 'counterCast', spellId: sp.id }); }
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
@@ -292,7 +296,7 @@ function openTriggerBatch(batch) {
   };
   const pushWith = (t, text, picked) => {
     remaining.splice(remaining.indexOf(t), 1);
-    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, kw: t.kw, n: t.n, arg: t.arg };
+    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, spellId: t.spellId, kw: t.kw, n: t.n, arg: t.arg };
     if (picked) { obj.targets = picked; obj._tgtAsked = true; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; }
     state.stack.push(obj);
     state.priority = { active: true, passed: false };
@@ -682,6 +686,7 @@ function openAbilityEffect(obj, done) {
   }
   if (obj.special === 'storm') { makeSpellCopies(obj.spellId, obj.n || 0, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'suspendCast') { suspendCastFree(obj.sourceId, done); return; }
+  if (obj.special === 'counterCast') { counterStackObject(obj.spellId, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'openingReveal' && openingRevealEffect(obj, done)) return;
   if (obj.special === 'reboundCast') { suspendCastFree(obj.sourceId, done, 'Rebound'); return; }
   if ((obj.special === 'surveil' || obj.special === 'scry') && obj.n) {
