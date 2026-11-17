@@ -418,6 +418,14 @@ const { setup } = require('./common.js');
     const [r2] = await bfSet(['Mock Ravener']); await optByLabel(r2, 'ravenous', 0, 'Enters with X', 'xValue=5');
     const b2 = await ev(i => ({ c: __d.state.battlefield.find(x => x.id === i).counters.plus, h: __d.state.hand.length }), r2);
     return { ok: a.c === 3 && a.h === h0 && b2.c === 5 && b2.h === h0 + 1, why: JSON.stringify({ h0, a, b2 }) }; });
+
+  await T('702.68a', 'frenzy N: an unblocked attacker gets +N/+0 until end of turn (every attacker is unblocked in a goldfish)', async () => { await reset(); const [fr] = await bfSet(['Mock Frenzier']); const n = await atk([fr]);
+    await runOpt(fr, 'frenzy', 2, 0); const p2 = await ev(i => __d.ptCalc(__d.state.battlefield.find(c => c.id === i)).p, fr);
+    return { ok: n >= 1 && p2 === 4, why: JSON.stringify({ n, p2 }) }; });
+  await T('702.97a', 'scavenge: [cost], exile this card from your graveyard: put +1/+1 counters equal to its power on target creature (sorcery speed)', async () => { await reset(); const [bear] = await bfSet(['Grizzly Bears']); const id = await putHand('Mock Scavenger');
+    const r = await ev(i => { const s = __d.state, k = s.hand.findIndex(c => c.id === i), [c] = s.hand.splice(k, 1); s.graveyard.push(c); s.manaPool = { C: 1 }; s.step = __d.STEPS.findIndex(x => x.id === 'main1'); __d.useGyAbility(i, 'scavenge'); document.querySelectorAll('.backdrop').forEach(x => x.remove());
+      const b = s.battlefield[0]; return { counters: b.counters && b.counters.plus, ex: s.exile.some(x => x.id === i), gy: s.graveyard.some(x => x.id === i) }; }, id);
+    return { ok: r.counters === 4 && r.ex && !r.gy, why: JSON.stringify(r) }; });
   console.log('\nRULES CHECK (Comprehensive Rules, 19 June 2026)\n');
   for (const t of out) console.log((t.ok ? 'PASS' : 'FAIL') + '  CR ' + t.rule.padEnd(14) + t.name + (t.ok ? '' : '\n        -> ' + t.why));
   console.log(`\n${out.filter(t => t.ok).length}/${out.length} pass`);

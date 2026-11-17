@@ -55,6 +55,25 @@ function applyFrame() {
     b.style.setProperty('--fi', String(settings.frameGlow));
   } else for (const k of ['--fa', '--fb', '--fc', '--fglow', '--fi']) b.style.removeProperty(k);
 }
+// v0.96.18 One-click sets: each interface theme comes with a matching card sleeve, playmat, board frame and song. Applying one changes all of them together.
+const UI_SETS = [
+  { id: 'default', label: 'Midnight (default)', ui: 'default', sleeve: 'star', mat: 'nebula', frame: 'none', song: 'lofi', note: 'Night sky sleeve, nebula mat, cosmic low-fi.' },
+  { id: 'obsidian', label: 'Obsidian & gold', ui: 'obsidian', sleeve: 'deco', mat: 'deco', frame: 'gold', song: 'boombap', note: 'Gilded deco sleeve and mat, royal gold frame, dusty boom-bap.' },
+  { id: 'abyss', label: 'Abyss blue', ui: 'abyss', sleeve: 'waves', mat: 'ocean', frame: 'ice', song: 'rain', note: 'Tides sleeve, ocean mat, ice frame, rainy-window music.' },
+  { id: 'forest', label: 'Forest', ui: 'forest', sleeve: 'forest', mat: 'grove', frame: 'grass', song: 'golden', note: 'Forest sleeve, moonlit grove mat, grass frame, golden-hour music.' },
+  { id: 'neon', label: 'Neon', ui: 'neon', sleeve: 'wheel', mat: 'storm', frame: 'storm', song: 'arcade', note: 'Mana wheel sleeve, storm mat, storm frame, arcade chill.' },
+  { id: 'parchment', label: 'Parchment', ui: 'parchment', sleeve: 'worn', mat: 'map', frame: 'none', song: 'jazzhop', note: 'Worn card back, old map mat, midnight jazz-hop.' },
+  { id: 'light', label: 'Light', ui: 'light', sleeve: 'check', mat: 'kitchen', frame: 'none', song: 'golden', note: 'Checker sleeve, kitchen-table mat, golden-hour music.' },
+  { id: 'cosmos', label: 'Pixel cosmos (lo-fi)', ui: 'cosmos', sleeve: 'pixcosmos', mat: 'pixcosmos', frame: 'none', song: 'lofi', note: 'Pixel sleeve and mat, cosmic low-fi.' }
+];
+function applyUiSet(id) {
+  const st = UI_SETS.find(x => x.id === id); if (!st) return;
+  settings.uiSet = st.id; settings.uiTheme = st.ui; settings.sleevePreset = st.sleeve; settings.matPreset = st.mat; settings.custom = false; settings.frame = st.frame;
+  if (settings.setMusic !== false) { settings.sound.musicStyle = st.song; settings.sound.music = true; settings.sound.on = true; }
+  saveSettings(); try { applySettings(); } catch (e) {} try { applyUiTheme(); } catch (e) {} try { applySleeve(); } catch (e) {}
+  if (settings.setMusic !== false) { try { musicSettingsChanged(); } catch (e) {} }
+  toast(st.label, 'Theme, sleeve, playmat' + (st.frame !== 'none' ? ', frame' : '') + (settings.setMusic !== false ? ' and music' : '') + ' set.');
+}
 function applySettings() {
   applyFrame(); applyCursor(); applyUiTheme();
   const b = document.body.style;
@@ -242,11 +261,12 @@ function openSettings() {
         mk('Spell spotlight size','spotSize',0.6,1.5,0.1,v=>Math.round(v*100)+'%','Size of the card shown when a spell is cast or resolves')); })()
   ); }; drawAnim();
   const themeBox=h('div'); themeBox.append((()=>{ const sel=h('select'); for(const [v,l] of UI_THEMES) sel.append(h('option',{value:v,text:l})); sel.value=settings.uiTheme||'default'; sel.addEventListener('change',()=>{settings.uiTheme=sel.value;saveSettings();}); return h('div',{class:'setrow'},h('label',{text:'Interface theme'}),sel,h('span',{class:'muted small',text:'Colours of the panels and buttons'})); })());
-  themeBox.append((()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicStyle==='lofi'; const go=h('button',{text:'Apply Pixel cosmos set',onclick:()=>{ settings.uiTheme='cosmos'; settings.sleevePreset='pixcosmos'; settings.matPreset='pixcosmos'; settings.custom=false;
-      saveSettings(); try{applySettings();}catch(e){} try{applyUiTheme();}catch(e){} try{applySleeve();}catch(e){} toast('Pixel cosmos','Theme, sleeve and playmat set.'); }});
-    // the music switch is the same setting as Settings > Sound > Music style, so it keeps its state
-    cb.addEventListener('change',()=>{ settings.sound.musicStyle=cb.checked?'lofi':'ambient'; if(cb.checked){settings.sound.music=true;settings.sound.on=true;} saveSettings(); try{musicSettingsChanged();}catch(e){} });
-    return h('div',{class:'setrow'},h('label',{text:'One-click set'}),go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},cb,'Cosmic low-fi music')); })());
+  themeBox.append((()=>{ const sel=h('select'); for(const st of UI_SETS) sel.append(h('option',{value:st.id,text:st.label})); sel.value=settings.uiSet||(UI_SETS.find(x=>x.ui===settings.uiTheme)||UI_SETS[0]).id;
+    const mcb=h('input',{type:'checkbox'}); mcb.checked=settings.setMusic!==false; mcb.addEventListener('change',()=>{settings.setMusic=mcb.checked;saveSettings();});
+    const go=h('button',{text:'Apply set',onclick:()=>applyUiSet(sel.value)});
+    sel.addEventListener('change',()=>{const st=UI_SETS.find(x=>x.id===sel.value); note.textContent=st?st.note:'';});
+    const note=h('span',{class:'muted small',text:(UI_SETS.find(x=>x.id===sel.value)||{}).note||''});
+    return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
   const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox);
   { const box = h('div'), draw = () => {
@@ -290,8 +310,8 @@ function openSettings() {
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.vol; r.addEventListener('input',()=>{settings.sound.vol=+r.value;saveSettings();}); r.addEventListener('change',()=>sfx('draw')); return h('div',{class:'setrow'},h('label',{text:'Volume'}),r); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.music!==false; cb.addEventListener('change',()=>{settings.sound.music=cb.checked;saveSettings();musicSettingsChanged();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Background music'}),h('span',{class:'muted small',text:'A calm, never-ending ambient loop generated in the app. It starts after your first click.'}))); })(),
-    (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),h('option',{value:'lofi',text:'Cosmic low-fi (beat, electric piano, vinyl)'})); sel.value=settings.sound.musicStyle==='lofi'?'lofi':'ambient'; sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=sel.value!=='lofi';}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
-    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:settings.sound.musicStyle!=='lofi'},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Soft kick, snare and swung hats in the Cosmic low-fi style. Turn off for just keys, bass and crackle.'}))); })(),
+    (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),...Object.entries(LOFI_SONGS).map(([k,v])=>h('option',{value:k,text:v.label}))); sel.value=musicStyleId(); sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=!LOFI_SONGS[sel.value];}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
+    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:!LOFI_SONGS[settings.sound.musicStyle]},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Kick, snare and hats in the low-fi and hip-hop songs. Turn off for just keys, bass and crackle.'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.musicVol; r.addEventListener('input',()=>{settings.sound.musicVol=+r.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music volume'}),r); })(),
     ...SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })
   ); }; drawSound();

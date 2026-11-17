@@ -64,3 +64,7 @@ function kwCantBlock(c) {
   const plus = c.counters && typeof c.counters === 'object' ? (c.counters.plus || 0) - (c.counters.minus || 0) : 0;
   return has('unleash') && plus > 0;
 }
+
+// CR 702.68a Frenzy N: "Whenever this creature attacks and isn't blocked, it gets +N/+0 until end of turn." A goldfish has no blockers, so every attacker is unblocked.
+KW_TRIGGERS.push({ cr: '702.68', kw: 'frenzy', ev: 'attack-self', cond: 'Frenzy: whenever this creature attacks and isn\'t blocked', text: 'Whenever this creature attacks and isn\'t blocked, it gets +N/+0 until end of turn.' });
+KW_EFFECTS['frenzy'] = obj => [{ full: true, label: `${obj.sourceName} is unblocked: +${obj.n || 1}/+0 until end of turn (frenzy)`, fn: () => addTempPT(obj.sourceId, obj.n || 1, 0) }];

@@ -5849,7 +5849,7 @@ function openZone(zone) {
       if (zone === 'exile' && stashReady(c)) row.append(h('button', { class: 'primary', text: c.plotted ? 'Cast free (plotted)' : 'Cast (foretold)', title: c.plotted ? 'You plotted this on an earlier turn: cast it without paying its mana cost, at sorcery speed' : 'You foretold this on an earlier turn: cast it for its foretell cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && c.onAdv) row.append(h('button', { class: 'primary', text: 'Cast creature', title: 'This card was exiled on an adventure: you may cast it from exile', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'graveyard' && gyLandPlayable(c)) row.append(h('button', { class: 'primary', text: 'Play land', title: 'You may play lands from your graveyard (uses a land drop)', onclick: () => { m.close(); playLandFromGy(c.id); } }));
-      if (zone === 'graveyard') for (const ga of gyAbilitiesFor(c)) row.append(h('button', { class: 'primary', text: ga.label, title: ga.kind === 'unearth' ? 'Return it to the battlefield with haste; exile it at the next end step (sorcery speed)' : `Exile it from your graveyard and create a ${ga.kind === 'embalm' ? 'white' : 'black 4/4'} Zombie token copy (sorcery speed)`, onclick: () => { m.close(); useGyAbility(c.id, ga.kind); } }));
+      if (zone === 'graveyard') for (const ga of gyAbilitiesFor(c)) row.append(h('button', { class: 'primary', text: ga.label, title: ga.kind === 'scavenge' ? 'Exile it from your graveyard: put +1/+1 counters equal to its power on target creature (sorcery speed)' : ga.kind === 'unearth' ? 'Return it to the battlefield with haste; exile it at the next end step (sorcery speed)' : `Exile it from your graveyard and create a ${ga.kind === 'embalm' ? 'white' : 'black 4/4'} Zombie token copy (sorcery speed)`, onclick: () => { m.close(); useGyAbility(c.id, ga.kind); } }));
       if (zone === 'graveyard') { const go = gyCastOptions(c); if (go.length) row.append(h('button', { class: 'primary', text: go.length > 1 ? 'Cast…' : (go[0].kind === 'aftermath' ? 'Cast ' + (cardInfo(c.name).fc[1].name) : go[0].kind === 'escape' ? 'Escape' : 'Flashback'), title: go.map(x => x.label).join('\n'), onclick: () => { m.close(); castFromGraveyard(c.id); } })); }
       if (zone !== 'hand') row.append(act('Hand', 'hand'));
       row.append(act('Play', 'battlefield'));
@@ -6089,8 +6089,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.17';
+const APP_VERSION = '0.96.18';
 const CHANGELOG = [
+  { v: '0.96.18', title: 'Steady, filling turn bar; one-click sets; more music', notes: ['The turn-flow bar is now always the same size and its steps never shift: the button slot is fixed, the stack count floats, and the current step no longer gets wider. It also fills like a loading bar up to the step you are in, in your theme colours.','One-click sets now exist for every interface theme (Midnight, Obsidian & gold, Abyss blue, Forest, Neon, Parchment, Light, Pixel cosmos): the theme, card sleeve, playmat, board frame and a matching song all change together (Settings > Look). Untick Matching music to leave your song alone.','Five new generated songs (Settings > Sound > Music style): Dusty boom-bap, Rainy window, Midnight jazz-hop, Arcade chill and Golden hour, next to Cosmic low-fi.','Frenzy (702.68): +N/+0 when it attacks unblocked. Scavenge (702.97): exile it from the graveyard for +1/+1 counters equal to its power on a creature.'] },
   { v: '0.96.17', title: 'Keyword batch 5', notes: ['Exploit (702.110): when it enters you may sacrifice a creature (it can sacrifice itself); "when this creature exploits a creature" then triggers.','Enlist (702.154): as it attacks, tap an untapped nonattacking creature that is not summoning sick; it gets +X/+0 for that creature\'s power.','Mobilize N (702.181): N tapped and attacking 1/1 red Warrior tokens, sacrificed at the next end step; they do not trigger attack abilities.','Unleash (702.98): optional +1/+1 counter, and the creature cannot be assigned as a blocker while it has one (decayed now also blocks that way).','Devour N (702.82): sacrifice any number of creatures for N counters each. Ravenous (702.156): X counters, draw a card if X is 5 or more.','Fixed: Bolster with tied creatures now actually puts the counters on the creature you pick.'] },
   { v: '0.96.16', title: 'Smoother play, fixed turn-flow bar', notes: ['The turn-flow bar now sits in its own row between the battlefield and the lower zones, so it no longer moves when the combat notice appears. The pre-game actions panel now sits above the floating hand. Drawing and re-rendering are much lighter (layout runs once per frame, repeated rules lookups are cached), and the GPU is used for rasterising for a higher frame rate.'] },
   { v: '0.96.15', title: 'Rules-check panel, no Draw 7', notes: ['The opening-hand screen no longer has a Draw 7 button. The rules-check pop-up for discarding to hand size now uses the same panel style as other pop-ups instead of a blank card.'] },
@@ -6908,8 +6909,8 @@ function startMusic() {
   if (music || !settings.sound.on || !settings.sound.music) return;
   const ac = audio(); if (!ac) return;
   const bus = ac.createGain(); bus.gain.value = 0.0001; bus.gain.linearRampToValueAtTime(musicVolume() || 0.0001, ac.currentTime + 3);
-  const M = { bus, ac, next: ac.currentTime + 0.3, i: 0, timer: null, style: settings.sound.musicStyle === 'lofi' ? 'lofi' : 'ambient' }; music = M;
-  if (M.style === 'lofi') { startLofi(M, ac, bus); return; }
+  const M = { bus, ac, next: ac.currentTime + 0.3, i: 0, timer: null, style: musicStyleId() }; music = M;
+  if (LOFI_SONGS[M.style]) { startLofi(M, ac, bus); return; }
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; bus.connect(lp); lp.connect(ac.destination);
   const wet = ac.createGain(); wet.gain.value = 0.9; lp.connect(wet); wet.connect(reverbIn(ac));
   const CH = 10;   // seconds per chord
@@ -6933,11 +6934,26 @@ const LOFI_PROGS = [
   [[53, 60, 64, 67, 71], [52, 59, 62, 67, 71], [50, 57, 60, 64, 67], [48, 55, 59, 64, 67]],     // Fmaj9  Em7  Dm9  Cmaj7
   [[45, 57, 60, 64, 67], [41, 57, 60, 64, 69], [48, 55, 59, 62, 67], [43, 55, 59, 62, 66]]];    // Am9  Fmaj7  Cmaj7  G6
 const LOFI_SPARK = [74, 76, 79, 81, 83, 86];
+// v0.96.18 more generated songs. Each is a small recipe read by startLofi: tempo, swing, chord loops (MIDI voicings), the keys voice, the drum pattern, the tape colour and extras.
+const LOFI_SONGS = {
+  lofi: { label: 'Cosmic low-fi (beat, electric piano, vinyl)', bpm: 74, swing: 0.58, lp: 3200, voice: 'epiano', drums: 'lofi', progs: null },
+  boombap: { label: 'Dusty boom-bap (hip-hop beat, chopped keys)', bpm: 86, swing: 0.6, lp: 2600, voice: 'stab', drums: 'boombap', sub: true,
+    progs: [[[45, 57, 60, 64, 67], [45, 57, 60, 64, 67], [41, 57, 60, 64, 69], [43, 55, 59, 62, 65]], [[50, 57, 60, 64, 69], [50, 57, 60, 64, 69], [48, 55, 59, 64, 67], [43, 55, 58, 62, 65]]] },
+  rain: { label: 'Rainy window (soft keys, rain, no drums)', bpm: 66, swing: 0.55, lp: 2400, voice: 'epiano', drums: 'rim', rain: true,
+    progs: [[[48, 55, 59, 64, 67], [45, 55, 60, 64, 67], [41, 55, 60, 64, 69], [43, 55, 59, 62, 67]], [[53, 60, 64, 67, 71], [52, 59, 62, 67, 71], [45, 57, 60, 64, 67], [43, 55, 59, 62, 66]]] },
+  jazzhop: { label: 'Midnight jazz-hop (9ths and 13ths, brush hats)', bpm: 80, swing: 0.62, lp: 3600, voice: 'epiano', drums: 'brush', walk: true,
+    progs: [[[50, 60, 64, 67, 72], [43, 59, 62, 65, 69], [48, 59, 62, 67, 71], [45, 57, 60, 67, 71]], [[52, 59, 62, 67, 72], [45, 57, 61, 67, 71], [50, 57, 60, 64, 69], [43, 59, 62, 65, 71]]] },
+  arcade: { label: 'Arcade chill (soft chiptune, light beat)', bpm: 90, swing: 0.5, lp: 4200, voice: 'chip', drums: 'lofi', arp: true,
+    progs: [[[48, 55, 60, 64, 67], [45, 52, 57, 60, 64], [41, 48, 53, 57, 60], [43, 50, 55, 59, 62]], [[45, 52, 57, 60, 64], [41, 48, 53, 57, 60], [48, 55, 60, 64, 67], [43, 50, 55, 59, 62]]] },
+  golden: { label: 'Golden hour (warm pluck, easy groove)', bpm: 92, swing: 0.57, lp: 3800, voice: 'pluck', drums: 'lofi',
+    progs: [[[48, 55, 59, 64, 67], [43, 55, 59, 62, 69], [45, 57, 60, 64, 67], [41, 57, 60, 64, 65]], [[53, 60, 64, 67, 71], [48, 59, 64, 67, 71], [50, 57, 62, 65, 69], [43, 55, 59, 62, 65]]] }
+};
+const musicStyleId = () => LOFI_SONGS[settings.sound.musicStyle] ? settings.sound.musicStyle : 'ambient';
 function startLofi(M, ac, bus) {
-  const BPM = 74, BEAT = 60 / BPM, BAR = BEAT * 4, SWING = 0.58;
+  const S = LOFI_SONGS[M.style] || LOFI_SONGS.lofi, BPM = S.bpm, BEAT = 60 / BPM, BAR = BEAT * 4, SWING = S.swing, PROGS = S.progs || LOFI_PROGS;
   const so = () => settings.sound;
   // tape colour: gentle saturation and a low-pass so everything sits a little dull and warm
-  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200; lp.Q.value = 0.4;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = S.lp; lp.Q.value = 0.4;
   const sat = ac.createWaveShaper(); { const n = 256, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n / 2) - 1; c[i] = Math.tanh(x * 1.8); } sat.curve = c; }
   const wowLfo = ac.createOscillator(), wowAmt = ac.createGain(); wowLfo.frequency.value = 0.35; wowAmt.gain.value = 9; wowLfo.connect(wowAmt); wowLfo.start();   // tape wobble in cents
   bus.disconnect(); bus.connect(sat); sat.connect(lp); lp.connect(ac.destination); const wet = ac.createGain(); wet.gain.value = 0.7; lp.connect(wet); wet.connect(reverbIn(ac));
@@ -6946,7 +6962,14 @@ function startLofi(M, ac, bus) {
   const noise = (t, dur, type, freq, peak) => { const o = ac.createBufferSource(); o.buffer = noiseBuf; const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; const g = ac.createGain();
     g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(f); f.connect(g); g.connect(bus); o.start(t, Math.random() * 0.5); o.stop(t + dur + 0.02); };
   const kick = (t, v) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.setValueAtTime(115, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34); o.connect(g); g.connect(bus); o.start(t); o.stop(t + 0.4); };
-  const keys = (hz, t, dur, peak) => {   // electric piano: a sine plus a quick bell-ish overtone, both with a soft attack and a slow fall
+  const keys = (hz, t, dur, peak) => {
+    if (S.voice !== 'epiano') {   // stab = short, bright, chopped-sample keys; chip = soft square arps; pluck = warm guitar-like pluck
+      const [type, fall, mult] = S.voice === 'stab' ? ['triangle', 0.55, 1] : S.voice === 'chip' ? ['square', 0.9, 1] : ['triangle', 1.6, 1];
+      const o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter(); o.type = type; o.frequency.value = hz * mult; wowAmt.connect(o.detune); f.type = 'lowpass'; f.frequency.setValueAtTime(S.voice === 'chip' ? 2400 : 3000, t); f.frequency.exponentialRampToValueAtTime(700, t + fall);
+      const pk = S.voice === 'chip' ? peak * 0.42 : peak * 1.1; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(pk, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + fall);
+      o.connect(f); f.connect(g); g.connect(bus); o.start(t); o.stop(t + fall + 0.05); return;
+    }
+    // electric piano: a sine plus a quick bell-ish overtone, both with a soft attack and a slow fall
     for (const [mult, p, type] of [[1, peak, 'sine'], [2.005, peak * 0.22, 'sine'], [4.01, peak * 0.05, 'triangle']]) {
       const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = hz * mult; wowAmt.connect(o.detune);
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(p, t + 0.012); g.gain.exponentialRampToValueAtTime(p * 0.35, t + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -6957,13 +6980,27 @@ function startLofi(M, ac, bus) {
   const whoosh = t => { const o = ac.createBufferSource(); o.buffer = noiseBuf; o.loop = true; const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 5; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2600, t + 6); const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + 3); g.gain.linearRampToValueAtTime(0.0001, t + 7); o.connect(f); f.connect(g); g.connect(bus); o.start(t); o.stop(t + 7.1); };
   const bar = t => {
-    const prog = LOFI_PROGS[Math.floor(M.i / 8) % LOFI_PROGS.length], ch = prog[M.i % 4], j = () => (Math.random() - 0.5) * 0.018;   // a little human timing
+    const prog = PROGS[Math.floor(M.i / 8) % PROGS.length], ch = prog[M.i % 4], j = () => (Math.random() - 0.5) * 0.018;   // a little human timing
     ch.forEach((m, k) => keys(midiHz(m), t + k * 0.018 + j(), BAR * 1.05, 0.085));   // strummed chord
     bass(midiHz(ch[0] - 12), t, BEAT * 1.8); if (Math.random() < 0.7) bass(midiHz(ch[0] - 12 + (Math.random() < 0.5 ? 0 : 7)), t + BEAT * 2.5 + BEAT * (SWING - 0.5), BEAT * 1.2);
+    if (S.arp) for (let k = 0; k < 8; k++) if (Math.random() < 0.7) keys(midiHz(ch[k % ch.length] + 12), t + k * BEAT / 2 + (k % 2 ? (SWING - 0.5) * BEAT : 0) + j(), BEAT, 0.05);   // soft chip arpeggio
+    if (S.walk) for (let k = 1; k < 4; k++) if (Math.random() < 0.8) bass(midiHz(ch[0] - 12 + [0, 2, 4, 7, 5][Math.floor(Math.random() * 5)]), t + k * BEAT + j(), BEAT * 0.9);   // a loose walking bass line
+    if (S.sub) kick(t + BEAT * 2.75 + j(), 0.18);
     if (so().musicBeat !== false) {
-      kick(t + j(), 0.5); if (Math.random() < 0.6) kick(t + BEAT * 2.5 + j(), 0.34); kick(t + BEAT * 2 + j(), 0.28 * (Math.random() < 0.4 ? 1 : 0));
-      noise(t + BEAT + j(), 0.2, 'bandpass', 1800, 0.22); noise(t + BEAT * 3 + j(), 0.22, 'bandpass', 1800, 0.24);   // soft snare on 2 and 4
-      for (let e = 0; e < 8; e++) { const off = (e % 2 ? SWING : 0) + Math.floor(e / 2); noise(t + (off + (e % 2 ? 0 : 0)) * BEAT + j(), 0.05, 'highpass', 7000, 0.04 + Math.random() * 0.05); }
+      if (S.drums === 'boombap') {
+        kick(t + j(), 0.62); kick(t + BEAT * 1.75 + j(), 0.46); if (Math.random() < 0.7) kick(t + BEAT * 2.5 + j(), 0.4); if (Math.random() < 0.35) kick(t + BEAT * 3.5 + j(), 0.3);
+        noise(t + BEAT + j(), 0.16, 'bandpass', 1300, 0.34); noise(t + BEAT * 3 + j(), 0.18, 'bandpass', 1300, 0.38);   // snare on 2 and 4, cracked and a little lower
+        for (let e = 0; e < 8; e++) { const off = (e % 2 ? SWING : 0) + Math.floor(e / 2); noise(t + off * BEAT + j(), 0.04, 'highpass', 8000, e % 2 ? 0.035 : 0.075); }
+      } else if (S.drums === 'rim') {
+        noise(t + BEAT + j(), 0.05, 'bandpass', 3400, 0.12); noise(t + BEAT * 3 + j(), 0.05, 'bandpass', 3400, 0.12); if (Math.random() < 0.5) noise(t + BEAT * 2.5 + j(), 0.04, 'bandpass', 3400, 0.06);   // quiet rim ticks, no kick
+      } else if (S.drums === 'brush') {
+        kick(t + j(), 0.34); noise(t + BEAT + j(), 0.28, 'bandpass', 2400, 0.1); noise(t + BEAT * 3 + j(), 0.28, 'bandpass', 2400, 0.1);
+        for (let e = 0; e < 8; e++) { const off = (e % 2 ? SWING : 0) + Math.floor(e / 2); if (Math.random() < 0.85) noise(t + off * BEAT + j(), 0.09, 'highpass', 5000, e % 2 ? 0.05 : 0.025); }
+      } else {
+        kick(t + j(), 0.5); if (Math.random() < 0.6) kick(t + BEAT * 2.5 + j(), 0.34); kick(t + BEAT * 2 + j(), 0.28 * (Math.random() < 0.4 ? 1 : 0));
+        noise(t + BEAT + j(), 0.2, 'bandpass', 1800, 0.22); noise(t + BEAT * 3 + j(), 0.22, 'bandpass', 1800, 0.24);   // soft snare on 2 and 4
+        for (let e = 0; e < 8; e++) { const off = (e % 2 ? SWING : 0) + Math.floor(e / 2); noise(t + off * BEAT + j(), 0.05, 'highpass', 7000, 0.04 + Math.random() * 0.05); }
+      }
     }
     for (let k = 0; k < 4; k++) if (Math.random() < 0.28) spark(midiHz(LOFI_SPARK[Math.floor(Math.random() * LOFI_SPARK.length)]), t + BEAT * (k + Math.random()));
     for (let k = 0; k < 6; k++) if (Math.random() < 0.7) noise(t + Math.random() * BAR, 0.012, 'highpass', 1500, 0.07 + Math.random() * 0.08);   // vinyl pops
@@ -6973,12 +7010,15 @@ function startLofi(M, ac, bus) {
   M.timer = setInterval(() => { try { while (M.next < ac.currentTime + 2.5) { const t = M.next; M.next += BAR; try { bar(t); } catch (e) { console.warn('lofi bar', e); } } } catch (e) {} }, 400);
   // constant faint vinyl hiss
   const hiss = ac.createBufferSource(); hiss.buffer = noiseBuf; hiss.loop = true; const hf = ac.createBiquadFilter(); hf.type = 'highpass'; hf.frequency.value = 5000; const hg = ac.createGain(); hg.gain.value = 0.012; hiss.connect(hf); hf.connect(hg); hg.connect(bus); hiss.start(); M.extra.push(hiss);
+  if (S.rain) {   // steady rain: filtered noise with a slow swell, plus the odd drop
+    const rn = ac.createBufferSource(); rn.buffer = noiseBuf; rn.loop = true; const rf = ac.createBiquadFilter(); rf.type = 'bandpass'; rf.frequency.value = 2400; rf.Q.value = 0.5; const rg = ac.createGain(); rg.gain.value = 0.05;
+    const sw = ac.createOscillator(), sg = ac.createGain(); sw.frequency.value = 0.08; sg.gain.value = 0.018; sw.connect(sg); sg.connect(rg.gain); sw.start(); rn.connect(rf); rf.connect(rg); rg.connect(bus); rn.start(); M.extra.push(rn, sw); }
 }
 function stopMusic() {
   if (!music) return; const M = music; music = null; clearInterval(M.timer); setTimeout(() => { try { (M.extra || []).forEach(x => x.stop()); } catch (e) {} }, 1600);
   try { M.bus.gain.cancelScheduledValues(M.ac.currentTime); M.bus.gain.setValueAtTime(M.bus.gain.value, M.ac.currentTime); M.bus.gain.linearRampToValueAtTime(0.0001, M.ac.currentTime + 1.2); setTimeout(() => { try { M.bus.disconnect(); } catch (e) {} }, 1500); } catch (e) {}
 }
-function musicSettingsChanged() { if (music && music.style !== (settings.sound.musicStyle === 'lofi' ? 'lofi' : 'ambient')) stopMusic(); if (settings.sound.on && settings.sound.music) { if (music) { try { music.bus.gain.setTargetAtTime(musicVolume() || 0.0001, music.ac.currentTime, 0.2); } catch (e) {} } else startMusic(); } else stopMusic(); }
+function musicSettingsChanged() { if (music && music.style !== musicStyleId()) stopMusic(); if (settings.sound.on && settings.sound.music) { if (music) { try { music.bus.gain.setTargetAtTime(musicVolume() || 0.0001, music.ac.currentTime, 0.2); } catch (e) {} } else startMusic(); } else stopMusic(); }
 // browsers only allow audio after a click or key press, so the music begins on the first one
 let parRaf = 0;
 document.addEventListener('mousemove', e => {
@@ -8059,7 +8099,7 @@ function drawBoardStrip() {
     })))));
   // v0.90.2 floating mana is shown once (top bar), not twice; the strip carries the Next phase / Next turn buttons instead.
   const info = h('div', { class: 'bs-info' },
-    state.stack.length ? h('span', { class: 'bs-stack', text: `stack: ${state.stack.length}` }) : null);
+    state.stack.length ? h('span', { class: 'bs-stack', text: `stack ${state.stack.length}` }) : null);
   const acts = bsActionsEl(); el.replaceChildren(track, info, acts);
   scheduleLayout();
 }
@@ -8069,6 +8109,9 @@ function placeBoardStrip() {
   const zs = [...el.children]; const setZ = v => zs.forEach(k => { k.style.zoom = v; }); el.classList.remove('tight', 'tighter'); setZ('');
   const over = () => el.scrollWidth > el.clientWidth + 1;
   if (over()) { el.classList.add('tight'); if (over()) { el.classList.add('tighter'); let z = 0.95; while (over() && z > 0.6) { setZ(z.toFixed(2)); z -= 0.05; } } }
+  // v0.96.18 the bar fills like a loading bar up to the end of the step you are in
+  const now = el.querySelector('.bs-step.now'), r = el.getBoundingClientRect();
+  if (now && r.width) { const nr = now.getBoundingClientRect(); el.style.setProperty('--fill', Math.max(0, Math.round(nr.right - r.left + 5)) + 'px'); } else el.style.setProperty('--fill', '0px');
 }
 window.addEventListener('resize', () => { try { placeBoardStrip(); } catch (e) { /* ignore */ } });
 
@@ -8166,6 +8209,25 @@ function applyFrame() {
     b.style.setProperty('--fa', fc.a); b.style.setProperty('--fb', fc.b); b.style.setProperty('--fc', fc.c); b.style.setProperty('--fglow', fc.glow);
     b.style.setProperty('--fi', String(settings.frameGlow));
   } else for (const k of ['--fa', '--fb', '--fc', '--fglow', '--fi']) b.style.removeProperty(k);
+}
+// v0.96.18 One-click sets: each interface theme comes with a matching card sleeve, playmat, board frame and song. Applying one changes all of them together.
+const UI_SETS = [
+  { id: 'default', label: 'Midnight (default)', ui: 'default', sleeve: 'star', mat: 'nebula', frame: 'none', song: 'lofi', note: 'Night sky sleeve, nebula mat, cosmic low-fi.' },
+  { id: 'obsidian', label: 'Obsidian & gold', ui: 'obsidian', sleeve: 'deco', mat: 'deco', frame: 'gold', song: 'boombap', note: 'Gilded deco sleeve and mat, royal gold frame, dusty boom-bap.' },
+  { id: 'abyss', label: 'Abyss blue', ui: 'abyss', sleeve: 'waves', mat: 'ocean', frame: 'ice', song: 'rain', note: 'Tides sleeve, ocean mat, ice frame, rainy-window music.' },
+  { id: 'forest', label: 'Forest', ui: 'forest', sleeve: 'forest', mat: 'grove', frame: 'grass', song: 'golden', note: 'Forest sleeve, moonlit grove mat, grass frame, golden-hour music.' },
+  { id: 'neon', label: 'Neon', ui: 'neon', sleeve: 'wheel', mat: 'storm', frame: 'storm', song: 'arcade', note: 'Mana wheel sleeve, storm mat, storm frame, arcade chill.' },
+  { id: 'parchment', label: 'Parchment', ui: 'parchment', sleeve: 'worn', mat: 'map', frame: 'none', song: 'jazzhop', note: 'Worn card back, old map mat, midnight jazz-hop.' },
+  { id: 'light', label: 'Light', ui: 'light', sleeve: 'check', mat: 'kitchen', frame: 'none', song: 'golden', note: 'Checker sleeve, kitchen-table mat, golden-hour music.' },
+  { id: 'cosmos', label: 'Pixel cosmos (lo-fi)', ui: 'cosmos', sleeve: 'pixcosmos', mat: 'pixcosmos', frame: 'none', song: 'lofi', note: 'Pixel sleeve and mat, cosmic low-fi.' }
+];
+function applyUiSet(id) {
+  const st = UI_SETS.find(x => x.id === id); if (!st) return;
+  settings.uiSet = st.id; settings.uiTheme = st.ui; settings.sleevePreset = st.sleeve; settings.matPreset = st.mat; settings.custom = false; settings.frame = st.frame;
+  if (settings.setMusic !== false) { settings.sound.musicStyle = st.song; settings.sound.music = true; settings.sound.on = true; }
+  saveSettings(); try { applySettings(); } catch (e) {} try { applyUiTheme(); } catch (e) {} try { applySleeve(); } catch (e) {}
+  if (settings.setMusic !== false) { try { musicSettingsChanged(); } catch (e) {} }
+  toast(st.label, 'Theme, sleeve, playmat' + (st.frame !== 'none' ? ', frame' : '') + (settings.setMusic !== false ? ' and music' : '') + ' set.');
 }
 function applySettings() {
   applyFrame(); applyCursor(); applyUiTheme();
@@ -8354,11 +8416,12 @@ function openSettings() {
         mk('Spell spotlight size','spotSize',0.6,1.5,0.1,v=>Math.round(v*100)+'%','Size of the card shown when a spell is cast or resolves')); })()
   ); }; drawAnim();
   const themeBox=h('div'); themeBox.append((()=>{ const sel=h('select'); for(const [v,l] of UI_THEMES) sel.append(h('option',{value:v,text:l})); sel.value=settings.uiTheme||'default'; sel.addEventListener('change',()=>{settings.uiTheme=sel.value;saveSettings();}); return h('div',{class:'setrow'},h('label',{text:'Interface theme'}),sel,h('span',{class:'muted small',text:'Colours of the panels and buttons'})); })());
-  themeBox.append((()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicStyle==='lofi'; const go=h('button',{text:'Apply Pixel cosmos set',onclick:()=>{ settings.uiTheme='cosmos'; settings.sleevePreset='pixcosmos'; settings.matPreset='pixcosmos'; settings.custom=false;
-      saveSettings(); try{applySettings();}catch(e){} try{applyUiTheme();}catch(e){} try{applySleeve();}catch(e){} toast('Pixel cosmos','Theme, sleeve and playmat set.'); }});
-    // the music switch is the same setting as Settings > Sound > Music style, so it keeps its state
-    cb.addEventListener('change',()=>{ settings.sound.musicStyle=cb.checked?'lofi':'ambient'; if(cb.checked){settings.sound.music=true;settings.sound.on=true;} saveSettings(); try{musicSettingsChanged();}catch(e){} });
-    return h('div',{class:'setrow'},h('label',{text:'One-click set'}),go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},cb,'Cosmic low-fi music')); })());
+  themeBox.append((()=>{ const sel=h('select'); for(const st of UI_SETS) sel.append(h('option',{value:st.id,text:st.label})); sel.value=settings.uiSet||(UI_SETS.find(x=>x.ui===settings.uiTheme)||UI_SETS[0]).id;
+    const mcb=h('input',{type:'checkbox'}); mcb.checked=settings.setMusic!==false; mcb.addEventListener('change',()=>{settings.setMusic=mcb.checked;saveSettings();});
+    const go=h('button',{text:'Apply set',onclick:()=>applyUiSet(sel.value)});
+    sel.addEventListener('change',()=>{const st=UI_SETS.find(x=>x.id===sel.value); note.textContent=st?st.note:'';});
+    const note=h('span',{class:'muted small',text:(UI_SETS.find(x=>x.id===sel.value)||{}).note||''});
+    return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
   const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox);
   { const box = h('div'), draw = () => {
@@ -8402,8 +8465,8 @@ function openSettings() {
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.vol; r.addEventListener('input',()=>{settings.sound.vol=+r.value;saveSettings();}); r.addEventListener('change',()=>sfx('draw')); return h('div',{class:'setrow'},h('label',{text:'Volume'}),r); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.music!==false; cb.addEventListener('change',()=>{settings.sound.music=cb.checked;saveSettings();musicSettingsChanged();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Background music'}),h('span',{class:'muted small',text:'A calm, never-ending ambient loop generated in the app. It starts after your first click.'}))); })(),
-    (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),h('option',{value:'lofi',text:'Cosmic low-fi (beat, electric piano, vinyl)'})); sel.value=settings.sound.musicStyle==='lofi'?'lofi':'ambient'; sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=sel.value!=='lofi';}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
-    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:settings.sound.musicStyle!=='lofi'},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Soft kick, snare and swung hats in the Cosmic low-fi style. Turn off for just keys, bass and crackle.'}))); })(),
+    (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),...Object.entries(LOFI_SONGS).map(([k,v])=>h('option',{value:k,text:v.label}))); sel.value=musicStyleId(); sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=!LOFI_SONGS[sel.value];}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
+    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:!LOFI_SONGS[settings.sound.musicStyle]},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Kick, snare and hats in the low-fi and hip-hop songs. Turn off for just keys, bass and crackle.'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.musicVol; r.addEventListener('input',()=>{settings.sound.musicVol=+r.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music volume'}),r); })(),
     ...SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })
   ); }; drawSound();
@@ -9291,7 +9354,7 @@ const RULES_TABLE = [
   ['702.65', 'Aura Swap', 'ability', 'none'],
   ['702.66', 'Delve', 'ability', 'named'],
   ['702.67', 'Fortify', 'ability', 'none'],
-  ['702.68', 'Frenzy', 'ability', 'none'],
+  ['702.68', 'Frenzy', 'ability', 'tested'],
   ['702.69', 'Gravestorm', 'ability', 'none'],
   ['702.70', 'Poisonous', 'ability', 'none'],
   ['702.71', 'Transfigure', 'ability', 'none'],
@@ -9320,7 +9383,7 @@ const RULES_TABLE = [
   ['702.94', 'Miracle', 'ability', 'tested'],
   ['702.95', 'Soulbond', 'ability', 'none'],
   ['702.96', 'Overload', 'ability', 'tested'],
-  ['702.97', 'Scavenge', 'ability', 'none'],
+  ['702.97', 'Scavenge', 'ability', 'tested'],
   ['702.98', 'Unleash', 'ability', 'tested'],
   ['702.99', 'Cipher', 'ability', 'none'],
   ['702.100', 'Evolve', 'ability', 'tested'],
@@ -9452,7 +9515,7 @@ function kwTriggersFor(info) {
   const items = kwItems(info.tx);
   for (const k of KW_TRIGGERS) for (const it of items) {
     const m = it.match(new RegExp('^' + k.kw + '(?:(?:\\s+|\\s*[\\u2014-]\\s*)(.+))?$', 'i')); if (!m) continue;   // v0.96.7 the argument can be a number, a mana cost or a whole cost ("Cumulative upkeep\u2014Pay 1 life")
-    const n = m[1] && /^\d+$/.test(m[1]) ? +m[1] : (k.kw === 'modular' || k.kw === 'mobilize' || k.kw === 'devour' || k.kw === 'fabricate' || k.kw === 'renown' || k.kw === 'bloodthirst' || k.kw === 'annihilator' ? 1 : 0);
+    const n = m[1] && /^\d+$/.test(m[1]) ? +m[1] : (k.kw === 'modular' || k.kw === 'mobilize' || k.kw === 'frenzy' || k.kw === 'devour' || k.kw === 'fabricate' || k.kw === 'renown' || k.kw === 'bloodthirst' || k.kw === 'annihilator' ? 1 : 0);
     const arg = m[1] || ''; out.push({ arg, ev: k.ev, cond: k.cond, effect: k.text.replace(/\bN\b/g, String(n)), line: `${it} (keyword, CR ${k.cr}): ${k.text.replace(/\bN\b/g, String(n))}`, filter: k.filter || '', optional: false, special: 'kw', kw: k.kw, n, arg, test: k.test || null });
     break;
   }
@@ -9652,9 +9715,10 @@ function routeLimits(c, routes) {
 // CR 702.128a Embalm: "[Cost], Exile this card from your graveyard: Create a token that's a copy of this card, except it's white, it has no mana cost, and it's a Zombie in addition to its other types. Activate only as a sorcery."
 // CR 702.129a Eternalize: the same, except the token is black and 4/4.
 // CR 702.84a  Unearth: "[Cost]: Return this card from your graveyard to the battlefield. It gains haste. Exile it at the beginning of the next end step. If it would leave the battlefield, exile it instead of putting it anywhere else. Activate only as a sorcery."
+// CR 702.97a  Scavenge: "[Cost], Exile this card from your graveyard: Put a number of +1/+1 counters equal to this card's power on target creature. Activate only as a sorcery."  (The power is the one it had in the graveyard: its printed power.)
 // CR 702.107a Outlast: "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."  (read in activatedAbilitiesFor)
 // CR 702.88a  Rebound: "If this spell was cast from your hand, instead of putting it into your graveyard as it resolves, exile it and, at the beginning of your next upkeep, you may cast this card from exile without paying its mana cost."
-const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
+const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth|Scavenge)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
 function gyAbilitiesFor(c) {
   if (!c || c.token || !state) return [];
   const info = cardInfo(c.name); if (!info) return []; const out = [];
@@ -9685,6 +9749,12 @@ function useGyAbility(id, kind) {
       b.card.exileInstead = true; addKwFx(id, 'haste', { until: 'manual' });
       addFx({ kind: 'delayed', when: 'end', action: 'exile', targetId: id, targetName: b.card.name, text: `Exile ${b.card.name} (unearth).`, srcName: b.card.name });
       log(`${b.card.name}: unearthed. It has haste, is exiled at the beginning of the next end step, and is exiled instead if it would leave the battlefield`);
+    } else if (kind === 'scavenge') {
+      const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling it is part of the cost
+      const n = Math.max(0, ptCalc(c0).p || 0), crs = state.battlefield.filter(x => permTypeInfo(x).types.has('creature'));
+      log(`${c0.name}: scavenge paid; choose a creature to get ${n} +1/+1 counter${n === 1 ? '' : 's'}`);
+      if (!crs.length) log('Scavenge: there is no creature to target'); else if (crs.length === 1) addCounter(crs[0].id, n, 'plus');
+      else openPickCards({ title: `Scavenge: put ${n} +1/+1 counter${n === 1 ? '' : 's'} on target creature`, cards: crs, max: 1, min: 1, note: `Counters equal to ${c0.name}'s power (${n}).`, done: picked => { if (picked[0]) addCounter(picked[0].id, n, 'plus'); } });
     } else {
       const info = cardInfo(g.name); const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling this card is part of the cost
       makeTokensFromDef(copyTokenDef(info, kind), 1, `${c0.name} (${kind})`);
@@ -9930,6 +10000,10 @@ function kwCantBlock(c) {
   const plus = c.counters && typeof c.counters === 'object' ? (c.counters.plus || 0) - (c.counters.minus || 0) : 0;
   return has('unleash') && plus > 0;
 }
+
+// CR 702.68a Frenzy N: "Whenever this creature attacks and isn't blocked, it gets +N/+0 until end of turn." A goldfish has no blockers, so every attacker is unblocked.
+KW_TRIGGERS.push({ cr: '702.68', kw: 'frenzy', ev: 'attack-self', cond: 'Frenzy: whenever this creature attacks and isn\'t blocked', text: 'Whenever this creature attacks and isn\'t blocked, it gets +N/+0 until end of turn.' });
+KW_EFFECTS['frenzy'] = obj => [{ full: true, label: `${obj.sourceName} is unblocked: +${obj.n || 1}/+0 until end of turn (frenzy)`, fn: () => addTempPT(obj.sourceId, obj.n || 1, 0) }];
 init();
 
 })();
