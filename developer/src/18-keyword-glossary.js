@@ -262,13 +262,13 @@ function fitBattlefieldCards() {
     const zone = row.parentElement;
     const count = row.children.length;
     if (!count || !zone) {
-      row.style.setProperty('--zone-scale', '1');
+      row.style.setProperty('--zone-scale', '1'); row.style.maxWidth = '';
       continue;
     }
 
     const availW = Math.max(1, zone.clientWidth - 20);
-    const availH = Math.max(1, zone.clientHeight - 42);
-    let scale = 1;
+    const availH = Math.max(1, zone.clientHeight - 48);   // v0.96.20 a few px of margin so a borderline fit cannot flip between two layouts
+    let scale = 1, usedCols = 0;
     if (spec.id === 'row-creatures' && zone.classList.contains('combat-on')) {   // combat (v0.69.3): a single row, non-attackers overlapped to the side
       const na = row.querySelectorAll('.card.attacking').length, no = row.querySelectorAll('.card:not(.attacking)').length;
       const need = na * (baseW + gap) + no * (baseW * 0.54 + gap) + 24;
@@ -281,7 +281,7 @@ function fitBattlefieldCards() {
       // become progressively more compact.
       const idealCols = Math.max(1, Math.ceil(Math.sqrt((count * availW * baseH) / Math.max(availH * baseW, 1))));
       const cols = Math.min(count, idealCols);
-      const rows = Math.ceil(count / cols);
+      const rows = Math.ceil(count / cols); usedCols = cols;
       scale = Math.min(
         1,
         (availW - Math.max(0, cols - 1) * gap) / (cols * baseW),
@@ -295,6 +295,9 @@ function fitBattlefieldCards() {
 
     scale = Math.max(minScale, scale);
     row.style.setProperty('--zone-scale', String(scale));
+    // v0.96.20 make the browser wrap into exactly the columns this calculation assumed (a razor-thin fit used to wrap or not from frame to frame: the flicker with 5 permanents)
+    if (usedCols) usedCols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * scale + gap) + 1e-6)));   // as many columns as truly fit at this size
+    if (spec.id !== 'row-creatures') row.style.maxWidth = usedCols ? Math.ceil(usedCols * baseW * scale + (usedCols - 1) * gap + 3) + 'px' : '';
   }
 }
 
