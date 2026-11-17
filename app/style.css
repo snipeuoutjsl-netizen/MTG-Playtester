@@ -1657,3 +1657,7 @@ body.responding #boardstrip .bs-step { opacity: .55; }
 #mpPanel .mpmsg.me { opacity: .7; }
 body.mp-open #stage { padding-top: 0; }
 .mpcol { display: flex; flex-direction: column; gap: 6px; }
+
+/* v0.97.4 the "cards float" mode replaced the green glow animation: run both together */
+body.bffloat #mat .cardrow .card.act-ready { animation: bfFloat 5.2s ease-in-out infinite, actGlow 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { body.bffloat #mat .cardrow .card.act-ready { animation: bfFloat 5.2s ease-in-out infinite; box-shadow: 0 0 0 1px rgba(70,220,120,.6), 0 0 12px 3px rgba(70,220,120,.4), 0 2px 8px rgba(0,0,0,.45); } }
