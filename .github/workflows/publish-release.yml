@@ -1,0 +1,43 @@
+# Publishes the update release by itself, so no file can be forgotten.
+# Use it: push a tag named v<version> (for example v0.96.13), or open Actions > "Publish release" > Run workflow and type the tag.
+# It checks that the game files are up to date, builds the six update files with developer/make-release.js and creates a published (not draft) release.
+name: Publish release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish, for example v0.96.13 (created from the selected branch if it does not exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check app.js is built from src
+        run: node developer/build-src.js --check
+      - name: Build the six update files
+        run: node developer/make-release.js
+      - name: Check the tag matches the version
+        run: |
+          VER=$(node -p "require('./app/package.json').version")
+          [ "v$VER" = "$TAG" ] || { echo "Tag $TAG does not match app version v$VER. Change the tag or the version."; exit 1; }
+          for f in index.html app.js style.css package.json latest.json update.json; do [ -s "release-$VER/$f" ] || { echo "missing $f"; exit 1; }; done
+          echo "VER=$VER" >> "$GITHUB_ENV"
+      - name: Create the release
+        run: |
+          node -e "const m=require('./release-$VER/latest.json');console.log('**'+m.title+'**\n\n'+m.notes.map(n=>'- '+n).join('\n'))" > notes.md
+          gh release create "$TAG" release-$VER/index.html release-$VER/app.js release-$VER/style.css release-$VER/package.json release-$VER/latest.json release-$VER/update.json \
+            --title "v$VER" --notes-file notes.md --target "${{ github.sha }}" --latest

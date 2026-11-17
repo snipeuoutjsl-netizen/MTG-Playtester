@@ -83,7 +83,7 @@ Please include:
 - Run the rules tests: `cd tests && python3 inject.py && node cr-rules.js`.
 - The game is plain HTML, JS and CSS with a thin Electron shell (`main.js`, `preload.js`). The game files are in `app/`. The code lives in `developer/src/` (one file per area) and is joined into `app/app.js` by `node developer/build-src.js`. Edit `src/`, then build; commit both.
 - `python3 tests/rules-audit.py MagicCompRules.txt --table` regenerates the Comprehensive Rules keyword table (`src/40-rules-table.js`).
-- **Publishing a release:** run `node developer/make-release.js`, then upload ALL SIX files it lists (index.html, app.js, style.css, package.json, latest.json, update.json) to the newest GitHub release. The in-app updater downloads them from `releases/latest/download/`, so a release that is a draft, a pre-release, or missing a file cannot be installed from inside the app.
+- **Publishing a release:** push a tag named `v<version>` (for example `git tag v0.96.13 && git push origin v0.96.13`), or run *Actions > Publish release* and type the tag. The workflow `publish-release.yml` builds the six update files (index.html, app.js, style.css, package.json, latest.json, update.json) and publishes the release. By hand, `node developer/make-release.js` makes the same six files.
 
 ## Legal
 
