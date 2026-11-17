@@ -1549,3 +1549,8 @@ body.handfloat #row-hand .card:hover, body.handfloat #row-hand .card.dragging, b
 body.handfloat #row-hand .card.cast-ready { animation: handFloat 4.6s ease-in-out infinite, readyPulse 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { body.handfloat #row-hand .card.cast-ready { animation: none; } }
 body.responding #row-hand .card.cast-ready { animation: respondGlow 1.4s ease-in-out infinite; }
+
+/* v0.96.14 rules-check panel (no card behind it): same look as the other pop-ups */
+.ss-rulebox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.5); text-align: left; overflow: hidden; margin-bottom: 8px; }
+.ss-rulebox .ss-rh { padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 700; }
+.ss-rulebox .ss-rt { padding: 12px 14px; font-size: 13px; color: var(--muted); }

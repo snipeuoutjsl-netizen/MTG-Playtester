@@ -562,7 +562,6 @@ function renderOverlay() {
         h('div', { class: 'pbtns' },
           h('button', { class: 'primary', text: 'Keep', onclick: keepHand }),
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
-          h('button', { text: 'Draw 7', onclick: () => pregameDraw(7) }),
           h('button', {
             text: state.hand.some(mulliganHandSwap) ? `Use Serum Powder — exile hand, draw ${state.hand.length}` : 'Serum Powder unavailable',
             disabled: !state.hand.some(mulliganHandSwap),

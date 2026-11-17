@@ -84,7 +84,9 @@ function drawStackStage() {
   }
   if (resPick) {
     const n = state.discarding, verb = handPick ? handPick.verb : 'discard', cnt = bottomSel.size, r = pickSrc;
-    el.replaceChildren(h('div', { class: 'ss-row' }, shown.map(face)),
+    // v0.96.14 a rules check with no card behind it (the hand-size discard) is shown as a normal pop-up panel, not as an empty card
+    const ruleBox = r && r.pseudo ? h('div', { class: 'ss-rulebox' }, h('div', { class: 'ss-rh', text: !handPick ? 'Rules check: maximum hand size' : 'Rules check: ' + (handPick.title || r.name) }), h('div', { class: 'ss-rt', text: r.text || '' })) : null;
+    el.replaceChildren(ruleBox || h('div', { class: 'ss-row' }, shown.map(face)),
       h('div', { class: 'ss-pick' }, h('b', { text: !handPick ? 'Cleanup: hand size' : pickSrc.kindTxt ? `${pickSrc.kindTxt}: ${pickSrc.name}` : `${r.trigger ? 'Triggered ability' : 'Resolving'}: ${handPick.title || r.sourceName || pickSrc.name}` }),
         h('div', { text: `Select ${n} card${n === 1 ? '' : 's'} in your hand to ${verb} (${cnt}/${n})` }), handPick && handPick.note ? h('div', { class: 'muted small', text: handPick.note }) : null, state.stack.length ? h('div', { class: 'muted small', text: `${state.stack.length} object${state.stack.length === 1 ? '' : 's'} on the stack wait${state.stack.length === 1 ? 's' : ''} behind this.` }) : null),
       resLinesEl(),
