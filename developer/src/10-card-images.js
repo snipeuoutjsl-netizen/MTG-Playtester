@@ -191,5 +191,6 @@ async function prepareImages() {
   if (n) render();
   setImgStatus();
   maybeAutoDownload();
+  try { const defs = deckTokenDefs(); if (defs.length) { if (await loadTokenImgs(defs.map(d => d.name))) render(); if (autoImages) downloadTokenArt(defs); } } catch (e) { /* tokens are optional */ }
 }
 
