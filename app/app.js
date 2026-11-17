@@ -4655,9 +4655,11 @@ function spendOnlyOk(only, ctx) {
   if (/\bcreature spells?\b/.test(lo)) return /\bCreature\b/.test(t);
   return true;
 }
-// Card names compare without punctuation: the data calls it "Urza's Power Plant" while the other Tron lands' Oracle text says "Urza's Power-Plant".
-const nameKey = n => norm(String(n || '').split(' // ')[0]).replace(/[^a-z0-9]/g, '');
-function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => nameKey(x.name) === nameKey(n)))) return ab.alt.fixed; return ab.fixed; }
+// "If you control an Urza's Mine and an Urza's Power-Plant": these are land TYPES (CR 205.3i), not card names, so the condition is checked against the type line of each permanent
+// (supertypes, card types and subtypes, punctuation ignored) \u2014 never against what the card is called.
+const typeKey = t => String(t || '').toLowerCase().replace(/[\u2019']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function hasTypePhrase(c, phrase) { const line = typeKey(frontType(c) || ''), want = typeKey(phrase); return !!want && (' ' + line + ' ').includes(' ' + want + ' '); }
+function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => hasTypePhrase(x, n)))) return ab.alt.fixed; return ab.fixed; }
 // The most productive fixed multi-mana ability of a land that may be used for ctx, or null (a normal one-mana land).
 function landMulti(c, anyCtx) {
   let best = null;
@@ -6128,8 +6130,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.28';
+const APP_VERSION = '0.96.29';
 const CHANGELOG = [
+  { v: '0.96.29', title: 'Tron checks land types, not names', notes: ['"If you control an Urza\'s Mine and an Urza\'s Power-Plant" is now checked the way the rules define it (CR 205.3i): Urza\'s Mine, Urza\'s Power-Plant and Urza\'s Tower are land types, so the app looks at each permanent\'s type line and never at what the card is called. Any land with those types counts.'] },
   { v: '0.96.28', title: 'Lands stay on one row when they fit', notes: ['A row of lands (or artifacts) no longer wraps to a second row while there is room: the zone now measures the real width of its cards (a tapped land is turned sideways and a stack of copies is wider) instead of assuming every card is the same width. Cards still shrink only when they truly cannot fit.'] },
   { v: '0.96.27', title: 'Tron lands fixed', notes: ['Urza\'s Mine, Power Plant and Tower now tap for their full amounts in any order. The cause: the card is named "Urza\'s Power Plant" but the Oracle text of the Mine and Tower says "Urza\'s Power-Plant", so they never found it. Names are now compared without punctuation.'] },
   { v: '0.96.26', title: 'Opening-hand reveals, global rules from your deck report', notes: ['Devourer of Destiny and every card worded "You may reveal this card from your opening hand. If you do, at the beginning of your first upkeep, ...": the pre-game screen now has a Reveal button, and the effect goes on the stack at your first upkeep (Devourer: look at the top four, keep one on top, exile the rest).','Ensnaring Bridge: creatures with power greater than the number of cards in your hand can\'t attack (the attack list updates live as your hand changes).','Torpor Orb: creatures entering no longer cause abilities to trigger. Grafdigger\'s Cage: creature cards can\'t enter the battlefield from a graveyard or library, and spells can\'t be cast from graveyards. Omnath: unspent mana becomes colorless instead of emptying. Damping Sphere: each spell costs {1} more for each other spell cast this turn. "Lands you control enter untapped" is applied.','Vesuva and similar lands are recognised in the current Oracle wording. The card-reading report counts all of these as understood.'] },

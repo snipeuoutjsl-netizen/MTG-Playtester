@@ -503,6 +503,10 @@ const { setup } = require('./common.js');
     const ids = await bfSet(["Urza's Mine", "Urza's Power Plant", "Urza's Tower"]);
     const r = await ev(() => __d.state.battlefield.filter(c => /^Urza/.test(c.name)).map(c => { const lm = __d.landMulti(c); return c.name.slice(8) + '=' + (lm ? lm.fixed.length : 1); }).join(' '));
     return { ok: r === 'ine=2 ower Plant=2 ower=3', why: r }; });
+  await T('205.3i', 'the Tron condition "If you control an Urza\'s Mine and an Urza\'s Power-Plant" is checked against land TYPES, not card names: a land of the type Urza\'s Mine with any name counts', async () => { await reset();
+    await bfSet(['Mock Mine Lookalike', "Urza's Power Plant", "Urza's Tower"]);
+    const r = await ev(() => __d.state.battlefield.filter(c => /^Urza/.test(c.name)).map(c => { const lm = __d.landMulti(c); return lm ? lm.fixed.length : 1; }).join(','));
+    return { ok: r === '2,3', why: r }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });

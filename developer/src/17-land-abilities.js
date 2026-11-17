@@ -42,9 +42,11 @@ function spendOnlyOk(only, ctx) {
   if (/\bcreature spells?\b/.test(lo)) return /\bCreature\b/.test(t);
   return true;
 }
-// Card names compare without punctuation: the data calls it "Urza's Power Plant" while the other Tron lands' Oracle text says "Urza's Power-Plant".
-const nameKey = n => norm(String(n || '').split(' // ')[0]).replace(/[^a-z0-9]/g, '');
-function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => nameKey(x.name) === nameKey(n)))) return ab.alt.fixed; return ab.fixed; }
+// "If you control an Urza's Mine and an Urza's Power-Plant": these are land TYPES (CR 205.3i), not card names, so the condition is checked against the type line of each permanent
+// (supertypes, card types and subtypes, punctuation ignored) \u2014 never against what the card is called.
+const typeKey = t => String(t || '').toLowerCase().replace(/[\u2019']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function hasTypePhrase(c, phrase) { const line = typeKey(frontType(c) || ''), want = typeKey(phrase); return !!want && (' ' + line + ' ').includes(' ' + want + ' '); }
+function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => hasTypePhrase(x, n)))) return ab.alt.fixed; return ab.fixed; }
 // The most productive fixed multi-mana ability of a land that may be used for ctx, or null (a normal one-mana land).
 function landMulti(c, anyCtx) {
   let best = null;
