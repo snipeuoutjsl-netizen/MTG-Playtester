@@ -241,6 +241,7 @@ function reserveHandSpace() {
   const card = hc.querySelector('.card'), h = card ? card.offsetHeight : 0;
   const cover = h ? Math.round(h * 0.82) + 8 : 0;
   stage.style.setProperty('--handcover', cover + 'px');
+  document.documentElement.style.setProperty('--handcover-root', (h ? h + 28 : 0) + 'px');   // v0.96.14 pop-ups centre in the space ABOVE the hand
 }
 function fitBattlefieldCards() {
   try { reserveHandSpace(); } catch (e) { /* layout only */ }
