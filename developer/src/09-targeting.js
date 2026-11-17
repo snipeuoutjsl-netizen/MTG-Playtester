@@ -203,7 +203,7 @@ function targetedOptions(tx, obj) {
     else if (/\buntap\b/i.test(s)) each((t, c) => { if (c && c.tapped) untapByEffect(c.id); }, t => `Untap ${t.name}`);
     else if (/\btap\b/i.test(s) && /\btap target/i.test(s)) each((t, c) => { if (c && !c.tapped) toggleTap(c.id); }, t => `Tap ${t.name}`);
     else if ((mm = s.match(/put (a|an|one|two|three|four|five|\d+) \+1\/\+1 counters? on/i))) { const n = wnum(mm[1]); each((t, c) => { if (c) addCounter(c.id, n, 'plus'); }, t => `Put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${t.name}`); }
-    else if (/\bcounter\b/i.test(s) && /\bcounter target\b/i.test(s)) each((t) => { counterStackObject(t.id, src); }, t => `Counter ${t.name}`);
+    else if (/\bcounter\b/i.test(s) && /\bcounter target\b/i.test(s)) each((t) => { const sp = state.stack.find(x => x.id === t.id), mv = sp ? spellMV(sp) : 0; counterStackObject(t.id, src); delayedManaFromText(tx, mv, src); }, t => `Counter ${t.name}`);
     else if ((mm = s.match(/\bgains? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(n, true) : changeOppLife(n); }, t => `${t.name} ${t.id === 'you' ? 'gain' : 'gains'} ${n} life`); }
     else if ((mm = s.match(/\bloses? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); }, t => `${t.name} ${t.id === 'you' ? 'lose' : 'loses'} ${n} life`); }
     else if (parseDrawDiscard(s)) { const dd = parseDrawDiscard(s); each((t) => { if (t.id === 'you') runDrawDiscard(dd, src); else { log(`${src}: your opponent: ${ddLabel(dd).toLowerCase()} (not tracked here)`); render(); } }, t => `${t.name}: ${ddLabel(dd).toLowerCase()}`); }

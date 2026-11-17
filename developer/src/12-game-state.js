@@ -293,6 +293,7 @@ function enterStep(i, quiet) {
   } else if (id === 'upkeep') {
     if (state.gs && state.gs.init) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'At the beginning of your upkeep, venture into the Undercity.', effect: 'Venture into the Undercity.', special: null, optional: false, why: 'You have the initiative (rule 725.2). The app does not track the dungeon; move your marker by hand.' });
   } else if (id === 'main1') {
+    runDelayed('main1');
     for (const c of state.battlefield.slice()) if (isSaga(c)) sagaAdvance(c, false);
   } else if (id === 'end_combat') {
     runDelayed('endcombat');

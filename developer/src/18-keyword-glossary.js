@@ -145,7 +145,15 @@ function setupKeywordTips() {
 }
 
 function sickNote(c) { return state && teach('summoningSick') && state.battlefield.some(x => x.id === c.id) && isSick(c) ? h('div', { class: 'sicknote', text: SICK_TEXT }) : null; }
+// The enlarged preview stays interactive (click to flip, hover keyword chips): it only swaps to another card after the pointer rests on it
+// briefly, so crossing other cards on the way to the right column no longer replaces it, and it never changes while the pointer is on it.
+let previewTimer = 0, previewHold = false, previewWired = false;
 function showPreview(c) {
+  if (!previewWired) { const b = $('#preview'); if (b) { previewWired = true; b.addEventListener('mouseenter', () => { previewHold = true; clearTimeout(previewTimer); }); b.addEventListener('mouseleave', () => { previewHold = false; }); } }
+  if (previewHold) return;
+  clearTimeout(previewTimer); previewTimer = setTimeout(() => { if (!previewHold) showPreviewNow(c); }, 170);
+}
+function showPreviewNow(c) {
   const box = $('#preview');
   const im = !c.token && showImages ? imgFor(c.name) : null;
   if (im) {
