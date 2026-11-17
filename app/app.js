@@ -5485,7 +5485,6 @@ function renderOverlay() {
         h('div', { class: 'pbtns' },
           h('button', { class: 'primary', text: 'Keep', onclick: keepHand }),
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
-          h('button', { text: 'Draw 7', onclick: () => pregameDraw(7) }),
           h('button', {
             text: state.hand.some(mulliganHandSwap) ? `Use Serum Powder — exile hand, draw ${state.hand.length}` : 'Serum Powder unavailable',
             disabled: !state.hand.some(mulliganHandSwap),
@@ -6072,8 +6071,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.14';
+const APP_VERSION = '0.96.15';
 const CHANGELOG = [
+  { v: '0.96.15', title: 'Rules-check panel, no Draw 7', notes: ['The opening-hand screen no longer has a Draw 7 button. The rules-check pop-up for discarding to hand size now uses the same panel style as other pop-ups instead of a blank card.'] },
   { v: '0.96.14', title: 'Pop-ups stay above your hand', notes: ['The glowing outline is back on hand cards: green glow for playable now (gently pulsing), red for not enough mana, amber for wrong timing.', 'Centred pop-ups (pre-game actions, choices, search windows) now sit in the space above your hand, so the hand no longer covers their buttons.'] },
   { v: '0.96.13', title: 'Release set fixed, movable Hand label', notes: ['Updater: releases now always come with a SIXTH file, update.json, which older app shells read (its absence caused "update.json has no version"). The release script bundles all six files into one zip and the update window names the missing file.','The small Hand label (count and Key) can be dragged anywhere on the table; its place is remembered and double-clicking puts it back. The Sort button is gone: drag cards sideways in the hand to order them.'] },
   { v: '0.96.12', title: 'Tezzeret, Cruel Captain in full, emblems', notes: ['Tezzeret, Cruel Captain now follows his real Oracle text: "Whenever an artifact you control enters" adds a loyalty counter; 0: untap target artifact or creature and, if it is an artifact creature, put a +1/+1 counter on it; \u22123: search for an artifact card with mana value 1 or less, reveal it, put it into your hand, shuffle; \u22127: you get an emblem.','Emblems (CR 114) are new: "You get an emblem with \u2026" creates a permanent emblem that lives outside the battlefield, shown in a small panel on the mat, and its abilities trigger like any other (Tezzeret\'s emblem puts three +1/+1 counters on a target artifact at the beginning of combat and turns a non-creature one into a 0/0 Robot artifact creature).','Effects that make a permanent a creature (CR 613.1d, 613.4b) now change its types, subtypes and base power/toughness, so it moves to the creature row and counts as a creature everywhere.','"Put a +1/+1 counter on it" after a target no longer puts the counter on the ability\'s source. Mana value for searches is now worked out from the mana cost (CR 202.3).'] },
@@ -7992,7 +7992,9 @@ function drawStackStage() {
   }
   if (resPick) {
     const n = state.discarding, verb = handPick ? handPick.verb : 'discard', cnt = bottomSel.size, r = pickSrc;
-    el.replaceChildren(h('div', { class: 'ss-row' }, shown.map(face)),
+    // v0.96.14 a rules check with no card behind it (the hand-size discard) is shown as a normal pop-up panel, not as an empty card
+    const ruleBox = r && r.pseudo ? h('div', { class: 'ss-rulebox' }, h('div', { class: 'ss-rh', text: !handPick ? 'Rules check: maximum hand size' : 'Rules check: ' + (handPick.title || r.name) }), h('div', { class: 'ss-rt', text: r.text || '' })) : null;
+    el.replaceChildren(ruleBox || h('div', { class: 'ss-row' }, shown.map(face)),
       h('div', { class: 'ss-pick' }, h('b', { text: !handPick ? 'Cleanup: hand size' : pickSrc.kindTxt ? `${pickSrc.kindTxt}: ${pickSrc.name}` : `${r.trigger ? 'Triggered ability' : 'Resolving'}: ${handPick.title || r.sourceName || pickSrc.name}` }),
         h('div', { text: `Select ${n} card${n === 1 ? '' : 's'} in your hand to ${verb} (${cnt}/${n})` }), handPick && handPick.note ? h('div', { class: 'muted small', text: handPick.note }) : null, state.stack.length ? h('div', { class: 'muted small', text: `${state.stack.length} object${state.stack.length === 1 ? '' : 's'} on the stack wait${state.stack.length === 1 ? 's' : ''} behind this.` }) : null),
       resLinesEl(),
