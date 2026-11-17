@@ -188,6 +188,8 @@ function additionalCosts(c) {
   for (const raw of tx.split('\n')) {
     const line = raw.trim();
     { const co = casualtyOptional(line, c); if (co) { optional.push(co); continue; } }   // v0.96.2
+    if ((m = line.match(/^Squad\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Squad', mana: m[1], comps: [], replicate: true, squad: true }); continue; }   // v0.96.22 CR 702.157
+    if ((m = line.match(/^Offspring\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Offspring', mana: m[1], comps: [], offspring: true }); continue; }   // CR 702.175
     if ((m = line.match(/^Replicate\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Replicate', mana: m[1], comps: [], replicate: true }); continue; }   // v0.96.3
     if ((m = line.match(/^As an additional cost to cast this spell, (you may )?(.+?)\.?$/i))) {
       const cs = parseCostComps(m[2], c.name), mana = manaOf(cs), rest = cs.filter(k => k.k !== 'mana');
@@ -335,6 +337,9 @@ function applyCostInfo(c, ci) {
     if (ci.alt === 'dash') c.dashed = true;
     if (ci.casualty) c.casualtyPaid = true;
     if (ci.replicate) c.replicateN = ci.replicate;
+    if (ci.squad) { c.squadN = ci.squad; log(`${c.name}: squad cost paid ${ci.squad} time${ci.squad === 1 ? '' : 's'}`); }
+    if (ci.offspring) { c.offspringPaid = true; log(`${c.name}: offspring cost paid`); }
+    if (ci.alt === 'impending') c.impended = true;
     if (ci.alt === 'overload') c.overloaded = true;
     if (ci.alt === 'bestow') c.bestowed = true;
     if (ci.evoked) { c.evoked = true; log(`${c.name}: cast for its evoke cost`); }
@@ -378,7 +383,7 @@ function openCostChooser(c, routes, opts, go) {
   m.body.append(h('div', { class: 'psub', text: 'Choose how to pay for this spell.' }), list);
   if (ec.why) m.body.append(h('div', { class: 'costnote' }, 'Total cost is already adjusted: ', ec.why));
   opts.forEach((o, i) => {
-    if (o.replicate) { const num = h('input', { type: 'number', min: 0, max: 9, value: 0, style: 'width:54px' }); num.addEventListener('input', () => { reps[i] = Math.max(0, Math.min(9, parseInt(num.value, 10) || 0)); }); m.body.append(h('label', { class: 'teachopt' }, num, h('span', null, h('b', { text: 'Optional: Replicate ' }), symbols(o.mana), h('span', { class: 'muted small', text: ' pay it any number of times; copy the spell for each' })))); return; }
+    if (o.replicate) { const num = h('input', { type: 'number', min: 0, max: 9, value: 0, style: 'width:54px' }); num.addEventListener('input', () => { reps[i] = Math.max(0, Math.min(9, parseInt(num.value, 10) || 0)); }); m.body.append(h('label', { class: 'teachopt' }, num, h('span', null, h('b', { text: 'Optional: ' + (o.label || 'Replicate') + ' ' }), symbols(o.mana), h('span', { class: 'muted small', text: ' pay it any number of times; copy the spell for each' })))); return; }
     const cb = h('input', { type: 'checkbox' });
     cb.addEventListener('change', () => { if (cb.checked) kicks.add(i); else kicks.delete(i); });
     m.body.append(h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Optional: ' + o.label + ' ' }), o.mana ? symbols(o.mana) : '', h('span', { class: 'muted small', text: o.comps.length ? ' ' + o.comps.map(k => k.text || '').join(', ') : '' }))));
@@ -401,7 +406,7 @@ function runCast(c, reopen, modes, route, kicks) {
   gatherCosts(c, comps, picks => {
     let manaE = mana; if (route.alt && route.alt.reduceBySac) { const sp = picks.find(p => p.comp.emerge); const sc = sp && findCard(sp.ids[0]); const mv = sc && !sc.card.token ? (cardInfo(sc.card.name) || {}).cmc || 0 : 0; manaE = reduceGenericBy(mana, mv); log(`${c.name}: emerge, ${sc ? sc.card.name : 'the sacrificed creature'} has mana value ${mv}, so the cost is reduced by ${mv}`); }
     runReducers(c, manaE, reducerKinds(c), (mana2, rpicks) => {
-      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate).length, evoked: !!(route.alt && route.alt.kind === 'evoke') };
+      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke') };
       const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }

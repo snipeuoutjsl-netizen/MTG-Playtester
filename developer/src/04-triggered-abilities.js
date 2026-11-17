@@ -84,6 +84,7 @@ function frontType(c) {
     const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(c.becomes.subs || []).map(cap)])];
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
+  if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
 function filterMatches(filter, card) {
@@ -107,7 +108,7 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id && (!t.test || t.test(c))) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
   } else if (ev === 'etb') {
     const e = ctx.card;
-    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
+    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
       else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e))) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);

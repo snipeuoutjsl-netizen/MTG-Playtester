@@ -1149,6 +1149,7 @@ function frontType(c) {
     const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(c.becomes.subs || []).map(cap)])];
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
+  if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
 function filterMatches(filter, card) {
@@ -1172,7 +1173,7 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id && (!t.test || t.test(c))) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
   } else if (ev === 'etb') {
     const e = ctx.card;
-    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
+    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
       else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e))) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
@@ -1904,7 +1905,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   memNote('left', c);
   fxOnLeave(c);
   detachFrom(c);
-  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
@@ -2294,6 +2295,8 @@ function additionalCosts(c) {
   for (const raw of tx.split('\n')) {
     const line = raw.trim();
     { const co = casualtyOptional(line, c); if (co) { optional.push(co); continue; } }   // v0.96.2
+    if ((m = line.match(/^Squad\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Squad', mana: m[1], comps: [], replicate: true, squad: true }); continue; }   // v0.96.22 CR 702.157
+    if ((m = line.match(/^Offspring\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Offspring', mana: m[1], comps: [], offspring: true }); continue; }   // CR 702.175
     if ((m = line.match(/^Replicate\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Replicate', mana: m[1], comps: [], replicate: true }); continue; }   // v0.96.3
     if ((m = line.match(/^As an additional cost to cast this spell, (you may )?(.+?)\.?$/i))) {
       const cs = parseCostComps(m[2], c.name), mana = manaOf(cs), rest = cs.filter(k => k.k !== 'mana');
@@ -2441,6 +2444,9 @@ function applyCostInfo(c, ci) {
     if (ci.alt === 'dash') c.dashed = true;
     if (ci.casualty) c.casualtyPaid = true;
     if (ci.replicate) c.replicateN = ci.replicate;
+    if (ci.squad) { c.squadN = ci.squad; log(`${c.name}: squad cost paid ${ci.squad} time${ci.squad === 1 ? '' : 's'}`); }
+    if (ci.offspring) { c.offspringPaid = true; log(`${c.name}: offspring cost paid`); }
+    if (ci.alt === 'impending') c.impended = true;
     if (ci.alt === 'overload') c.overloaded = true;
     if (ci.alt === 'bestow') c.bestowed = true;
     if (ci.evoked) { c.evoked = true; log(`${c.name}: cast for its evoke cost`); }
@@ -2484,7 +2490,7 @@ function openCostChooser(c, routes, opts, go) {
   m.body.append(h('div', { class: 'psub', text: 'Choose how to pay for this spell.' }), list);
   if (ec.why) m.body.append(h('div', { class: 'costnote' }, 'Total cost is already adjusted: ', ec.why));
   opts.forEach((o, i) => {
-    if (o.replicate) { const num = h('input', { type: 'number', min: 0, max: 9, value: 0, style: 'width:54px' }); num.addEventListener('input', () => { reps[i] = Math.max(0, Math.min(9, parseInt(num.value, 10) || 0)); }); m.body.append(h('label', { class: 'teachopt' }, num, h('span', null, h('b', { text: 'Optional: Replicate ' }), symbols(o.mana), h('span', { class: 'muted small', text: ' pay it any number of times; copy the spell for each' })))); return; }
+    if (o.replicate) { const num = h('input', { type: 'number', min: 0, max: 9, value: 0, style: 'width:54px' }); num.addEventListener('input', () => { reps[i] = Math.max(0, Math.min(9, parseInt(num.value, 10) || 0)); }); m.body.append(h('label', { class: 'teachopt' }, num, h('span', null, h('b', { text: 'Optional: ' + (o.label || 'Replicate') + ' ' }), symbols(o.mana), h('span', { class: 'muted small', text: ' pay it any number of times; copy the spell for each' })))); return; }
     const cb = h('input', { type: 'checkbox' });
     cb.addEventListener('change', () => { if (cb.checked) kicks.add(i); else kicks.delete(i); });
     m.body.append(h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Optional: ' + o.label + ' ' }), o.mana ? symbols(o.mana) : '', h('span', { class: 'muted small', text: o.comps.length ? ' ' + o.comps.map(k => k.text || '').join(', ') : '' }))));
@@ -2507,7 +2513,7 @@ function runCast(c, reopen, modes, route, kicks) {
   gatherCosts(c, comps, picks => {
     let manaE = mana; if (route.alt && route.alt.reduceBySac) { const sp = picks.find(p => p.comp.emerge); const sc = sp && findCard(sp.ids[0]); const mv = sc && !sc.card.token ? (cardInfo(sc.card.name) || {}).cmc || 0 : 0; manaE = reduceGenericBy(mana, mv); log(`${c.name}: emerge, ${sc ? sc.card.name : 'the sacrificed creature'} has mana value ${mv}, so the cost is reduced by ${mv}`); }
     runReducers(c, manaE, reducerKinds(c), (mana2, rpicks) => {
-      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate).length, evoked: !!(route.alt && route.alt.kind === 'evoke') };
+      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke') };
       const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }
@@ -3203,6 +3209,7 @@ function resolveTopOfStack() {
     enterBattlefield(c,{from:'stack',logMsg:`Resolved ${c.name} → battlefield`,afterPlace:()=>{
     if(c.warped){ delete c.warped; c.warpExile=state.turn; addFx({kind:'delayed',when:'end',action:'exile',targetId:c.id,targetName:c.name,text:`Exile ${c.name} (warp).`,srcName:c.name}); log(`${c.name}: warped, it will be exiled at the beginning of the next end step; you may cast it from exile on a later turn`); }
     if(c.bestowed) bestowResolved(c);
+    if(c.impended) impendingEnter(c);
     if(c.blitzed||c.dashed) altKwResolved(c);
     if(c.evoked){ delete c.evoked; queueTrigger({kind:'ability',cardId:c.id,cardName:c.name,text:'Evoke: when this enters, sacrifice it.',effect:'Sacrifice ~.',special:'sacSelf',optional:false,why:'You cast it for its evoke cost, so it is sacrificed when it enters. Its other enters-the-battlefield abilities still trigger; you choose the order they go on the stack.'}); }
     if(c.xValue!==undefined){
@@ -6046,21 +6053,22 @@ function openWelcome(onDone) {
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
       P('The deck button at the top left lists your saved decks and switches between them.')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
-      P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn tracker floating over the table shows every step and lights the one you are in.')]],
+      P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
-      P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.')]],
+      P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.'),
+      P('For coin flips and die rolls open ', B('⚙ → Dice & coin…'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
     ['5. Settings', [P('Open ', B('⚙ → Settings'), '. The tabs are:'),
-      h('ul', null, h('li', null, B('Layout'), ' – switch between the Updated and Original table layouts, and toggle each part.'), h('li', null, B('Graphics'), ' – card size, interface theme, foil, cursor, and card sleeves.'), h('li', null, B('Playmat & frame'), ' – the table surface and board layout options.'), h('li', null, B('Animations'), ' – every effect has its own switch.'), h('li', null, B('Sound'), ' – effect volume and sounds.'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'))]],
-    ['6. Playmats and sleeves', [P('Under ', B('Settings → Playmat & frame'), ' pick one of the built-in playmats or choose ', B('Custom playmat → Upload'), ' to use your own picture. Playmat motion adds a gentle drift if you want it.'),
-      P('Under ', B('Settings → Graphics'), ' choose a built-in sleeve for the card backs or use ', B('Upload sleeve…'), ' for your own design. Your choices are saved on this computer.')]],
+      h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, foil, cursor, card sizes, turn-flow bar opacity and card sleeves.'), h('li', null, B('Board'), ' – board layout, playmat and the frame around it.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
+    ['6. Themes, playmats and sleeves', [P('Under ', B('Settings → Look & feel'), ' the ', B('One-click set'), ' picker changes everything at once: interface theme, card sleeve, playmat, board frame and (if ticked) a matching song. Or choose each part yourself.'),
+      P('Pick a built-in playmat under ', B('Settings → Board'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
     ['7. What the icons and colours mean', [P('Cards in your hand glow to tell you what you can do: ', B('Playable'), ' (green), ', B('Can\'t pay'), ' (not enough or wrong mana), ', B('Wrong timing'), ' (sorcery-speed card outside your main phase), ', B('Instant speed'), ' (can be cast in response), and ', B('Selected'), '.'),
       P('The row of small icons at the top shows game states (monarch, initiative, storm count, energy, poison and more); they light up when active, and you can click them to change them. Tapped cards are turned sideways, summoning-sick creatures are dimmed, and a count badge like ', B('×4'), ' means identical cards are piled together (click it to spread them out).'),
-      P('Round icons on a creature are keywords it has right now. The turn tracker lights the step you are in, and the Stack panel shows what is waiting to resolve.')]],
+      P('Round icons on a creature are keywords it has right now. The ', B('Key'), ' button by the Hand label explains the glow colours, and you can drag that label wherever you like. The Stack panel shows what is waiting to resolve.')]],
     ['8. Learning and honesty', [P('Tutor mode adds hints such as phase pauses, mana payment help and rules reminders. Turn off whatever you do not want.'),
       P('The app reads the rules text on each card and applies what it understands, then tells you what is left for you to do by hand. ', B('⚙ → How the app reads cards…'), ' shows, card by card, which lines it handles and which it does not. When in doubt, the official rules text is what counts.'),
       P('In "How the app reads cards", ', B('understood'), ' means the app carries out every part of that line; ', B('partly'), ' or ', B('by hand'), ' means some of it is left to you, and the app says which part.')]],
     ['9. Updates', [P('The version number at the top right shows what changed in each release when you click it. New versions are published on GitHub.'),
-      P('Open ', B('⚙ → Update app…'), ' to check for a new version. If one is found it shows what is new and installs it; restart the app when asked. If a release ever says it needs a new app shell, download the full package once and run the installer.'),
+      P('Open ', B('⚙ → Update app…'), ' to check for a new version. If one is found it shows what is new and installs it; restart the app when asked. A few releases change the app shell itself (for example graphics settings); for those, run the installer from the Windows or SteamDeck-and-Linux folder once.'),
       P('Your decks, settings, playmats and sleeves stay on this computer through updates. You can reopen this tour any time from ', B('⚙ → Welcome tour…'), ' or from the Settings window.')]]
   ];
   let i = 0;
@@ -6093,8 +6101,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.21';
+const APP_VERSION = '0.96.22';
 const CHANGELOG = [
+  { v: '0.96.22', title: 'Keyword batch 6, Welcome tour updated', notes: ['Squad (702.157): pay the squad cost any number of times as you cast it; when it enters you create that many token copies. Offspring (702.175): an optional extra cost; if paid, a 1/1 token copy when it enters.','Impending (702.176): cast for the impending cost, it enters with N time counters, is not a creature while it has one, and loses one at the beginning of your end step.','The Welcome tour now describes the current app: the turn-flow bar, one-click sets, the new songs, Dice & coin, the Next round screen, the real Settings tabs and the Hand Key.'] },
   { v: '0.96.21', title: 'Next round screen, dice and coin, bar opacity', notes: ['When a game ends (opponent at 0 life, or you lose at 0 life, ten poison counters or an empty library) a Victory / Defeat screen appears with Next round (same deck), Sideboard then play, Choose another deck, or Keep playing. It also keeps a win/loss count for the session.','Coin flips and die rolls now tumble on screen and land on the real result: a 3D coin that stops on heads or tails, and dice (a real cube for d6, shaped dice for d4 to d100). The result is picked first with a true random number and the animation lands exactly on it. "Flip a coin" and "Roll a d20" in card text use it, and there is a new Dice & coin tool in the tools menu. Turn it off with Dice & coin tumble in the animation list.','New Turn-flow bar opacity slider (Settings > Look).','Settings: the panel could be taller than the space above your hand, so the last options could not be scrolled into view. It now fits the free space.'] },
   { v: '0.96.20', title: 'Battlefield flicker fix', notes: ['Fixed the flicker with five or more permanents in a zone: a card kept hopping between sitting in the row and wrapping underneath. The zones no longer show a scrollbar (it appeared and disappeared, changing how many cards fit), the number of columns is now set exactly from the card size so the browser cannot round it differently from frame to frame, and the fit keeps a few pixels of margin. Zones still scroll with the mouse wheel.'] },
   { v: '0.96.19', title: 'Targeting fix: "an opponent controls"', notes: ['Spells and abilities that say "target nonland permanent an opponent controls" (Leyline Binding, Banishing Light-style cards) or "target creature an opponent controls" no longer offer You and Opponent as targets. Only permanents are legal targets there (CR 115.2); because the opponent\'s board is not tracked, the single "a permanent your opponent controls" choice remains.'] },
@@ -9454,7 +9463,7 @@ const RULES_TABLE = [
   ['702.154', 'Enlist', 'ability', 'tested'],
   ['702.155', 'Read Ahead', 'ability', 'none'],
   ['702.156', 'Ravenous', 'ability', 'tested'],
-  ['702.157', 'Squad', 'ability', 'none'],
+  ['702.157', 'Squad', 'ability', 'tested'],
   ['702.158', 'Space Sculptor', 'ability', 'none'],
   ['702.159', 'Visit', 'ability', 'none'],
   ['702.160', 'Prototype', 'ability', 'named'],
@@ -9472,8 +9481,8 @@ const RULES_TABLE = [
   ['702.172', 'Spree', 'ability', 'named'],
   ['702.173', 'Freerunning', 'ability', 'none'],
   ['702.174', 'Gift', 'ability', 'none'],
-  ['702.175', 'Offspring', 'ability', 'none'],
-  ['702.176', 'Impending', 'ability', 'none'],
+  ['702.175', 'Offspring', 'ability', 'tested'],
+  ['702.176', 'Impending', 'ability', 'tested'],
   ['702.177', 'Exhaust', 'ability', 'none'],
   ['702.178', 'Max Speed', 'ability', 'none'],
   ['702.179', 'Start Your Engines!', 'ability', 'none'],
@@ -9618,6 +9627,8 @@ const ALT_KW = [
   { cr: '702.117', kw: 'surge', cond: 'If you or a teammate has cast another spell this turn', test: () => (spellsCastNow() > 0 ? '' : 'you have not cast another spell this turn') }
 ];
 function altKwLine(line, c) {
+  { const im = line.match(/^Impending (\d+)\s*[\u2014-]\s*(.+?)\.?$/i);   // v0.96.22 CR 702.176
+    if (im) { const cs = parseCostComps(im[2], c.name); return { kind: 'impending', cr: '702.176', label: `Impending ${im[1]}`, mana: manaOf(cs), comps: cs.filter(x => x.k !== 'mana'), cond: '', test: null, note: `It enters with ${im[1]} time counters and is not a creature until the last is removed.` }; } }
   for (const k of ALT_KW) {
     let m = line.match(new RegExp('^' + k.kw + '\\s+((?:\\{[^}]+\\})+)\\s*$', 'i'));
     if (m) return { kind: k.kw, cr: k.cr, label: k.kw[0].toUpperCase() + k.kw.slice(1), mana: m[1], comps: [], cond: k.cond, test: k.test || null, note: k.note || '', reduceBySac: !!k.reduceBySac, comps: k.reduceBySac ? parseCostComps('Sacrifice a creature', c.name).map(x => Object.assign(x, { emerge: true })) : [] };
@@ -10108,6 +10119,40 @@ function showGameEnd(which, title, sub) {
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
       h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { $('#btnDecks').click(); } catch (e) {} } })));
   m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); } }));
+}
+// ---------------------------------------------------------------- v0.96.22 keyword batch 6 (rules text): Squad, Offspring, Impending
+// CR 702.157a Squad [cost]: "As an additional cost to cast this spell, you may pay [cost] any number of times." and "When this creature enters, if its squad cost was paid, create a token that's a copy of it for each time its squad cost was paid."
+// CR 702.175a Offspring [cost]: "You may pay an additional [cost] as you cast this spell." and "When this permanent enters, if its offspring cost was paid, create a 1/1 token copy of it. The token has 'When this token enters, ...' (the copy is 1/1 in every other way it is a copy)."
+// CR 702.176a Impending N—[cost]: "You may choose to pay [cost] rather than pay this spell's mana cost." "If you chose to pay this permanent's impending cost, it enters with N time counters on it."
+//             "As long as a permanent's impending cost was paid and it has a time counter on it, it's not a creature." "At the beginning of your end step, if this permanent's impending cost was paid and it has a time counter on it, remove a time counter from it."
+// A token that is a copy of a card: the copiable values only (CR 707.2), no counters or other changes.
+function copyOfCardDef(info, o) {
+  o = o || {}; const front = String(info.t || '').split(' // ')[0], parts = front.split('—'), types = (parts[0].match(/\b(Artifact|Creature|Enchantment|Land|Planeswalker|Battle|Kindred)\b/g) || []),
+    subs = ((parts[1] || '').trim().split(/\s+/).filter(Boolean)), pt = o.pt || info.pt || '';
+  return { name: String(info.n || info.name || '').split(' // ')[0], pt, subs: subs.map(x => x.toLowerCase()), col: [...(info.col || [])], types, type: 'Token ' + parts[0].trim() + (subs.length ? ' — ' + subs.join(' ') : ''), tx: String(info.tx || '') };
+}
+function kwCopyTokens(srcId, srcName, n, o) {
+  const f = findCard(srcId), info = (f && cardInfo(f.card.name)) || cardInfo(srcName); if (!info) { log(`${srcName}: could not read its card data, create the token copies by hand`); return; }
+  const d = copyOfCardDef(Object.assign({ n: srcName }, info), o); makeTokensFromDef(d, n, `${srcName} (${o && o.pt ? 'offspring' : 'squad'})`);
+}
+KW_TRIGGERS.push(
+  { cr: '702.157', kw: 'squad', ev: 'etb-self', cond: 'Squad: when this creature enters, if its squad cost was paid', text: 'When this creature enters, if its squad cost was paid, create a token that\'s a copy of it for each time the cost was paid.', test: c => (c.squadN || 0) > 0 },
+  { cr: '702.175', kw: 'offspring', ev: 'etb-self', cond: 'Offspring: when this permanent enters, if its offspring cost was paid', text: 'When this permanent enters, if its offspring cost was paid, create a 1/1 token copy of it.', test: c => !!c.offspringPaid },
+  { cr: '702.176', kw: 'impending', ev: 'step:end', cond: 'Impending: at the beginning of your end step, if its impending cost was paid and it has a time counter', text: 'At the beginning of your end step, if this permanent\'s impending cost was paid and it has a time counter on it, remove a time counter from it.', test: c => !!c.impended && kwCtr(c, 'time') > 0 }
+);
+KW_EFFECTS['squad'] = obj => { const f = findCard(obj.sourceId), n = (f && f.card.squadN) || 0; return n ? [{ full: true, label: `Create ${n} token cop${n === 1 ? 'y' : 'ies'} of ${obj.sourceName} (squad paid ${n} time${n === 1 ? '' : 's'})`, fn: () => { kwCopyTokens(obj.sourceId, obj.sourceName, n); } }] : []; };
+KW_EFFECTS['offspring'] = obj => [{ full: true, label: `Create a 1/1 token copy of ${obj.sourceName} (offspring paid)`, fn: () => { kwCopyTokens(obj.sourceId, obj.sourceName, 1, { pt: '1/1' }); } }];
+KW_EFFECTS['impending'] = obj => {
+  const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield' || !f.card.impended || kwCtr(f.card, 'time') < 1) return [];   // intervening "if" (CR 603.4), rechecked as it resolves
+  return [{ full: true, label: `Remove a time counter from ${obj.sourceName} (${kwCtr(f.card, 'time')} now)`, fn: () => {
+    addCounter(obj.sourceId, -1, 'time'); const g = findCard(obj.sourceId);
+    if (g && g.zone === 'battlefield' && kwCtr(g.card, 'time') === 0) { log(`${obj.sourceName}: the last time counter is gone, it is a creature now`); render(); } } }];
+};
+// Cast for the impending cost: it enters with N time counters (CR 702.176a). While it has one it is not a creature (frontType hides the Creature type).
+function impendingEnter(c) {
+  if (!c.impended) return; const m = String(cardText(c)).replace(/\([^)]*\)/g, '').match(/^Impending (\d+)/im), n = m ? +m[1] : 0;
+  c.counters = c.counters && typeof c.counters === 'object' ? c.counters : { plus: 0, minus: 0 }; c.counters.time = n;
+  log(`${c.name}: cast for its impending cost, it enters with ${n} time counter${n === 1 ? '' : 's'} and is not a creature until the last is removed`);
 }
 init();
 
