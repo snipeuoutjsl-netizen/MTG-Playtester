@@ -467,6 +467,12 @@ const { setup } = require('./common.js');
     const [g] = await bfSet(['Bloodghast']);
     const r = await ev(i => { const s = __d.state, c = s.battlefield.find(x => x.id === i); s.oppLife = 20; const a = { nb: __d.kwCantBlock(c), haste: __d.hasKw(c, 'haste') }; s.oppLife = 10; const b = { haste: __d.hasKw(c, 'haste') }; return { a, b }; }, g);
     return { ok: r.a.nb && !r.a.haste && r.b.haste, why: JSON.stringify(r) }; });
+  await T('614.1', 'a token-doubling replacement effect ("it creates twice that many of those tokens instead") is read from the rules text and applied when an effect creates tokens', async () => { await reset();
+    const count = () => ev(() => __d.state.battlefield.filter(c => c.token && c.name === 'Treasure').length);
+    await ev(() => { __d.makeTokensFromDef({ name: 'Treasure', pt: '', subs: ['treasure'], col: [], types: ['artifact'], type: 'Token Artifact \u2014 Treasure', tx: '' }, 1, 'test'); }); const base = await count();
+    await bfSet(['Doubling Season']);
+    await ev(() => { __d.makeTokensFromDef({ name: 'Treasure', pt: '', subs: ['treasure'], col: [], types: ['artifact'], type: 'Token Artifact \u2014 Treasure', tx: '' }, 2, 'test'); }); const after = await count();
+    return { ok: base === 1 && after === 5, why: JSON.stringify({ base, after }) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });

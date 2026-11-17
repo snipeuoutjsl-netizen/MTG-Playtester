@@ -2,7 +2,21 @@
 // compileCard() walks the Oracle text line by line and says, for each line, what kind of rule it is
 // (keyword, mana ability, activated, triggered, static, loyalty, spell effect) and how much of it the app handles.
 // status: 'ok' = the app handles it, 'part' = recognised but some of it is done by hand, 'unk' = not understood, 'info' = reminder text.
-const KW_ENFORCED = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'overload', 'bestow', 'escalate', 'replicate', 'emerge', 'prowl', 'miracle', 'plot', 'foretell', 'blitz', 'dash', 'spectacle', 'surge', 'casualty', 'exalted', 'battle cry', 'annihilator', 'evolve', 'renown', 'mentor', 'training', 'dethrone', 'melee', 'fabricate', 'modular', 'bloodthirst', 'extort', 'riot', 'ninjutsu', 'flashback', 'spree', 'suspend', 'living weapon', 'dredge', 'embalm', 'eternalize', 'unearth', 'outlast', 'rebound', 'cumulative upkeep', 'vanishing', 'fading', 'decayed', 'exert', 'monstrosity', 'populate', 'boast', 'devoid']);
+const KW_ENFORCED_BASE = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'overload', 'bestow', 'escalate', 'replicate', 'emerge', 'prowl', 'miracle', 'plot', 'foretell', 'blitz', 'dash', 'spectacle', 'surge', 'casualty', 'exalted', 'battle cry', 'annihilator', 'evolve', 'renown', 'mentor', 'training', 'dethrone', 'melee', 'fabricate', 'modular', 'bloodthirst', 'extort', 'riot', 'ninjutsu', 'flashback', 'spree', 'suspend', 'living weapon', 'dredge', 'embalm', 'eternalize', 'unearth', 'outlast', 'rebound', 'cumulative upkeep', 'vanishing', 'fading', 'decayed', 'exert', 'monstrosity', 'populate', 'boast', 'devoid']);
+// A keyword counts as handled when the engine has it: the older hand list above, any keyword with a trigger or effect in the keyword framework,
+// any alternative-cost keyword, and every keyword the rules table marks "tested" (a CR-numbered test exercises it). Built on first use, so new keyword batches show up here by themselves.
+let kwEnfMemo = null;
+const KW_ENFORCED = { has(n) {
+  if (!kwEnfMemo) {
+    kwEnfMemo = new Set(KW_ENFORCED_BASE);
+    for (const t of KW_TRIGGERS) if (t.kw) kwEnfMemo.add(String(t.kw).toLowerCase());
+    for (const k of Object.keys(KW_EFFECTS)) kwEnfMemo.add(k.toLowerCase());
+    for (const a of (Array.isArray(ALT_KW) ? ALT_KW : [])) if (a.kw) kwEnfMemo.add(String(a.kw).toLowerCase());
+    for (const r of RULES_TABLE) if (r[2] === 'ability' && r[3] === 'tested') kwEnfMemo.add(String(r[1]).toLowerCase());
+    kwEnfMemo.add('ward');   // a goldfish game has no opponent targeting your permanents, so there is nothing to enforce
+  }
+  return kwEnfMemo.has(n);
+} };
 const STATIC_PATTERNS = [
   [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
   [/^if you would draw a card, you may skip that draw instead\.?$/i, 'A "Skip draws" icon appears in the top bar while this is on the battlefield. Switch it on and every card you would draw is skipped (rule 614.1a); switch it off to draw normally.'],
@@ -110,7 +124,7 @@ function compileCardOne(c) {
       continue;
     }
     // cost lines (v0.46)
-    if ((m = stripped.match(/^(Evoke|Kicker|Delve|Convoke|Improvise|Cycling|Affinity for\b)/i))) {
+    if ((m = stripped.match(/^(Evoke|Kicker|Delve|Convoke|Improvise|Cycling|Warp|Flashback|Affinity for\b)/i))) {
       const w = m[1].toLowerCase();
       const NOTE = { evoke: 'Evoke: when you cast it the app offers the evoke cost as a way to pay (including "exile a card from your hand" costs). If you use it, a sacrifice trigger goes on the stack when it enters.',
         kicker: 'Kicker: an optional extra cost offered when you cast it and remembered as "kicked" in the log. The kicked effect itself is applied by hand.',
@@ -192,6 +206,8 @@ function compileCardOne(c) {
     }
     if (/^\+\s*(?:\{[^}]+\})+\s*\u2014/.test(stripped)) { const eff = recognizedEffects(stripped.replace(/^[^\u2014]*\u2014\s*/, '').replace(nameRe, '~')); push(text, 'spell', eff.length ? 'ok' : 'part', `Spree mode: you pick it as you cast, and its cost is added to the spell.` + (eff.length ? ` The app can apply: ${eff.join('; ')}.` : ' You apply its effect by hand.')); continue; }
     { const rl = rulingFor(norml); if (rl) { push(text, 'other', 'part', rl); continue; } }
+    if (/^You may cast (?:~|this card|this creature|[A-Z][\w' ,-]*?) from your graveyard (?:as long as|using its)\b/i.test(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Cast from your graveyard: the card shows a Cast option in your graveyard while its condition holds (or for its alternative cost).'); continue; }
+    if (tokenReplLine(stripped)) { push(text, 'static', 'ok', 'Replacement effect (rule 614): every time an effect creates tokens for you, the app changes the number as it creates them and logs it.'); continue; }
     { const sb = sbParseLine(stripped.replace(nameRe, '~')); if (sb) { push(text, 'static', 'ok', sb.becomes ? `Static ability: ${sb.cond ? 'as long as ' + sb.cond + ', ' : ''}it is a ${sb.pt || ''} ${sb.subs.join(' ')} creature${sb.kws.length ? ' with ' + sb.kws.join(', ') : ''}; the app applies the type, P/T and keywords while the condition holds.` : sb.cantBlock ? `Static ability: it can't block${sb.cond ? ' as long as ' + sb.cond : ''}; the app keeps it out of the blocker list.` : `Static ability: it has ${sb.kws.join(', ')}${sb.cond ? ' as long as ' + sb.cond : ''}; the app checks the condition each time it reads the card.`); continue; } }
     push(text, 'other', 'unk', 'Not understood: the app does nothing for this line. Handle it by hand.');
   }
@@ -249,7 +265,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 function uncoveredClauses(effectText) {
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
