@@ -5,7 +5,7 @@
 // CR 702.97a  Scavenge: "[Cost], Exile this card from your graveyard: Put a number of +1/+1 counters equal to this card's power on target creature. Activate only as a sorcery."  (The power is the one it had in the graveyard: its printed power.)
 // CR 702.107a Outlast: "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."  (read in activatedAbilitiesFor)
 // CR 702.88a  Rebound: "If this spell was cast from your hand, instead of putting it into your graveyard as it resolves, exile it and, at the beginning of your next upkeep, you may cast this card from exile without paying its mana cost."
-const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth|Scavenge)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
+const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth|Scavenge|Encore)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
 function gyAbilitiesFor(c) {
   if (!c || c.token || !state) return [];
   const info = cardInfo(c.name); if (!info) return []; const out = [];
@@ -36,6 +36,13 @@ function useGyAbility(id, kind) {
       b.card.exileInstead = true; addKwFx(id, 'haste', { until: 'manual' });
       addFx({ kind: 'delayed', when: 'end', action: 'exile', targetId: id, targetName: b.card.name, text: `Exile ${b.card.name} (unearth).`, srcName: b.card.name });
       log(`${b.card.name}: unearthed. It has haste, is exiled at the beginning of the next end step, and is exiled instead if it would leave the battlefield`);
+    } else if (kind === 'encore') {
+      const info = cardInfo(g.name); const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling it is part of the cost
+      const d = copyOfCardDef(Object.assign({ n: g.name }, info), {}); const before = new Set(state.battlefield.map(x => x.id));
+      makeTokensFromDef(d, 1, `${c0.name} (encore)`);
+      for (const t of state.battlefield) if (!before.has(t.id)) { addKwFx(t.id, 'haste', { until: 'manual' });
+        addFx({ kind: 'delayed', when: 'end', action: 'sacrifice', targetId: t.id, targetName: t.name, text: `Sacrifice ${t.name} (encore).`, srcName: c0.name }); }
+      log(`${c0.name}: encore paid; a token copy with haste was created for your opponent. It attacks that player this turn if able and is sacrificed at the beginning of the next end step`);
     } else if (kind === 'scavenge') {
       const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling it is part of the cost
       const n = Math.max(0, ptCalc(c0).p || 0), crs = state.battlefield.filter(x => permTypeInfo(x).types.has('creature'));

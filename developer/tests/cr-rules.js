@@ -452,6 +452,25 @@ const { setup } = require('./common.js');
     await ev(() => { window.__noGameEnd = true; document.querySelectorAll('.backdrop, .lethal').forEach(x => x.remove()); });
     return { ok: !!r && r.win && /Next round/.test(r.t) && /Keep playing/.test(r.t), why: JSON.stringify(r) }; });
 
+
+  // ---- v0.96.23 keyword batch 7
+  await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
+    const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });
+    return { ok: r.base === '{3}{U}' && r.cut === 1 && r.cost === '{2}{U}', why: JSON.stringify(r) }; });
+  await T('702.141a', 'encore: exile it from the graveyard; a hasty token copy that is sacrificed at the next end step (sorcery speed)', async () => { await reset(); await toMain(); const id = await putHand('Mock Encorer');
+    const r = await ev(i => { const s = __d.state, k = s.hand.findIndex(c => c.id === i), [c] = s.hand.splice(k, 1); s.graveyard.push(c); s.manaPool = { B: 1, C: 2 }; const ab = __d.gyAbilitiesFor(c).map(a => a.kind);
+      s.step = __d.STEPS.findIndex(x => x.id === 'end'); __d.useGyAbility(i, 'encore'); const early = s.graveyard.some(x => x.id === i);
+      s.step = __d.STEPS.findIndex(x => x.id === 'main1'); __d.useGyAbility(i, 'encore'); const t = s.battlefield.find(x => x.token && x.name === 'Mock Encorer');
+      return { ab, early, gy: s.graveyard.some(x => x.id === i), ex: s.exile.some(x => x.id === i), tok: !!t, pt: t && t.tk.pt, haste: !!t && __d.hasKw(t, 'haste'), delayed: (s.fx || []).some(f => f.kind === 'delayed' && f.action === 'sacrifice' && t && f.targetId === t.id) }; }, id);
+    return { ok: r.ab[0] === 'encore' && r.early && !r.gy && r.ex && r.tok && r.pt === '2/1' && r.haste && r.delayed, why: JSON.stringify(r) }; });
+  await T('702.75a', 'hideaway N: look at the top N, exile one face down, the rest to the bottom; later play it free', async () => { await reset();
+    const [hw] = await bfSet(['Mock Hideaway']);
+    const r = await ev(i => { const s = __d.state; const top = s.library.slice(0, 3).map(c => c.id), n0 = s.library.length;
+      const eff = __d.KW_EFFECTS['hideaway']({ sourceId: i, sourceName: 'Mock Hideaway', n: 3 }); eff[0].fn(); return { top, n0, eff: eff.length }; }, hw);
+    await ev(() => { const b = document.querySelector('.backdrop'); const card = b && b.querySelector('.frow'); if (card) card.click(); });
+    await ev(() => { const b = [...document.querySelectorAll('.backdrop button')].find(x => /^confirm$/i.test(x.textContent)); if (b) b.click(); });
+    const after = await ev(i => { const s = __d.state; return { ex: s.exile.filter(x => x.hiddenBy === i).length, lib: s.library.length, ids: s.library.slice(-2).map(c => c.id) }; }, hw);
+    return { ok: r.eff === 1 && after.ex === 1 && after.lib === r.n0 - 1, why: JSON.stringify({ r, after }) }; });
   // ---- v0.96.22 keyword batch 6
   await T('702.157a', 'squad: pay the squad cost any number of times; when it enters, create that many token copies of it', async () => { await reset();
     const info = await ev(() => { const c = Object.assign(__d.newCard('Mock Squadmate'), { id: __d.state.nextId++ }); const ac = __d.additionalCosts(c); return { opt: ac.optional.map(o => o.label + (o.replicate ? ':multi' : '')), }; });

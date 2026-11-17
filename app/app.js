@@ -2251,6 +2251,7 @@ function effectiveCost(c) {
     const per = (m[1].match(/\{(\d+)\}/g) || []).reduce((a, x) => a + parseInt(x.slice(1), 10), 0), n = countForEach(m[2]);
     if (per && n !== null && per * n > 0) { cut += per * n; notes.push(`${n} × {${per}} less (${m[2].replace(/ you control$/, '').replace(/^basic land type among lands$/, 'basic land type')})`); }
   }
+  if (/^Undaunted\s*$/im.test(tx)) { cut += 1; notes.push('Undaunted: {1} less for each opponent (1 opponent)'); }
   const am = tx.match(/^Affinity for ([a-z ]+?)\s*$/im);
   if (am) { const w = singularWord(am[1].trim().split(/\s+/).pop()), n = state.battlefield.filter(x => { const p = permTypeInfo(x); return p.types.has(w) || p.subs.has(w); }).length; if (n) { cut += n; notes.push(`Affinity: ${n} × {1} less (${am[1].trim()})`); } }
   for (const a of costAdjustments(c)) { if (a.dir === 'more') add += a.amt; else cut += a.amt; notes.push(`${a.src} ${a.dir === 'more' ? '+' : '−'}{${a.amt}}`); }
@@ -5228,10 +5229,18 @@ function fitBattlefieldCards() {
     }
 
     scale = Math.max(minScale, scale);
-    row.style.setProperty('--zone-scale', String(scale));
-    // v0.96.20 make the browser wrap into exactly the columns this calculation assumed (a razor-thin fit used to wrap or not from frame to frame: the flicker with 5 permanents)
-    if (usedCols) usedCols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * scale + gap) + 1e-6)));   // as many columns as truly fit at this size
-    if (spec.id !== 'row-creatures') row.style.maxWidth = usedCols ? Math.ceil(usedCols * baseW * scale + (usedCols - 1) * gap + 3) + 'px' : '';
+    // v0.96.23 Fit by measuring, not only by arithmetic: lay the row out, and if any card sits outside the zone, shrink everything a little and look again (smaller cards also fit more per row).
+    const place = sc => {
+      row.style.setProperty('--zone-scale', String(sc));
+      if (spec.id !== 'row-creatures') { const cols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * sc + gap) + 1e-6))); row.style.maxWidth = Math.ceil(cols * baseW * sc + (cols - 1) * gap + 3) + 'px'; }
+    };
+    const spills = () => {   // offset* ignores the floating/tilting transforms, so a card that merely bobs does not count
+      const lim = zone.clientHeight - 6, limW = zone.clientWidth - 6;
+      for (const k of row.children) { if (k.offsetTop + k.offsetHeight > lim || k.offsetLeft + k.offsetWidth > limW) return true; }
+      return false;
+    };
+    place(scale);
+    for (let g = 0; g < 16 && scale > minScale && spills(); g++) { scale = Math.max(minScale, scale * 0.94); place(scale); }
   }
 }
 
@@ -5678,6 +5687,7 @@ function showCardMenu(c, zone, x, y) {
     else for(const ab of activatedAbilitiesFor(c)) items.push({ label: `Activate ability: ${ab.cost}`, fn: () => activateAbility(c.id, false, ab.ix) });
     items.push('-');
   }
+  if (zone === 'battlefield' && state.exile.some(x => x.hiddenBy === c.id)) items.push({ label: 'Hideaway: play the exiled card free', title: 'When the hideaway condition is met, play the exiled card without paying its mana cost', fn: () => hideawayPlay(c.id) });
   if (zone === 'battlefield' && fetchInfo(c)) { items.push({ label: c.tapped ? 'Fetch… (needs an untapped land)' : 'Activate: sacrifice and fetch…', fn: () => c.tapped ? toast('Cannot fetch', 'Fetch lands have {T} in their cost, so the land must be untapped.') : openFetch(c) }); items.push('-'); }
   if (zone === 'hand') {
     if (isLandName(c.name)) items.push({ label: 'Play land', fn: () => playLand(c.id) });
@@ -5860,7 +5870,7 @@ function openZone(zone) {
       if (zone === 'exile' && stashReady(c)) row.append(h('button', { class: 'primary', text: c.plotted ? 'Cast free (plotted)' : 'Cast (foretold)', title: c.plotted ? 'You plotted this on an earlier turn: cast it without paying its mana cost, at sorcery speed' : 'You foretold this on an earlier turn: cast it for its foretell cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && c.onAdv) row.append(h('button', { class: 'primary', text: 'Cast creature', title: 'This card was exiled on an adventure: you may cast it from exile', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'graveyard' && gyLandPlayable(c)) row.append(h('button', { class: 'primary', text: 'Play land', title: 'You may play lands from your graveyard (uses a land drop)', onclick: () => { m.close(); playLandFromGy(c.id); } }));
-      if (zone === 'graveyard') for (const ga of gyAbilitiesFor(c)) row.append(h('button', { class: 'primary', text: ga.label, title: ga.kind === 'scavenge' ? 'Exile it from your graveyard: put +1/+1 counters equal to its power on target creature (sorcery speed)' : ga.kind === 'unearth' ? 'Return it to the battlefield with haste; exile it at the next end step (sorcery speed)' : `Exile it from your graveyard and create a ${ga.kind === 'embalm' ? 'white' : 'black 4/4'} Zombie token copy (sorcery speed)`, onclick: () => { m.close(); useGyAbility(c.id, ga.kind); } }));
+      if (zone === 'graveyard') for (const ga of gyAbilitiesFor(c)) row.append(h('button', { class: 'primary', text: ga.label, title: ga.kind === 'encore' ? 'Exile it from your graveyard: create a hasty token copy that attacks this turn and is sacrificed at the end step (sorcery speed)' : ga.kind === 'scavenge' ? 'Exile it from your graveyard: put +1/+1 counters equal to its power on target creature (sorcery speed)' : ga.kind === 'unearth' ? 'Return it to the battlefield with haste; exile it at the next end step (sorcery speed)' : `Exile it from your graveyard and create a ${ga.kind === 'embalm' ? 'white' : 'black 4/4'} Zombie token copy (sorcery speed)`, onclick: () => { m.close(); useGyAbility(c.id, ga.kind); } }));
       if (zone === 'graveyard') { const go = gyCastOptions(c); if (go.length) row.append(h('button', { class: 'primary', text: go.length > 1 ? 'Cast…' : (go[0].kind === 'aftermath' ? 'Cast ' + (cardInfo(c.name).fc[1].name) : go[0].kind === 'escape' ? 'Escape' : 'Flashback'), title: go.map(x => x.label).join('\n'), onclick: () => { m.close(); castFromGraveyard(c.id); } })); }
       if (zone !== 'hand') row.append(act('Hand', 'hand'));
       row.append(act('Play', 'battlefield'));
@@ -6053,7 +6063,7 @@ function openWelcome(onDone) {
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
       P('The deck button at the top left lists your saved decks and switches between them.')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
-      P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size.')]],
+      P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
       P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.'),
       P('For coin flips and die rolls open ', B('⚙ → Dice & coin…'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
@@ -6101,8 +6111,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.22';
+const APP_VERSION = '0.96.23';
 const CHANGELOG = [
+  { v: '0.96.23', title: 'Zones resize to fit, keyword batch 7', notes: ['Every battlefield zone now measures its cards after layout and shrinks them in real time until all of them fit, so a fourth or fifth land no longer wraps under the zone or gets clipped.','Hideaway N (702.75): when it enters, look at the top N cards, exile one face down, put the rest on the bottom in a random order; right-click the permanent and choose Hideaway to play the exiled card free (a land is put onto the battlefield).','Undaunted (702.125): costs {1} less for the opponent. Encore (702.141): from your graveyard at sorcery speed, exile the card to create a hasty token copy that is sacrificed at the next end step.'] },
   { v: '0.96.22', title: 'Keyword batch 6, Welcome tour updated', notes: ['Squad (702.157): pay the squad cost any number of times as you cast it; when it enters you create that many token copies. Offspring (702.175): an optional extra cost; if paid, a 1/1 token copy when it enters.','Impending (702.176): cast for the impending cost, it enters with N time counters, is not a creature while it has one, and loses one at the beginning of your end step.','The Welcome tour now describes the current app: the turn-flow bar, one-click sets, the new songs, Dice & coin, the Next round screen, the real Settings tabs and the Hand Key.'] },
   { v: '0.96.21', title: 'Next round screen, dice and coin, bar opacity', notes: ['When a game ends (opponent at 0 life, or you lose at 0 life, ten poison counters or an empty library) a Victory / Defeat screen appears with Next round (same deck), Sideboard then play, Choose another deck, or Keep playing. It also keeps a win/loss count for the session.','Coin flips and die rolls now tumble on screen and land on the real result: a 3D coin that stops on heads or tails, and dice (a real cube for d6, shaped dice for d4 to d100). The result is picked first with a true random number and the animation lands exactly on it. "Flip a coin" and "Roll a d20" in card text use it, and there is a new Dice & coin tool in the tools menu. Turn it off with Dice & coin tumble in the animation list.','New Turn-flow bar opacity slider (Settings > Look).','Settings: the panel could be taller than the space above your hand, so the last options could not be scrolled into view. It now fits the free space.'] },
   { v: '0.96.20', title: 'Battlefield flicker fix', notes: ['Fixed the flicker with five or more permanents in a zone: a card kept hopping between sitting in the row and wrapping underneath. The zones no longer show a scrollbar (it appeared and disappeared, changing how many cards fit), the number of columns is now set exactly from the card size so the browser cannot round it differently from frame to frame, and the fit keeps a few pixels of margin. Zones still scroll with the mouse wheel.'] },
@@ -9381,7 +9392,7 @@ const RULES_TABLE = [
   ['702.72', 'Champion', 'ability', 'none'],
   ['702.73', 'Changeling', 'ability', 'named'],
   ['702.74', 'Evoke', 'ability', 'named'],
-  ['702.75', 'Hideaway', 'ability', 'none'],
+  ['702.75', 'Hideaway', 'ability', 'tested'],
   ['702.76', 'Prowl', 'ability', 'tested'],
   ['702.77', 'Reinforce', 'ability', 'none'],
   ['702.78', 'Conspire', 'ability', 'none'],
@@ -9431,7 +9442,7 @@ const RULES_TABLE = [
   ['702.122', 'Crew', 'ability', 'named'],
   ['702.123', 'Fabricate', 'ability', 'tested'],
   ['702.124', 'Partner', 'ability', 'none'],
-  ['702.125', 'Undaunted', 'ability', 'none'],
+  ['702.125', 'Undaunted', 'ability', 'tested'],
   ['702.126', 'Improvise', 'ability', 'named'],
   ['702.127', 'Aftermath', 'ability', 'named'],
   ['702.128', 'Embalm', 'ability', 'tested'],
@@ -9447,7 +9458,7 @@ const RULES_TABLE = [
   ['702.138', 'Escape', 'ability', 'named'],
   ['702.139', 'Companion', 'ability', 'named'],
   ['702.140', 'Mutate', 'ability', 'none'],
-  ['702.141', 'Encore', 'ability', 'none'],
+  ['702.141', 'Encore', 'ability', 'tested'],
   ['702.142', 'Boast', 'ability', 'tested'],
   ['702.143', 'Foretell', 'ability', 'tested'],
   ['702.144', 'Demonstrate', 'ability', 'none'],
@@ -9740,7 +9751,7 @@ function routeLimits(c, routes) {
 // CR 702.97a  Scavenge: "[Cost], Exile this card from your graveyard: Put a number of +1/+1 counters equal to this card's power on target creature. Activate only as a sorcery."  (The power is the one it had in the graveyard: its printed power.)
 // CR 702.107a Outlast: "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."  (read in activatedAbilitiesFor)
 // CR 702.88a  Rebound: "If this spell was cast from your hand, instead of putting it into your graveyard as it resolves, exile it and, at the beginning of your next upkeep, you may cast this card from exile without paying its mana cost."
-const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth|Scavenge)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
+const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth|Scavenge|Encore)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
 function gyAbilitiesFor(c) {
   if (!c || c.token || !state) return [];
   const info = cardInfo(c.name); if (!info) return []; const out = [];
@@ -9771,6 +9782,13 @@ function useGyAbility(id, kind) {
       b.card.exileInstead = true; addKwFx(id, 'haste', { until: 'manual' });
       addFx({ kind: 'delayed', when: 'end', action: 'exile', targetId: id, targetName: b.card.name, text: `Exile ${b.card.name} (unearth).`, srcName: b.card.name });
       log(`${b.card.name}: unearthed. It has haste, is exiled at the beginning of the next end step, and is exiled instead if it would leave the battlefield`);
+    } else if (kind === 'encore') {
+      const info = cardInfo(g.name); const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling it is part of the cost
+      const d = copyOfCardDef(Object.assign({ n: g.name }, info), {}); const before = new Set(state.battlefield.map(x => x.id));
+      makeTokensFromDef(d, 1, `${c0.name} (encore)`);
+      for (const t of state.battlefield) if (!before.has(t.id)) { addKwFx(t.id, 'haste', { until: 'manual' });
+        addFx({ kind: 'delayed', when: 'end', action: 'sacrifice', targetId: t.id, targetName: t.name, text: `Sacrifice ${t.name} (encore).`, srcName: c0.name }); }
+      log(`${c0.name}: encore paid; a token copy with haste was created for your opponent. It attacks that player this turn if able and is sacrificed at the beginning of the next end step`);
     } else if (kind === 'scavenge') {
       const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling it is part of the cost
       const n = Math.max(0, ptCalc(c0).p || 0), crs = state.battlefield.filter(x => permTypeInfo(x).types.has('creature'));
@@ -10153,6 +10171,40 @@ function impendingEnter(c) {
   if (!c.impended) return; const m = String(cardText(c)).replace(/\([^)]*\)/g, '').match(/^Impending (\d+)/im), n = m ? +m[1] : 0;
   c.counters = c.counters && typeof c.counters === 'object' ? c.counters : { plus: 0, minus: 0 }; c.counters.time = n;
   log(`${c.name}: cast for its impending cost, it enters with ${n} time counter${n === 1 ? '' : 's'} and is not a creature until the last is removed`);
+}
+// ---------------------------------------------------------------- v0.96.23 keyword batch 7 (rules text): Hideaway, Undaunted, Encore
+// CR 702.75a Hideaway N: "When this permanent enters, look at the top N cards of your library. You may exile one of them face down. Put the rest on the bottom of your library in a random order."
+// CR 702.75b "[Do something] with the exiled card" refers to the card exiled by that permanent's hideaway; the card may be played (CR 702.75c) when the permanent's own condition is met.
+// CR 702.125a Undaunted: "This spell costs {1} less to cast for each opponent you have." (goldfish: one opponent)  [in costAdjustments, 08]
+// CR 702.141a Encore [cost]: "[Cost], Exile this card from your graveyard: For each opponent, create a token that's a copy of it that attacks that opponent this turn if able. They gain haste. Sacrifice them at the beginning of the next end step. Activate only as a sorcery." [in useGyAbility, 44]
+KW_TRIGGERS.push(
+  { cr: '702.75', kw: 'hideaway', ev: 'etb-self', cond: 'Hideaway: when this permanent enters', text: 'When this permanent enters, look at the top N cards of your library. You may exile one of them face down. Put the rest on the bottom of your library in a random order.' }
+);
+KW_EFFECTS['hideaway'] = obj => {
+  const n = obj.n || 4;
+  return [{ full: true, label: `Look at the top ${n} cards, exile one face down, the rest on the bottom`, fn: () => {
+    const top = state.library.slice(0, n); if (!top.length) { log(`${obj.sourceName}: hideaway, but your library is empty`); return; }
+    const finish = chosen => {
+      snap(); const keep = chosen && state.library.find(x => x.id === chosen.id);
+      let rest = state.library.splice(0, top.length).filter(x => !keep || x.id !== keep.id);
+      for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }   // random order (CR 702.75a)
+      state.library.push(...rest);
+      if (keep) { keep.hiddenBy = obj.sourceId; keep.faceDown = true; state.exile.push(keep); log(`${obj.sourceName}: hideaway, exiled a card face down; ${rest.length} went to the bottom of your library in a random order`); }
+      else log(`${obj.sourceName}: hideaway, no card exiled; ${rest.length} went to the bottom of your library in a random order`);
+      render();
+    };
+    openPickCards({ title: `${obj.sourceName}: hideaway ${n}`, cards: top, max: 1, min: 0, note: 'Exile one face down (optional). The rest go to the bottom in a random order.', done: picked => finish(picked && picked[0]) });
+  } }];
+};
+// "You may play the exiled card without paying its mana cost" once the permanent's condition is met (CR 702.75c): a land is put onto the battlefield, anything else is cast free.
+function hideawayPlay(srcId) {
+  if (!state) return; const cards = state.exile.filter(x => x.hiddenBy === srcId); if (!cards.length) { toast('Nothing hidden', 'This permanent has no card exiled with hideaway.'); return; }
+  const go = c => {
+    delete c.hiddenBy; delete c.faceDown;
+    if (/\bLand\b/.test(frontType(c) || '')) { moveCard(c.id, 'battlefield'); log(`Hideaway: played ${c.name} from exile`); render(); }
+    else suspendCastFree(c.id, null, 'Hideaway');
+  };
+  if (cards.length === 1) go(cards[0]); else openPickCards({ title: 'Hideaway: play which exiled card?', cards, max: 1, min: 1, done: p => { if (p[0]) go(p[0]); } });
 }
 init();
 
