@@ -1,0 +1,10 @@
+MTG PLAYTESTER - what is in this folder
+
+  Windows/               Windows launchers. Play.bat opens the game in its own window; Build-Installer.bat makes the installer.
+  SteamDeck-and-Linux/   Play.sh opens the game in its own window; Build-AppImage.sh makes a single-file AppImage.
+  In-Browser/            Nothing to install: Play-in-Browser.bat (Windows) or Play-in-Browser.sh (Linux) opens it in your browser.
+  app/                   The game itself. All three launchers use this one folder, so leave it where it is.
+  developer/             Source code, tests, notes and the release script. You do not need this to play.
+
+Quick start: open the folder for your system and double-click the Play file.
+Desktop windows need Node.js (https://nodejs.org, LTS) once; the first launch installs the window shell.

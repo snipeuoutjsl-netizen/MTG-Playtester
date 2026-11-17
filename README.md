@@ -30,9 +30,9 @@ You need nothing for the browser version, and Node.js only if you build the desk
 |---|---|
 | **Windows installer or portable .exe** | Download from the [Releases page](https://github.com/snipeuoutjsl-netizen/MTG-Playtester/releases). Not code-signed, so Windows SmartScreen may warn: choose *More info*, then *Run anyway*. |
 | **Linux / Steam Deck AppImage** | Download from Releases, make it executable, run it. On Steam Deck use Desktop Mode, then add it as a non-Steam game for Game Mode. |
-| **Just try it in a browser** | Download the source zip, then double-click `Start.bat` (Windows) or run `./Start-Browser.sh` (Linux). Or open `index.html` in Edge, Chrome or Firefox. |
-| **Desktop window from source** | Install [Node.js LTS](https://nodejs.org), then run `Run-Desktop.bat` (Windows) or `./Run-Linux.sh`. |
-| **Build it yourself** | `Build-Installer.bat` (Windows) or `./Build-Linux.sh`; or use the GitHub Actions workflows *Build Windows app* and *Build Linux app*. |
+| **Just try it in a browser** | Download the source zip, then double-click `In-Browser/Play-in-Browser.bat` (Windows) or run `In-Browser/Play-in-Browser.sh` (Linux). Or open `app/index.html` in Edge, Chrome or Firefox. |
+| **Desktop window from source** | Install [Node.js LTS](https://nodejs.org), then run `Windows/Play.bat` or `SteamDeck-and-Linux/Play.sh`. |
+| **Build it yourself** | `Windows/Build-Installer.bat` or `SteamDeck-and-Linux/Build-AppImage.sh`; or use the GitHub Actions workflows *Build Windows app* and *Build Linux app*. |
 
 The desktop app and the browser version keep **separate storage**, so load the card data and import your decks once in whichever you use.
 
@@ -79,11 +79,11 @@ Please include:
 
 ## For developers
 
-- `DEVNOTES.md` is the developer history.
+- `developer/DEVNOTES.md` is the developer history.
 - Run the rules tests: `cd tests && python3 inject.py && node cr-rules.js`.
-- The game is plain HTML, JS and CSS with a thin Electron shell (`main.js`, `preload.js`). The code lives in `src/` (one file per area) and is joined into `app.js` by `node build-src.js`. Edit `src/`, then build; commit both.
+- The game is plain HTML, JS and CSS with a thin Electron shell (`main.js`, `preload.js`). The game files are in `app/`. The code lives in `developer/src/` (one file per area) and is joined into `app/app.js` by `node developer/build-src.js`. Edit `src/`, then build; commit both.
 - `python3 tests/rules-audit.py MagicCompRules.txt --table` regenerates the Comprehensive Rules keyword table (`src/40-rules-table.js`).
-- **Publishing a release:** run `node make-release.js`, then upload ALL SIX files it lists (index.html, app.js, style.css, package.json, latest.json, update.json) to the newest GitHub release. The in-app updater downloads them from `releases/latest/download/`, so a release that is a draft, a pre-release, or missing a file cannot be installed from inside the app.
+- **Publishing a release:** run `node developer/make-release.js`, then upload ALL SIX files it lists (index.html, app.js, style.css, package.json, latest.json, update.json) to the newest GitHub release. The in-app updater downloads them from `releases/latest/download/`, so a release that is a draft, a pre-release, or missing a file cannot be installed from inside the app.
 
 ## Legal
 

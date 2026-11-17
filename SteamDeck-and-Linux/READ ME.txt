@@ -1,0 +1,5 @@
+Steam Deck / Linux (Desktop Mode)
+
+Play.sh            Opens the game in its own window (needs Node.js; SteamOS: sudo pacman -S nodejs npm).
+Build-AppImage.sh  Builds one AppImage file (output: app/dist). Right-click it > Properties > Permissions > Is executable.
+If a script will not run: right-click > Properties > Permissions > Is executable.

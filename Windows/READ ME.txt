@@ -1,0 +1,4 @@
+Windows
+
+Play.bat            Opens the game in its own window (installs the window shell on first run; needs Node.js LTS).
+Build-Installer.bat Builds a one-click installer and portable .exe (output: app\dist). Send people the ready-made zip it makes.
