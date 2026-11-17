@@ -1,32 +1,27 @@
 {
-  "version": "0.67.0",
+  "version": "0.96.13",
   "shell": 2,
-  "title": "Board layout pass",
+  "title": "Release set fixed, movable Hand label",
   "notes": [
-    "Six board changes, each with its own switch in Settings > Playmat & frame > Board layout.",
-    "Zone depth: the three battlefield zones look like shelves with a soft inner shadow.",
-    "Stack identical lands and tokens: identical cards pile into one with a count badge; click the badge to spread them out, and click it again to pile them up. Cards with counters, attachments or different states stay separate.",
-    "Dim cards that cannot act: tapped lands and summoning-sick creatures are a little duller.",
-    "Mana and phase strip: a slim strip on the board edge shows the current step, what comes next, floating mana, your land drop and the stack size.",
-    "Combat lane: once attackers are declared, they move to a lit lane at the front of the creature zone.",
-    "Fanned graveyard: the top three graveyard cards show fanned out."
+    "Updater: releases now always come with a SIXTH file, update.json, which older app shells read (its absence caused \"update.json has no version\"). The release script bundles all six files into one zip and the update window names the missing file.",
+    "The small Hand label (count and Key) can be dragged anywhere on the table; its place is remembered and double-clicking puts it back. The Sort button is gone: drag cards sideways in the hand to order them."
   ],
   "files": {
     "index.html": {
-      "sha256": "7a04ec0621a4a8c7bdcb4d2847c4b5aeaca99f2c175e300617d0be633d3ffeae",
-      "size": 9984
+      "sha256": "1aca6a8cdc9915ab8e947f771c23130f740ee4e3ab0e70da738cf752a9d0df2c",
+      "size": 10200
     },
     "app.js": {
-      "sha256": "384226209db026967bb267e07da27f4824b01988db315a74ff59c7565fa2f92e",
-      "size": 567890
+      "sha256": "adf196e004e34984668070f1a830739c729cf4a9fcce07fb95b15789ea24d79d",
+      "size": 928683
     },
     "style.css": {
-      "sha256": "e28e7050442d169c41a7b2d6c3f210512ed8fbaae3b130a5dd05645dc4d741a2",
-      "size": 81771
+      "sha256": "b5ae9e21f3b41a26fad31a46930143d6bde21115e9f4f6f3acd6c5cd89d42683",
+      "size": 124205
     },
     "package.json": {
-      "sha256": "1f49ad263edea427ab5a193239b1a33546974c45fb0699ded74a953ccea78135",
-      "size": 1193
+      "sha256": "0ad7d21a23b1d825938637f80333c69f21cd435c1fb8259ff8979b3cdd8d7d82",
+      "size": 1547
     }
   }
 }
