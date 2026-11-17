@@ -203,7 +203,16 @@ function targetedOptions(tx, obj) {
     else if (/\buntap\b/i.test(s)) each((t, c) => { if (c && c.tapped) untapByEffect(c.id); }, t => `Untap ${t.name}`);
     else if (/\btap\b/i.test(s) && /\btap target/i.test(s)) each((t, c) => { if (c && !c.tapped) toggleTap(c.id); }, t => `Tap ${t.name}`);
     else if ((mm = s.match(/put (a|an|one|two|three|four|five|\d+) \+1\/\+1 counters? on/i))) { const n = wnum(mm[1]); each((t, c) => { if (c) addCounter(c.id, n, 'plus'); }, t => `Put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${t.name}`); }
-    else if (/\bcounter\b/i.test(s) && /\bcounter target\b/i.test(s)) each((t) => { const sp = state.stack.find(x => x.id === t.id), mv = sp ? spellMV(sp) : 0; counterStackObject(t.id, src); delayedManaFromText(tx, mv, src); }, t => `Counter ${t.name}`);
+    else if (/\bcounter\b/i.test(s) && /\bcounter target\b/i.test(s)) { const cdest = (m0 => m0 ? (/hand/.test(m0[1]) ? 'hand' : /top of/.test(m0[1]) ? 'top' : 'exile') : null)(tx.replace(/\u2019/g, "'").match(/countered this way, ((?:put it into its owner's hand|put it on top of its owner's library|exile it))/i));
+      const soft = s.match(/\bunless (?:its controller|that player|they|its owner|you) pays? (.+?)\.?$/i);   // CR 608.2c / 701.6: a "soft" counter: only counters if the cost is NOT paid
+      each((t) => { const sp = state.stack.find(x => x.id === t.id), mv = sp ? spellMV(sp) : 0;
+        { const cc = s.match(/\bif it has mana value (\d+) or (less|greater|more)\b/i);   // "Counter target spell if it has mana value 3 or less" (CR 608.2b: checked as it resolves)
+          if (cc && sp) { const nn = +cc[1], okc = cc[2].toLowerCase() === 'less' ? mv <= nn : mv >= nn; if (!okc) { log(`${src}: ${t.name} has mana value ${mv}, not ${nn} or ${cc[2] === 'less' ? 'less' : 'greater'}, so it is not countered`); render(); return; } } }
+        if (!soft) { counterStackObject(t.id, src, cdest); delayedManaFromText(tx, mv, src); return; }
+        const cost = soft[1].replace(/\s+/g, ' ').trim(), m = modal(`${src}: counter unless it pays ${cost}`, { width: 480, sticky: true, noClose: true });
+        m.body.append(h('div', { class: 'psub', text: `${t.name} is countered unless its controller pays ${cost}. Did they pay?` }), h('div', { class: 'muted small', text: 'Their mana is not tracked here: pay it from your own mana if it is your spell, otherwise answer for your opponent.' }));
+        m.foot.append(h('button', { text: `They paid ${cost}`, onclick: () => { m.close(); log(`${src}: ${t.name}'s controller paid ${cost}, so it is not countered`); render(); } }), h('button', { class: 'primary', text: "They didn't pay: counter it", onclick: () => { m.close(); counterStackObject(t.id, src, cdest); delayedManaFromText(tx, mv, src); } }));
+      }, t => `Counter ${t.name}${soft ? ' unless its controller pays ' + soft[1].replace(/\s+/g, ' ').trim() : ''}`); }
     else if ((mm = s.match(/\bgains? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(n, true) : changeOppLife(n); }, t => `${t.name} ${t.id === 'you' ? 'gain' : 'gains'} ${n} life`); }
     else if ((mm = s.match(/\bloses? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); }, t => `${t.name} ${t.id === 'you' ? 'lose' : 'loses'} ${n} life`); }
     else if (parseDrawDiscard(s)) { const dd = parseDrawDiscard(s); each((t) => { if (t.id === 'you') runDrawDiscard(dd, src); else { log(`${src}: your opponent: ${ddLabel(dd).toLowerCase()} (not tracked here)`); render(); } }, t => `${t.name}: ${ddLabel(dd).toLowerCase()}`); }
@@ -255,14 +264,14 @@ function applyGraveReturn(c, stx) {
   return rest.replace(/You lose life equal to (?:its|that card's) mana value\.?/i,'').replace(/[^.]*gains? haste until end of turn\.?/i,'').replace(/[^.]*exile (?:it|that creature) at the beginning of the next end step\.?/i,'').replace(/[^.]*would leave the battlefield, exile it instead[^.]*\.?/i,'').trim();
 }
 // "Countered": the top object of the stack is removed without resolving (you are playtesting against a real opponent).
-function counterStackObject(id, by) {
+function counterStackObject(id, by, dest) {   // dest: where a countered spell goes instead of its graveyard (CR 701.6 + Remand / Memory Lapse / Dissipate text)
   if(!state) return; const i=state.stack.findIndex(x=>x.id===id); if(i<0) return;
   { const sc=state.stack[i]; if(!sc.ability && !sc.opp && /(?:this spell|this card) can'?t be countered/i.test((cardText(sc)||'').replace(/\u2019/g,"'"))) { log(`${by?by+': ':''}${sc.name} can't be countered, so it stays on the stack`); toast("Can't be countered", `${sc.name} says it can't be countered, so the counterspell does nothing to it (rule 101.2).`); return; } }
   snap();
   const [c]=state.stack.splice(i,1); if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
   if(c.opp){ log(`${by?by+': ':''}Opponent's ${c.name} was countered`); toast(`Opponent's ${c.name} countered`,'It leaves the stack without resolving.'); }
   else if(c.ability){ log(`${by?by+': ':''}${c.sourceName||c.name}: ability was countered — it does not resolve`); toast('Ability countered','It leaves the stack without resolving. The permanent that made it is unaffected.'); }
-  else { const where=gyPush(c,'stack'); delete c.target; delete c.targets; delete c.modes; delete c.modeTexts; log(`${by?by+': ':''}${c.name} was countered → ${where}`); restoreHalf(c); toast(`${c.name} countered`, `A countered spell does not resolve (no effects, no entering the battlefield) and goes to its owner's ${where}.`); }
+  else { const where = dest === 'hand' ? (state.hand.push(c), "its owner's hand") : dest === 'top' ? (state.library.unshift(c), 'the top of its owner\'s library') : dest === 'exile' ? (state.exile.push(c), 'exile') : gyPush(c,'stack'); delete c.target; delete c.targets; delete c.modes; delete c.modeTexts; log(`${by?by+': ':''}${c.name} was countered → ${where}`); restoreHalf(c); toast(`${c.name} countered`, `A countered spell does not resolve (no effects, no entering the battlefield) and goes to its owner's ${where}.`); }
   render();
   if(state.pendingTriggers.length) resolvePendingTrigger();
 }
