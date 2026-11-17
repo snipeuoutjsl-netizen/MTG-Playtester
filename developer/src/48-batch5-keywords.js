@@ -60,7 +60,7 @@ KW_EFFECTS['ravenous'] = obj => { const f = findCard(obj.sourceId), x = (f && f.
 // CR 702.147a Decayed and CR 702.98a Unleash (while it has a +1/+1 counter): this creature can't block.
 function kwCantBlock(c) {
   const items = kwItems(cardText(c) || ''), has = k => items.some(i => new RegExp('^' + k + '\\b', 'i').test(i));
-  if (has('decayed')) return true;
+  if (has('decayed') || sbCantBlock(c)) return true;   // "~ can't block" read from the rules text (52)
   const plus = c.counters && typeof c.counters === 'object' ? (c.counters.plus || 0) - (c.counters.minus || 0) : 0;
   return has('unleash') && plus > 0;
 }

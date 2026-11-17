@@ -689,6 +689,7 @@ function hasKw(c, kw) {
   if (state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)) return true;   // "gains haste until end of turn"
   if (kw === 'haste' && c.suspHaste && state && state.battlefield.includes(c)) return true;   // cast from suspend
   if (kwLine(cardText(c), kw)) return true;
+  if (sbKeywords(c).includes(kw)) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
 const GRANTABLE = ['flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
@@ -698,7 +699,7 @@ function grantedKeywords(c) {
   if (!state || !c || c.tapped === undefined && !c.id) return out;
   for (const kw of GRANTABLE) {
     if (kwLine(cardText(c), kw)) continue;
-    let from = kwGrant(c, kw);
+    let from = kwGrant(c, kw) || (sbKeywords(c).includes(kw) ? 'its own ability' : null);
     if (!from) { const fe = fxOn(c, 'kw').find(e => e.kw === kw); if (fe) from = `${fe.srcName && fe.srcName !== 'manual' ? fe.srcName : 'an effect'}, ${UNTIL_WORDS[fe.until]}`; }
     if (from) out.push({ kw, from });
   }
@@ -790,7 +791,7 @@ function cdaValues(c) {
 }
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
-  if (c.becomes && c.becomes.pt) pt = c.becomes.pt;   // CR 613.4b: an effect that sets base power and toughness
+  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; }   // CR 613.4b: an effect that sets base power and toughness
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
@@ -1144,9 +1145,10 @@ function parseTriggers(c) {
 }
 function frontType(c) {
   const i = c && !c.token && cardInfo(c.name); let t = i && i.t ? i.t.split(' // ')[0] : '';
-  if (c && c.becomes && t) {   // v0.96.12 CR 613.1d: a type-changing effect adds its card types and subtypes to the printed ones
-    const [a, b] = t.split('\u2014').map(x => x.trim()), cap = w => w[0].toUpperCase() + w.slice(1), have = new Set(a.toLowerCase().split(/\s+/)), add = c.becomes.types.filter(w => !have.has(w)).map(cap);
-    const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(c.becomes.subs || []).map(cap)])];
+  const bc = c && (c.becomes || selfBecomes(c));
+  if (bc && t) {   // v0.96.12 CR 613.1d: a type-changing effect adds its card types and subtypes to the printed ones
+    const [a, b] = t.split('\u2014').map(x => x.trim()), cap = w => w[0].toUpperCase() + w.slice(1), have = new Set(a.toLowerCase().split(/\s+/)), add = bc.types.filter(w => !have.has(w)).map(cap);
+    const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
@@ -4837,8 +4839,8 @@ document.addEventListener('mousemove', e => {
 function cardEl(c, zone) {
   const info = c.token ? null : cardInfo(c.name);
   const pw = !c.token && isPlaneswalker(c);
-  const ptc = (!pw && zone === 'battlefield' && permZone(c) === 'creatures' && (c.token || info)) ? ptCalc(c) : null;
-  const pt = pw ? null : ptc ? ptText(c) : (c.token ? c.tk.pt : info && info.pt);
+  const ptc = ((!pw || selfBecomes(c)) && zone === 'battlefield' && permZone(c) === 'creatures' && (c.token || info)) ? ptCalc(c) : null;
+  const pt = pw && !selfBecomes(c) ? null : ptc ? ptText(c) : (c.token ? c.tk.pt : info && info.pt);
   const e = h('div', {
     class: `card c-${colorClass(c)}${isFoil(c) ? ' foil' : ''}${pt ? ' haspt' : ''}${c.tapped ? ' tapped' : ''}${selected === c.id ? ' sel' : ''}${bottomSel.has(c.id) ? ' bsel' : ''}${zone === 'hand' && state && (state.discarding || (state.phase === 'mull' && state.bottomPhase)) ? (!handPick || !handPick.ok || handPick.ok(c) ? ' pickable' : ' nopick') : ''}${zone === 'hand' && teach('playability') ? ' cast-' + handInteraction(c) : ''}${zone === 'hand' && isInstantSpeed(c) && teach('playability') ? ' instant-speed' : ''}${zone === 'battlefield' && teach('playability') && activationReady(c) ? ' cast-ready act-ready' : ''}${zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' sick' : ''}`,
     draggable: 'true', 'data-id': c.id, title: c.name + (!c.token && cardInfo(c.name) && cardInfo(c.name).mc ? '  ' + cardInfo(c.name).mc : '') + (zone === 'hand' ? handTip(c) : '') + (zone === 'battlefield' && teach('playability') && activationReady(c) ? ' — ' + activationReady(c) : '') + (zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' — ' + SICK_TEXT : '')
@@ -5115,7 +5117,7 @@ function showPreviewText(c) {
 }
 
 function permZone(c) {
-  if (c.becomes && c.becomes.types.includes('creature')) return 'creatures';
+  if ((c.becomes && c.becomes.types.includes('creature')) || selfBecomes(c)) return 'creatures';
   if (c.token) return c.tk && c.tk.pt ? 'creatures' : 'noncreature';
   const info = cardInfo(c.name);
   if (isLandName(c.name)) return 'lands';
@@ -6111,8 +6113,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.23';
+const APP_VERSION = '0.96.24';
 const CHANGELOG = [
+  { v: '0.96.24', title: 'Green glow, popups above the hand, rules-driven statics', notes: ['Permanents and planeswalkers with an ability you can activate right now get a soft pulsing green glow; when nothing can be activated there is no glow.','The stack and the resolving prompt (including its Discard / Resolve buttons) now sit in the space above your hand, so the hand can no longer cover them.','Kaito, Bane of Nightmares: during your turn, while he has loyalty counters, he is now a 3/4 Ninja creature with hexproof (type, power/toughness, creature row and keyword). This is read from the words of the static ability, not from his name, so every card with that wording works.','New general reader for a permanent\'s own statics: "As long as [condition], ~ is a N/N [types] creature with [keywords]", "~ has [keyword] as long as [condition]" (Bloodghast) and "~ can\'t block" (Gravecrawler, Bloodghast). The card-reading report now counts these as understood.'] },
   { v: '0.96.23', title: 'Zones resize to fit, keyword batch 7', notes: ['Every battlefield zone now measures its cards after layout and shrinks them in real time until all of them fit, so a fourth or fifth land no longer wraps under the zone or gets clipped.','Hideaway N (702.75): when it enters, look at the top N cards, exile one face down, put the rest on the bottom in a random order; right-click the permanent and choose Hideaway to play the exiled card free (a land is put onto the battlefield).','Undaunted (702.125): costs {1} less for the opponent. Encore (702.141): from your graveyard at sorcery speed, exile the card to create a hasty token copy that is sacrificed at the next end step.'] },
   { v: '0.96.22', title: 'Keyword batch 6, Welcome tour updated', notes: ['Squad (702.157): pay the squad cost any number of times as you cast it; when it enters you create that many token copies. Offspring (702.175): an optional extra cost; if paid, a 1/1 token copy when it enters.','Impending (702.176): cast for the impending cost, it enters with N time counters, is not a creature while it has one, and loses one at the beginning of your end step.','The Welcome tour now describes the current app: the turn-flow bar, one-click sets, the new songs, Dice & coin, the Next round screen, the real Settings tabs and the Hand Key.'] },
   { v: '0.96.21', title: 'Next round screen, dice and coin, bar opacity', notes: ['When a game ends (opponent at 0 life, or you lose at 0 life, ten poison counters or an empty library) a Victory / Defeat screen appears with Next round (same deck), Sideboard then play, Choose another deck, or Keep playing. It also keeps a win/loss count for the session.','Coin flips and die rolls now tumble on screen and land on the real result: a 3D coin that stops on heads or tails, and dice (a real cube for d6, shaped dice for d4 to d100). The result is picked first with a true random number and the animation lands exactly on it. "Flip a coin" and "Roll a d20" in card text use it, and there is a new Dice & coin tool in the tools menu. Turn it off with Dice & coin tumble in the animation list.','New Turn-flow bar opacity slider (Settings > Look).','Settings: the panel could be taller than the space above your hand, so the last options could not be scrolled into view. It now fits the free space.'] },
@@ -8919,6 +8922,7 @@ function compileCardOne(c) {
     }
     if (/^\+\s*(?:\{[^}]+\})+\s*\u2014/.test(stripped)) { const eff = recognizedEffects(stripped.replace(/^[^\u2014]*\u2014\s*/, '').replace(nameRe, '~')); push(text, 'spell', eff.length ? 'ok' : 'part', `Spree mode: you pick it as you cast, and its cost is added to the spell.` + (eff.length ? ` The app can apply: ${eff.join('; ')}.` : ' You apply its effect by hand.')); continue; }
     { const rl = rulingFor(norml); if (rl) { push(text, 'other', 'part', rl); continue; } }
+    { const sb = sbParseLine(stripped.replace(nameRe, '~')); if (sb) { push(text, 'static', 'ok', sb.becomes ? `Static ability: ${sb.cond ? 'as long as ' + sb.cond + ', ' : ''}it is a ${sb.pt || ''} ${sb.subs.join(' ')} creature${sb.kws.length ? ' with ' + sb.kws.join(', ') : ''}; the app applies the type, P/T and keywords while the condition holds.` : sb.cantBlock ? `Static ability: it can't block${sb.cond ? ' as long as ' + sb.cond : ''}; the app keeps it out of the blocker list.` : `Static ability: it has ${sb.kws.join(', ')}${sb.cond ? ' as long as ' + sb.cond : ''}; the app checks the condition each time it reads the card.`); continue; } }
     push(text, 'other', 'unk', 'Not understood: the app does nothing for this line. Handle it by hand.');
   }
   // modal lines ("Choose one \u2014 \u2022 ... \u2022 ...")
@@ -10036,7 +10040,7 @@ KW_EFFECTS['ravenous'] = obj => { const f = findCard(obj.sourceId), x = (f && f.
 // CR 702.147a Decayed and CR 702.98a Unleash (while it has a +1/+1 counter): this creature can't block.
 function kwCantBlock(c) {
   const items = kwItems(cardText(c) || ''), has = k => items.some(i => new RegExp('^' + k + '\\b', 'i').test(i));
-  if (has('decayed')) return true;
+  if (has('decayed') || sbCantBlock(c)) return true;   // "~ can't block" read from the rules text (52)
   const plus = c.counters && typeof c.counters === 'object' ? (c.counters.plus || 0) - (c.counters.minus || 0) : 0;
   return has('unleash') && plus > 0;
 }
@@ -10206,6 +10210,62 @@ function hideawayPlay(srcId) {
   };
   if (cards.length === 1) go(cards[0]); else openPickCards({ title: 'Hideaway: play which exiled card?', cards, max: 1, min: 1, done: p => { if (p[0]) go(p[0]); } });
 }
+// ---------------------------------------------------------------- v0.96.23 rules-text reading: a permanent's own "is a N/N ... creature" static ability
+// CR 613.1d (type-changing effects), CR 613.4b (P/T-setting effects), CR 611.3a (a static ability's effect applies as long as its conditions are true).
+// Reads lines like:  "During your turn, as long as Kaito has one or more loyalty counters on him, he's a 3/4 Ninja creature and has hexproof."
+//                    "As long as you control a Demon, ~ is a 4/4 Dragon creature with flying."   "As long as it's your turn, Gideon is a 5/5 Human Soldier creature with indestructible."
+// No card names appear here: the line is understood from its words, then the condition is evaluated each time the card is read.
+const SB_COND = [
+  // [pattern, (match, card) => true/false]
+  [/^(?:it'?s|it is) your turn$/i, () => true],   // goldfish: it is always your turn
+  [/^.+? (?:has|have) (one|a|an|\d+) or more ([\w+\/-]+) counters? on (?:him|her|it|them|~|this \w+)$/i, (m, c) => { const n = /^\d+$/.test(m[1]) ? +m[1] : 1, k = m[2].toLowerCase(); return (k === 'loyalty' ? (c.loyalty || 0) : counterCount(c, k === '+1/+1' ? 'plus' : k)) >= n; }],
+  [/^you control (an?|one|two|three|\d+) ?(?:or more )?(.+)$/i, (m, c) => { const n = /^\d+$/.test(m[1]) ? +m[1] : ({ two: 2, three: 3 }[m[1].toLowerCase()] || 1); let ps = null; try { ps = parseSubject('each ' + m[2].replace(/s$/i, '') + ' you control', c); } catch (e) { ps = null; } if (!ps) return null; return state.battlefield.filter(x => x.id !== c.id && ps.test(x)).length >= n; }],
+  [/^you have (\d+) or more life$/i, m => state.life >= +m[1]],
+  [/^you have (\d+) or less life$/i, m => state.life <= +m[1]],
+  [/^an opponent has (\d+) or less life$/i, m => (state.oppLife ?? 20) <= +m[1]],
+  [/^an opponent has (\d+) or more life$/i, m => (state.oppLife ?? 20) >= +m[1]],
+];
+const SB_SUBJ = '(?:~|he|she|it)';
+const SB_RE = new RegExp("^([Dd]uring your turn,\\s*)?(?:[Aa]s long as ([^,]+?),\\s*)?([Dd]uring your turn,\\s*)?" + SB_SUBJ + "(?:'s|\\u2019s| is| are)\\s+an?\\s+(?:(\\d+)\\/(\\d+)\\s+)?((?:[A-Za-z-]+\\s+)*?)creature\\b(?:\\s+(?:with|and has|and gains)\\s+(.+?))?\\.?$");
+const SB_KW_RE = new RegExp("^(?:[Aa]s long as ([^,]+?),\\s*)?" + SB_SUBJ + " (?:has|have|gains) ([a-z ,]+?)(?: as long as (.+?))?\\.?$");
+const SB_NOBLOCK_RE = new RegExp("^(?:[Aa]s long as ([^,]+?),\\s*)?" + SB_SUBJ + " can't block(?: as long as (.+?))?\\.?$");
+const SB_COLORS = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+const sbKwList = t => String(t || '').split(/,\s*|\s+and\s+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+// Reads ONE rules line (the card's own name already replaced by ~) and returns a spec, or null.
+function sbParseLine(line) {
+  line = String(line || '').trim(); if (!line || /:/.test(line.replace(/"[^"]*"/g, '')) || /^(When|Whenever|At|Until|Equipped|Enchanted)\b/i.test(line)) return null;
+  let m = line.match(SB_RE);
+  if (m) {
+    const words = (m[6] || '').trim().split(/\s+/).filter(Boolean), types = ['creature'], subs = [], col = [];
+    for (const w of words) { const lw = w.toLowerCase(); if (SB_COLORS[lw]) col.push(SB_COLORS[lw]); else if (/^(artifact|enchantment|land)$/.test(lw)) types.push(lw); else if (lw === 'legendary') continue; else subs.push(lw); }
+    const kws = m[7] ? sbKwList(m[7]).filter(x => GRANTABLE.includes(x)) : [];
+    return { becomes: true, myTurn: !!(m[1] || m[3]), cond: m[2] || '', pt: m[4] ? m[4] + '/' + m[5] : '', types, subs, col, kws };
+  }
+  if ((m = line.match(SB_NOBLOCK_RE))) return { cantBlock: true, cond: m[1] || m[2] || '', kws: [] };
+  if ((m = line.match(SB_KW_RE))) { const kws = sbKwList(m[2]); if (kws.length && kws.every(x => GRANTABLE.includes(x))) return { kws, cond: m[1] || m[3] || '' }; }
+  return null;
+}
+function sbParse(name, tx) {
+  const re = selfNameRe(name), out = [];
+  for (const raw of String(tx || '').replace(/\([^)]*\)/g, '').split('\n')) { const sp = sbParseLine(raw.trim().replace(re, '~')); if (sp) out.push(sp); }
+  return out;
+}
+const sbMemo = new Map();
+// The currently active specs of a permanent on the battlefield (each spec's condition is evaluated now).
+function sbActive(c) {
+  if (!c || c.token || !state || !state.battlefield.includes(c)) return [];
+  const info = cardInfo(c.name); if (!info || !info.tx) return [];
+  let specs = sbMemo.get(c.name); if (!specs) { specs = sbParse(c.name, info.tx); sbMemo.set(c.name, specs); }
+  const out = [];
+  for (const s of specs) {
+    if (s.cond) { let ok = null; const cond = s.cond.replace(/[\u2019]/g, "'").trim(); for (const [re, fn] of SB_COND) { const m = cond.match(re); if (m) { ok = fn(m, c); break; } } if (!ok) continue; }
+    out.push(s);
+  }
+  return out;
+}
+const selfBecomes = c => sbActive(c).find(s => s.becomes) || null;
+const sbKeywords = c => sbActive(c).flatMap(s => s.kws || []);
+const sbCantBlock = c => sbActive(c).some(s => s.cantBlock);
 init();
 
 })();

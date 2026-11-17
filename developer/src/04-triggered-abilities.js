@@ -79,9 +79,10 @@ function parseTriggers(c) {
 }
 function frontType(c) {
   const i = c && !c.token && cardInfo(c.name); let t = i && i.t ? i.t.split(' // ')[0] : '';
-  if (c && c.becomes && t) {   // v0.96.12 CR 613.1d: a type-changing effect adds its card types and subtypes to the printed ones
-    const [a, b] = t.split('\u2014').map(x => x.trim()), cap = w => w[0].toUpperCase() + w.slice(1), have = new Set(a.toLowerCase().split(/\s+/)), add = c.becomes.types.filter(w => !have.has(w)).map(cap);
-    const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(c.becomes.subs || []).map(cap)])];
+  const bc = c && (c.becomes || selfBecomes(c));
+  if (bc && t) {   // v0.96.12 CR 613.1d: a type-changing effect adds its card types and subtypes to the printed ones
+    const [a, b] = t.split('\u2014').map(x => x.trim()), cap = w => w[0].toUpperCase() + w.slice(1), have = new Set(a.toLowerCase().split(/\s+/)), add = bc.types.filter(w => !have.has(w)).map(cap);
+    const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
