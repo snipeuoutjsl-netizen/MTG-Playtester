@@ -1615,6 +1615,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
+  { const lk = linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -6225,8 +6226,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.97.5';
+const APP_VERSION = '0.97.6';
 const CHANGELOG = [
+  { v: '0.97.6', title: 'Linked effects: "this, then that" are one effect', notes: ['Effects whose second part depends on the first are now one unit instead of two separate buttons (CR 608.2b, 608.2c). "Destroy up to one target nonland permanent. Its controller creates a tapped Powerstone token." (Cityscape Leveler): with no target chosen nothing happens; if the target was your permanent you get the token; if it was your opponent\'s permanent they get it (your opponent\'s life changes are applied, other results are logged for you to apply at the table).', '"If you do" / "When you do": the second part happens only if the first part was actually done. If the app can do the first part it checks the game changed; if you have to do it by hand (sacrifice, behold ...) it asks "did you do it?".', '"That player ..." after a target is read the same way as "its controller".'] },
   { v: '0.97.5', title: 'Becomes-a-creature and base P/T effects', notes: ['New rules-text readers (CR 613.1d, 613.4b, 611.2): "~ becomes a 2/2 creature [with flying] until end of turn. It\'s still a land" (manlands), "target land you control becomes a 4/4 Elemental creature with haste until end of turn", "target creature has base power and toughness 1/1 until end of turn" and "until your next turn" versions now apply the new type, power/toughness and keywords and end on time (before they were only a "Remember" note).', 'The card now shows its changed type line (for example Artifact Creature / Land Creature) and its P/T, and the effects end when the permanent leaves the battlefield.'] },
   { v: '0.97.4', title: 'Glow fix, no duplicate draw, Karn the Great Creator', notes: ['Fixed: the green glow on cards with a usable activated ability was hidden by the "cards float" battlefield effect, so it never showed. Both now run together.', 'Fixed: an effect such as Kozilek\'s Command ("scries X, then draws a card") listed the draw twice ("Draw 1 card" and "You draw 1 card"), so applying both drew two cards. Each step is now listed once, in the order the text gives them, and "scries" is understood.', 'Karn, the Great Creator now works from its rules text: +1 makes up to one target noncreature artifact an artifact creature with power and toughness equal to its mana value until your next turn (it stops at the start of your next upkeep); −2 lets you put an artifact card from your sideboard or face up in exile into your hand.'] },
   { v: '0.97.3', title: 'Always yield', notes: ['New "Always yield" (like Magic Online): the first time each triggered ability goes on the stack in a game you are asked once whether to always do the same thing. Say yes and from then on it goes on the stack by itself with the same targets, applies the same effect you chose the first time, and resolves without asking (e.g. a creature that pings your opponent every time you cast a spell).', 'Manage or remove entries from ⚙ → Always yield. Everything resets when the game ends.'] },
@@ -10781,6 +10783,80 @@ function animateGeneralEffect(tx, src, obj) {
     if (!cards.length) { toast('No legal target', `There is no ${phrase} on the battlefield.`); return; }
     openPickCards({ title: `${src}: choose target ${phrase}`, note: 'Choose the target.', cards, min: 1, max: 1, done: p => { const x = p && p[0]; if (x) apply(x); } });
   } };
+}
+// ---------------------------------------------------------------- v0.97.6 rules text: effects that depend on each other (CR 608.2c, 608.2b, 609.3)
+// "Destroy up to one target nonland permanent. Its controller creates a tapped Powerstone token." is ONE effect with two linked parts, not two separate buttons:
+//   - the second sentence refers to the object the first one acted on ("its controller", "that creature's owner"), so with no target chosen nothing happens (CR 608.2b/609.3);
+//   - the second part is done by THAT object's controller: your opponent's permanent -> your opponent gets the token / life (it is not tracked here);
+//   - a first part that fails (an indestructible permanent) does not stop the second ("unless it says 'if you do'"), CR 608.2c.
+const DEPENDENT_RE = /^(?:(?:its|that [a-z]+'s|their|the [a-z]+'s) (?:controller|owner)|that player)\b\s*/i;
+function targetSide(t) {   // whose permanent / spell is it?  'me' | 'opp' | null
+  if (!t) return null; if (t.kind === 'opp') return 'opp';
+  if (t.kind === 'spell') { const sp = state.stack.find(x => x.id === t.id); return sp ? (sp.opp ? 'opp' : 'me') : null; }
+  if (t.kind === 'perm' || t.kind === 'gy') return findCard(t.id) ? 'me' : null; return null;
+}
+function linkedDependentOptions(tx, obj) {
+  if (!state) return null;
+  const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+  const j = sents.findIndex((x, i) => i > 0 && DEPENDENT_RE.test(x)); if (j < 1) return null;
+  const A = sents.slice(0, j).join(' '), B = sents[j].replace(DEPENDENT_RE, 'You '), rest = sents.slice(j + 1).join(' ');
+  const needsTarget = /\btarget\b/i.test(A);
+  if (needsTarget && obj && obj.ability && !(obj.targets || []).length) return [{ full: true, label: 'No target was chosen: nothing happens (its second part depends on it)', fn: () => { log(`${(obj && obj.sourceName) || 'Ability'}: no target was chosen, so nothing happens (its second part refers to that object, CR 608.2b)`); } }];
+  const aO = effectOptionsBase(A, obj).filter(o => typeof o.fn === 'function' && !o.hidden), bO = effectOptionsBase(B, obj).filter(o => typeof o.fn === 'function' && !o.hidden);
+  if (aO.length !== 1 || bO.length !== 1) return null;
+  const a = aO[0], b = bO[0], src = (obj && obj.sourceName) || 'Ability';
+  const label = `${a.label}; then its controller: ${String(b.label).replace(/^(?:You |Create)/, m => m === 'Create' ? 'creates' : '').replace(/^creates /, 'creates ')}`;
+  const full = { full: true, label, fn: () => {
+    const tg = obj && (obj.targets || []).find(t => !t.gone);
+    if (needsTarget && !tg) { log(`${src}: no target was chosen, so nothing happens (its second part refers to that object, CR 608.2b)`); toast(`${src}`, 'No target was chosen, so nothing happens.'); return; }
+    const side = needsTarget ? targetSide(tg) : 'me';
+    if (needsTarget && !side) { log(`${src}: its target is gone, so the ability does nothing (CR 608.2b)`); return; }
+    a.fn();
+    if (side === 'opp') {   // your opponent's permanent: its controller is your opponent
+      const n = (String(b.label).match(/(\d+) life/) || [])[1]; const gain = /\bgain/i.test(b.label), lose = /\blose/i.test(b.label);
+      if (n && gain) changeOppLife(+n); else if (n && lose) changeOppLife(-n);
+      else { log(`${src}: its controller (your opponent) does the second part: ${B.replace(/^You /, '')} — apply it at the table (opponent permanents are not tracked)`); toast(`${src}`, `Your opponent's permanent: its controller does the second part (${b.label}). Apply it at the table.`); }
+      return;
+    }
+    b.fn();
+  } };
+  const out = [full];
+  if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o);
+  return out;
+}
+
+// ---- "If you do, ..." / "When you do, ..." (CR 608.2c, 603.12): the second part happens only if the first part was actually done.
+// The first part may open its own window (choose a card to discard...), so we wait for it to settle and then compare the game before and after.
+const IFDO_RE = /^(?:if you do|when you do|if you did|if you can|if they do),?\s*/i;
+const stateSig = () => state ? [state.hand.length, state.library.length, state.graveyard.length, state.exile.length, state.battlefield.length, state.stack.length, state.life, state.oppLife, Object.values(state.manaPool || {}).reduce((a, b) => a + b, 0), state.battlefield.reduce((a, c) => a + (c.counters ? (c.counters.plus || 0) + (c.counters.minus || 0) : 0), 0)].join('|') : '';
+function afterSettled(cb, tries = 0) {
+  if (document.querySelector('#modalRoot .backdrop:not(.dock)') && tries < 600) { setTimeout(() => afterSettled(cb, tries + 1), 150); return; }
+  cb();
+}
+function ifYouDoOptions(tx, obj) {
+  if (!state) return null;
+  const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+  if (typeof parseDrawDiscard === 'function' && parseDrawDiscard(clean)) return null;   // discard/draw pairs have their own reader
+  const j = sents.findIndex((x, i) => i > 0 && IFDO_RE.test(x)); if (j < 1) return null;
+  const A = sents.slice(0, j).join(' '), B = sents[j].replace(IFDO_RE, ''), rest = sents.slice(j + 1).join(' ');
+  const B1 = B[0].toUpperCase() + B.slice(1);
+  const aO = effectOptionsBase(A, obj).filter(o => typeof o.fn === 'function' && !o.hidden), bO = effectOptionsBase(B1, obj).filter(o => typeof o.fn === 'function' && !o.hidden);
+  if (aO.length === 0 && bO.length === 1) {   // the first part is something the app cannot do for you (sacrifice, behold ...): do it by hand, then say whether you did
+    const b = bO[0], src0 = (obj && obj.sourceName) || 'Ability', aTxt = A.replace(/\.$/, '');
+    return [{ full: true, label: `If you ${aTxt[0].toLowerCase() + aTxt.slice(1).replace(/^you may /i, '')}: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
+      const m = modal(`${src0}: did you do it?`, { width: 480, sticky: true, noClose: true }); m.body.append(h('div', { class: 'psub', text: `${A}` }), h('div', { class: 'psub', text: `Do the first part by hand (card menus), then answer. The "if you do" part only happens if you did it.` }));
+      m.foot.append(h('button', { text: "I didn't", onclick: () => { m.close(); log(`${src0}: the first part was not done, so "if you do" does nothing (CR 608.2c)`); } }), h('button', { class: 'primary', text: 'I did it', onclick: () => { m.close(); b.fn(); } }));
+    } }];
+  }
+  if (aO.length !== 1 || bO.length !== 1) return null;
+  const a = aO[0], b = bO[0], src = (obj && obj.sourceName) || 'Ability';
+  const full = { full: true, label: `${a.label}. If you do: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
+    const before = stateSig(); a.fn();
+    afterSettled(() => { if (stateSig() === before) { log(`${src}: you didn't do the first part, so "if you do" does nothing (CR 608.2c)`); toast(`${src}`, `The first part was not done, so the "if you do" part does not happen.`); return; } b.fn(); });
+  } };
+  const out = [full]; if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
 }
 init();
 
