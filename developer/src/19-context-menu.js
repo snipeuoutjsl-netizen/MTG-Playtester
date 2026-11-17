@@ -139,6 +139,7 @@ function showCardMenu(c, zone, x, y) {
     else for(const ab of activatedAbilitiesFor(c)) items.push({ label: `Activate ability: ${ab.cost}`, fn: () => activateAbility(c.id, false, ab.ix) });
     items.push('-');
   }
+  if (zone === 'battlefield' && state.exile.some(x => x.hiddenBy === c.id)) items.push({ label: 'Hideaway: play the exiled card free', title: 'When the hideaway condition is met, play the exiled card without paying its mana cost', fn: () => hideawayPlay(c.id) });
   if (zone === 'battlefield' && fetchInfo(c)) { items.push({ label: c.tapped ? 'Fetch… (needs an untapped land)' : 'Activate: sacrifice and fetch…', fn: () => c.tapped ? toast('Cannot fetch', 'Fetch lands have {T} in their cost, so the land must be untapped.') : openFetch(c) }); items.push('-'); }
   if (zone === 'hand') {
     if (isLandName(c.name)) items.push({ label: 'Play land', fn: () => playLand(c.id) });

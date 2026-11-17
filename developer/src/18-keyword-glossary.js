@@ -294,10 +294,18 @@ function fitBattlefieldCards() {
     }
 
     scale = Math.max(minScale, scale);
-    row.style.setProperty('--zone-scale', String(scale));
-    // v0.96.20 make the browser wrap into exactly the columns this calculation assumed (a razor-thin fit used to wrap or not from frame to frame: the flicker with 5 permanents)
-    if (usedCols) usedCols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * scale + gap) + 1e-6)));   // as many columns as truly fit at this size
-    if (spec.id !== 'row-creatures') row.style.maxWidth = usedCols ? Math.ceil(usedCols * baseW * scale + (usedCols - 1) * gap + 3) + 'px' : '';
+    // v0.96.23 Fit by measuring, not only by arithmetic: lay the row out, and if any card sits outside the zone, shrink everything a little and look again (smaller cards also fit more per row).
+    const place = sc => {
+      row.style.setProperty('--zone-scale', String(sc));
+      if (spec.id !== 'row-creatures') { const cols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * sc + gap) + 1e-6))); row.style.maxWidth = Math.ceil(cols * baseW * sc + (cols - 1) * gap + 3) + 'px'; }
+    };
+    const spills = () => {   // offset* ignores the floating/tilting transforms, so a card that merely bobs does not count
+      const lim = zone.clientHeight - 6, limW = zone.clientWidth - 6;
+      for (const k of row.children) { if (k.offsetTop + k.offsetHeight > lim || k.offsetLeft + k.offsetWidth > limW) return true; }
+      return false;
+    };
+    place(scale);
+    for (let g = 0; g < 16 && scale > minScale && spills(); g++) { scale = Math.max(minScale, scale * 0.94); place(scale); }
   }
 }
 
