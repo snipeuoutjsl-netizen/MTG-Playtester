@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('desktop', {
   fromUrl: url => ipcRenderer.invoke('upd:url', url),
   ghCheck: () => ipcRenderer.invoke('upd:ghcheck'),
   ghInstall: () => ipcRenderer.invoke('upd:ghinstall'),
+  onProgress: cb => { const f = (e, d) => cb(d); ipcRenderer.on('upd:progress', f); return () => ipcRenderer.removeListener('upd:progress', f); },
   reset: () => ipcRenderer.invoke('upd:reset'),
   restart: () => ipcRenderer.invoke('upd:restart')
 });

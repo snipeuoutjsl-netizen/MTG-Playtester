@@ -90,9 +90,22 @@ ipcMain.handle('upd:url', async (e, base) => {
 // ------------------------------------------------------------------ GitHub updates (v0.66)
 // Each GitHub release carries index.html, app.js, style.css, package.json and latest.json (version, notes, SHA-256 of every file).
 // The file names come from APP_FILES here, never from the downloaded manifest, and every file must match its SHA-256 before anything is installed.
-const SHELL_VERSION = 2;   // bump when main.js / preload.js change in a way a file update cannot deliver
+const SHELL_VERSION = 3;   // v0.94.0: download progress events
+const SHELL_MIN_FOR_FILES = 2;   // the oldest shell that can still install this release's files (written to latest.json as "shell"); raise it only when files need newer shell features   // bump when main.js / preload.js change in a way a file update cannot deliver
 const GH_BASE = process.env.MTGPT_UPDATE_BASE || 'https://github.com/snipeuoutjsl-netizen/MTG-Playtester/releases/latest/download';
 const MAX_FILE = 25 * 1024 * 1024;
+// Downloads one file and reports bytes as they arrive (for the progress bar).
+async function fetchWithProgress(url, onBytes) {
+  const res = await net.fetch(url);
+  if (!res.ok) throw new Error('Could not download ' + path.basename(url) + ' (HTTP ' + res.status + ').');
+  const chunks = []; let got = 0;
+  if (res.body && typeof res.body.getReader === 'function') {
+    const rd = res.body.getReader();
+    for (;;) { const { done, value } = await rd.read(); if (done) break; got += value.length; if (got > MAX_FILE) throw new Error(path.basename(url) + ' is unexpectedly large, so nothing was installed.'); chunks.push(Buffer.from(value)); onBytes(value.length); }
+    return Buffer.concat(chunks);
+  }
+  const buf = Buffer.from(await res.arrayBuffer()); onBytes(buf.length); return buf;
+}
 async function ghManifest() {
   const res = await net.fetch(GH_BASE + '/latest.json');
   if (res.status === 404) return null;
@@ -107,10 +120,12 @@ ipcMain.handle('upd:ghcheck', async () => {
     const cur = readVersion(activeDir());
     if (!man) return { ok: true, none: true, current: cur };
     const notes = Array.isArray(man.notes) ? man.notes.map(String).slice(0, 40) : [];
-    return { ok: true, current: cur, latest: man.version, newer: newer(man.version, cur), title: String(man.title || ''), notes, needsInstaller: Number(man.shell || 0) > SHELL_VERSION };
+    const bytes = Object.values(man.files || {}).reduce((a, f) => a + (Number(f && f.size) || 0), 0);
+    return { ok: true, current: cur, latest: man.version, newer: newer(man.version, cur), title: String(man.title || ''), notes, bytes, needsInstaller: Number(man.shell || 0) > SHELL_VERSION };
   } catch (e) { return { ok: false, error: /fetch failed|ENOTFOUND|ECONN|ERR_/i.test(e.message) ? 'Could not reach GitHub (are you online?).' : e.message }; }
 });
-ipcMain.handle('upd:ghinstall', async () => {
+ipcMain.handle('upd:ghinstall', async (ev) => {
+  const send = d => { try { ev.sender.send('upd:progress', d); } catch (e) { /* window gone */ } };
   try {
     const man = await ghManifest();
     if (!man) throw new Error('No release was found on GitHub.');
@@ -120,18 +135,19 @@ ipcMain.handle('upd:ghinstall', async () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.mkdirSync(tmp, { recursive: true });
     const files = man.files || {};
+    const total = APP_FILES.reduce((a, f) => a + (Number(files[f] && files[f].size) || 0), 0); let done = 0;
+    send({ phase: 'start', total, done: 0 });
     for (const f of APP_FILES) {
       const want = String((files[f] && files[f].sha256) || files[f] || '').toLowerCase();
       if (!/^[0-9a-f]{64}$/.test(want)) throw new Error('latest.json has no checksum for ' + f + ', so nothing was installed.');
-      const res = await net.fetch(GH_BASE + '/' + f);
-      if (!res.ok) throw new Error('Could not download ' + f + ' (HTTP ' + res.status + ').');
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length > MAX_FILE) throw new Error(f + ' is unexpectedly large, so nothing was installed.');
+      const buf = await fetchWithProgress(GH_BASE + '/' + f, n => { done += n; send({ phase: 'download', file: f, done, total }); });
+      send({ phase: 'verify', file: f, done, total });
       if (crypto.createHash('sha256').update(buf).digest('hex') !== want) throw new Error('Checksum mismatch for ' + f + ': the download is damaged or was changed, so nothing was installed.');
       fs.writeFileSync(path.join(tmp, f), buf);
     }
     if (readVersion(tmp) !== man.version) throw new Error('The downloaded package.json does not match the announced version, so nothing was installed.');
-    return installFrom(tmp);
+    send({ phase: 'install' });
+    const r = installFrom(tmp); send({ phase: 'done' }); return r;
   } catch (e) { return { ok: false, error: /fetch failed|ENOTFOUND|ECONN|ERR_/i.test(e.message) ? 'Could not reach GitHub (are you online?).' : e.message }; }
 });
 ipcMain.handle('upd:reset', () => { fs.rmSync(overrideDir(), { recursive: true, force: true }); return { ok: true }; });

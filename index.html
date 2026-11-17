@@ -30,6 +30,7 @@
     <button id="btnDraw" title="Draw a card (D)"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 8v8M9 13l3 3 3-3"/></svg><span class="lbl">Draw</span></button>
     <button id="btnUntap" title="Untap all permanents (U)"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg><span class="lbl">Untap all</span></button>
     <button id="btnToken" title="Create a token"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg><span class="lbl">Token</span></button>
+    <button id="btnTokens" title="Tokens your deck can make" hidden>Tokens (<span id="cnt-tokens">0</span>)</button>
     <button id="btnStack" title="Open the stack"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg><span class="lbl">Stack</span></button>
   </div>
   <span class="status"><span id="imgStatus" class="chip"></span><span id="dbStatus" class="chip"></span></span>
@@ -66,7 +67,7 @@
         <div class="hudbox opp" id="oppBox">
           <button data-opp="-1">−1</button>
           <div class="lifewrap"><span class="hudlabel">Opp</span><b id="oppNum">20</b></div>
-          <button data-opp="1">+1</button><button id="btnOppDraw" title="Your opponent drew a card (triggers Orcish Bowmasters and similar)">🃏</button>
+          <button data-opp="1">+1</button><button id="btnOppDraw" title="Your opponent drew a card (triggers Orcish Bowmasters and similar)">🃏</button><button id="btnOppSearch" title="Your opponent searched their library (triggers Wan Shi Tong and similar)">🔎</button>
         </div>
         <div class="hudbox life">
           <button data-life="-5">−5</button><button data-life="-1">−1</button>
@@ -76,11 +77,7 @@
       </div>
       <div id="phases" aria-label="Turn phases"></div>
       <div class="gbtns">
-        <button id="btnCombat" class="primary" hidden>Declare attackers</button>
-        <button id="btnNextPhase" class="primary" title="Shortcut: Space">Next phase ▸</button>
-        <button id="btnNext" title="Shortcut: N">Next turn ⏭</button>
-        <button id="btnTokens" title="Tokens your deck can make" hidden>Tokens (<span id="cnt-tokens">0</span>)</button>
-        <button id="btnSideboard" data-open="sideboard">Sideboard (<span id="cnt-sideboard">0</span>)</button>
+        <span id="bsActions" class="bs-actions"><button id="btnCombat" class="primary" hidden>Declare attackers</button><button id="btnNextPhase" class="primary" title="Shortcut: Space">Next phase ▸</button><button id="btnNext" title="Shortcut: N">Next turn ⏭</button></span>
       </div>
     </div>
 
@@ -124,6 +121,7 @@
 
     <section id="handWrap" data-drop="hand">
       <div class="zlabel">Hand <span id="cnt-hand"></span><button id="btnHandSort" class="handsort" title="Sort the cards in your hand. You can also drag cards sideways to reorder them.">Sort ▾</button><span id="handLegend" class="handlegend"><span class="legend ready" title="Green: you can play or cast this right now.">Playable</span><span class="legend mana" title="Red: the timing is fine, but you cannot pay for it: not enough mana, or not the right colours. Hover the card to see which.">Can't pay</span><span class="legend timing" title="Gold: wrong timing. Wrong phase, the stack is busy, or you already played a land. Hover the card to see why.">Wrong timing</span><span class="legend instant" title="The lightning badge: instant speed or flash. It can be cast whenever you have priority.">⚡ Instant speed</span><span class="legend sel" title="White: the card you have selected.">Selected</span></span></div>
+      <div id="handPickBar" hidden></div>
       <div class="cardrow" id="row-hand"></div>
     </section>
   </section>

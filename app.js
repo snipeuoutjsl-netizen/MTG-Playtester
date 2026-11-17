@@ -294,8 +294,10 @@ function healHalves() {
   }
 }
 function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.faceOf || c.name} is exiled on an adventure: you may cast it from exile later`); return 'exile'; }
+// v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
+function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && c.mayPlayTurn !== state.turn) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && c.mayPlayTurn !== state.turn) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
@@ -311,6 +313,9 @@ function gyCastOptions(c) {
     else if ((m = line.match(/^Flashback\s*[\u2014-]\s*(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); out.push({ kind: 'flashback', label: 'Flashback \u2014 ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), fi: null }); }
     else if ((m = line.match(/^Escape\s*[\u2014-]\s*(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); out.push({ kind: 'escape', label: 'Escape \u2014 ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), fi: null }); }
   }
+  if (/you may cast this card from your graveyard using its warp ability/i.test(tx)) { for (const w of altCostsFor(c).filter(a => a.kind === 'warp')) out.push({ kind: 'warp', label: w.label + ' (from your graveyard)', mana: w.mana, comps: w.comps, fi: null }); }
+  { const gm = tx.match(/you may cast (?:this card|~|[^.\n]*?) from your graveyard as long as you control an? ([a-z]+)/i);   // v0.94.1 Gravecrawler
+    if (gm && info.mc && !info.land) { const sub = gm[1].toLowerCase(); if (state.battlefield.some(b => { const pi = permTypeInfo(b); return pi.types.has(sub) || (pi.subs && [...pi.subs].some(x => String(x).toLowerCase() === sub)); })) out.push({ kind: 'static', label: `Cast from your graveyard (you control a ${gm[1]})`, mana: info.mc.split(' // ')[0], comps: [], fi: null }); } }
   if (info.kind === 'aftermath' && info.fc && info.fc[1]) { const r = info.fc[1]; out.push({ kind: 'aftermath', label: r.name + ' (aftermath)', mana: r.mc || '', comps: [], fi: 1 }); }
   if (c.gfb && c.gfb === state.turn && !out.some(o => o.kind === 'flashback') && info.mc && !info.land) out.push({ kind: 'flashback', label: 'Flashback ' + info.mc.split(' // ')[0] + ' (granted until end of turn)', mana: info.mc.split(' // ')[0], comps: [], fi: null });
   return out;
@@ -457,8 +462,11 @@ function landDropUsed() { return !!state.landPlayedThisTurn && (state.landsPlaye
 function canPlayLandNow() {
   return canPlaySorcerySpeedNow() && !landDropUsed();
 }
+// v0.91.2 Split second (rule 702.61): while a spell with split second is on the stack, nobody can cast spells or activate abilities that are not mana abilities.
+function splitSecondOn() { return !!state && state.stack.some(x => !x.ability && !x.opp && String(cardText(x) || '').split('\n').some(l => /^split second\b/i.test(l.trim()))); }
 function canCastNow(c) {
   if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding) return false;
+  if (splitSecondOn()) return false;
   // No player receives priority during untap or the normal cleanup step.
   if (state.step === 0 || state.step === CLEANUP) return false;
   if (state.stack.length) return isInstantSpeed(c);
@@ -587,6 +595,8 @@ function parseStaticCard(g) {
           if (items.length) { list.push({ line, kind: 'kw', g, subj, items }); continue; }
         }
       }
+      // v0.90.9 "~ gets +1/+1 for each green mana you have." (Omnath, Locus of Mana)
+      if ((m = line.match(/^~ gets? ([+-]\d+)\/([+-]\d+) for each (.+)$/i)) && /\bmana\b/i.test(m[3])) { const per = m[3]; list.push({ line, kind: 'pt', g, subj: { self: true, test: c => c.id === g.id }, p: +m[1], t: +m[2], perFn: () => countEachMulti(per), perText: per }); continue; }
       // power / toughness: "Other Dragons you control get +1/+1."
       if ((m = line.match(/^(.+?) gets? ([+-]\d+)\/([+-]\d+)$/i))) {
         const subj = parseSubject(m[1], g);
@@ -1026,7 +1036,8 @@ const MAIN_STEPS = [[/\b(?:precombat|first) main phase\b/, 'main1'], [/\b(?:post
 // so a self-reference matches either the full name or that short name (rule 201.4 / Oracle wording).
 function selfNameRe(full) {
   const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : '';
-  return new RegExp(short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f), 'gi');
+  const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
+  return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
 function parseTriggers(c) {
   if (!c || c.token) return [];
@@ -1062,11 +1073,13 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) (?:another|a) .*dies/.test(cond) && !/opponent/.test(cond)) { ev = 'dies-other'; filter = cond; }
     else if (/^whenever you draw/.test(cond)) ev = 'draw';
     else if (/^whenever an opponent draws a card/.test(cond)) ev = 'opp-draw';
+    else if (/^whenever an opponent searches their library/.test(cond)) ev = 'opp-search';
     else if (/^(?:when|whenever) (?:~|this \w+) leaves the battlefield/.test(cond)) ev = 'leaves-self';
     else if (/^whenever you gain life/.test(cond)) ev = 'lifegain';
     else if (/^(?:when|whenever) (?:~|this \w+) deals combat damage to (?:a player|an opponent|a creature or player|a player or planeswalker)/.test(cond)) ev = 'combat-damage-self';
     else if (/^(?:when|whenever) (?:one or more |a |an )?(?:other )?creatures? you control deals? combat damage to (?:a player|an opponent)/.test(cond)) ev = 'combat-damage-any';
     if (!ev && /^(?:when|whenever) (?:~|this \w+) enters(?: the battlefield)? or attacks/.test(cond)) ev = 'etb-self';
+    let ko = null; if (!ev && (ko = cond.match(/^(?:when|whenever) (?:~|this \w+) or another (.+?) enters/))) ev = 'etb-self';   // v0.86
     if (!ev) {   // v0.64: graveyard, discard/cycle, mana, life loss
       let q;
       if ((q = cond.match(/^(?:when|whenever) (?:~|this \w+) is put into (?:your|a) graveyard from (anywhere|your library|your hand)/))) { ev = 'gy-self'; from = q[1]; zone = 'graveyard'; }
@@ -1076,9 +1089,14 @@ function parseTriggers(c) {
       else if ((q = cond.match(/^(?:when|whenever) you tap (?:~|this \w+) for mana/))) ev = 'tap-self';
       else if ((q = cond.match(/^(?:when|whenever) you lose life/))) ev = 'lifeloss';
     }
+    // v0.94.4 intervening-if on casts: "if it's the second creature spell you cast this turn, you may return ~ ..." (Vengevine) is checked when the spell is cast (CR 603.4) and then dropped from the effect text
+    let nth = null;
+    if (ev === 'cast') { const nm = /^if it'?s the (first|second|third|fourth) (?:(noncreature|creature|instant|sorcery|artifact|enchantment|land|instant or sorcery) )?spell you cast (?:this|each) turn,\s*/i.exec(cm[2]); if (nm) { nth = { n: ['first', 'second', 'third', 'fourth'].indexOf(nm[1].toLowerCase()) + 1, type: (nm[2] || '').toLowerCase() }; cm[2] = cm[2].slice(nm[0].length); } }
     if (/^if (?:~|this \w+) is in your graveyard\b/i.test(cm[2]) || (ev === 'gy-self')) zone = 'graveyard';
-    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another });
+    if (ev !== 'gy-self' && /\breturn (?:~|this \w+|it) from your graveyard to the battlefield/i.test(cm[2])) zone = 'graveyard';   // v0.94.1 Bloodghast: Landfall \u2014 you may return ~ from your graveyard to the battlefield
+    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth });
     if (ev === 'etb-self' && /enters(?: the battlefield)? or attacks/.test(cond)) out.push({ ev: 'attack-self', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
+    if (ko) out.push({ ev: 'etb-other', cond: cm[1], effect: cm[2], line: body, filter: 'another ' + ko[1], optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
   }
   if (/\bcascade\b/i.test(info.tx)) out.push({ ev: 'cast-self', cond: 'When you cast this spell', effect: 'Cascade: exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order.', line: 'Cascade (keyword): exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it free.', filter: '', optional: true, special: 'cascade' });
@@ -1116,7 +1134,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'cast') {
     const sp = ctx.card;
     for (const t of parseTriggers(sp)) if (t.ev === 'cast-self') add(sp, t, `You cast ${sp.name}. "When you cast this spell" abilities trigger immediately and go on the stack above the spell, so they resolve first.`);
-    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp)) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
     for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self') add(a, t, `${a.name} was declared as an attacker.`);
@@ -1127,6 +1145,8 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) if (c.id !== d.id) for (const t of parseTriggers(c)) if (t.ev === 'dies-other' && filterMatches(t.filter, d)) add(c, t, `${d.name} died and matches this ability's condition.`);
   } else if (ev === 'draw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'draw') add(c, t, 'You drew a card.');
+  } else if (ev === 'oppsearch') {
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-search') add(c, t, 'Your opponent searched their library.');
   } else if (ev === 'oppdraw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-draw') add(c, t, 'Your opponent drew a card (not the first one of their draw step), so this ability triggers.');
   } else if (ev === 'leaves') {
@@ -1320,7 +1340,13 @@ const wnum = w => /^x$/i.test(w) ? 'X' : (WORD_NUM[String(w).toLowerCase()] || p
 const CARD_DEFS = {};
 function defCard(name, def) { CARD_DEFS[norm(name)] = def; }
 function defFor(name) { if (!name) return null; const n = String(name); return CARD_DEFS[norm(n)] || CARD_DEFS[norm(n.split(' // ')[0])] || null; }
-function defLine(name, text) { const d = defFor(name); if (!d) return null; const t = String(text || '').replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(/\s+/g, ' ').trim(); return d.lines.find(L => L.re.test(t)) || null; }
+function defLine(name, text) {
+  const d = defFor(name); if (!d) return null;
+  const clean = x => x.replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(selfNameRe(name), '~').replace(/\s+/g, ' ').trim();
+  const whole = clean(String(text || '')); let L = d.lines.find(x => x.re.test(whole)); if (L) return L;
+  for (const raw of String(text || '').split('\n')) { const t = clean(raw); if (!t) continue; L = d.lines.find(x => x.re.test(t)); if (L) return Object.assign({}, L, { _line: raw }); }
+  return null;
+}
 defCard('Sink into Stupor', { lines: [{
   re: /^Return target spell or nonland permanent an opponent controls to its owner's hand\. If a spell is returned this way, that spell's owner puts it on top of their library instead\.?$/i,
   note: 'a spell is taken off the stack and goes on top of its owner\'s library; a permanent returns to its owner\'s hand.',
@@ -1339,9 +1365,171 @@ defCard('Sink into Stupor', { lines: [{
     }
     return out;
   } }] });
+
+// ---- v0.86 definitions written from the user's own deck scan (Modern Domain, Dragons, Grixis, Jewel Shops, Landfall, Leyline of the Goyf)
+const srcCard = obj => { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null; return f && f.zone === 'battlefield' ? f.card : null; };
+const genericFor = (obj, tx) => effectOptions(tx, { ...obj, sourceName: '~' });   // the general reader, skipping this card's definition
+function domainCount() { if (!state) return 0; const set = new Set(); for (const c of state.battlefield) { const p = permTypeInfo(c); if (!p.types.has('land')) continue; for (const b of ['plains', 'island', 'swamp', 'mountain', 'forest']) if (p.subs.has(b)) set.add(b); } return set.size; }
+function payManaThen(card, cost, label, cb) {   // pay a mana cost for an effect ("you may pay {4}") with the normal payment window, then run cb
+  if (!state) return false;
+  if (!manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null).ok) { toast('Cannot pay', `You cannot pay ${cost} right now. Choose not to, or make more mana first.`); return false; }
+  const finish = ids => { snap(); tapManaIds(ids || []); cb(); render(); };
+  if (teach('stackGuidance')) { openManaPayment(card, finish, cost, label); return true; }
+  const plan = manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null);
+  state.manaPool = plan.pool; finish(plan.used.map(i => manaSources()[i].card.id)); return true;
+}
+defCard('Twinned Vision', { lines: [{
+  re: /^Draw a card\. If this spell wasn't cast from your hand, draw two cards instead\.?$/i,
+  note: 'draws one card, or two if it was cast from anywhere except your hand (the app remembers where you cast it from, so flashback draws two).',
+  options(obj) { const n = obj.castFrom && obj.castFrom !== 'hand' ? 2 : 1; return [{ label: n === 2 ? `Draw 2 cards (it was cast from your ${obj.castFrom}, not your hand)` : 'Draw 1 card (cast from your hand)', fn: () => { snap(); const d = drawCards(n); log(`Twinned Vision: you drew ${d}`); render(); } }]; } }] });
+defCard('Requiting Hex', { lines: [{
+  re: /^Destroy target creature with mana value \d+ or less\. If this spell's additional cost was paid, you gain \d+ life\.?$/i,
+  note: 'destroys the target; the life is offered only if you paid the optional extra cost when you cast it.',
+  options(obj) { const out = genericFor(obj, 'Destroy target creature with mana value 2 or less.'); if (obj.optPaid) out.push({ label: 'Gain 2 life (you paid the additional cost: blight 1)', fn: () => changeLife(2, true) }); else out.push({ label: 'No life gain: the additional cost was not paid', fn: () => log('Requiting Hex: the additional cost was not paid, so no life gained') }); return out; } }] });
+defCard('Foul-Tongue Invocation', { lines: [{
+  re: /^Target player sacrifices a creature of their choice\. If you revealed a Dragon card or controlled a Dragon as you cast this spell, you gain 4 life\.?$/i,
+  note: 'the target player sacrifices a creature; you gain 4 life only if you revealed a Dragon card or controlled a Dragon as you cast it (you choose, the app cannot see a revealed card).',
+  options(obj) {
+    const out = [], t = (obj.targets || []).filter(x => !x.gone)[0];
+    const mine = t && t.kind === 'player' && t.id === 'you';
+    out.push({ label: mine ? 'You sacrifice a creature of your choice' : `${t ? t.name : 'Target player'} sacrifices a creature of their choice (their board is not tracked: apply it at the table)`, fn: () => {
+      if (!mine) { log('Foul-Tongue Invocation: the target player sacrifices a creature of their choice (apply at the table)'); render(); return; }
+      const cands = state.battlefield.filter(c => permTypeInfo(c).types.has('creature'));
+      if (!cands.length) { log('Foul-Tongue Invocation: you control no creature to sacrifice'); return; }
+      pickCardsModal('Foul-Tongue Invocation', 'Choose a creature you control to sacrifice.', cands, 1, ids => { log('Foul-Tongue Invocation: you sacrificed a creature'); moveCard(ids[0], 'graveyard'); });
+    } });
+    const dr = state.battlefield.some(c => permTypeInfo(c).subs.has('dragon'));
+    out.push({ label: `Gain 4 life (you revealed a Dragon card or controlled a Dragon as you cast it${dr ? ': you control one now' : ''})`, fn: () => changeLife(4, true) });
+    return out; } }] });
+defCard('Tribal Flames', { lines: [{
+  re: /^Domain\s*[—-]\s*~ deals X damage to any target, where X is the number of basic land types among lands you control\.?$/i,
+  note: 'counts the basic land types among your lands (Plains, Island, Swamp, Mountain, Forest) and deals that much damage.',
+  options(obj) { const n = domainCount(); return genericFor(obj, `~ deals ${n} damage to any target.`).map(o => ({ ...o, label: `${o.label || 'Deal damage'} (domain: ${n} basic land type${n === 1 ? '' : 's'})` })); } }] });
+defCard('Wan Shi Tong, Librarian', { lines: [{
+  re: /^put (X|\d+) \+1\/\+1 counters on (?:~|him)\. Then draw half (?:X|\d+) cards, rounded down\.?$/i,
+  note: 'puts X +1/+1 counters on it, then you draw half X cards rounded down (X is read from how it was cast).',
+  options(obj, tx) { const m = /put (X|\d+)/i.exec(tx), c = srcCard(obj), n = m && m[1] !== 'X' ? +m[1] : (c && c.xValue) || 0, d = Math.floor(n / 2);
+    return [{ label: `Put ${n} +1/+1 counter${n === 1 ? '' : 's'} on it, then draw ${d} card${d === 1 ? '' : 's'} (X = ${n})`, fn: () => { if (c && n) addCounter(c.id, n, 'plus'); if (d) { snap(); const k = drawCards(d); log(`Wan Shi Tong: you drew ${k}`); } render(); } }]; } }] });
+defCard('Wan Shi Tong, Librarian', { lines: [{
+  re: /^put a \+1\/\+1 counter on (?:~|him|Wan Shi Tong) and draw a card\.?$/i,
+  note: 'when an opponent searches their library (use the \uD83D\uDD0E button next to their life), it gets a +1/+1 counter and you draw a card.',
+  options(obj) { const c = srcCard(obj); return [{ label: 'Put a +1/+1 counter on it and draw a card', fn: () => { if (c) addCounter(c.id, 1, 'plus'); snap(); const k = drawCards(1); log(`Wan Shi Tong: you drew ${k}`); render(); } }]; } }] });
+defCard('Mossborn Hydra', { lines: [{
+  re: /^double the number of \+1\/\+1 counters on ~\.?$/i,
+  note: 'doubles the +1/+1 counters on it.',
+  options(obj) { const c = srcCard(obj); if (!c) return []; const cur = (c.counters && c.counters.plus) || 0; return [{ label: `Double its +1/+1 counters (${cur} → ${cur * 2})`, fn: () => { if (cur) addCounter(c.id, cur, 'plus'); else log('Mossborn Hydra: no +1/+1 counters to double'); } }]; } }] });
+defCard('Kappa Cannoneer', { lines: [{
+  re: /^put a \+1\/\+1 counter on ~\. It can't be blocked this turn\.?$/i,
+  note: 'puts a +1/+1 counter on it; "can\'t be blocked" has no effect in a goldfish game (there are no blockers).',
+  options(obj) { const c = srcCard(obj); if (!c) return []; return [{ label: 'Put a +1/+1 counter on it (it can\'t be blocked this turn)', fn: () => { addCounter(c.id, 1, 'plus'); log('Kappa Cannoneer: it can\'t be blocked this turn'); } }]; } }] });
+defCard('Search for Azcanta', { lines: [{
+  re: /^surveil 1\. Then if you have seven or more cards in your graveyard, you may transform ~\.?$/i,
+  note: 'surveil 1, then checks your graveyard (seven cards) and offers to transform it.',
+  options(obj, tx) { return [{ label: 'Surveil 1, then transform it if you have seven or more cards in your graveyard', fn: () => {
+    openScry(1, true, tx, () => {
+      const n = state.graveyard.length;
+      if (n < 7) { log(`Search for Azcanta: ${n} card${n === 1 ? '' : 's'} in your graveyard, not seven: it does not transform`); render(); return; }
+      const m = modal('Search for Azcanta', { width: 460, sticky: true, noClose: true });
+      m.body.append(h('div', { class: 'psub', text: `You have ${n} cards in your graveyard. You may transform it into Azcanta, the Sunken Ruin.` }));
+      m.foot.append(h('button', { text: 'Do not transform', onclick: () => { m.close(); log('Search for Azcanta: you chose not to transform it'); render(); } }), h('button', { class: 'primary', text: 'Transform', onclick: () => { m.close(); if (obj.sourceId) transformPerm(obj.sourceId); } }));
+    }); } }]; } }] });
+defCard('Mana Vault', { lines: [{
+  re: /^you may pay \{4\}\. If you do, untap ~\.?$/i,
+  note: 'asks you to pay {4} with the normal payment window, then untaps it.',
+  options(obj) { const c = srcCard(obj); if (!c) return []; return [{ label: 'Pay {4} and untap Mana Vault', fn: () => { if (!c.tapped) { toast('Already untapped', 'Mana Vault is already untapped.'); return; } payManaThen(c, '{4}', 'Pay {4} and untap', () => { c.tapped = false; log('Mana Vault: paid {4} and untapped it'); }); } }]; } }] });
+defCard('Mana Crypt', { lines: [{ re: /^flip a coin\. If you lose the flip, ~ deals 3 damage to you\.?$/i, note: 'flips a coin; on a loss you take 3 damage.', options: (obj, tx) => genericFor(obj, 'flip a coin. If you lose the flip, this artifact deals 3 damage to you.') }] });
+defCard('Necrodominance', { lines: [{ re: /^you may pay any amount of life\. If you do, draw that many cards\.?$/i, note: 'you choose how much life to pay; you draw that many cards.', options: (obj, tx) => genericFor(obj, tx) }] });
+// Lands from the graveyard (Icetill Explorer, Mole Man, Crucible of Worlds...)
+function gyLandPermission() { return !!state && state.battlefield.some(x => !x.token && /you may play lands from your graveyard/i.test(((cardInfo(x.name) || {}).tx || '').replace(/\s+/g, ' '))); }
+function gyLandPlayable(c) { return !!c && !c.token && gyLandPermission() && !!(cardInfo(c.name) || {}).land; }
+function playLandFromGy(id) {
+  const f = findCard(id); if (!f || f.zone !== 'graveyard' || !gyLandPlayable(f.card)) return;
+  if (!canPlayLandNow()) { toast(landDropUsed() ? 'Land already played' : 'Wrong phase', landDropUsed() ? 'You have already used all your land plays this turn.' : 'Lands can only be played during your main phase when the stack is empty.'); return; }
+  log(`${f.card.name}: played from your graveyard (a land you may play because of a permanent you control)`);
+  moveCard(id, 'hand'); playLand(id);
+}
+// v0.88: linked steps. "Draw two cards, then discard two cards" / "Discard a card. If you do, draw a card": the second
+// part is not optional and not a separate effect, it is the price of the first (Faithless Looting, Merfolk Looter, Prismari Command).
+function parseDrawDiscard(tx) {
+  const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const sents = t.split(/(?<=[.!?])\s+/);
+  const NUM = '(a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+|that many)';
+  const re = new RegExp('\\b(draw|discard)s?\\s+' + NUM + '\\s+cards?\\b', 'gi');
+  for (let i = 0; i < sents.length; i++) {
+    let seg = sents[i];
+    if (!/\b(?:draws?|discards?)\b/i.test(seg)) continue;
+    while (i + 1 < sents.length && /^(?:Then|If you do,|If you can,)\s+(?:you\s+)?(?:draw|discard)/i.test(sents[i + 1])) seg += ' ' + sents[++i];
+    if (/\byou may\b|\bX\b|\bat random\b|\bopponent\b|\beach player\b|\bwhenever\b|\bif you (?!do|can)/i.test(seg)) continue;
+    const steps = []; let m; re.lastIndex = 0;
+    while ((m = re.exec(seg))) steps.push({ k: m[1].toLowerCase(), n: /^that many$/i.test(m[2]) ? 'that' : wnum(m[2]) });
+    if (steps.length >= 2 && steps.some(x => x.k === 'draw') && steps.some(x => x.k === 'discard') && steps.every(x => x.n === 'that' || x.n > 0)) {
+      return { steps, needs: /\bif you do\b/i.test(seg), text: seg };
+    }
+  }
+  return null;
+}
+function ddLabel(p) { return p.steps.map((x, i) => (i ? 'then ' : '') + (x.k === 'draw' ? 'draw ' : 'discard ') + (x.n === 'that' ? 'that many' : x.n) + ' card' + (x.n === 1 ? '' : 's')).join(', ').replace(/^./, c => c.toUpperCase()); }
+function runDrawDiscard(p, src) {
+  snap();
+  let i = 0, last = 0;
+  const step = () => {
+    if (i >= p.steps.length) { render(); flushTriggers(); return; }
+    const st = p.steps[i++], n = st.n === 'that' ? last : st.n;
+    if (p.needs && i > 1 && !last) { log(`${src}: "if you do" — nothing happened in the step before, so the rest is skipped`); i = p.steps.length; step(); return; }
+    if (st.k === 'draw') { last = drawCards(n); log(`${src}: drew ${last}`); render(); step(); return; }
+    if (!state.hand.length) { last = 0; log(`${src}: nothing to discard (your hand is empty)`); step(); return; }
+    const finish = (ids) => { const picked = ids.map(id => state.hand.find(c => c.id === id)).filter(Boolean); for (const c of picked) moveCard(c.id, 'graveyard'); last = picked.length; log(`${src}: discarded ${picked.map(c => c.name).join(', ')}`); render(); step(); };
+    pickFromHand({ n, title: src, verb: 'discard', note: `The discard is part of the effect (${ddLabel(p).toLowerCase()}).`, done: finish });
+  };
+  step();
+}
+// v0.93.0 Linked clauses (area 3): "Do A. Then do B." / "Do A. If you do, B." for any effects the app already understands one at a time.
+// Each clause runs in order. An "If you do" clause runs only when the clause before it actually changed something (zones, life or mana);
+// when a clause opens its own window (a pick, a scry) the chain waits until that window is finished before judging.
+function chainSig() { const s = state; return [s.hand.length, s.library.length, s.graveyard.length, s.exile.length, s.battlefield.length, s.battlefield.filter(c => c.tapped).length, s.life, JSON.stringify(s.manaPool), s.stack.length].join('/'); }
+function chainBusy(base) { return !!(handPick || (state && state.discarding) || document.querySelectorAll('.modal').length > base); }
+function runChain(steps, src, baseModals) {
+  let i = 0, prev = true;
+  const next = () => {
+    if (i >= steps.length) { render(); flushTriggers(); return; }
+    const st = steps[i++];
+    if (st.needs && !prev) { log(`${src}: "${st.text.slice(0, 60)}\u2026" skipped, the step before did nothing (rule: "if you do")`); next(); return; }
+    const before = chainSig(); st.opt.fn();
+    const judge = () => { prev = chainSig() !== before; next(); };
+    if (chainBusy(baseModals)) { let t = 0; const iv = setInterval(() => { if (!chainBusy(baseModals) || ++t > 400) { clearInterval(iv); judge(); } }, 150); } else judge();
+  };
+  next();
+}
 function effectOptions(tx, obj) {
+  const base = effectOptionsBase(tx, obj);
+  try {
+    if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
+    const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+    const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+    if (parseDrawDiscard(clean)) return base;
+    if (sents.length < 2 || !sents.some((x, i) => i > 0 && /^(?:Then|If you do|If you can)\b/i.test(x))) return base;
+    if (/\b(?:choose one|choose two|you may|for each|X\b)/i.test(clean) || sents.some(x => /^(?:Flashback|Kicker|Storm|Cycling|Escape|Buyback|Entwine)/i.test(x))) return base;
+    const steps = [];
+    for (let i = 0; i < sents.length; i++) {
+      const o = effectOptionsBase(sents[i].replace(/^(?:Then|If you do,|If you can,)\s+/i, ''), obj).filter(x => typeof x.fn === 'function' && !x.special);
+      if (o.length !== 1) return base;
+      steps.push({ opt: o[0], text: sents[i], needs: /^If you (?:do|can)\b/i.test(sents[i]) });
+    }
+    const src = (obj && obj.sourceName) || 'Ability', label = steps.map((st, i) => (i ? (st.needs ? ' \u2192 if you do: ' : ' \u2192 then ') : '') + (st.opt.label || st.text)).join('');
+    return [{ label: 'In order: ' + label, full: false, chain: true, fn: () => { snap(); runChain(steps, src, document.querySelectorAll('.modal').length); } }, ...base];
+  } catch (e) { return base; }
+}
+function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
-  { const L = defLine(obj.sourceName, tx); if (L) { const o = L.options(obj, tx); if (o && o.length) return o.map(x => ({ full: true, def: true, ...x })); } }
+  { const L = defLine(obj.sourceName, tx);
+    if (L) {
+      const o = L.options(obj, L._line || tx);
+      if (o && o.length) {
+        const out = o.map(x => ({ full: true, def: true, ...x }));
+        if (L._line) { const rest = tx.split('\n').filter(l => l !== L._line).join('\n').trim(); if (rest) out.push(...effectOptions(rest, obj)); }
+        return out;
+      }
+    } }
   if (/\bchoose (?:one|two|up to one|up to two|one or both)\b[^\u2022]*\u2014/i.test(tx) && /\u2022/.test(tx)) {   // modal: offer each mode separately
     const modes = tx.split(/\s*\u2022\s*/).slice(1), out = [];
     modes.forEach((md, i) => { for (const o of effectOptions(md, obj)) out.push(o.label ? { ...o, label: `Mode ${i + 1}: ${o.label}` } : o); });
@@ -1354,6 +1542,14 @@ function effectOptions(tx, obj) {
   const pl = n => (n === 1 ? '' : 's');
   if (/pay any amount of life/i.test(tx) && /draw that many/i.test(tx)) opts.push({ special: 'payLifeDraw', summary: 'pay life and draw' });
   if (obj.special === 'cascade') opts.push({ special: 'cascade', summary: 'cascade' });
+  // v0.92.1 "Target player reveals their hand. You choose a [nonland] card from it. That player discards that card." (Cabal Therapist, Duress-style)
+  if (/target player reveals their hand\.\s*you choose (?:a|an) ([a-z\- ]*?)card from it\.\s*that player discards (?:that card|it)/i.test(tx)) {
+    const nl = /nonland/i.test(tx), tgt = obj.targets && obj.targets[0], mine = !tgt || tgt.id === 'you', srcN = obj.sourceName || 'Ability';
+    opts.push({ full: true, label: mine ? `Discard a ${nl ? 'nonland ' : ''}card from your hand (you are the target)` : `Opponent reveals their hand (nothing to choose in a goldfish game)`, fn: () => {
+      if (!mine) { log(`${srcN}: the opponent's hand is not tracked in a goldfish game, so nothing is discarded`); return; }
+      pickFromHand({ n: 1, title: srcN, verb: 'discard', choose: true, ok: c => !nl || !isLandName(c.name), note: `You are the target, so you choose a ${nl ? 'nonland ' : ''}card from your own hand and discard it.`, done: ids => { const c = state.hand.find(x => x.id === ids[0]); if (c) { moveCard(c.id, 'graveyard'); log(`${srcN}: discarded ${c.name}`); } else log(`${srcN}: no ${nl ? 'nonland ' : ''}card to discard`); render(); flushTriggers(); } });
+    } });
+  }
   if (obj.special === 'sacSelf' && obj.sourceId) opts.push({ label: `Sacrifice ${obj.sourceName}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { log(`${obj.sourceName}: sacrificed (evoke)`); moveCard(f.card.id, 'graveyard'); } else toast('Already gone', `${obj.sourceName} is no longer on the battlefield.`); } });
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   if (/look at the top card of target player'?s library/i.test(tx)) opts.push({ special: 'lookTop', summary: 'look at the top card' });
@@ -1384,7 +1580,9 @@ function effectOptions(tx, obj) {
     } else opts.push({ label: `Transform ${src}`, fn: () => transformPerm(obj.sourceId) });
   }
   if (delayed && /\bdraw a card\b/i.test(tx)) opts.push({ special: 'delayedDraw', summary: 'draw a card next upkeep' });
-  if (!delayed && !/opponent/i.test(tx) && (mm = tx.match(/\b(?:you draw|draws?)\s+(a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X)\s+cards?/i))) { const n = wnum(mm[1]); opts.push({ label: `Draw ${n} card${pl(n)}`, fn: () => { snap(); if (dredgeOptions().length && teach('dredgePrompts')) { askDredge(+n || 0); return; } const d = drawCards(+n || 0); log(`${src}: drew ${d}`); render(); } }); }
+  const ddp = !delayed ? parseDrawDiscard(tx) : null;
+  if (ddp) opts.push({ label: ddLabel(ddp), fn: () => runDrawDiscard(ddp, src), full: false });
+  else if (!delayed && !/opponent/i.test(tx) && (mm = tx.match(/\b(?:you draw|draws?)\s+(a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X)\s+cards?/i))) { const n = wnum(mm[1]); opts.push({ label: `Draw ${n} card${pl(n)}`, fn: () => { snap(); if (dredgeOptions().length && teach('dredgePrompts')) { askDredge(+n || 0); return; } const d = drawCards(+n || 0); log(`${src}: drew ${d}`); render(); } }); }
   if ((mm = txs.match(/\byou gain (an?|\d+) life for each ([^.,]+)/i))) { const per = /^\d+$/.test(mm[1]) ? +mm[1] : 1, n = per * (countForEach(mm[2]) || 0); opts.push({ label: `Gain ${n} life (${per} for each ${mm[2].trim()})`, fn: () => changeLife(n, true) }); }
   else if ((mm = tx.match(/\byou gain (\d+|X) life/i)) && mm[1] !== 'X') { const v = +mm[1]; opts.push({ label: `Gain ${v} life`, fn: () => changeLife(v, true) }); }
   if ((mm = tx.match(/\byou lose (\d+|X) life/i)) && mm[1] !== 'X') { const v = +mm[1]; opts.push({ label: `Lose ${v} life`, fn: () => changeLife(-v) }); }
@@ -1394,6 +1592,9 @@ function effectOptions(tx, obj) {
   for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/)) { if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
   if ((mm = tx.match(/\b(scry|surveil)\s+(\d+)/i))) { const w = mm[1], v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
+  else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
+  // v0.86 amass (rule 701.47): "Then amass Orcs 1."
+  if ((mm = txs.match(/\bamass ([A-Z][a-z]+) (\d+|an?|one|two|three|four|five)\b/))) { const ty = mm[1], v = numOf(mm[2]); opts.push({ label: `Amass ${ty} ${v}`, fn: () => doAmass(ty, v, obj.sourceName || '~') }); }
   if ((mm = txs.match(/\bremove (an?|one|two|three|four|five|\d+) ([a-z][a-z-]*) counters? from (?:~|this \w+\b)/i)) && obj.sourceId && mm[2].toLowerCase() !== 'all') { const v = /^\d+$/.test(mm[1]) ? +mm[1] : (TOKEN_NUMW[mm[1].toLowerCase()] || 1), kd = mm[2].toLowerCase(); opts.push({ label: `Remove ${v === 1 ? 'an' : v} ${kd} counter${pl(v)} from ${src}`, fn: () => addCounter(obj.sourceId, -v, kd === 'plus' ? 'plus' : kd) }); }
   if (obj.sourceId && /\byou may exile (?:it|~)\b/i.test(txs)) {
     const combo = /\byou may exile (?:it|~)\b[^.]*\.\s*If you do, create\b/i.test(txs), defs = combo ? tokenDefsFromText(txs, src).filter(d => !d.amassOnly) : [];
@@ -1439,13 +1640,14 @@ function effectOptions(tx, obj) {
     else if ((mm = txs.match(/\b(?:~|it) deals? (\d+) damage to you\b/i))) { const v = +mm[1], cond = /if ~ is tapped/i.test(txs); opts.push({ label: `${cond ? 'If tapped: ' : ''}take ${v} damage`, fn: () => { if (cond) { const f = obj.sourceId && findCard(obj.sourceId); if (f && !f.card.tapped) { toast('Not tapped', `${src} is untapped, so it deals no damage.`); return; } } changeLife(-v, true); } }); }
     if (obj.sourceId && /\buntap (?:~|this \w+)\b/i.test(txs)) opts.push({ label: `Untap ${src}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield' && f.card.tapped) untapByEffect(f.card.id); } });
     if (obj.sourceId && /^(?:then )?(?:you may )?sacrifice (?:~|it|this \w+)(?: unless it escaped)?\.?$/i.test(txs.trim().replace(/^.*\.\s+(?=then sacrifice)/i, ''))) opts.push({ label: `Sacrifice ${src}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed`); moveCard(f.card.id, 'graveyard'); } } });
-    if (obj.sourceId && (mm = txs.match(/return ~ from your graveyard to (your hand|the battlefield)/i))) opts.push({ label: `Return ${src} from the graveyard to ${mm[1].toLowerCase()}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'graveyard') moveCard(f.card.id, /hand/i.test(mm[1]) ? 'hand' : 'battlefield'); } });
+    if (obj.sourceId && (mm = txs.match(/return ~ from your graveyard to (your hand|the battlefield)/i))) { const dest = mm[1].toLowerCase(); opts.push({ label: `Return ${src} from the graveyard to ${dest}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'graveyard') moveCard(f.card.id, /hand/i.test(dest) ? 'hand' : 'battlefield'); else toast('Not in graveyard', `${src} is no longer in your graveyard.`); } }); }   // v0.94.4 mm was reassigned by later matches, so the click threw (Vengevine/Bloodghast)
     if (obj.sourceId && (mm = txs.match(/put (a|an|one|two|three|\d+) ([a-z]+) counters? on (?:~|this \w+)/i)) && !/\+1\/\+1/.test(mm[0]) && mm[2].toLowerCase() !== 'a') { const v = wnum(mm[1]), kd = mm[2].toLowerCase(); opts.push({ label: `Put ${v === 1 ? 'a' : v} ${kd} counter${v === 1 ? '' : 's'} on ${src}`, fn: () => addCounter(obj.sourceId, v, kd) }); }
   }
   return bound.concat(opts);
 }
+let resolvingObj = null;   // v0.90.5 the stack object whose effect is being applied, so a hand pick can show it in the centre
 function openAbilityEffect(obj, done) {
-  const tx = obj.text || '';
+  const tx = obj.text || ''; if (obj && obj.sourceName) resolvingObj = obj;
   if (obj.special === 'suspendTick') {
     const f = findCard(obj.sourceId);
     if (f && f.zone === 'exile' && f.card.timeCounters > 0) {
@@ -1456,6 +1658,7 @@ function openAbilityEffect(obj, done) {
     }
     render(); if (done) done(); return;
   }
+  if (obj.special === 'storm') { makeSpellCopies(obj.spellId, obj.n || 0, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'suspendCast') { suspendCastFree(obj.sourceId, done); return; }
   if ((obj.special === 'surveil' || obj.special === 'scry') && obj.n) {
     openScry(obj.n, obj.special === 'surveil', obj.text || '', () => { log(`Resolved: ${obj.name}`); if (done) done(); }); return;
@@ -1464,7 +1667,20 @@ function openAbilityEffect(obj, done) {
     const specs = parseTargetSpecs(tx);
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
-  const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 600, sticky: true, noClose: true });
+  // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.
+  if (teach('autoResolve') && !obj.special) {
+    let pre = []; try { pre = effectOptions(tx, obj); } catch (e) { pre = []; }
+    const one = pre.length === 1 && !pre[0].special && typeof pre[0].fn === 'function' ? pre[0] : null;
+    let clean = !!one && (one.full || !uncoveredClauses(tx).length);
+    if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
+    if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
+    if (clean) {
+      const lbl = one.label || 'its effect';
+      log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
+      one.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
+    }
+  }
+  const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 520, sticky: true, noClose: true, resolve: true });
   let opts = effectOptions(tx, obj);
   // The automatic 'delayedDraw' already covers a delayed draw; drop the generic duplicate button (it caused a second draw).
   if (opts.some(x => x.special === 'delayedDraw')) opts = opts.filter(x => !(x.label && /^Create delayed trigger: Draw a card/i.test(x.label)));
@@ -1681,6 +1897,7 @@ function adjustLoyalty(id, d) {
   checkLoyalty(f.card); render(); flushTriggers();
 }
 function activatePW(c, ab, x) {
+  if (splitSecondOn()) { toast('Split second', 'Loyalty abilities cannot be activated while a spell with split second is on the stack.'); return; }
   snap();
   const delta = ab.isX ? -x : ab.cost;
   c.loyalty = Math.max(0, (c.loyalty || 0) + delta);
@@ -1762,6 +1979,7 @@ function countForEach(phrase) {
   const t = phrase.toLowerCase();
   const bf = state.battlefield;
   const typeOf = c => { const i = cardInfo(c.name); return i && i.t ? i.t.split(' // ')[0] : (c.token ? 'Creature' : ''); };
+  { const mm = t.match(/\b(white|blue|black|red|green|colorless) mana (?:in your (?:mana )?pool|you have)\b/); if (mm) return (state.manaPool || {})[{ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G', colorless: 'C' }[mm[1]]] || 0; if (/\bmana in your (?:mana )?pool\b/.test(t)) return manaTotal(); }   // Omnath, Locus of Mana
   if (/basic land type/.test(t)) return domainCount();
   if (/instant and sorcery card/.test(t) || /instant or sorcery card/.test(t)) return state.graveyard.filter(c => /\b(Instant|Sorcery)\b/.test(typeOf(c))).length;
   if (/card in your graveyard/.test(t)) return state.graveyard.length;
@@ -1787,7 +2005,7 @@ function symCmc(mc) {
 //   5. pay the mana (floating mana first, then lands)
 // Nothing changes in the game until every choice is made; cancelling at any window leaves the game untouched.
 const numw = w => (String(w).toLowerCase() === 'another' ? 1 : numOf(w));
-const PICK_KINDS = ['sac', 'discard', 'exile', 'tapOther', 'bounce'];
+const PICK_KINDS = ['sac', 'discard', 'exile', 'tapOther', 'bounce', 'blight', 'reveal'];
 
 function splitCostParts(t) {
   return String(t || '').replace(/’/g, "'").replace(/\.$/, '')
@@ -1839,6 +2057,8 @@ function parseCostComps(text, short) {
     else if ((m = part.match(/^Exile (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (.*?)\s*cards? from your (graveyard|hand)$/i))) out.push({ k: 'exile', n: numw(m[1]), zone: m[3].toLowerCase(), f: parseCostFilter(m[2]), text: part });
     else if ((m = part.match(/^Tap (a|an|one|two|three|\d+) untapped (.+?)(?: you control)?$/i))) out.push({ k: 'tapOther', n: numw(m[1]), f: parseCostFilter('untapped ' + m[2]), text: part });
     else if ((m = part.match(/^Return (a|an|one|two|three|\d+) (.+?) you control to (?:its|their) owner'?s? hand$/i))) out.push({ k: 'bounce', n: numw(m[1]), f: parseCostFilter(m[2]), text: part });
+    else if ((m = part.match(/^Blight (a|an|one|two|three|\d+)$/i))) out.push({ k: 'blight', n: 1, cnt: numw(m[1]), f: parseCostFilter('creature'), text: part });   // v0.86: put N -1/-1 counters on a creature you control
+    else if ((m = part.match(/^Reveal (a|an|one|two|three|\d+) (.+?) cards? from your hand$/i))) out.push({ k: 'reveal', n: numw(m[1]), f: parseCostFilter(m[2]), text: part });   // v0.86
     else out.push({ k: 'other', text: part });
   }
   return out;
@@ -1851,7 +2071,8 @@ function compCands(comp, srcId, taken) {
   switch (comp.k) {
     case 'sac': case 'bounce': return state.battlefield.filter(ok);
     case 'tapOther': return state.battlefield.filter(c => !c.tapped && ok(c));
-    case 'discard': return state.hand.filter(c => c.id !== srcId && ok(c));
+    case 'discard': case 'reveal': return state.hand.filter(c => c.id !== srcId && ok(c));
+    case 'blight': return state.battlefield.filter(c => !taken.has(c.id) && permTypeInfo(c).types.has('creature'));
     case 'exile': return (comp.zone === 'hand' ? state.hand : state.graveyard).filter(c => c.id !== srcId && ok(c));
   }
   return [];
@@ -1922,15 +2143,20 @@ function effectiveCost(c) {
   if (am) { const w = singularWord(am[1].trim().split(/\s+/).pop()), n = state.battlefield.filter(x => { const p = permTypeInfo(x); return p.types.has(w) || p.subs.has(w); }).length; if (n) { cut += n; notes.push(`Affinity: ${n} × {1} less (${am[1].trim()})`); } }
   for (const a of costAdjustments(c)) { if (a.dir === 'more') add += a.amt; else cut += a.amt; notes.push(`${a.src} ${a.dir === 'more' ? '+' : '−'}{${a.amt}}`); }
   out.add = add; out.cut = cut;
-  const g1 = Math.max(0, g0 + add - cut), net = g1 - g0;
+  let g1 = Math.max(0, g0 + add - cut);
+  out.tri = trinisphereOn();
+  if (out.tri) { const pb = manaCostParts(base), col = pb.colors.length + pb.flexible.length; if (g1 + col < 3) { g1 = 3 - col; notes.push('Trinisphere: each spell costs at least {3}'); } }
+  const net = g1 - g0;
   if (net !== 0) out.cost = (g1 > 0 ? `{${g1}}` : '') + base.replace(/\{\d+\}/, '');
   out.reduced = Math.abs(net); out.increased = net > 0; out.why = notes.join('; ');
   return out;
 }
 // The same total adjustments applied to an alternative cost.
+function trinisphereOn() { return !!state && state.battlefield.some(x => !x.tapped && !x.token && /each spell that would cost less than three mana to cast costs three mana to cast/i.test(((cardInfo(x.name) || {}).tx || '').replace(/\s+/g, ' '))); }
 function taxed(mana, ec) {
   const p = manaCostParts(mana || '');
-  const g = Math.max(0, p.generic + ec.add - ec.cut);
+  let g = Math.max(0, p.generic + ec.add - ec.cut);
+  if (ec.tri && g + p.colors.length + p.flexible.length < 3) g = 3 - p.colors.length - p.flexible.length;
   return (g ? `{${g}}` : '') + p.colors.map(x => `{${x}}`).join('') + p.flexible.map(x => `{${x}}`).join('');
 }
 
@@ -1940,6 +2166,8 @@ function altCostsFor(c) {
   for (const raw of tx.split('\n')) {
     const line = raw.trim();
     if ((m = line.match(/^Evoke\s+((?:\{[^}]+\})+)\s*$/i))) out.push({ kind: 'evoke', label: 'Evoke', mana: m[1], comps: [] });
+    else if ((m = line.match(/^Warp\s+((?:\{[^}]+\})+)\s*$/i))) out.push({ kind: 'warp', label: 'Warp', mana: m[1], comps: [] });
+    else if ((m = line.match(/^Warp\s*[\u2014-]\s*(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); out.push({ kind: 'warp', label: 'Warp \u2014 ' + m[1].replace(/\.$/, ''), mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana') }); }
     else if ((m = line.match(/^Evoke—(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); out.push({ kind: 'evoke', label: 'Evoke — ' + m[1].replace(/\.$/, ''), mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana') }); }
     else if ((m = line.match(/(?:^|\.\s+)(?:(If [^,]+),\s*)?you may ((?:pay|exile|discard|sacrifice|tap|return)\b[^.]*?) rather than pay (?:this spell's|its) mana cost/i))) {
       const cs = parseCostComps(m[2], c.name);
@@ -1962,7 +2190,7 @@ function additionalCosts(c) {
 }
 // Every way this card can be cast right now: { label, mana, comps, alt, ok, why, detail }
 function castRoutes(c, extra) {
-  const ec = effectiveCost(c), ad = additionalCosts(c), alts = altCostsFor(c);
+  const ec = effectiveCost(c), ad = additionalCosts(c), alts = altCostsFor(c).filter(a => !(a.kind === 'warp' && c.fromExile));   // warp is a from-hand cost only
   const mk = (label, mana, alt, cond) => {
     const comps = ad.req.comps.concat(alt ? alt.comps : []);
     const r = { label, mana: mergeGeneric(mana + (extra || '') + ad.req.mana), comps, alt, cond: cond || '', ok: true, why: '', detail: '' };
@@ -2034,7 +2262,10 @@ function runReducers(c, mana, kinds, cb, picks) {
 }
 
 // ---- choosing the cards that pay a cost
-function pickCardsModal(title, intro, cands, n, cb) {
+function pickCardsModal(title, intro, cands, n, cb, verb) {
+  if (verb === 'discard' && cands.length && cands.every(x => state.hand.some(c => c.id === x.id))) {   // v0.90.1: discard costs are chosen in the hand zone
+    const okIds = new Set(cands.map(x => x.id)); pickFromHand({ n, title: String(title).split(':')[0], verb, note: 'This is part of the cost.', ok: c => okIds.has(c.id), choose: true, cancel: true, done: cb }); return;
+  }
   const m = modal(title, { width: 600, sticky: true, onCancel: () => {} });
   const sel = new Set(), rows = h('div', { class: 'prelist' }), go = h('button', { class: 'primary', text: 'Confirm', disabled: true });
   const upd = () => { cands.forEach((x, i) => rows.children[i].classList.toggle('sel', sel.has(x.id))); go.disabled = sel.size !== n; go.textContent = `Confirm (${sel.size}/${n})`; };
@@ -2054,14 +2285,14 @@ function gatherCosts(src, comps, cb) {
   const need = comps.filter(k => PICK_KINDS.includes(k.k));
   if (!need.length) { cb([]); return; }
   const picks = [], taken = new Set(); let ix = 0;
-  const VERB = { sac: 'sacrifice', discard: 'discard', exile: 'exile', tapOther: 'tap', bounce: 'return to your hand' };
+  const VERB = { sac: 'sacrifice', discard: 'discard', exile: 'exile', tapOther: 'tap', bounce: 'return to your hand', blight: 'put the -1/-1 counters on', reveal: 'reveal' };
   const next = () => {
     if (ix >= need.length) { cb(picks); return; }
     const comp = need[ix++], cands = compCands(comp, src.id, taken);
     const done = ids => { ids.forEach(x => taken.add(x)); picks.push({ comp, ids }); next(); };
     if (cands.length < comp.n) { toast('Cannot pay the cost', comp.text); return; }
     if (cands.length === comp.n) { done(cands.map(x => x.id)); return; }
-    pickCardsModal(`${src.name}: ${comp.text}`, `Choose ${comp.n} to ${VERB[comp.k]}. This is part of the cost, so it happens as you ${src.ability ? 'activate the ability' : 'cast the spell'}, before it goes on the stack.`, cands, comp.n, done);
+    pickCardsModal(`${src.name}: ${comp.text}`, `Choose ${comp.n} to ${VERB[comp.k]}. This is part of the cost, so it happens as you ${src.ability ? 'activate the ability' : 'cast the spell'}, before it goes on the stack.`, cands, comp.n, done, comp.k);
   };
   next();
 }
@@ -2078,6 +2309,8 @@ function applyPicks(src, picks) {
       case 'delve': log(`${src.name}: delved ${nm} (exiled from your graveyard)`); (src.exiledWith = src.exiledWith || []).push({ name: nm }); moveCard(id, 'exile'); break;
       case 'tapOther': case 'convoke': case 'improvise': f.card.tapped = true; log(`${src.name}: tapped ${nm} as a cost${p.comp.k === 'tapOther' ? '' : ' (' + p.comp.k + ')'}`); break;
       case 'bounce': log(`${src.name}: returned ${nm} to your hand as a cost`); moveCard(id, 'hand'); break;
+      case 'blight': addCounter(id, p.comp.cnt || 1, 'minus'); log(`${src.name}: blight ${p.comp.cnt || 1} — put ${p.comp.cnt || 1} -1/-1 counter${(p.comp.cnt || 1) === 1 ? '' : 's'} on ${nm}`); break;
+      case 'reveal': log(`${src.name}: revealed ${nm} from your hand as a cost (it stays in your hand)`); break;
     }
   }
 }
@@ -2086,6 +2319,7 @@ function applyCostInfo(c, ci) {
   try {
     if (ci.life) { state.life -= ci.life; log(`${c.name}: paid ${ci.life} life as a cost`); }
     applyPicks(c, ci.picks || []);
+    if (ci.alt === 'warp') { c.warped = true; log(`${c.name}: cast for its warp cost (exiled at the next end step)`); }
     if (ci.evoked) { c.evoked = true; log(`${c.name}: cast for its evoke cost`); }
     else if (ci.alt) log(`${c.name}: cast using an alternative cost (${ci.label})`);
     if (ci.kicked && ci.kicked.length) { c.kicked = true; log(`${c.name}: kicked`); }
@@ -2354,17 +2588,53 @@ function tapManaIds(manaIds){
 }
 function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   const f=findCard(id); if(!f||f.zone!=='hand'||isLandName(f.card.name))return;
-  const fromC=centerOf(`#row-hand .card[data-id="${id}"]`);
+  const fromC=centerOf(`#row-hand .card[data-id="${id}"]`); noteFlightFrom(id,`#row-hand .card[data-id="${id}"]`);
   snap(); const [c]=state.hand.splice(f.idx,1); sfx('cast'); spotlight(c,'cast',fromC);
-  state.halfChosen=null; let gyLeft=false; if(c.fromGy){ if(c.fromGy.kind!=='escape') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
-  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
+  state.halfChosen=null; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
+  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.warpExile; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
+  c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }
   if(modes){ const md=spellModal(c); if(md){ c.modes=modes; c.modeTexts=modes.map(i=>md.modes[i].text); log(`${c.name}: chosen ${md.spree?'extras':'modes'}: ${c.modeTexts.join(' | ')}`); } }
   withCtx(c,()=>tapManaIds(manaIds));
   if(ci) applyCostInfo(c,ci);
   noteCast(c); state.stack.push(c); state.priority={active:true,passed:false}; if(gyLeft) fireTrigger('gyleave',{card:c,to:'stack'});
-  log(`Cast ${c.name}${c.targets&&c.targets.length?' targeting '+c.targets.map(t=>t.name).join(', '):''} — put it on the stack`); fireTrigger('cast',{card:c}); render();
+  log(`Cast ${c.name}${c.targets&&c.targets.length?' targeting '+c.targets.map(t=>t.name).join(', '):''} — put it on the stack`); fireTrigger('cast',{card:c}); stormOnCast(c); render();
   if(state.pendingTriggers.length) resolvePendingTrigger(); else if(reopen)openStack();
+}
+// ---- v0.91.0 copies of spells and Storm (rules 707.10, 702.40)
+// A copy of an instant or sorcery spell is put on the stack (it is not cast, so it does not count for Storm), resolves like the original and then
+// ceases to exist: it never reaches the graveyard.
+function makeSpellCopies(spellId, n, srcName) {
+  const i = state.stack.findIndex(x => x.id === spellId); if (i < 0) { log(`${srcName || 'Copy'}: the spell is no longer on the stack, so nothing is copied`); return 0; }
+  const orig = state.stack[i]; if (orig.ability || orig.opp || isPermanentCard(orig)) { log(`${srcName || 'Copy'}: only instant and sorcery spells are copied here`); return 0; }
+  for (let k = 0; k < n; k++) {
+    const cp = JSON.parse(JSON.stringify(orig)); cp.id = state.nextId++; cp.copy = true; delete cp.gyExile; cp.castFrom = orig.castFrom;
+    state.stack.push(cp);
+  }
+  state.priority = { active: true, passed: false };
+  const copies = state.stack.filter(x => x.copy && x.id > orig.id).slice(-n);
+  log(`${srcName || 'Copy'}: ${n} cop${n === 1 ? 'y' : 'ies'} of ${orig.name} put on the stack.`);
+  // v0.91.3 rule 707.10c: you may choose new targets for each copy. Ask one copy at a time; closing the window keeps the original's targets.
+  const specs = (orig.targets && orig.targets.length) ? parseTargetSpecs(String(cardText(orig) || '')) : [];
+  if (specs.length && copies.length) {
+    const ask = k => {
+      if (k >= copies.length) { render(); return; }
+      const cp = copies[k];
+      chooseTargets(`${orig.name} (copy ${k + 1} of ${copies.length}): new target`, specs, picked => {
+        cp.targets = picked; delete cp.target; if (picked[0] && picked[0].kind === 'player') cp.target = picked[0].id;
+        log(`${orig.name} (copy ${k + 1}): now targets ${picked.map(t => t.name).join(', ')}`); ask(k + 1);
+      }, { srcId: orig.id, onCancel: () => { log(`${orig.name} (copy ${k + 1}): keeps the original's targets`); ask(k + 1); } });
+    };
+    setTimeout(() => ask(0), 0);
+  }
+  return n;
+}
+function stormOnCast(c) {
+  const tx = String(cardText(c) || '');
+  if (c.copy || !tx.split('\n').some(l => /^storm\b/i.test(l.trim().replace(/\([^)]*\)/g, '')))) return;
+  const n = Math.max(0, spellsCastNow() - 1);
+  state.stack.push({ ability: true, trigger: true, special: 'storm', id: state.nextId++, name: `${c.name} \u2014 storm`, sourceId: c.id, sourceName: c.name, spellId: c.id, n, text: `Storm \u2014 copy ${c.name} for each spell cast before it this turn (${n}).` });
+  log(`${c.name}: storm triggers (${n} spell${n === 1 ? '' : 's'} cast before it this turn)`);
 }
 function passPriority(){
   if(!state||!state.stack.length)return;
@@ -2625,6 +2895,7 @@ function targetedOptions(tx, obj) {
     else if (/\bcounter\b/i.test(s) && /\bcounter target\b/i.test(s)) each((t) => { counterStackObject(t.id, src); }, t => `Counter ${t.name}`);
     else if ((mm = s.match(/\bgains? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(n, true) : changeOppLife(n); }, t => `${t.name} ${t.id === 'you' ? 'gain' : 'gains'} ${n} life`); }
     else if ((mm = s.match(/\bloses? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); }, t => `${t.name} ${t.id === 'you' ? 'lose' : 'loses'} ${n} life`); }
+    else if (parseDrawDiscard(s)) { const dd = parseDrawDiscard(s); each((t) => { if (t.id === 'you') runDrawDiscard(dd, src); else { log(`${src}: your opponent: ${ddLabel(dd).toLowerCase()} (not tracked here)`); render(); } }, t => `${t.name}: ${ddLabel(dd).toLowerCase()}`); }
     else if ((mm = s.match(/\bdraws? (a|an|one|two|three|four|five|six|seven|\d+) cards?/i))) { const n = wnum(mm[1]); each((t) => { if (t.id === 'you') { snap(); const d = drawCards(n); log(`${src}: you drew ${d}`); render(); } else { log(`${src}: your opponent draws ${n} (not tracked here)`); render(); } }, t => `${t.name} ${t.id === 'you' ? 'draw' : 'draws'} ${n} card${n === 1 ? '' : 's'}`); }
     opts.push(...durationOptions(s, obj, first.filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name }))));
   }
@@ -2632,14 +2903,15 @@ function targetedOptions(tx, obj) {
 }
 // "Return target legendary creature card from your graveyard to the battlefield" and similar: the target is chosen
 // as the spell is cast, and checked again as it resolves (rules 601.2c, 608.2b).
-const RETURN_RE = /\bReturn target ((?:[a-z\-]+ )*?)card (?:from|in) (?:your|a) graveyard to (the battlefield|your hand)[^.]*\./i;
+const RETURN_RE = /\b(?:Return|Put) target ((?:[a-z\-]+ )*?)card (?:with mana value (\d+)( or (?:less|greater))? )?(?:from|in) (?:your|a|an) graveyard (?:to|onto) (the battlefield|your hand)[^.]*\./i;   // v0.94.1 also "Put target creature card from a graveyard onto the battlefield under your control" and mana value limits
 function graveTargetSpec(c) {
   if(!/\b(?:Instant|Sorcery)\b/.test(frontType(c))) return null;
   const m=cardText(c).replace(/\n/g,' ').match(RETURN_RE); if(!m) return null;
-  return { words: m[1].trim().toLowerCase().split(/\s+/).filter(Boolean), to: m[2].toLowerCase(), label: (m[1]+'card').trim() };
+  return { words: m[1].trim().toLowerCase().split(/\s+/).filter(Boolean), mv: m[2] ? { n: +m[2], rel: (m[3] || '').trim() } : null, to: m[4].toLowerCase(), label: (m[1]+'card'+(m[2] ? ' with mana value '+m[2]+(m[3]||'') : '')).trim() };
 }
 function matchesGraveSpec(card, spec) {
   const t=frontType(card)||'';
+  if (spec.mv) { const i=cardInfo(card.name), v=i?i.cmc||0:0; if (spec.mv.rel==='or less' ? v>spec.mv.n : spec.mv.rel==='or greater' ? v<spec.mv.n : v!==spec.mv.n) return false; }
   return spec.words.every(w => w==='legendary' ? /Legendary/i.test(t) : w==='nonlegendary' ? !/Legendary/i.test(t) : w==='nonland' ? !/\bLand\b/i.test(t) : new RegExp('\\b'+w+'\\b','i').test(t));
 }
 function openGraveTarget(c, spec, done) {
@@ -2660,21 +2932,23 @@ function applyGraveReturn(c, stx) {
   const rest=stx.replace(RETURN_RE,'').trim();
   if(gi<0){ log(`${c.name}: its target (${name}) is no longer in the graveyard, so the spell does nothing`); toast('Spell fizzled',`${name} left the graveyard, so ${c.name} has no legal target and does nothing.`); return ''; }
   const [t]=state.graveyard.splice(gi,1);
-  if(rm[2].toLowerCase()==='your hand'){ state.hand.push(t); log(`${c.name}: returned ${t.name} to your hand`); return rest; }
+  if(rm[4].toLowerCase()==='your hand'){ state.hand.push(t); log(`${c.name}: returned ${t.name} to your hand`); return rest; }
+  const tappedIn=/\b(?:to|onto) the battlefield tapped\b/i.test(rm[0]), loseMV=/you lose life equal to (?:its|that card's) mana value/i.test(rest);
+  if(loseMV){ const inf=cardInfo(t.name), n=inf?inf.cmc||0:0; if(n){ changeLife(-n); log(`${c.name}: you lose ${n} life (mana value of ${t.name})`); } }
   t.counters={plus:0,minus:0};
-  enterBattlefield(t,{from:'graveyard',logMsg:`${c.name}: returned ${t.name} from the graveyard to the battlefield`,afterPlace:()=>{
-    if(/gains? haste until end of turn/i.test(rest)){ addFx({kind:'kw',targetId:t.id,kw:'haste',srcName:c.name}); log(`${t.name} gains haste until end of turn`); }
+  enterBattlefield(t,{from:'graveyard',tapped:tappedIn||undefined,logMsg:`${c.name}: returned ${t.name} from the graveyard to the battlefield${tappedIn?' tapped':''}`,afterPlace:()=>{
+    if(/gains? haste(?: until end of turn)?\b/i.test(rest)){ addFx({kind:'kw',targetId:t.id,kw:'haste',srcName:c.name}); log(`${t.name} gains haste until end of turn`); }
     if(/exile (?:it|that creature) at the beginning of the next end step/i.test(rest)){ addFx({kind:'delayed',when:'end',action:'exile',targetId:t.id,targetName:t.name,text:`Exile ${t.name}.`,srcName:c.name}); log(`${t.name} will be exiled at the beginning of the next end step`); }
     if(/if (?:it|that creature) would leave the battlefield, exile it instead/i.test(rest)){ t.exileInstead=true; }
   }});
-  return rest.replace(/[^.]*gains? haste until end of turn\.?/i,'').replace(/[^.]*exile (?:it|that creature) at the beginning of the next end step\.?/i,'').replace(/[^.]*would leave the battlefield, exile it instead[^.]*\.?/i,'').trim();
+  return rest.replace(/You lose life equal to (?:its|that card's) mana value\.?/i,'').replace(/[^.]*gains? haste until end of turn\.?/i,'').replace(/[^.]*exile (?:it|that creature) at the beginning of the next end step\.?/i,'').replace(/[^.]*would leave the battlefield, exile it instead[^.]*\.?/i,'').trim();
 }
 // "Countered": the top object of the stack is removed without resolving (you are playtesting against a real opponent).
 function counterStackObject(id, by) {
   if(!state) return; const i=state.stack.findIndex(x=>x.id===id); if(i<0) return;
   { const sc=state.stack[i]; if(!sc.ability && !sc.opp && /(?:this spell|this card) can'?t be countered/i.test((cardText(sc)||'').replace(/\u2019/g,"'"))) { log(`${by?by+': ':''}${sc.name} can't be countered, so it stays on the stack`); toast("Can't be countered", `${sc.name} says it can't be countered, so the counterspell does nothing to it (rule 101.2).`); return; } }
   snap();
-  const [c]=state.stack.splice(i,1); if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) spotlight(c,'counter',null);
+  const [c]=state.stack.splice(i,1); if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
   if(c.opp){ log(`${by?by+': ':''}Opponent's ${c.name} was countered`); toast(`Opponent's ${c.name} countered`,'It leaves the stack without resolving.'); }
   else if(c.ability){ log(`${by?by+': ':''}${c.sourceName||c.name}: ability was countered — it does not resolve`); toast('Ability countered','It leaves the stack without resolving. The permanent that made it is unaffected.'); }
   else { const where=gyPush(c,'stack'); delete c.target; delete c.targets; delete c.modes; delete c.modeTexts; log(`${by?by+': ':''}${c.name} was countered → ${where}`); restoreHalf(c); toast(`${c.name} countered`, `A countered spell does not resolve (no effects, no entering the battlefield) and goes to its owner's ${where}.`); }
@@ -2689,8 +2963,19 @@ function castOppSpell(name, type) {
   if(!isAb) spotlight({name,opp:true},'cast',null);
   log(isAb?`Opponent's ability ${name} goes on the stack`:`Opponent casts ${name}${type?' ('+type+')':''} — it is on the stack`); render();
 }
+function finishAbilityResolving() {
+  if (!state || !state.resolvingAb) return;
+  if (state.discarding || handPick) { state.resolvingWait = true; render(); return; }
+  state.resolvingAb = null; if (!state.resolving) { state.resolvingWait = false; state.resLines = []; } render();
+}
+function finishResolving() {   // the spell whose effect was just applied (or skipped) now leaves the stack
+  const c = state && state.resolving; if (!c) return;
+  if (state.discarding || handPick) { state.resolvingWait = true; render(); return; }   // wait until the chosen cards have been discarded
+  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
+}
 function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();
+  noteFlightFrom(state.stack[state.stack.length-1].id,`#stackStage .ss-card.top`);
   const c=state.stack.pop(); state.priority={active:false,passed:false};
   if(c.opp){ log(`Opponent's ${c.name} resolves — apply its effects at the table`); toast(`Opponent's ${c.name} resolves`,'Its effects are not tracked here. Adjust your board, life or cards by hand.'); render(); return; }
   if(c.targets&&c.targets.length){
@@ -2707,6 +2992,7 @@ function resolveTopOfStack() {
   if(c.ability){ log(`Resolved ability of ${c.sourceName}`); eff=c; }
   else if (isPermanentCard(c)) {
     enterBattlefield(c,{from:'stack',logMsg:`Resolved ${c.name} → battlefield`,afterPlace:()=>{
+    if(c.warped){ delete c.warped; c.warpExile=state.turn; addFx({kind:'delayed',when:'end',action:'exile',targetId:c.id,targetName:c.name,text:`Exile ${c.name} (warp).`,srcName:c.name}); log(`${c.name}: warped, it will be exiled at the beginning of the next end step; you may cast it from exile on a later turn`); }
     if(c.evoked){ delete c.evoked; queueTrigger({kind:'ability',cardId:c.id,cardName:c.name,text:'Evoke: when this enters, sacrifice it.',effect:'Sacrifice ~.',special:'sacSelf',optional:false,why:'You cast it for its evoke cost, so it is sacrificed when it enters. Its other enters-the-battlefield abilities still trigger; you choose the order they go on the stack.'}); }
     if(c.xValue!==undefined){
       const cm=cardText(c).match(/enters(?: the battlefield)? with (twice )?X (\+1\/\+1|[a-z\-]+) counters?/i);
@@ -2714,18 +3000,20 @@ function resolveTopOfStack() {
     }
     }});
   } else {
-    const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure';
-    const where=adv0?exileOnAdventure(c):gyPush(c,'stack');
-    log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`);
+    const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
+    // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
     { const md0=c.modes?spellModal(c):null; const baseTx=md0?modalText(md0,c.modes):cardText(c); delete c.modes; delete c.modeTexts;
       let stx=baseTx.replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
-      // Instants and sorceries: offer the effects the app can apply (X spells always get the panel).
-      if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true}; delete c.targets; }
+      if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
+    if(eff && !adv0 && layoutOn('resolveFirst')){ state.resolving=c; log(`${nm0} is resolving`); }
+    else if(c.copy){ log(`Resolved a copy of ${nm0}; the copy ceases to exist`); }
+    else { const where=adv0?exileOnAdventure(c):gyPush(c,'stack'); log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`); }
   }
-  restoreHalf(c);
+  if(!state.resolving) restoreHalf(c);
   render();
-  if(eff) openAbilityEffect(eff,()=>{ if(state.pendingTriggers.length) resolvePendingTrigger(); });
+  if(eff && c.ability){ state.resolvingAb = Object.assign({}, c); render(); }
+  if(eff) openAbilityEffect(eff,()=>{ finishResolving(); finishAbilityResolving(); if(state.pendingTriggers.length) resolvePendingTrigger(); });
   else if(state.pendingTriggers.length) resolvePendingTrigger();
 }
 
@@ -3015,6 +3303,8 @@ function getCurrentDeck() {
   const decks = loadDecks();
   const n = currentDeckName();
   if (!n || !decks[n]) return null;
+  const sb = decks[n].sb;   // v0.90.2 sideboarded version of the list (the saved text itself is never touched)
+  if (sb && Array.isArray(sb.main) && sb.main.length) return { name: n, main: sb.main.map(x => ({ ...x })), side: (sb.side || []).map(x => ({ ...x })), sideboarded: true };
   return { name: n, ...parseDeck(decks[n].text) };
 }
 
@@ -3024,6 +3314,42 @@ let state = null;
 let undoStack = [];
 let selected = null;
 let bottomSel = new Set();
+// v0.90.1: choosing cards to discard happens in the hand zone itself. `handPick` describes an effect or cost that needs cards from the hand
+// ({n, verb, note, ok(card), cancel, onCancel, done(ids)}); the cleanup discard uses the same bar with no `handPick`.
+let handPick = null;
+function pickFromHand(o) {
+  if (!state) return;
+  const hand = state.hand.filter(c => !o.ok || o.ok(c));
+  const n = Math.min(o.n, hand.length);
+  if (!n) { if (o.done) o.done([]); return; }
+  if (n >= hand.length && !o.choose) { o.done(hand.map(c => c.id)); return; }   // only one possible choice: no need to ask
+  bottomSel.clear(); handPick = Object.assign({ verb: 'discard' }, o, { n }); if (o.title && resolvingObj && resolvingObj.sourceName === o.title) handPick.res = resolvingObj; state.discarding = n; render();
+}
+function cancelHandPick() { const ctx = handPick; handPick = null; bottomSel.clear(); if (state) state.discarding = 0; render(); if (ctx && ctx.onCancel) ctx.onCancel(); }
+function drawHandPickBar() {
+  const bar = $('#handPickBar'), wrap = $('#handWrap'); if (!bar || !wrap) return;
+  if (handPick && !(state && state.discarding)) handPick = null;
+  const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
+  const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
+  document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
+  const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
+  if (mb) {
+    const n = state.mulls, cnt = bottomSel.size, serum = state.serumPending;
+    bar.replaceChildren(
+      h('span', { class: 'hp-msg', text: `Mulligan: select ${n} card${n === 1 ? '' : 's'} to put on the bottom` }), h('span', { class: 'hp-count', text: `${cnt}/${n}` }),
+      serum ? h('span', { class: 'hp-note muted small', text: 'Serum Powder is used after you choose.' }) : null, h('span', { class: 'hp-sp' }),
+      h('button', { class: 'primary', text: serum ? 'Confirm and use Serum Powder' : 'Confirm', disabled: cnt !== n, onclick: serum ? finishSerumPowder : finishMulligan }));
+    return;
+  }
+  const n = state.discarding, verb = handPick ? handPick.verb : 'discard', cnt = bottomSel.size;
+  bar.replaceChildren(
+    h('span', { class: 'hp-msg', text: handPick ? `${handPick.title ? handPick.title + ': ' : ''}select ${n} card${n === 1 ? '' : 's'} to ${verb}` : `Cleanup: select ${n} card${n === 1 ? '' : 's'} to discard` }),
+    h('span', { class: 'hp-count', text: `${cnt}/${n}` }),
+    handPick && handPick.note ? h('span', { class: 'hp-note muted small', text: handPick.note }) : null,
+    h('span', { class: 'hp-sp' }),
+    handPick && handPick.cancel ? h('button', { text: 'Cancel', onclick: cancelHandPick }) : null,
+    h('button', { class: 'primary', text: verb.charAt(0).toUpperCase() + verb.slice(1) + (n > 1 ? ` ${cnt}/${n}` : ''), disabled: cnt !== n, onclick: confirmDiscard }));
+}
 
 function newCard(name, extra) { return Object.assign({ id: 0, name, tapped: false, counters: 0 }, extra || {}); }
 
@@ -3047,6 +3373,7 @@ function undo() {
 }
 
 function log(msg) {
+  if (state.resolving || state.resolvingAb) { state.resLines = state.resLines || []; if (!/^Resolved\b|is resolving$/.test(msg)) state.resLines.push(msg); if (state.resLines.length > 6) state.resLines.shift(); }   // v0.91.1 shown under the card while it resolves
   state.log.push((state.turn ? `T${state.turn}: ` : '') + msg);
   if (state.log.length > 400) state.log.shift();
 }
@@ -3071,7 +3398,7 @@ function moveCard(id, to, pos) {
   } else {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
-    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.evoked; delete c.kicked; delete c.fromGy; if (to !== 'exile') delete c.mayPlayTurn; if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
     delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });
@@ -3090,15 +3417,19 @@ function replacementEffectHints(){
   if(!state||!teach('rulesHints'))return [];
   return state.battlefield.filter(c=>/\b(?:if you would|whenever you would|instead|skip that draw)\b/i.test(cardText(c))).map(c=>c.name);
 }
+function skipDrawSource() { return !!state && state.battlefield.some(x => !x.token && /If you would draw a card, you may skip that draw instead/i.test(((cardInfo(x.name) || {}).tx || '').replace(/\s+/g, ' '))); }
 function drawCards(n, silent) {
-  let drawn = 0;
+  let drawn = 0, skipped = 0;
+  const skipOn = !!(state.gs && state.gs.skipDraw) && skipDrawSource();   // v0.90 Necrodominance: you may skip each draw (the Skip draws switch)
   for (let i = 0; i < n; i++) {
+    if (skipOn) { skipped++; continue; }
     if (!state.library.length) { if (!silent) log('Library is empty!'); state.drewEmpty = true; break; }
     const reps=replacementEffectHints(); if(reps.length && !silent && i===0) log(`Rules hint: ${reps.join(', ')} may modify this draw or event.`);
     state.hand.push(state.library.shift());
     drawn++; if (!silent) setTimeout(() => sfx('draw'), (drawn - 1) * 110);
     if (!silent && drawn <= 3) fireTrigger('draw');
   }
+  if (skipped && !silent) log(`Skipped ${skipped} draw${skipped === 1 ? '' : 's'} (the Skip draws switch is on)`);
   return drawn;
 }
 
@@ -3314,6 +3645,8 @@ function jumpToStep(i) {
 }
 
 function nextPhase() {
+  if (state && state.resolving) finishResolving();
+  if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
   if (STEPS[state.step].id === 'attack' && !state.combat.declared && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
@@ -3322,19 +3655,37 @@ function nextPhase() {
 }
 
 function nextTurn() {
+  if (state && state.resolving) finishResolving();
+  if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
   snap();
   if (state.step < CLEANUP) { for (let j = state.step + 1; j <= CLEANUP && !state.discarding && !state.pendingTriggers.length; j++) enterStep(j, true); }
   if (state.pendingTriggers.length) { render(); flushTriggers(); return; }
   if (state.discarding) { render(); return; }
+  const vault = teach('vaultPrompt') ? state.battlefield.find(c => c.tapped && !c.token && /you would begin your turn while [^.]*? is tapped, you may skip that turn instead/i.test(((cardInfo(c.name) || {}).tx || '').replace(/\s+/g, ' '))) : null;
+  if (vault) { openVaultPrompt(vault); return; }
+  beginNextTurn();
+}
+function beginNextTurn() {
   state.turn++;
   if (state.extraTurns > 0) { state.extraTurns--; log('Extra turn begins'); }
   startTurn();
 }
+// Time Vault: "If you would begin your turn while this artifact is tapped, you may skip that turn instead. If you do, untap this artifact."
+function openVaultPrompt(vault) {
+  const extra = state.extraTurns > 0;
+  const m = modal(`${vault.name} is tapped`, { width: 520, sticky: true, noClose: true });
+  m.body.append(h('div', { class: 'psub', text: `You would begin ${extra ? 'your extra turn' : 'your turn'} while ${vault.name} is tapped, so you may skip that turn instead (rule 614.10). If you do, ${vault.name} untaps.` }),
+    h('div', { class: 'muted small', text: extra ? 'Skipping uses up the extra turn without playing it. Your next turn then begins normally.' : 'Skipping means a whole turn cycle passes (a goldfish opponent does nothing), then your next turn begins with it untapped.' }));
+  m.foot.append(
+    h('button', { text: 'Take the turn', onclick: () => { m.close(); beginNextTurn(); } }),
+    h('button', { class: 'primary', text: 'Skip it and untap', onclick: () => { m.close(); snap(); vault.tapped = false; if (extra) state.extraTurns--; log(`${vault.name}: you skipped ${extra ? 'your extra turn' : 'a turn'} and untapped it`); beginNextTurn(); } }));
+}
 
 function confirmDiscard() {
   if (!state || !state.discarding || bottomSel.size !== state.discarding) return;
+  if (handPick) { const ctx = handPick, ids = [...bottomSel]; handPick = null; bottomSel.clear(); state.discarding = 0; ctx.done(ids); render(); flushTriggers(); return; }
   snap();
   for (const id of [...bottomSel]) {
     const i = state.hand.findIndex(c => c.id === id);
@@ -3426,11 +3777,27 @@ function manaTotal() {
   if (!state || !state.manaPool) return 0;
   return Object.values(state.manaPool).reduce((a,b)=>a+(b||0),0);
 }
+// v0.90.9 Static effects that change when mana empties (rule 106.4): Omnath, Locus of Mana keeps green; Upwelling keeps everything.
+function manaKeepers() {
+  const out = { all: false, colors: new Set(), by: [] };
+  if (!state) return out;
+  for (const x of state.battlefield) {
+    if (x.token) continue; const tx = (((cardInfo(x.name) || {}).tx) || '').replace(/\s+/g, ' ');
+    if (/mana pools? (?:don'?t|doesn'?t|do not) empty|(?:you )?don'?t lose unspent mana as steps and phases end/i.test(tx)) { out.all = true; out.by.push(x.name); }
+    else { const m = tx.match(/(?:you )?don'?t lose unspent (white|blue|black|red|green) mana as steps and phases end/i) || tx.match(/(white|blue|black|red|green) mana doesn'?t empty from (?:your )?mana pools?/i); if (m) { out.colors.add({ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' }[m[1].toLowerCase()]); out.by.push(x.name); } }
+  }
+  return out;
+}
 function clearManaPool(reason='') {
   if (!state || !state.manaPool || !manaTotal()) return;
-  const total = manaTotal();
-  state.manaPool = {W:0,U:0,B:0,R:0,G:0,C:0};
-  if (reason) log(`${total} floating mana emptied (${reason})`);
+  const keep = manaKeepers(), kept = {}; let lost = 0, held = 0;
+  for (const k of Object.keys(state.manaPool)) {
+    const v = state.manaPool[k] || 0;
+    if (keep.all || keep.colors.has(k)) { kept[k] = v; held += v; } else { kept[k] = 0; lost += v; }
+  }
+  state.manaPool = Object.assign({W:0,U:0,B:0,R:0,G:0,C:0}, kept);
+  if (reason && lost) log(`${lost} floating mana emptied (${reason})`);
+  if (reason && held) log(`${held} floating mana stayed in your pool (${[...new Set(keep.by)].join(', ')})`);
 }
 function addFloatingMana(color, amount=1) {
   if (!state) return;
@@ -3791,7 +4158,17 @@ function openOppDraw() {
   m.body.append(h('div', { class: 'psub', text: 'Abilities like Orcish Bowmasters ignore the first card an opponent draws in each of their draw steps. Was this that card?' }));
   m.foot.append(
     h('button', { text: 'Yes, their draw-step draw', onclick: () => { m.close(); log('Opponent drew their draw-step card (no triggers)'); } }),
-    h('button', { class: 'primary', text: 'No, an extra draw', onclick: () => { m.close(); log('Opponent drew an extra card'); fireTrigger('oppdraw'); render(); flushTriggers(); } }));
+    h('button', { class: 'primary', text: 'No, an extra draw', onclick: () => {
+      m.close();
+      const hb = state.battlefield.find(c => !c.token && /If an opponent would draw a card except the first one they draw in each of their draw steps, instead you create a Treasure token/i.test(((cardInfo(c.name) || {}).tx || '').replace(/\s+/g, ' ')));
+      if (hb) { log(`${hb.name}: your opponent's extra draw is replaced, so they draw nothing and you create a Treasure token (rule 614.6: "whenever an opponent draws" abilities do not trigger)`); makeTokensFromDef(treasureDef(), 1, hb.name); return; }
+      log('Opponent drew an extra card'); fireTrigger('oppdraw'); render(); flushTriggers(); } }));
+}
+function treasureDef() { return { name: 'Treasure', pt: '', col: [], types: ['Artifact'], subs: ['treasure'], tx: TOKEN_PRE.treasure.tx, type: 'Token Artifact \u2014 Treasure' }; }
+function openOppSearch() {
+  if (!state) return;
+  log('Your opponent searched their library'); fireTrigger('oppsearch'); render(); flushTriggers();
+  if (!state.pendingTriggers.length && !state.battlefield.some(c => parseTriggers(c).some(t => t.ev === 'opp-search'))) toast('Opponent searched', 'Noted. None of your permanents care when an opponent searches their library.');
 }
 function makeToken(name, pt) {
   if (!state) return;
@@ -4207,7 +4584,7 @@ function cardEl(c, zone) {
   const ptc = (!pw && zone === 'battlefield' && permZone(c) === 'creatures' && (c.token || info)) ? ptCalc(c) : null;
   const pt = pw ? null : ptc ? ptText(c) : (c.token ? c.tk.pt : info && info.pt);
   const e = h('div', {
-    class: `card c-${colorClass(c)}${isFoil(c) ? ' foil' : ''}${pt ? ' haspt' : ''}${c.tapped ? ' tapped' : ''}${selected === c.id ? ' sel' : ''}${bottomSel.has(c.id) ? ' bsel' : ''}${zone === 'hand' && teach('playability') ? ' cast-' + handInteraction(c) : ''}${zone === 'hand' && isInstantSpeed(c) && teach('playability') ? ' instant-speed' : ''}${zone === 'battlefield' && teach('playability') && activationReady(c) ? ' cast-ready act-ready' : ''}${zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' sick' : ''}`,
+    class: `card c-${colorClass(c)}${isFoil(c) ? ' foil' : ''}${pt ? ' haspt' : ''}${c.tapped ? ' tapped' : ''}${selected === c.id ? ' sel' : ''}${bottomSel.has(c.id) ? ' bsel' : ''}${zone === 'hand' && state && (state.discarding || (state.phase === 'mull' && state.bottomPhase)) ? (!handPick || !handPick.ok || handPick.ok(c) ? ' pickable' : ' nopick') : ''}${zone === 'hand' && teach('playability') ? ' cast-' + handInteraction(c) : ''}${zone === 'hand' && isInstantSpeed(c) && teach('playability') ? ' instant-speed' : ''}${zone === 'battlefield' && teach('playability') && activationReady(c) ? ' cast-ready act-ready' : ''}${zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' sick' : ''}`,
     draggable: 'true', 'data-id': c.id, title: c.name + (!c.token && cardInfo(c.name) && cardInfo(c.name).mc ? '  ' + cardInfo(c.name).mc : '') + (zone === 'hand' ? handTip(c) : '') + (zone === 'battlefield' && teach('playability') && activationReady(c) ? ' — ' + activationReady(c) : '') + (zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' — ' + SICK_TEXT : '')
   },
     isFoil(c) ? foilEl() : null,
@@ -4223,7 +4600,12 @@ function cardEl(c, zone) {
     zone === 'battlefield' && state && teach('durationHints') && fxOn(c).length ? h('div', { class: 'fxbadge', title: fxOn(c).map(e => `${e.kind === 'pt' ? sgnN(e.p) + '/' + sgnN(e.t) : e.kind === 'kw' ? e.kw : e.text} ${UNTIL_WORDS[e.until] || ''}`).join('\n'), text: '\u23F3' }) : null,
     !c.token && usesDelirium(c) && state ? (() => { const n = deliriumCount(); return h('div', { class: 'delirium-badge' + (n >= 4 ? ' on' : ''), text: `\u0394 ${Math.min(n, 4)}/4`, title: `Delirium: ${n} card type${n === 1 ? '' : 's'} among cards in your graveyard (${n >= 4 ? 'active' : 'needs four'})` }); })() : null,
     !c.token && usesDomain(c) ? h('div', { class: 'domain-badge', text: `${domainCount()}/5`, title: 'Domain: distinct basic land types among lands you control' }) : null,
-    (() => { const cc=typeof c.counters==='number'?{plus:c.counters,minus:0}:(c.counters||{plus:0,minus:0}); const s=[]; if(cc.plus)s.push('+1 '+cc.plus); if(cc.minus)s.push('−1 '+cc.minus); for(const k of Object.keys(cc)) if(k!=='plus'&&k!=='minus'&&cc[k]) s.push(k+' '+cc[k]); if(c.chosen) s.push('\u201c'+c.chosen+'\u201d'); return s.length?h('div',{class:'cbadge',text:s.join(' · ')}):null; })(),
+    (() => { const cc=typeof c.counters==='number'?{plus:c.counters,minus:0}:(c.counters||{plus:0,minus:0}); const chips=[];   // v0.94.3 one chip per kind of counter: the count first, then which counter it is
+      const chip=(cls,n,label,tip)=>h('span',{class:'ctr '+cls,title:tip},h('b',{class:'ctr-n',text:String(n)}),h('span',{class:'ctr-k',text:label}));
+      if(cc.plus)chips.push(chip('plus',cc.plus,'+1/+1',`${cc.plus} +1/+1 counter${cc.plus===1?'':'s'} (the creature gets +${cc.plus}/+${cc.plus})`)); if(cc.minus)chips.push(chip('minus',cc.minus,'\u22121/\u22121',`${cc.minus} \u22121/\u22121 counter${cc.minus===1?'':'s'}`));
+      for(const k of Object.keys(cc)) if(k!=='plus'&&k!=='minus'&&cc[k]) chips.push(chip('other',cc[k],k,`${cc[k]} ${k} counter${cc[k]===1?'':'s'}`));
+      if(c.chosen) chips.push(h('span',{class:'ctr chosen',title:'Chosen'},h('span',{class:'ctr-k',text:'\u201c'+c.chosen+'\u201d'})));
+      return chips.length?h('div',{class:'cbadge'},...chips):null; })(),
     zone === 'battlefield' && state && (c.att || attachmentsOf(c).length) ? (() => { const hst = hostOf(c), ats = attachmentsOf(c); return h('div', { class: 'attbadge', text: hst ? '\u2192 ' + hst.name : '\u2694 ' + ats.map(a => a.name).join(', '), title: hst ? `${c.name} is attached to ${hst.name}.` : `Attached to this: ${ats.map(a => a.name).join(', ')}` }); })() : null,
     c.token ? h('div', { class: 'ctoken', text: 'token' }) : null
   );
@@ -4250,6 +4632,7 @@ function onCardClick(c, zone) {
   hideMenu();
   if (zone === 'hand' && ((state.phase === 'mull' && state.bottomPhase) || state.discarding)) {
     const lim = state.discarding || state.mulls;
+    if (handPick && handPick.ok && !handPick.ok(c)) { toast('Cannot choose that', 'That card is not an allowed choice.'); return; }
     if (bottomSel.has(c.id)) bottomSel.delete(c.id);
     else if (bottomSel.size < lim) bottomSel.add(c.id);
     render();
@@ -4269,6 +4652,13 @@ function onCardClick(c, zone) {
   render();
 }
 
+function openAbilityPicker(c) {
+  const L = activatedAbilitiesFor(c), m = modal(`${c.name}: activate an ability`, { width: 580 });
+  const why = { tap: 'it must be untapped and not summoning sick', counters: 'not enough counters', life: 'not enough life', cost: 'you cannot pay the cost', restriction: 'a timing restriction is not met', mana: 'not enough mana' };
+  m.body.append(h('div', { class: 'psub', text: 'You may activate this any time you have priority (and only as a sorcery if the ability says so). Pick one.' }));
+  for (const ab of L) { const r = abilityReady(c, ab); m.body.append(h('div', { class: 'row' + (r ? ' dim' : '') }, h('span', { class: 'nm', text: `${ab.cost}: ${ab.effect}` }), h('button', { class: r ? '' : 'primary', text: 'Activate', title: r ? 'Cannot now: ' + (why[r] || r) : '', onclick: () => { m.close(); activateAbility(c.id, false, ab.ix); } }))); }
+  m.foot.append(h('button', { text: c.tapped ? 'Untap it instead' : 'Tap it instead', onclick: () => { m.close(); toggleTap(c.id); } }), h('button', { text: 'Close', onclick: () => m.close() }));
+}
 function onCardDbl(c, zone) {
   if (!state || state.phase !== 'play' || state.discarding || holdForTriggers()) return;
   if (zone === 'battlefield') {
@@ -4276,6 +4666,7 @@ function onCardDbl(c, zone) {
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);
     else if (isManaPermanent(c) && !c.tapped) tapForMana(c.id);
     else if (!/\bCreature\b/.test(frontType(c)) && !isLandName(c.name) && activatedAbilityFor(c)) { const L = activatedAbilitiesFor(c); const ab = L.find(x => !abilityReady(c, x)) || L[0]; activateAbility(c.id, false, ab.ix); }
+    else if (!isLandName(c.name) && activatedAbilitiesFor(c).some(x => !abilityReady(c, x))) openAbilityPicker(c);   // v0.86: a creature with a usable ability (Psychic Frog): choose which
     else toggleTap(c.id);
   }
   else if (zone === 'hand') {
@@ -4321,6 +4712,7 @@ const KEYWORDS = [
   ['Crew', /\bcrew \d/i, 'Tap any number of creatures with total power equal to or greater than the crew number: this Vehicle becomes an artifact creature until end of turn.'],
   ['Persist', /\bpersist\b/i, 'When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield with a -1/-1 counter.'],
   ['Undying', /\bundying\b/i, 'When this creature dies, if it had no +1/+1 counters on it, return it to the battlefield with a +1/+1 counter.'],
+  ['Warp', /\bwarp\b/i, 'You may cast this from your hand for its warp cost. If you do, it is exiled at the beginning of the next end step, and you may cast it from exile on a later turn.'],
   ['Evoke', /\bevoke\b/i, 'You may cast this for its evoke cost. If you do, it’s sacrificed when it enters the battlefield.'],
   ['Madness', /\bmadness\b/i, 'If you discard this card, you may cast it for its madness cost instead of putting it into your graveyard.'],
   ['Dash', /\bdash\b(?=\s*[{—])/i, 'You may cast this for its dash cost. It gains haste and returns to your hand at end of turn.'],
@@ -4602,7 +4994,7 @@ function render() {
   runToughnessSBA();
   document.body.classList.toggle('responding', !!state && state.phase === 'play' && state.stack.length > 0);
   document.body.classList.toggle('imgmode', showImages && (IMG.size > 0 || CUSTOM.size > 0));
-  document.body.classList.toggle('hand3d', animOn('hand3d')); document.body.classList.toggle('bffloat', animOn('bfFloat'));
+  document.body.classList.toggle('castflight', castFlightOn()); document.body.classList.toggle('hand3d', animOn('hand3d')); document.body.classList.toggle('bffloat', animOn('bfFloat'));
   document.body.classList.toggle('blocked', isBlocked());
   renderTop();
   const has = !!state;
@@ -4614,7 +5006,6 @@ function render() {
   const cbt = $('#btnCombat'); if (cbt) cbt.hidden = !(has && state.phase === 'play' && STEPS[state.step].id === 'attack' && !state.phasePause && !state.combat.declared);
   renderManaPool(); drawStateIcons();
   for (const z of ['library', 'graveyard', 'exile']) { const n = has ? state[z].length : 0; const pc = $('#pcnt-' + z); pc.textContent = n; pc.classList.toggle('zero', !n); }
-  $('#cnt-sideboard').textContent = has ? state.sideboard.length : 0;
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
   { const n = has ? state.library.length : 0; const ls = $('#libstack'); ls.dataset.thick = n > 40 ? 3 : n > 15 ? 2 : n > 0 ? 1 : 0; ls.title = teach('libraryMenu') ? 'Click for draw, look, scry, surveil, mill, search' : ''; }
   $('#cnt-hand').textContent = has ? `(${state.hand.length})` : '';
@@ -4652,13 +5043,14 @@ function render() {
     for (const c of state.hand) hand.append(cardEl(c, 'hand'));
   }
   applyLayout();
-  document.body.classList.toggle('l-depth', layoutOn('zoneDepth')); document.body.classList.toggle('l-fangy', layoutOn('gyFan'));
+  document.body.classList.toggle('l-strip', layoutOn('boardStrip')); document.body.classList.toggle('l-depth', layoutOn('zoneDepth')); document.body.classList.toggle('l-fangy', layoutOn('gyFan'));
   $('#zc-creatures').textContent = counts.creatures ? `(${counts.creatures})` : '';
-  $('#zc-lands').textContent = counts.lands ? `(${counts.lands})` : '';
+  $('#zc-lands').textContent = (counts.lands ? `(${counts.lands})` : '') + (has && state.phase === 'play' ? (counts.lands ? ' · ' : '') + (landDropUsed() ? 'land drop used' : 'land drop ready') : '');   // v0.90.2 moved here from the turn bar
   fitBattlefieldCards();
   layoutHand(); applyFan();
   $('#phases')?.classList.toggle('hidden', !teach('phaseBar') || (layoutOn('boardStrip') && !!state && state.phase === 'play'));
-  renderPhaseBar(); phaseFlash(); drawBoardStrip(); drawStackStage();
+  renderPhaseBar(); phaseFlash(); drawBoardStrip(); drawStackStage(); drawHandPickBar();
+  if (state && (state.resolving || state.resolvingAb) && state.resolvingWait && !state.discarding && !handPick) setTimeout(() => { try { finishResolving(); finishAbilityResolving(); } catch (e) { /* ignore */ } }, 0);
   renderOverlay();
   const logEl = $('#log');
   logEl.replaceChildren();
@@ -4724,14 +5116,20 @@ function openCombatHelper(){
     const rows=h('div',{class:'prelist'});
     const creatures=state.battlefield.filter(c=>permZone(c)==='creatures');
     if(!creatures.length) rows.append(h('div',{class:'muted',text:'You control no creatures.'}));
+    const btns=new Map(), sync=(c)=>{const b=btns.get(c.id); if(!b) return; b.className=picks.has(c.id)?'tgl on':'tgl'; b.textContent=picks.has(c.id)?'Attacking':'Attack';};
     creatures.forEach(c=>{
       const why=attackBlock(c), vig=hasKw(c,'vigilance');
-      const btn=h('button',{class:'tgl',text:'Attack',disabled:!!why,title:why});
-      btn.addEventListener('click',()=>{picks.has(c.id)?picks.delete(c.id):picks.add(c.id);btn.className=picks.has(c.id)?'tgl on':'tgl';btn.textContent=picks.has(c.id)?'Attacking':'Attack';});
+      const btn=h('button',{class:'tgl',text:'Attack',disabled:!!why,title:why}); btns.set(c.id,btn);
+      btn.addEventListener('click',()=>{picks.has(c.id)?picks.delete(c.id):picks.add(c.id);sync(c);});
       const pw=powerOf(c);
       rows.append(h('div',{class:'row'+(why?' cantatk':'')},h('span',{class:'nm'},c.name+(vig?' (vigilance: does not tap)':'')),h('span',{class:'muted small',text:why?why:`power ${pw.n}${pw.star?' (*)':''}`}),btn));
     });
-    m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),rows);
+    // v0.94.3 Attack with all: picks every creature that can legally attack (not tapped, not summoning sick unless it has haste, no defender, no "can't attack" effect)
+    const viable=creatures.filter(c=>!attackBlock(c)), skipped=creatures.filter(c=>attackBlock(c));
+    const allBtn=h('button',{class:'primary',text:`Attack with all (${viable.length})`,disabled:!viable.length,title:viable.length?'Selects every creature that can attack right now':'No creature can attack right now',onclick:()=>{viable.forEach(c=>picks.add(c.id));creatures.forEach(sync);allNote.textContent=skipped.length?`Left out: ${skipped.map(c=>`${c.name} (${c.tapped?'tapped':isSick(c)?'summoning sick':hasKw(c,'defender')?'defender':"can't attack"})`).join(', ')}.`:'Every creature you control is attacking.';}});
+    const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();creatures.forEach(sync);allNote.textContent='';}});
+    const allNote=h('div',{class:'muted small'});
+    m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),h('div',{class:'pbtns',style:'margin:6px 0'},allBtn,noneBtn),allNote,rows);
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{
       snap();state.combat.attackers=[...picks];state.combat.declared=true;
       const atk=[...picks].map(id=>findCard(id)?.card).filter(Boolean);
@@ -4840,19 +5238,13 @@ function renderOverlay() {
           ? 'Serum Powder is checked before each mulligan decision. Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
           : 'Your hand is shown below.' }));
     } else {
+      ov.hidden = true; ov.replaceChildren(); return;   // v0.90.7 chosen in the hand bar instead
       const serum = state.serumPending;
       show(
         h('div', { class: 'ptitle', text: serum ? 'Put cards on the bottom' : 'Put cards on the bottom' }),
         h('div', { class: 'psub' }, serum ? `You have mulliganed ${state.mulls} time${state.mulls === 1 ? '' : 's'}. When you finally keep a hand, you will put ${state.mulls} card${state.mulls === 1 ? '' : 's'} on the bottom. Serum Powder itself does not require bottoming cards.` : 'Click ', serum ? null : h('b', { text: String(state.mulls) }), serum ? null : ` card${state.mulls === 1 ? '' : 's'} in your hand below `, serum ? null : `(${bottomSel.size}/${state.mulls} chosen).`),
         h('div', { class: 'pbtns' }, h('button', { class: 'primary', text: serum ? 'Confirm and use Serum Powder' : 'Confirm', disabled: bottomSel.size !== state.mulls, onclick: serum ? finishSerumPowder : finishMulligan })));
     }
-    return;
-  }
-  if (state.discarding) {
-    show(
-      h('div', { class: 'ptitle', text: 'Cleanup: discard' }),
-      h('div', { class: 'psub' }, `You have ${state.hand.length} cards. Click `, h('b', { text: String(state.discarding) }), ` below to discard (${bottomSel.size}/${state.discarding}).`),
-      h('div', { class: 'pbtns' }, h('button', { class: 'primary', text: 'Discard', disabled: bottomSel.size !== state.discarding, onclick: confirmDiscard })));
     return;
   }
   ov.hidden = true;
@@ -4927,6 +5319,7 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
   if(isLandName(f.card.name) && fetchInfo(f.card)){ if(f.card.tapped){toast('Cannot fetch','Fetch lands have {T} in their cost, so the land must be untapped.');return;} openFetch(f.card); return; }
   { const lk=abilityLockedBy(f.card,false); if(lk){ toast("Ability can't be activated", `${lk.name} says activated abilities of sources named “${lk.chosen}” can't be activated.`); return; } }
   let ab=activatedAbilitiesFor(f.card)[ix||0]; if(!ab)return;
+  if(splitSecondOn() && !ab.mana){ toast('Split second','A spell with split second is on the stack: only mana abilities can be activated until it resolves (rule 702.61).'); return; }
   { const md=parseModal(ab.effect); if(md && modes===undefined){ openModeChoice(f.card.name, md, idxs=>activateAbility(id,ack,ix,idxs), ab.mana); return; } if(md) ab={...ab, effect:modalText(md,modes)}; }
   if(!state || state.phase!=='play' || holdForTriggers() || state.discarding || state.step===0 || state.step===CLEANUP){ toast('Cannot activate now', state && holdForTriggers() ? 'A triggered ability is waiting to go on the stack. Press Continue and it resolves first, then you get priority.' : 'You can only activate abilities when you have priority (not during untap or cleanup).'); return; }
   if(ab.tap && f.card.tapped){toast('Ability cannot be activated','This ability requires the permanent to be untapped.');return;}
@@ -4949,6 +5342,12 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
     // Costs are paid as the ability is activated, so a sacrificed permanent is already gone when the ability resolves.
     if(ab.selfSac){ log(`${c.name}: sacrificed as a cost`); leaveBattlefield(c,'graveyard'); }
     const obj={ability:true,id:state.nextId++,name:`${c.name} — ability`,sourceId:ab.selfSac?null:c.id,sourceName:c.name,cost:ab.cost,text:ab.effect,target,targets};
+    // v0.86 rule 605.3b: a mana ability (no target, adds mana, not a loyalty ability) does not use the stack: it resolves the moment it is activated, so Black Lotus works.
+    if(!targets && /^Add\b/i.test(String(ab.effect).trim())){
+      log(`Activated ${c.name}: ${ab.cost} — a mana ability: it resolves immediately and does not use the stack (rule 605.3b)`);
+      if(ab.other) toast('Other costs',`Pay the rest of the cost yourself: ${ab.other}.`);
+      render(); openAbilityEffect(obj,()=>{ render(); }); return;
+    }
     state.stack.push(obj); state.priority={active:true,passed:false};
     log(`Activated ${c.name}: ${ab.cost}${targets?` (target: ${targets.map(t=>t.name).join(', ')})`:''} — ability on the stack`);
     if(ab.other) toast('Other costs',`Pay the rest of the cost yourself: ${ab.other}.`);
@@ -5028,7 +5427,7 @@ function modal(title, opts) {
     h('header', null, h('span', { text: title }), h('button', { text: '✕', hidden: !!opts.noClose, title: opts.onCancel ? 'Cancel and go back' : 'Close', onclick: () => { close(); if (opts.onCancel) opts.onCancel(); } })),
     body, foot);
   if (opts.noClose) m.dataset.noclose = '1';
-  const back = h('div', { class: 'backdrop' + (opts.dock ? ' dock' : '') }, m);
+  const back = h('div', { class: 'backdrop' + (opts.dock ? ' dock' : '') + (opts.resolve ? ' resolve' : '') }, m);
   back.addEventListener('mousedown', e => { if (e.target === back && !opts.sticky && !opts.dock) close(); });
   root.append(back);
   let closed = false;
@@ -5108,7 +5507,8 @@ function openDeckEditor(opts) {
       const d = parseDeck(ta.value);
       if (!d.main.length) { alert('The decklist is empty.'); return; }
       const all = loadDecks();
-      all[name] = Object.assign({}, all[name] || {}, { text: ta.value, updated: Date.now() });
+      const keepSb = all[name] && all[name].text === ta.value ? all[name].sb : undefined;   // editing the list itself discards any sideboard changes
+      all[name] = Object.assign({}, all[name] || {}, { text: ta.value, updated: Date.now() }); if (keepSb) all[name].sb = keepSb; else delete all[name].sb;
       saveDecks(all);
       lsSet('mtgpt.current', name);
       refreshDeckSelect();
@@ -5164,7 +5564,9 @@ function openZone(zone) {
       } });
       if(teach('libraryPreview')) row.addEventListener('mouseenter', () => showPreview(c));
       if (zone === 'exile' && c.mayPlayTurn === state.turn) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
+      if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && c.onAdv) row.append(h('button', { class: 'primary', text: 'Cast creature', title: 'This card was exiled on an adventure: you may cast it from exile', onclick: () => { m.close(); castFromExile(c.id); } }));
+      if (zone === 'graveyard' && gyLandPlayable(c)) row.append(h('button', { class: 'primary', text: 'Play land', title: 'You may play lands from your graveyard (uses a land drop)', onclick: () => { m.close(); playLandFromGy(c.id); } }));
       if (zone === 'graveyard') { const go = gyCastOptions(c); if (go.length) row.append(h('button', { class: 'primary', text: go.length > 1 ? 'Cast…' : (go[0].kind === 'aftermath' ? 'Cast ' + (cardInfo(c.name).fc[1].name) : go[0].kind === 'escape' ? 'Escape' : 'Flashback'), title: go.map(x => x.label).join('\n'), onclick: () => { m.close(); castFromGraveyard(c.id); } })); }
       if (zone !== 'hand') row.append(act('Hand', 'hand'));
       row.append(act('Play', 'battlefield'));
@@ -5404,8 +5806,90 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.85.0';
+const APP_VERSION = '0.94.4';
 const CHANGELOG = [
+  { v: '0.94.4', title: 'Vengevine and Cabal Therapist', notes: ['Vengevine: "if it\'s the second creature spell you cast this turn" is now checked (rule 603.4). The trigger only appears on your second creature spell of the turn (noncreature spells in between do not count), and it returns Vengevine itself, nothing else. The same check works for "first/second/third spell" and typed versions on other cards.','Fixed a crash when applying "return ~ from your graveyard" suggestions (Vengevine, Bloodghast): the button threw an error and nothing returned.','Cabal Therapist: the whole chain (target, sacrifice, resolve, choose a nonland card, discard) was re-tested from start to finish, including sacrificing Therapist itself, and works in my tests. If it still fails for you, tell me which target you chose and what you saw.'] },
+  { v: '0.94.3', title: 'Attack with all, counter chips, sleeve fix', notes: ['Declare attackers has an "Attack with all" button. It selects every creature that can legally attack (not tapped, not summoning sick unless it has haste, no defender, no "can\'t attack" effect) and lists the ones it left out and why. Clear undoes it, and you can still toggle single creatures before declaring.','Counters are now chips on the card: a green "5 +1/+1" instead of "+1 5", red for −1/−1, blue for other kinds (hover for the full sentence).','Fixed: your chosen card sleeve looked reset every time the app started (only uploaded images were re-applied). Presets are applied at start-up now.','The 1-2-3 step strip is hidden when the centre shows a discard or card choice.'] },
+  { v: '0.94.2', title: 'Discards and card choices in the centre', notes: ['When you must discard or choose cards from your hand, the choice now appears in the middle of the table next to the card that causes it: the spell or ability being resolved, the card whose cost you are paying, or the hand-size rule at cleanup. Previously only some ability-driven discards did.','Select the cards in your hand as before; the count, note and Discard button are in the centre. Anything waiting on the stack is mentioned.','New switch in Settings > Board: "Discard and card choices in the centre". Off brings back the thin bar above your hand. The mulligan bottom step is unchanged.'] },
+  { v: '0.94.1', title: 'Warp, true-shape piles, music switch', notes: ['Warp (Timeline Culler and friends): cast for the warp cost from your hand, it is exiled at the beginning of the next end step, and from a later turn you can cast it from exile for its normal cost (Cast button in the Exile window). Timeline Culler can also be cast with warp from the graveyard.','Library, graveyard and exile piles keep a true card shape (5:7) at every window size instead of being cropped or stretched, and sit evenly spaced.','The Cosmic low-fi music switch next to Apply Pixel cosmos set is now the same setting as Settings > Sound > Music style, so it no longer switches itself off when Settings closes.','Returning from the graveyard: Bloodghast-style "return this from your graveyard" landfall triggers now fire from the graveyard; Gravecrawler can be cast from the graveyard while you control a Zombie; "Return all" / "at random" / "mana value N or less" / "tapped" wordings and Reanimate ("Put target creature card from a graveyard onto the battlefield under your control. You lose life equal to its mana value.") now work.'] },
+  { v: '0.94.0', title: 'Update window with a progress bar', notes: ['When the desktop app starts and a newer version is on GitHub, an Update window opens with what changed and an Update now button. Later hides it for this run; Skip this version hides it until the next release.','Updating shows a progress bar with the file name and megabytes downloaded, then a verification step (each file is checked against its published SHA-256) and a Restart now button. Nothing is installed if a check fails.','The same progress bar is in Menu > Update app. A new switch there turns the start-up window back into the small notice.','The progress numbers need the updated app shell (shown after you install the full package once); on the older shell the bar just animates while it downloads.'] },
+  { v: '0.93.2', title: 'Pixel cosmos set', notes: ['New matching set in lo-fi pixel style: the sleeve (Settings > Look & feel), the playmat (Settings > Board) and a UI theme, all called "Pixel cosmos (lo-fi)". Dusky indigo and purple with teal and pink accents, drawn on a chunky pixel grid: stars, a crescent moon and a ringed planet.','Pick each one separately, or use the one-click "Apply Pixel cosmos set" button in Settings > Look & feel to set the sleeve, mat and theme together (with an option to add the Cosmic low-fi music).','The art is an original design made for this app.'] },
+  { v: '0.93.1', title: 'Cosmic low-fi music', notes: ['New music style in Settings > Sound: Cosmic low-fi. A generated, never-ending loop with a swung soft beat, warm electric-piano chords (7ths and 9ths), a soft bass, tape wobble, vinyl crackle and shimmering high notes with a long reverb.', 'Low-fi drums have their own switch. The calm ambient loop is still the default and you can switch styles while the game is running.', 'Everything is made on the fly, no audio files, works offline.'] },
+  { v: '0.93.0', title: 'Linked clauses for any card', notes: ['When an effect reads "Do A. Then do B." or "Do A. If you do, B." and the app understands each part, you get one button that runs them in order.', 'An "If you do" part only runs if the step before it changed something (cards moved, life, mana); otherwise it is skipped and the log says so.', 'If a step opens its own window (a hand pick, scry), the chain waits until you finish it before judging the next step.'] },
+  { v: '0.92.2', title: 'Consistency pass', notes: ['Pop-ups and Settings now use one control height (34px), one corner radius (10px) and one text size (13px): close buttons, search box, selects, number boxes, upload buttons, colour swatches and tiles.', 'Stack box: the "Opponent casts" name field now has its own row, with the type picker and Add on the next row, all the same height; View top 10 matches.', 'Hand legend chips use the same corner radius as the buttons.'] },
+  { v: '0.92.1', title: 'Cabal Therapist and Duress-style discard', notes: ['"Target player reveals their hand. You choose a nonland card from it. That player discards that card." is now understood. Targeting yourself (the Reanimator use) lets you pick a nonland card from your own hand to discard; targeting the opponent is logged, since a goldfish opponent has no hand.'] },
+  { v: '0.92.0', title: 'Replacement effects: you choose the order', notes: ['Counter-replacement cards (Hardened Scales, Doubling Season, Winding Constrictor and similar) now follow rule 616.1: when two or more apply to the same event, you choose the order. If the order cannot change the result, nothing is asked. If it can, the app applies the order that gives you the most counters, tells you, and offers the other order in a side window; your choice is remembered for that pair of cards.', 'The log says which effects applied and in what order.'] },
+  { v: '0.91.4', title: 'Rules test suite', notes: ['New tests folder with 14 checks that play a mock game and compare the app with the Comprehensive Rules (June 2026 edition): floating mana, the stack order, spells staying on the stack until their effect is done, Storm, copies, split second, sorcery timing, toughness 0, the legend rule, the opening draw, cleanup discards and the two loss conditions. All 14 pass.', 'Corrected rule numbers I had written in notes: floating mana empties under rule 106.4 and a spell goes to the graveyard last under rule 608.2n.'] },
+  { v: '0.91.3', title: 'New targets for copies', notes: ['When a spell with targets is copied (Storm, or the Copy button), a window asks for the new target of each copy in turn. Close it to keep the original\'s target (rule 707.10c).'] },
+  { v: '0.91.2', title: 'Stack order list and split second', notes: ['When more than one thing is on the stack, a list under the cards shows the order: what resolves first, then the next ones, each labelled spell, copy, triggered ability, activated ability or loyalty ability.', 'Split second works (rule 702.61): while a spell with split second is on the stack you cannot cast spells or activate non-mana abilities (including loyalty abilities), the cards stop showing as playable, and a red notice explains why. You can still tap lands for mana.'] },
+  { v: '0.91.1', title: 'Clearer stack and resolution', notes: ['The middle of the table now shows a three-step strip: 1 On the stack, 2 Resolving, 3 Done.', 'While an ability resolves, its card stays zoomed on the left and the "what does it do" window sits beside it instead of covering it. A short "What the app did" list under the card shows each thing the app just did (drew, discarded, added counters…).', 'Activated, triggered and loyalty abilities are labelled as such. A Finish button closes the resolution if you applied it by hand.'] },
+  { v: '0.91.0', title: 'Storm and copying spells', notes: ['Storm now works: casting a spell with storm puts a Storm trigger on the stack above it, and when that resolves the spell is copied once for each spell cast before it this turn (your opponent\'s spells count too, as you enter them).', 'Copies are not cast (they do not add to the Storm count), resolve like the original, then cease to exist instead of going to the graveyard.', 'New Copy button next to Resolve top for Twincast, Fork, Reverberate and similar: it puts one copy of the top instant or sorcery on the stack. Choose new targets for copies by hand.'] },
+  { v: '0.90.11', title: 'Spells stay on the stack while resolving', notes: ['Instants and sorceries now stay in the middle of the table while their effect is applied (including any discard you have to choose), and only then go to the graveyard, as rule 608.2n says. A "Finish: to graveyard" button is there if you apply the effect by hand. A setting (Board > layout) turns this off.'] },
+  { v: '0.90.10', title: 'Same sizes in panels and pop-ups', notes: ['The side panels (Stack, Game log), the hand header (Sort and the legend chips) and the pop-up footers now use the same control sizes as the top bar: 34px buttons and fields in panels and pop-ups, 30px in the hand header and log link, 24px legend chips.'] },
+  { v: '0.90.9', title: 'Omnath, Locus of Mana', notes: ['Omnath, Locus of Mana now works: green mana stays in your pool as steps and phases end, and Omnath gets +1/+0 for each green mana in your pool. Upwelling-style cards (mana pools do not empty) keep all mana. The log says when mana stayed.'] },
+  { v: '0.90.8', title: 'Status icons fit their box', notes: ['The little status icons in the game bar were being stretched to button size by the new uniform sizing and spilled out of their box. They are back to 22px and sit fully inside it.'] },
+  { v: '0.90.7', title: 'Mulligan bottom pick in your hand', notes: ['Choosing the cards to put on the bottom after a mulligan now works like discarding: the prompt, count and Confirm button sit in the bar above your hand and you click the cards in your hand. The big pop-up is gone.', 'The Next phase / Next turn buttons no longer appear above the table before a game starts (they live in the centre bar).'] },
+  { v: '0.90.6', title: 'One size for controls', notes: ['Top bar controls are all 34px tall (icon buttons are 34px squares, the status chips and version badge match), and every box in the game bar (Turn, Mana, status icons, Opp, Life) is the same 44px height with 30px buttons inside, so rows line up. The status icons are a little smaller so they fit in the same height, which also gives the battlefield a bit more room.'] },
+  { v: '0.90.5', title: 'Ability stays in the centre while you choose', notes: ['When a triggered or activated ability asks you to discard (Territorial Kavu, Faithless Looting and similar), the card it comes from now stays zoomed in the middle of the table with its ability text, along with the prompt, the count and the Discard button. You still click the cards to discard in your hand.'] },
+  { v: '0.90.4', title: 'Centre bar never overlaps', notes: ['When Declare attackers appears, the centre bar now shrinks to fit (smaller chips, then no group labels, then a slight zoom) so the steps and buttons can no longer run into each other.'] },
+  { v: '0.90.3', title: 'Centre bar tidy', notes: ['Every step chip and the Next phase / Next turn / Declare attackers buttons in the middle bar now share one height, font size and pill shape, and sit together in a single row with the buttons grouped on the right.'] },
+  { v: '0.90.2', title: 'Sideboarding and a roomier table', notes: [
+    'Sideboarding now lives on the deck screen: open Your decks, press Sideboard on a deck box, and swap cards one copy at a time between main deck and sideboard. Your saved decklist is never changed, and Restore original brings it back exactly.',
+    'A deck that is currently sideboarded has a gold Sideboard button, and new games use the sideboarded list. Editing the decklist itself clears the swaps.',
+    'The turn tracker in the middle of the battlefield now holds Next phase and Next turn. The old phase row above the battlefield is gone, which frees space, so the battlefield is taller.',
+    'Less repetition: floating mana is shown once (top bar), the land-drop note moved to the Lands label, the in-game Sideboard button is gone, Tokens moved to the top bar, and the status icons are smaller.'] },
+  { v: '0.90.1', title: 'Cast flight and discarding in your hand', notes: [
+    "When you cast a spell, the card now flies from your hand to the middle of the board and stays there while it is on the stack. When it resolves it flies to where it belongs: creatures and other permanents to the battlefield, instants and sorceries to the graveyard. A countered spell flies to the graveyard tinted red. This replaces the old spotlight for your own spells; the new 'Cast & resolve flight' switch in Settings > Animations turns it off (the spotlight comes back).",
+    "Choosing cards to discard now happens in your hand. Every card you may discard glows, the others dim, and a bar over the hand says 'select 2 cards to discard (0/2)' with a Discard button. A chosen card shows a red DISCARD tag. This is used for cleanup, for 'draw, then discard' effects such as Faithless Looting and Territorial Kavu, and for discard costs. The centre pop-up is gone.",
+    "Version numbers will now move in smaller steps, and the README has a 'Road to 1.0' plan focused on following the Comprehensive Rules more closely."
+  ] },
+  { v: '0.90.0', title: 'Cards that were done by hand', notes: [
+    "Necrodominance: while it is on the battlefield, a 'Skip draws' icon appears in the top bar. Switch it on and every card you would draw is skipped (your draw step too); switch it off to draw normally. It shows even if you turned the state icons off.",
+    "Goryo's Vengeance: the creature now gains haste as well as returning and being exiled at the next end step (the newer card text says 'gains haste' without 'until end of turn', which the app did not recognise).",
+    "Time Vault: when you press Next turn while it is tapped, a window asks if you want to skip that turn. Skipping untaps it (an extra turn can be skipped the same way). Tutor mode has a switch for this prompt.",
+    "Hullbreacher: when you tell the app your opponent drew an extra card (the card button next to their life), the draw is replaced by a Treasure token for you, and Bowmasters-style 'whenever an opponent draws' abilities do not trigger.",
+    "Wan Shi Tong: a new magnifier button next to your opponent's life says 'my opponent searched their library'. Wan Shi Tong then gets a counter and you draw. Any other 'whenever an opponent searches' card works the same way.",
+    "Vren's 'exile instead of dying' line is now shown as information: it only matters for your opponent's creatures, which the app does not track. Do it by hand if you play out an opposing board."
+  ] },
+  { v: '0.89.0', title: 'Settings redesign; borders and colour sets removed', notes: [
+    "Removed the colour sets (guilds, shards, wedges) and the battlefield border decorations. If you had one selected, your playmat and sleeve go back to the Kitchen table and Worn old card back; your frame colours stay as you left them.",
+    "The Settings window is rebuilt: a sidebar of tabs on the left (Look & feel, Board, Animations, Sound, Tutor mode), a title and one-line description for each tab, and a search box that looks through every tab at once.",
+    "The old 'Layout' tab is now part of 'Board', next to the playmat and frame, so everything about the table is in one place. 'Graphics' became 'Look & feel'.",
+    "Checkboxes are now on/off switches, section headings are clearer, and the window is wider so descriptions do not wrap so much. On a narrow screen the sidebar becomes a row of tabs."
+  ] },
+  { v: '0.88.2', title: 'Border corners', notes: [
+    "The four border strips used to overlap where they met, so the corners looked doubled up. Each strip is now cut on a diagonal (a mitred join, like a picture frame) so the corners meet cleanly."
+  ] },
+  { v: '0.88.1', title: 'Slimmer, finer borders', notes: [
+    "The battlefield borders now take about 40% less room (the default band is 26 px instead of 44; the Border size slider still goes from half to double).",
+    "Every border has more fine detail: flame tongues and sparks, a second thin vine with tiny leaves, flowers and thorns, wisps of smoke, a vertebrae row and ribs on the bones, snowflakes and frost lace, wave arcs and foam curls, and extra filigree on the gilded scrollwork. The art is drawn at full size and scaled down, so the detail stays crisp."
+  ] },
+  { v: '0.88.0', title: 'Linked steps: draw then discard', notes: [
+    "Cards like Faithless Looting, Merfolk Looter, Careful Study and Prismari Command (its draw-two-discard-two mode) were only read as 'draw'. Now the app understands the whole sentence as one effect in order: 'draw two cards, then discard two cards'. After the draw, a window makes you choose exactly that many cards to discard. There is no 'choose nothing' button, because the discard is part of the effect, not an option.",
+    "Works in either order ('discard two, then draw two'). If your hand has fewer cards than you must discard, you discard them all and the effect carries on (rule 701.8). 'If you do' wording skips the rest when the earlier step did nothing.",
+    "Resolve now applies these automatically, and the leftover keyword line (Flashback, Kicker, Cycling and so on) no longer stops the auto-apply, because the cast window already handles it.",
+    "Territorial Kavu: the card text in my data only says 'exile target card from a graveyard' when it attacks, with no discard. If your copy says something different, send me the exact text."
+  ] },
+  { v: '0.87.0', title: 'Colour sets, sleeves and battlefield borders', notes: [
+    "New 'Colour sets' section in Settings > Playmat & frame: 26 sets (5 colours, 10 guilds, 5 shards, 5 wedges, 5-colour). One click gives you a matching playmat, card sleeve, 3-colour board frame and border decoration. You can still change any piece afterwards.",
+    "Border decorations drawn along the edges of the battlefield: fire, vines, smoke, bones, frost, tides and runes. They sit behind your cards. Each has its own on/off, a size slider and an animate toggle (animation respects reduced-motion).",
+    "The playmat and sleeve galleries also list every set, and the interface accent can follow the set you pick.",
+    "All art is drawn by code, so it will not match real playmats. Tell me what looks off and I will tune it."
+  ] },
+  { v: '0.86.0', title: 'Card definitions from your decks', notes: [
+    "I went through your deck scan report and fixed the cards the app got wrong or skipped. Every fix below was checked against your own card text.",
+    "Bug fixed: current Magic card text says 'this creature' where older text used the card's name, and the app only understood the name. So Dragon's Rage Channeler's delirium (+2/+2 and flying) never switched on. It does now, and the same fix helps every card worded that way.",
+    "Twinned Vision draws two cards when you flash it back (it was drawing one). Requiting Hex only offers its 2 life if you paid the optional extra cost, and Foul-Tongue Invocation only offers its 4 life as an option you confirm (it used to offer it every time).",
+    "New costs the app can pay: 'blight 1' (puts a -1/-1 counter on a creature you control) and 'reveal a Dragon card from your hand'.",
+    "Tribal Flames counts your basic land types. Orcish Bowmasters now amasses (creates or grows your Orc Army). Wan Shi Tong draws half X and puts X counters on itself. Mossborn Hydra doubles its counters. Kappa Cannoneer triggers when another artifact enters. Search for Azcanta surveils, then offers to transform at seven cards in your graveyard. Mana Vault asks you to pay {4} to untap.",
+    "Black Lotus (and every other mana ability that taps or sacrifices) now adds its mana at once instead of waiting on the stack, which is the real rule: mana abilities cannot be responded to.",
+    "Trinisphere now raises the cost of cheap spells to three. Icetill Explorer and Mole Man let you play lands from your graveyard (open the graveyard and press Play land).",
+    "Activated abilities: double-click a creature that has a usable ability (Psychic Frog) and a chooser lists each ability with an Activate button, plus 'Tap it instead'. Abilities with no timing restriction can be used any time you have priority, including with something already on the stack; the green outline shows when one is ready.",
+    "The stack in the middle of the table now has Pass priority, Countered and Resolve top buttons right under it, so you can resolve without going to the side panel.",
+    "When you press Resolve and exactly one clear effect applies (a +1/+1 counter, drawing a card, damage to a target you chose) it is applied at once with no pop-up. The pop-up only appears when there is a real choice (more than one effect, 'you may', looking at cards, searching). Turn this off in Settings > Teaching: 'Auto-apply obvious effects'.",
+    "Board frames can now use three colours (edge, highlight and accent). Every preset has a third colour, and Custom has a third picker.",
+    "Still by hand: Necrodominance's 'skip a draw', Wan Shi Tong's opponent-search trigger, ward and the other rules about your opponent's cards (a goldfish game has no opponent board)."
+  ] },
   { v: '0.85.0', title: 'Linux and Steam Deck support', notes: [
     "MTG Playtester can now be built for Linux and the Steam Deck as a single AppImage file (Build-Linux.sh, or the new 'Build Linux app' action on GitHub). Run it in Desktop Mode, or add it to Steam as a non-Steam game.",
     "Also new for Linux: Run-Linux.sh (runs it from the folder) and Start-Browser.sh (opens it in your browser with nothing to install).",
@@ -5574,6 +6058,47 @@ function setupVersionBadge() {
   b.addEventListener('click', openChangelog);
 }
 
+// v0.94.0 Update window: shows on start when a newer version is on GitHub, installs it with a progress bar, then offers a restart.
+const RELEASES_URL = 'https://github.com/snipeuoutjsl-netizen/MTG-Playtester/releases/latest';
+const fmtMB = n => (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + ' MB';
+function makeProgress() {
+  const fill = h('div', { class: 'upd-fill' }), bar = h('div', { class: 'upd-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, fill), txt = h('div', { class: 'small muted upd-txt', text: '' });
+  return { el: h('div', { class: 'upd-prog' }, bar, txt), set(pct, t) { bar.classList.remove('indet'); fill.style.width = Math.max(0, Math.min(100, pct)) + '%'; bar.setAttribute('aria-valuenow', String(Math.round(pct))); txt.textContent = t || ''; }, indet(t) { bar.classList.add('indet'); txt.textContent = t || ''; } };
+}
+// Runs the GitHub install and drives a progress bar; resolves with the result of ghInstall.
+async function installWithProgress(prog, bytesHint) {
+  prog.indet('Starting\u2026');
+  let off = null;
+  if (window.desktop && typeof window.desktop.onProgress === 'function') off = window.desktop.onProgress(d => {
+    if (d.phase === 'download') { const tot = d.total || bytesHint || 0; if (tot) prog.set((d.done / tot) * 92, `Downloading ${d.file} \u2014 ${fmtMB(d.done)} of ${fmtMB(tot)}`); else prog.indet(`Downloading ${d.file}\u2026`); }
+    else if (d.phase === 'verify') prog.set((d.done / (d.total || bytesHint || d.done || 1)) * 92, `Checking ${d.file} against its published fingerprint\u2026`);
+    else if (d.phase === 'install') prog.set(96, 'Installing\u2026');
+    else if (d.phase === 'done') prog.set(100, 'Done');
+  }); else prog.indet('Downloading and checking files\u2026');
+  try { const r = await window.desktop.ghInstall(); if (r && r.ok && !r.upToDate) prog.set(100, 'Installed and verified'); return r; }
+  finally { if (off) off(); }
+}
+function openUpdatePrompt(r) {
+  const m = modal(`Update available \u2014 version ${r.latest}`, { width: 560, sticky: true });
+  const prog = makeProgress(); prog.el.hidden = true;
+  const status = h('p', { class: 'small', style: 'color:var(--gold)' });
+  m.body.append(h('p', null, `You have version ${r.current}. Version `, h('b', { text: r.latest }), ' is ready on GitHub', r.bytes ? ` (${fmtMB(r.bytes)}).` : '.'), r.title ? h('div', { class: 'ptitle', text: r.title }) : null, r.notes && r.notes.length ? h('ul', { class: 'small upd-notes' }, ...r.notes.map(n => h('li', { text: n }))) : null, prog.el, status);
+  const later = h('button', { text: 'Later', onclick: () => m.close() });
+  const skip = h('button', { text: 'Skip this version', onclick: () => { settings.skipUpdate = r.latest; saveSettings(); m.close(); } });
+  const go = h('button', { class: 'primary', text: 'Update now' }); let restartNow = false;
+  if (r.needsInstaller) {
+    status.textContent = 'This release also changes the app shell, so it cannot be installed from inside the app. Download the full package from the release page and run Build-Installer.bat once.';
+    go.textContent = 'Open release page'; go.addEventListener('click', () => { window.open(RELEASES_URL, '_blank'); });
+  } else go.addEventListener('click', async () => {
+    if (restartNow) { window.desktop.restart(); return; }
+    go.disabled = later.disabled = skip.disabled = true; prog.el.hidden = false; status.textContent = '';
+    const res = await installWithProgress(prog, r.bytes);
+    if (!res || !res.ok) { prog.el.hidden = true; status.textContent = 'Update failed: ' + ((res && res.error) || 'unknown error') + ' Nothing was changed.'; go.textContent = 'Try again'; go.disabled = later.disabled = skip.disabled = false; return; }
+    status.textContent = `Version ${res.version} is installed and verified.` + (state ? ' Restarting ends the game in progress, so finish or restart whenever you like.' : '');
+    go.textContent = 'Restart now'; go.disabled = false; later.textContent = 'Restart later'; later.disabled = false; skip.hidden = true; restartNow = true;
+  });
+  m.foot.append(skip, later, go);
+}
 // ---------------------------------------------------------------- app updates (desktop version only)
 async function openUpdate() {
   if (!window.desktop) return;
@@ -5598,13 +6123,14 @@ async function openUpdate() {
     if (!r.ok) { ghNote.textContent = 'Check failed: ' + r.error; return; }
     if (r.none) { ghNote.textContent = 'No release has been published on GitHub yet.'; return; }
     if (!r.newer) { ghNote.textContent = `You have the newest version (${r.current}).`; return; }
-    ghNote.textContent = `Version ${r.latest} is available (you have ${r.current}).`;
+    ghBytes = r.bytes || 0; ghNote.textContent = `Version ${r.latest} is available (you have ${r.current}).`;
     if (r.title) gh.append(h('div', { class: 'ptitle', text: r.title }));
     if (r.notes.length) gh.append(h('ul', { class: 'small' }, ...r.notes.map(n => h('li', { text: n }))));
     if (r.needsInstaller) { gh.append(h('p', { class: 'small', style: 'color:var(--gold)', text: 'This release also changes the app shell. Download the full package from the GitHub release page and run Build-Installer.bat once.' })); return; }
     ghInstallBtn.hidden = false;
   };
-  ghInstallBtn.addEventListener('click', async () => { ghNote.textContent = 'Downloading and checking files…'; ghInstallBtn.hidden = true; const r = await window.desktop.ghInstall(); if (!r.ok) { ghNote.textContent = 'Update failed: ' + r.error; ghInstallBtn.hidden = false; return; } gh.replaceChildren(); ghNote.textContent = `Version ${r.version} is installed and verified. Restart the app to use it.`; restart.hidden = false; });
+  const ghProg = makeProgress(); ghProg.el.hidden = true; let ghBytes = 0;
+  ghInstallBtn.addEventListener('click', async () => { ghNote.textContent = ''; ghInstallBtn.hidden = true; ghProg.el.hidden = false; const r = await installWithProgress(ghProg, ghBytes); ghProg.el.hidden = true; if (!r.ok) { ghNote.textContent = 'Update failed: ' + r.error + ' Nothing was changed.'; ghInstallBtn.hidden = false; return; } gh.replaceChildren(); ghNote.textContent = `Version ${r.version} is installed and verified. Restart the app to use it.`; restart.hidden = false; });
   const checkGh = async () => {
     ghNote.textContent = 'Checking GitHub…';
     if (!window.desktop.ghCheck) { ghNote.textContent = 'This app shell is older and cannot check GitHub. Install the full package once (run Build-Installer.bat), or use the web address below.'; return; }
@@ -5616,7 +6142,8 @@ async function openUpdate() {
     h('p', { class: 'small muted', text: 'Looks at the newest release on GitHub, shows what changed, then downloads the files and checks each one against its published SHA-256 fingerprint before installing. Your decks, card data and settings are kept.' }),
     h('div', null, h('button', { text: 'Check now', onclick: checkGh }), ' ', ghInstallBtn),
     h('label', { class: 'small', style: 'display:block;margin:6px 0' }, auto, ' Check for updates when the app starts'),
-    gh, ghNote,
+    (() => { const c = h('input', { type: 'checkbox' }); c.checked = settings.updatePrompt !== false; c.addEventListener('change', () => { settings.updatePrompt = c.checked; saveSettings(); }); return h('label', { class: 'small', style: 'display:block;margin:6px 0' }, c, ' Show the update window (with the install button) instead of a small notice'); })(),
+    gh, ghProg.el, ghNote,
     h('div', { class: 'fhead', text: 'From a folder' }),
     h('p', { class: 'small muted', text: 'Extract a new zip anywhere, then choose the folder that contains index.html. Your decks, card data and settings are kept.' }),
     h('button', { class: 'primary', text: 'Update from folder…', onclick: async () => { note.textContent = 'Working…'; report(await window.desktop.fromFolder()); if (note.textContent === 'Working…') note.textContent = ''; } }),
@@ -6086,9 +6613,10 @@ function startMusic() {
   if (music || !settings.sound.on || !settings.sound.music) return;
   const ac = audio(); if (!ac) return;
   const bus = ac.createGain(); bus.gain.value = 0.0001; bus.gain.linearRampToValueAtTime(musicVolume() || 0.0001, ac.currentTime + 3);
+  const M = { bus, ac, next: ac.currentTime + 0.3, i: 0, timer: null, style: settings.sound.musicStyle === 'lofi' ? 'lofi' : 'ambient' }; music = M;
+  if (M.style === 'lofi') { startLofi(M, ac, bus); return; }
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; bus.connect(lp); lp.connect(ac.destination);
   const wet = ac.createGain(); wet.gain.value = 0.9; lp.connect(wet); wet.connect(reverbIn(ac));
-  const M = { bus, ac, next: ac.currentTime + 0.3, i: 0, timer: null }; music = M;
   const CH = 10;   // seconds per chord
   const note = (hz, t, dur, peak, atk, type) => {
     const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = hz;
@@ -6103,11 +6631,59 @@ function startMusic() {
   };
   M.timer = setInterval(() => { try { while (M.next < ac.currentTime + 3) { chord(M.next); M.next += CH; } } catch (e) {} }, 500);
 }
+// v0.93.1 "Cosmic low-fi": a generated lo-fi loop. Swung drums, a warm electric-piano chord on every bar, a soft bass, tape wobble, vinyl crackle and a few shimmering high notes
+// with a long reverb. Same offline approach as the ambient loop (no files). Chords are 7ths and 9ths so it never sounds finished.
+const LOFI_PROGS = [
+  [[50, 57, 60, 64, 67], [43, 55, 59, 62, 65], [48, 55, 59, 64, 67], [45, 57, 60, 64, 67]],     // Dm9  Gm7  Cmaj7  Am9 (voicings as MIDI)
+  [[53, 60, 64, 67, 71], [52, 59, 62, 67, 71], [50, 57, 60, 64, 67], [48, 55, 59, 64, 67]],     // Fmaj9  Em7  Dm9  Cmaj7
+  [[45, 57, 60, 64, 67], [41, 57, 60, 64, 69], [48, 55, 59, 62, 67], [43, 55, 59, 62, 66]]];    // Am9  Fmaj7  Cmaj7  G6
+const LOFI_SPARK = [74, 76, 79, 81, 83, 86];
+function startLofi(M, ac, bus) {
+  const BPM = 74, BEAT = 60 / BPM, BAR = BEAT * 4, SWING = 0.58;
+  const so = () => settings.sound;
+  // tape colour: gentle saturation and a low-pass so everything sits a little dull and warm
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200; lp.Q.value = 0.4;
+  const sat = ac.createWaveShaper(); { const n = 256, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n / 2) - 1; c[i] = Math.tanh(x * 1.8); } sat.curve = c; }
+  const wowLfo = ac.createOscillator(), wowAmt = ac.createGain(); wowLfo.frequency.value = 0.35; wowAmt.gain.value = 9; wowLfo.connect(wowAmt); wowLfo.start();   // tape wobble in cents
+  bus.disconnect(); bus.connect(sat); sat.connect(lp); lp.connect(ac.destination); const wet = ac.createGain(); wet.gain.value = 0.7; lp.connect(wet); wet.connect(reverbIn(ac));
+  M.extra = [wowLfo];
+  const noiseBuf = (() => { const b = ac.createBuffer(1, ac.sampleRate * 1, ac.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return b; })();
+  const noise = (t, dur, type, freq, peak) => { const o = ac.createBufferSource(); o.buffer = noiseBuf; const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; const g = ac.createGain();
+    g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(f); f.connect(g); g.connect(bus); o.start(t, Math.random() * 0.5); o.stop(t + dur + 0.02); };
+  const kick = (t, v) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.setValueAtTime(115, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34); o.connect(g); g.connect(bus); o.start(t); o.stop(t + 0.4); };
+  const keys = (hz, t, dur, peak) => {   // electric piano: a sine plus a quick bell-ish overtone, both with a soft attack and a slow fall
+    for (const [mult, p, type] of [[1, peak, 'sine'], [2.005, peak * 0.22, 'sine'], [4.01, peak * 0.05, 'triangle']]) {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = hz * mult; wowAmt.connect(o.detune);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(p, t + 0.012); g.gain.exponentialRampToValueAtTime(p * 0.35, t + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(bus); o.start(t); o.stop(t + dur + 0.05); }
+  };
+  const bass = (hz, t, dur) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = hz; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.34, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(g); g.connect(bus); o.start(t); o.stop(t + dur + 0.05); };
+  const spark = (hz, t) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = hz; wowAmt.connect(o.detune); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.045, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.4); o.connect(g); g.connect(bus); o.start(t); o.stop(t + 3.5); };
+  const whoosh = t => { const o = ac.createBufferSource(); o.buffer = noiseBuf; o.loop = true; const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 5; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2600, t + 6); const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + 3); g.gain.linearRampToValueAtTime(0.0001, t + 7); o.connect(f); f.connect(g); g.connect(bus); o.start(t); o.stop(t + 7.1); };
+  const bar = t => {
+    const prog = LOFI_PROGS[Math.floor(M.i / 8) % LOFI_PROGS.length], ch = prog[M.i % 4], j = () => (Math.random() - 0.5) * 0.018;   // a little human timing
+    ch.forEach((m, k) => keys(midiHz(m), t + k * 0.018 + j(), BAR * 1.05, 0.085));   // strummed chord
+    bass(midiHz(ch[0] - 12), t, BEAT * 1.8); if (Math.random() < 0.7) bass(midiHz(ch[0] - 12 + (Math.random() < 0.5 ? 0 : 7)), t + BEAT * 2.5 + BEAT * (SWING - 0.5), BEAT * 1.2);
+    if (so().musicBeat !== false) {
+      kick(t + j(), 0.5); if (Math.random() < 0.6) kick(t + BEAT * 2.5 + j(), 0.34); kick(t + BEAT * 2 + j(), 0.28 * (Math.random() < 0.4 ? 1 : 0));
+      noise(t + BEAT + j(), 0.2, 'bandpass', 1800, 0.22); noise(t + BEAT * 3 + j(), 0.22, 'bandpass', 1800, 0.24);   // soft snare on 2 and 4
+      for (let e = 0; e < 8; e++) { const off = (e % 2 ? SWING : 0) + Math.floor(e / 2); noise(t + (off + (e % 2 ? 0 : 0)) * BEAT + j(), 0.05, 'highpass', 7000, 0.04 + Math.random() * 0.05); }
+    }
+    for (let k = 0; k < 4; k++) if (Math.random() < 0.28) spark(midiHz(LOFI_SPARK[Math.floor(Math.random() * LOFI_SPARK.length)]), t + BEAT * (k + Math.random()));
+    for (let k = 0; k < 6; k++) if (Math.random() < 0.7) noise(t + Math.random() * BAR, 0.012, 'highpass', 1500, 0.07 + Math.random() * 0.08);   // vinyl pops
+    if (M.i % 16 === 7) whoosh(t);
+    M.i++;
+  };
+  M.timer = setInterval(() => { try { while (M.next < ac.currentTime + 2.5) { const t = M.next; M.next += BAR; try { bar(t); } catch (e) { console.warn('lofi bar', e); } } } catch (e) {} }, 400);
+  // constant faint vinyl hiss
+  const hiss = ac.createBufferSource(); hiss.buffer = noiseBuf; hiss.loop = true; const hf = ac.createBiquadFilter(); hf.type = 'highpass'; hf.frequency.value = 5000; const hg = ac.createGain(); hg.gain.value = 0.012; hiss.connect(hf); hf.connect(hg); hg.connect(bus); hiss.start(); M.extra.push(hiss);
+}
 function stopMusic() {
-  if (!music) return; const M = music; music = null; clearInterval(M.timer);
+  if (!music) return; const M = music; music = null; clearInterval(M.timer); setTimeout(() => { try { (M.extra || []).forEach(x => x.stop()); } catch (e) {} }, 1600);
   try { M.bus.gain.cancelScheduledValues(M.ac.currentTime); M.bus.gain.setValueAtTime(M.bus.gain.value, M.ac.currentTime); M.bus.gain.linearRampToValueAtTime(0.0001, M.ac.currentTime + 1.2); setTimeout(() => { try { M.bus.disconnect(); } catch (e) {} }, 1500); } catch (e) {}
 }
-function musicSettingsChanged() { if (settings.sound.on && settings.sound.music) { if (music) { try { music.bus.gain.setTargetAtTime(musicVolume() || 0.0001, music.ac.currentTime, 0.2); } catch (e) {} } else startMusic(); } else stopMusic(); }
+function musicSettingsChanged() { if (music && music.style !== (settings.sound.musicStyle === 'lofi' ? 'lofi' : 'ambient')) stopMusic(); if (settings.sound.on && settings.sound.music) { if (music) { try { music.bus.gain.setTargetAtTime(musicVolume() || 0.0001, music.ac.currentTime, 0.2); } catch (e) {} } else startMusic(); } else stopMusic(); }
 // browsers only allow audio after a click or key press, so the music begins on the first one
 let parRaf = 0;
 document.addEventListener('mousemove', e => {
@@ -6179,7 +6755,7 @@ const SLEEVE_ART = {
   star: () => { const R = rng(7); return `<defs><linearGradient id="a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b1f5e"/><stop offset="1" stop-color="#070a22"/></linearGradient></defs><rect width="126" height="176" fill="url(#a)"/>${stars(R, 60, 126, 176, '#fff', 1)}<path d="M72 56 A32 32 0 1 0 72 120 A25 25 0 1 1 72 56Z" fill="#f4efd0"/><rect x="4" y="4" width="118" height="168" rx="8" fill="none" stroke="#c9d3ff" stroke-width="1"/>`; },
   check: () => `<defs><pattern id="c" width="20" height="20" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#15151a"/><rect x="10" y="10" width="10" height="10" fill="#15151a"/><rect x="10" width="10" height="10" fill="#26262e"/><rect y="10" width="10" height="10" fill="#26262e"/></pattern></defs><rect width="126" height="176" fill="url(#c)"/><rect x="4" y="4" width="118" height="168" rx="8" fill="none" stroke="#e3b95c" stroke-width="1.6"/><circle cx="63" cy="88" r="24" fill="#15151a" stroke="#e3b95c" stroke-width="2"/><path d="M63 70 L69 88 L63 106 L57 88Z" fill="#e3b95c"/>`
 };
-const SLEEVES = [['worn', 'Worn old card back'], ['wheel', 'Mana wheel'], ['dragon', 'Dragon scale'], ['arcane', 'Arcane circle'], ['forest', 'Forest'], ['waves', 'Tides'], ['ember', 'Ember'], ['deco', 'Gilded deco'], ['star', 'Night sky'], ['check', 'Checker']];
+const SLEEVES = [['worn', 'Worn old card back'], ['wheel', 'Mana wheel'], ['dragon', 'Dragon scale'], ['arcane', 'Arcane circle'], ['forest', 'Forest'], ['waves', 'Tides'], ['ember', 'Ember'], ['deco', 'Gilded deco'], ['star', 'Night sky'], ['pixcosmos', 'Pixel cosmos (lo-fi)'], ['check', 'Checker']];
 const MAT_ART = {
   kitchen: () => { const R = rng(7); let planks = '', seams = '', knots = '', scr = '';
     const tint = ['#7a4e2b', '#6e4527', '#80552f', '#684123', '#76492a', '#7d512d'];
@@ -6213,7 +6789,57 @@ ${planks}<rect width="1600" height="900" filter="url(#gr)"/><rect width="1600" h
   storm: () => { const R = rng(79); let c = ''; for (let i = 0; i < 16; i++) c += `<ellipse cx="${f1(R() * 1600)}" cy="${f1(R() * 420)}" rx="${f1(160 + R() * 220)}" ry="${f1(50 + R() * 70)}" fill="${i % 2 ? '#3a4458' : '#262e40'}" opacity=".7"/>`;
     return `<defs><linearGradient id="a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2434"/><stop offset="1" stop-color="#07090f"/></linearGradient><filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="40"/></filter><filter id="s"><feGaussianBlur stdDeviation="4"/></filter></defs><rect width="1600" height="900" fill="url(#a)"/><g filter="url(#b)">${c}</g><polyline points="1010,150 940,330 1010,330 920,560" fill="none" stroke="#bcd8ff" stroke-width="10" opacity=".6" filter="url(#s)"/><polyline points="1010,150 940,330 1010,330 920,560" fill="none" stroke="#fff" stroke-width="3" opacity=".85"/>`; }
 };
-const MATS = [['kitchen', 'Old kitchen table'], ['sigil', 'Mana sigil'], ['lair', "Dragon's lair"], ['arcane', 'Arcane circle'], ['ocean', 'Ocean depths'], ['dusk', 'Mountain dusk'], ['grove', 'Moonlit grove'], ['map', 'Old map'], ['deco', 'Obsidian & gold'], ['nebula', 'Nebula'], ['storm', 'Storm']];
+// v0.93.2 Pixel cosmos: an original lo-fi pixel sleeve, playmat and UI theme (stars, a crescent moon, a ringed planet). The art is drawn on a coarse grid in code.
+function pixSvg(W, H, cell, px) {
+  const byCol = {};
+  for (let y = 0; y < H; y++) { let x = 0; while (x < W) { const c = px(x, y); if (!c) { x++; continue; } let e = x + 1; while (e < W && px(e, y) === c) e++; (byCol[c] = byCol[c] || []).push(`M${x * cell} ${y * cell}h${(e - x) * cell}v${cell}h-${(e - x) * cell}z`); x = e; } }
+  return Object.entries(byCol).map(([c, d]) => `<path fill="${c}" d="${d.join('')}"/>`).join('');
+}
+const PIX = { n0: '#120b2b', n1: '#1b1236', n2: '#2a1b4d', n3: '#3b2a6b', n4: '#5a3d94', teal: '#46d6c0', mint: '#bff7ea', pink: '#ff7ac8', rose: '#b5488f', gold: '#ffe08a', white: '#f4f1ff' };
+const BAYER = [[0, 2], [3, 1]];
+function pixBand(x, y, H, cols) { const t = (y / H) * (cols.length - 1), i = Math.floor(t), f = t - i; return f * 4 > BAYER[y & 1][x & 1] + 0.5 ? cols[Math.min(cols.length - 1, i + 1)] : cols[i]; }
+SLEEVE_ART.pixcosmos = () => {
+  const W = 42, H = 58, R = rng(93), stars = new Map();
+  for (let i = 0; i < 46; i++) stars.set((3 + Math.floor(R() * 36)) + ',' + (4 + Math.floor(R() * 50)), R() < 0.2 ? PIX.gold : R() < 0.5 ? PIX.white : PIX.teal);
+  const inC = (x, y, cx, cy, r) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+  const px = (x, y) => {
+    const edge = Math.min(x, y, W - 1 - x, H - 1 - y);
+    if ((x === 0 || x === W - 1) && (y === 0 || y === H - 1)) return null;
+    if (edge === 0) return PIX.n0;
+    if (edge === 1) return (x + y) % 2 ? PIX.teal : PIX.n4;
+    if (edge === 2) return PIX.n3;
+    // moon (crescent): a disc with a bite taken out of it
+    if (inC(x, y, 19, 21, 9) && !inC(x, y, 23, 18, 8)) return inC(x, y, 17, 23, 5) ? PIX.mint : PIX.teal;
+    // ringed planet: ring behind (upper half) then body then ring in front (lower half)
+    const rr = ((x - 24) / 10) ** 2 + ((y - 43) / 2.6) ** 2, ring = rr <= 1 && rr >= 0.55;
+    if (ring && y < 43) return PIX.gold;
+    if (inC(x, y, 24, 43, 5.2)) return y > 43 && x > 25 ? PIX.rose : PIX.pink;
+    if (ring) return PIX.gold;
+    const st = stars.get(x + ',' + y); if (st) return st;
+    return pixBand(x, y, H, [PIX.n1, PIX.n2, PIX.n3, PIX.n2]);
+  };
+  return pixSvg(W, H, 3, px).replace(/^/, '<g shape-rendering="crispEdges">') + '</g>';
+};
+MAT_ART.pixcosmos = () => {
+  const W = 100, H = 56, R = rng(41), CELL = 16, seeds = []; for (let i = 0; i < 6; i++) seeds.push([R() * 12, R() * 12, R() * 12]);
+  const noise = (x, y) => { let v = 0, amp = 1, tot = 0; for (let o = 0; o < 3; o++) { const f = 0.09 * (1 << o), a = x * f + seeds[o][0], b = y * f + seeds[o][1]; v += amp * (Math.sin(a * 1.7 + Math.sin(b * 1.3 + seeds[o][2])) * 0.5 + 0.5) * (Math.cos(b * 1.5 + Math.sin(a) ) * 0.25 + 0.75); tot += amp; amp *= 0.5; } return v / tot; };
+  const stars = new Map(); for (let i = 0; i < 150; i++) stars.set(Math.floor(R() * W) + ',' + Math.floor(R() * H), R() < 0.15 ? PIX.gold : R() < 0.5 ? PIX.white : R() < 0.5 ? PIX.teal : PIX.pink);
+  const planets = [[84, 11, 5, PIX.pink, PIX.rose, true], [13, 44, 3, PIX.teal, PIX.n4, false], [60, 47, 2, PIX.gold, PIX.rose, false]];
+  const px = (x, y) => {
+    for (const [cx, cy, r, c1, c2, ring] of planets) {
+      const rr = ((x - cx) / (r * 2.1)) ** 2 + ((y - cy) / (r * 0.55)) ** 2, rg = ring && rr <= 1 && rr >= 0.5;
+      if (rg && y < cy) return PIX.gold;
+      if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) return (x - cx) + (y - cy) > r * 0.6 ? c2 : c1;
+      if (rg) return PIX.gold;
+    }
+    const st = stars.get(x + ',' + y); if (st) return st;
+    const n = noise(x, y), d = BAYER[y & 1][x & 1] * 0.045;
+    if (n + d > 0.93) return PIX.n4; if (n + d > 0.8) return PIX.n3;
+    return pixBand(x, y, H, [PIX.n0, PIX.n1, PIX.n2, PIX.n1]);
+  };
+  return '<g shape-rendering="crispEdges">' + pixSvg(W, H, CELL, px) + '</g>';
+};
+const MATS = [['kitchen', 'Old kitchen table'], ['sigil', 'Mana sigil'], ['lair', "Dragon's lair"], ['arcane', 'Arcane circle'], ['ocean', 'Ocean depths'], ['dusk', 'Mountain dusk'], ['grove', 'Moonlit grove'], ['map', 'Old map'], ['deco', 'Obsidian & gold'], ['nebula', 'Nebula'], ['pixcosmos', 'Pixel cosmos (lo-fi)'], ['storm', 'Storm']];
 const artCache = {};
 function artUrl(kind, id) {
   const k = kind + ':' + id; if (artCache[k]) return artCache[k];
@@ -6235,7 +6861,7 @@ function deckArtName(deckName, deck) {
   return deck.main[0] ? deck.main[0].name : '';
 }
 function artStyle(im) { return im && im.front ? `background-image:url("${im.front}")` : ''; }
-function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom) {
+function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide) {
   const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
   const a = DECKBOX_COL[cols[0] || ''], b = DECKBOX_COL[cols[1] || cols[0] || ''];
   const dbx = h('div', { class: 'dbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
@@ -6249,9 +6875,44 @@ function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom) {
   stage.addEventListener('mousemove', e => { const r = stage.getBoundingClientRect(); dbx.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); dbx.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
   stage.addEventListener('mouseleave', () => { dbx.style.removeProperty('--rx'); dbx.style.removeProperty('--ry'); });
   return h('div', { class: 'dbx-tile' + (isCur ? ' on' : '') }, stage, h('div', { class: 'dbx-shadow' }),
-    h('div', { class: 'dbx-btns' }, h('button', { text: 'Art…', title: 'Choose which card’s art is on this box', onclick: e => { e.stopPropagation(); onArt(); } }), h('button', { text: 'Edit', onclick: e => { e.stopPropagation(); onEdit(); } })),
+    h('div', { class: 'dbx-btns' }, h('button', { text: 'Art…', title: 'Choose which card’s art is on this box', onclick: e => { e.stopPropagation(); onArt(); } }), h('button', { text: 'Edit', onclick: e => { e.stopPropagation(); onEdit(); } }),
+      onSide ? h('button', { class: dk.sb ? 'sbon' : '', text: 'Sideboard' + (deck.side.length ? ` (${sum(deck.side)})` : ''), title: 'Swap cards between your main deck and sideboard. The original list can always be restored.', onclick: e => { e.stopPropagation(); onSide(); } }) : null),
     h('div', { class: 'dbx-btns' }, h('button', { class: 'cartbtn', text: 'Import custom card art…', title: 'Use your own pictures for the cards in this deck', onclick: e => { e.stopPropagation(); onCustom(); } })),
     isCur ? h('div', { class: 'dbx-cur', text: 'In use' }) : null);
+}
+// v0.90.2 Sideboarding lives on the deck screen. The saved decklist is never changed: swaps are stored as a separate "sideboarded" list that the
+// game uses, and "Restore original" simply deletes it.
+function openSideboarding(deckName, after) {
+  const all = loadDecks(), dk = all[deckName]; if (!dk) return;
+  const orig = parseDeck(dk.text), clone = l => l.map(x => ({ qty: x.qty, name: x.name }));
+  let cur = dk.sb && dk.sb.main && dk.sb.main.length ? { main: clone(dk.sb.main), side: clone(dk.sb.side || []) } : { main: clone(orig.main), side: clone(orig.side) };
+  const key = n => (resolve(n) ? resolve(n).name : n).toLowerCase();
+  const m = modal(`Sideboarding: ${deckName}`, { width: 900, onClose: after });
+  const move = (from, to, name) => {
+    const a = cur[from].find(x => x.name === name); if (!a) return;
+    a.qty--; if (a.qty <= 0) cur[from].splice(cur[from].indexOf(a), 1);
+    const b = cur[to].find(x => key(x.name) === key(name)); if (b) b.qty++; else cur[to].push({ qty: 1, name });
+    draw();
+  };
+  const changed = () => JSON.stringify([cur.main, cur.side].map(l => l.map(x => [key(x.name), x.qty]).sort())) !== JSON.stringify([orig.main, orig.side].map(l => l.map(x => [key(x.name), x.qty]).sort()));
+  const col = (title, list, from, to, arrow) => h('div', { class: 'sbd-col' }, h('div', { class: 'sbd-h', text: `${title} (${sum(list)})` }),
+    h('div', { class: 'sbd-list' }, list.length ? [...list].sort((x, y) => x.name.localeCompare(y.name)).map(x => h('div', { class: 'sbd-row' }, h('span', { class: 'sbd-q', text: x.qty }), h('span', { class: 'sbd-n', text: x.name }),
+      h('button', { text: arrow, title: from === 'main' ? 'Move one copy to the sideboard' : 'Move one copy into the main deck', onclick: () => move(from, to, x.name) }))) : h('div', { class: 'muted small', text: 'Nothing here.' })));
+  const draw = () => {
+    const mn = sum(cur.main), on = sum(orig.main);
+    m.body.replaceChildren(
+      h('div', { class: 'small muted', text: 'Click an arrow to swap one copy at a time. Your saved decklist is never changed; Restore original puts everything back.' }),
+      h('div', { class: 'sbd-wrap' }, col('Main deck', cur.main, 'main', 'side', 'Side ▸'), col('Sideboard', cur.side, 'side', 'main', '◂ Main')),
+      h('div', { class: 'sbd-foot small', style: mn === on ? '' : 'color:var(--gold)', text: `Main deck: ${mn} cards${mn === on ? '' : ` (the original had ${on})`}${changed() ? ' · changed from the original' : ' · same as the original'}` }));
+    reset.disabled = !changed() && !dk.sb;
+  };
+  const reset = h('button', { text: 'Restore original', title: 'Go back to the decklist exactly as you saved it', onclick: () => { cur = { main: clone(orig.main), side: clone(orig.side) }; draw(); } });
+  m.foot.append(reset, h('button', { text: 'Cancel', onclick: () => m.close() }), h('button', { class: 'primary', text: 'Use this list', onclick: () => {
+    const a2 = loadDecks(); if (!a2[deckName]) { m.close(); return; }
+    if (changed()) a2[deckName].sb = { main: clone(cur.main), side: clone(cur.side) }; else delete a2[deckName].sb;
+    saveDecks(a2); lsSet('mtgpt.current', deckName); refreshDeckSelect(); prepareImages(); m.close(); toast(changed() ? 'Sideboarded' : 'Original list', changed() ? 'New games use this list. Open Sideboard again and choose Restore original to undo.' : 'New games use the original list.'); render();
+  } }));
+  draw();
 }
 function openDeckPicker() {
   const m = modal('Your decks', { width: 940 });
@@ -6262,7 +6923,8 @@ function openDeckPicker() {
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
         () => openDeckArtPicker(n, draw),
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
-        () => openCustomArt(n, draw))))
+        () => openCustomArt(n, draw),
+        () => openSideboarding(n, draw))))
       : h('div', { class: 'muted', text: 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();
@@ -6391,10 +7053,10 @@ function openDeckArtPicker(deckName, after) {
 }
 // ---------------------------------------------------------------- animations and effects (v0.58)
 // Everything here only decorates: it never changes the game state. Each part has its own switch (Settings → Animations).
-const UI_THEMES = [['default', 'Midnight (default)'], ['obsidian', 'Obsidian & gold'], ['abyss', 'Abyss blue'], ['forest', 'Forest'], ['neon', 'Neon'], ['parchment', 'Parchment'], ['light', 'Light'], ['deck', 'Match my deck']];
+const UI_THEMES = [['default', 'Midnight (default)'], ['obsidian', 'Obsidian & gold'], ['abyss', 'Abyss blue'], ['forest', 'Forest'], ['neon', 'Neon'], ['parchment', 'Parchment'], ['light', 'Light'], ['cosmos', 'Pixel cosmos (lo-fi)'], ['deck', 'Match my deck']];
 function applyUiTheme() {
   const b = document.body, t = settings.uiTheme || 'default';
-  b.dataset.uitheme = t === 'deck' ? 'default' : t;
+  b.dataset.uitheme = t === 'deck' || t === 'set' ? 'default' : t;   // 'set' was a v0.87 option; it now falls back to the default theme
   const keys = ['--accent', '--accent-text', '--gold', '--line'];
   for (const k of keys) b.style.removeProperty(k);
   if (t === 'deck') { try { const d = getCurrentDeck(), cols = d ? deckColorsOf(d) : [], c = DECKBOX_COL[cols[0] || ''][1], c2 = DECKBOX_COL[cols[1] || cols[0] || ''][1];
@@ -6402,6 +7064,7 @@ function applyUiTheme() {
 }
 const ANIM_DEFS = [
   ['move', 'Card movement', 'Cards slide when drawn, played, tapped or sent to a graveyard or exile, and permanents pop in'],
+  ['castFlight', 'Cast & resolve flight', 'A spell flies from your hand to the middle of the board when cast, stays there while it is on the stack, then flies to the battlefield (permanents) or the graveyard (instants, sorceries, countered spells). Needs Card movement. While on, it replaces the spotlight for your own spells'],
   ['spell', 'Spell spotlight', 'A lit-up card in the middle of the screen when a spell is cast, resolves or is countered'],
   ['life', 'Life effects', 'Rolling life numbers, a colour flash, a shake on big hits and floating +/- numbers'],
   ['turn', 'Turn banner & phase flash', 'A banner at the start of each turn and a flash when the phase changes'],
@@ -6414,16 +7077,23 @@ const reducedMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced
 const aamt = k => { const v = settings.anim && settings.anim[k]; return v === undefined || isNaN(+v) ? 1 : +v; };
 const aspd = () => Math.max(0.2, aamt('speed'));
 function wa(el, frames, o) { o = { ...o }; const sp = aspd(); if (o.duration) o.duration /= sp; if (o.delay) o.delay /= sp; return el.animate(frames, o); }
+function castFlightOn() { return animOn('castFlight') && animOn('move'); }
 function animOn(k) { const a = settings.anim; return !!(a && a.on !== false && a[k] !== false && !reducedMotion()); }
 const centerOf = sel => { const e = typeof sel === 'string' ? document.querySelector(sel) : sel; if (!e) return null; const r = e.getBoundingClientRect(); return r.width || r.height ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; };
-const CARD_SEL = '#mat .card[data-id], #row-hand .card[data-id]';
+const CARD_SEL = '#mat .card[data-id], #row-hand .card[data-id], #stackStage .ss-card[data-id]';
+const flightFrom = new Map();   // id -> where a card was just before a state change that re-renders more than once (cast, resolve)
+function noteFlightFrom(id, sel) {
+  if (!castFlightOn()) return; const el = document.querySelector(sel); if (!el) return; const r = el.getBoundingClientRect(); if (!r.width) return;
+  flightFrom.set(String(id), { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: el.offsetWidth, h: el.offsetHeight, t: getComputedStyle(el).transform, stage: !!el.closest('#stackStage'), at: performance.now() });
+}
+const flightCounter = new Set();   // ids of spells that were just countered: their flight to the graveyard is tinted red
 let animPrev = null;
 function animCapture() {
   animPrev = null; if (!animOn('move') || !state) return;
   const cards = new Map(), nodes = new Map(); let n = 0;
   for (const el of document.querySelectorAll(CARD_SEL)) {
     const r = el.getBoundingClientRect(); if (!r.width) continue;
-    cards.set(el.dataset.id, { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: el.offsetWidth, h: el.offsetHeight, t: getComputedStyle(el).transform });
+    cards.set(el.dataset.id, { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: el.offsetWidth, h: el.offsetHeight, t: getComputedStyle(el).transform, stage: !!el.closest('#stackStage') });
     if (n++ < 70) nodes.set(el.dataset.id, el.cloneNode(true));
   }
   animPrev = { cards, nodes };
@@ -6444,11 +7114,13 @@ function animApply() {
   let newHand = 0;
   for (const el of now) {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, p = prev.cards.get(id), t = getComputedStyle(el).transform;
+    let p = prev.cards.get(id); const ff = flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, t = getComputedStyle(el).transform;
     if (p) {
       const dx = p.cx - cx, dy = p.cy - cy; if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5 && p.t === t) continue;
-      const dist = Math.hypot(dx, dy);
-      jobs.push(() => wa(el, [{ translate: `${dx}px ${dy}px`, transform: p.t }, { translate: '0px 0px', transform: t }], { duration: dist > 220 ? 460 : dist > 40 ? 340 : 220, easing: 'cubic-bezier(.25,.8,.25,1)' }));
+      const dist = Math.hypot(dx, dy), staged = castFlightOn() && (p.stage || !!el.closest('#stackStage'));   // v0.90.1 to/from the centre stage
+      const sc = el.offsetWidth && p.w ? p.w / el.offsetWidth : 1, scale = Math.abs(sc - 1) > .08 ? sc : 1;
+      jobs.push(() => wa(el, [{ translate: `${dx}px ${dy}px`, scale: String(scale), transform: p.t, zIndex: staged ? 9000 : 'auto' }, { translate: '0px 0px', scale: '1', transform: t, zIndex: staged ? 9000 : 'auto' }], { duration: staged ? 640 : dist > 220 ? 460 : dist > 40 ? 340 : 220, easing: staged ? 'cubic-bezier(.3,.7,.2,1)' : 'cubic-bezier(.25,.8,.25,1)' }));
     } else if (el.closest('#row-hand') && lib) {
       const dx = lib.x - cx, dy = lib.y - cy, delay = Math.min(newHand++, 8) * 80;
       jobs.push(() => wa(el, [{ translate: `${dx}px ${dy}px`, scale: '.4', rotate: '-10deg', opacity: 0.2 }, { translate: '0px 0px', scale: '1', rotate: '0deg', opacity: 1 }], { duration: 480, delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
@@ -6466,6 +7138,7 @@ function animApply() {
     if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
     if (!dest && state.stack.some(s => s.id === +id)) dest = centerOf('#stackBox');
     node.removeAttribute('data-id'); node.removeAttribute('title'); node.classList.add('ghost');
+    if (flightCounter.has(+id)) { node.style.filter = 'sepia(1) hue-rotate(-35deg) saturate(3.2) brightness(.85)'; flightCounter.delete(+id); }
     node.style.cssText = `position:fixed;left:${p.cx - p.w / 2}px;top:${p.cy - p.h / 2}px;width:${p.w}px;height:${p.h}px;margin:0;z-index:9000;pointer-events:none;transform:${p.t === 'none' ? 'none' : p.t}`;
     document.body.appendChild(node);
     const base = p.t === 'none' ? '' : p.t, to = dest ? `translate(${dest.x - p.cx}px,${dest.y - p.cy}px) scale(.3) rotate(20deg)` : `${base} scale(.7)`;
@@ -6491,6 +7164,7 @@ function spotCardEl(c) {
 }
 function spotlight(c, kind, from) {
   if (!animOn('spell') || !c) return;
+  if (castFlightOn() && !c.token) return;   // v0.90.1: the card itself flies hand -> stage -> zone instead
   const key = spotKey(c), col = SPOT_COL[key] || SPOT_COL[''], W = innerWidth, H = innerHeight;
   const wrap = h('div', { class: 'spot spot-' + kind, style: `--sc1:${col[0]};--sc2:${col[1]}` },
     h('div', { class: 'spot-rays' }), spotCardEl(c), kind === 'counter' ? h('div', { class: 'spot-x', text: '✕' }) : null,
@@ -6637,28 +7311,61 @@ function countEachMulti(per) {
 //  - "If ~ would enter the battlefield, you may discard a land card instead" (Mox Diamond)
 //  - "As ~ enters the battlefield, choose a ..." (Cavern of Souls, Phyrexian Revoker, Pithing Needle)
 //  - "If you would draw a card, you may instead ..." (dredge)
+// v0.92.0 Replacement-effect engine (rules 614, 616). Each applicable effect is a small step { src, label, f }. When more than one applies to the
+// same event, the affected player chooses the order (616.1); every effect applies once (614.5). If the order cannot change the result nothing is asked.
+// The app applies the order that gives the most counters, remembers your choice for that set of cards, and offers the other order right away.
+function replPerms(a) { if (a.length <= 1) return [a.slice()]; const out = []; a.forEach((x, i) => replPerms(a.filter((_, j) => j !== i)).forEach(p => out.push([x, ...p]))); return out; }
+function replRun(order, n) { let v = n; for (const e of order) v = e.f(v); return v; }
+function applyReplacements(effects, n, host, kindKey, kindTxt) {
+  if (!effects.length) return { value: n, order: [] };
+  const perms = replPerms(effects), results = perms.map(p => replRun(p, n)), same = results.every(r => r === results[0]);
+  let pick = 0;
+  const key = effects.map(e => e.src.name).sort().join('|'); state.replPref = state.replPref || {};
+  if (!same) {
+    const pref = state.replPref[key];
+    const pi = pref ? perms.findIndex(p => p.map(e => e.src.name).join('|') === pref) : -1;
+    pick = pi >= 0 ? pi : results.indexOf(Math.max(...results));
+  }
+  const order = perms[pick], value = results[pick];
+  if (!same && host) replOfferOther(host, kindKey, kindTxt, n, perms, results, pick, key);
+  return { value, order };
+}
+function replOfferOther(host, kindKey, kindTxt, n, perms, results, pick, key) {
+  if (state.replPref && state.replPref[key] && !state.replAsk) return;   // you already chose for this set of cards
+  const names = p => p.map(e => `${e.src.name} (${e.label})`).join(' then ');
+  const m = modal('Order of replacement effects (rule 616.1)', { width: 480, dock: true, noClose: true });
+  m.body.append(h('div', { class: 'psub', text: `${n} ${kindTxt} counter${n === 1 ? '' : 's'} would be put on ${host.name}. Two or more replacement effects apply and the order changes the result. You choose the order.` }));
+  perms.forEach((p, i) => { if (results.findIndex((r, j) => r === results[i] && perms[j].map(e => e.src.name).join('|') === p.map(e => e.src.name).join('|')) !== i) return;
+    m.body.append(h('div', { class: 'pbtns' }, h('button', { class: i === pick ? 'primary' : '', text: `${names(p)} → ${results[i]}${i === pick ? '  (applied)' : ''}`, onclick: () => {
+      const delta = results[i] - results[pick]; if (delta && host.counters && typeof host.counters === 'object') host.counters[kindKey] = Math.max(0, (host.counters[kindKey] || 0) + delta);
+      state.replPref = state.replPref || {}; state.replPref[key] = p.map(e => e.src.name).join('|'); pick = i;
+      log(`Replacement effects: you chose ${names(p)} (${results[i]} ${kindTxt} counters on ${host.name})`); m.close(); render(); } })));
+  });
+  m.foot.append(h('button', { text: 'Keep as applied', onclick: () => { state.replPref = state.replPref || {}; state.replPref[key] = perms[pick].map(e => e.src.name).join('|'); m.close(); } }));
+}
 function adjustCounterAdd(host, kindKey, n, viaEffect) {
   if (!state || !host || n <= 0) return n;
   const kindTxt = kindKey === 'plus' ? '+1/+1' : kindKey === 'minus' ? '-1/-1' : String(kindKey).toLowerCase();
-  const types = permTypeInfo(host).types; let out = n; const notes = [];
+  const types = permTypeInfo(host).types; const effects = [];
   for (const g of state.battlefield) {
-    if (g.token) continue; const tx = (cardText(g) || '').replace(/−/g, '-');
+    if (g.token) continue; const tx = (cardText(g) || '').replace(/\u2212/g, '-');
     if (!/counters? would be put on/i.test(tx) && !/would put one or more counters/i.test(tx)) continue;
     for (const ln of tx.split('\n')) {
       let m;
       if ((m = ln.match(/^If one or more ([+\-0-9\/]+|[a-z]+) counters would be put on an? ([a-z]+)(?: or ([a-z]+))? you control, that many plus (one|two|\d+)[^.]*instead\.?$/i))) {
         if (m[1].toLowerCase() !== kindTxt) continue;
         if (!(types.has(m[2].toLowerCase()) || (m[3] && types.has(m[3].toLowerCase())))) continue;
-        const add = wordN(m[4]); out += add; notes.push(`${g.name}: +${add}`);
+        const add = wordN(m[4]); effects.push({ src: g, label: `+${add}`, f: v => v + add });
       } else if ((m = ln.match(/^If one or more counters would be put on an? ([a-z]+) or ([a-z]+) you control, that many plus one of each of those kinds of counters are put on it instead/i))) {
         if (!(types.has(m[1].toLowerCase()) || types.has(m[2].toLowerCase()))) continue;
-        out += 1; notes.push(`${g.name}: +1`);
+        effects.push({ src: g, label: '+1', f: v => v + 1 });
       } else if (viaEffect && (m = ln.match(/^If an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead/i))) {
-        out *= 2; notes.push(`${g.name}: ×2`);
+        effects.push({ src: g, label: '\u00d72', f: v => v * 2 });
       }
     }
   }
-  if (notes.length && teach('replaceNotes')) log(`Replacement effect${notes.length > 1 ? 's' : ''} (rule 614): ${n} ${kindTxt} counter${n === 1 ? '' : 's'} would be put on ${host.name}; ${notes.join(', ')} → ${out}`);
+  const r = applyReplacements(effects, n, host, kindKey, kindTxt), out = r.value;
+  if (effects.length && teach('replaceNotes')) log(`Replacement effect${effects.length > 1 ? 's' : ''} (rule 614): ${n} ${kindTxt} counter${n === 1 ? '' : 's'} would be put on ${host.name}; ${r.order.map(e => `${e.src.name}: ${e.label}`).join(', then ')} \u2192 ${out}`);
   return out;
 }
 // Mox Diamond: "If ~ would enter the battlefield, you may discard a land card instead. If you do, put ~ onto the battlefield. If you don't, put it into its owner's graveyard."
@@ -6747,7 +7454,7 @@ function descMatchesCard(desc, name) {
 }
 // A small picker: choose up to `max` of the listed cards (the list can contain duplicates by name). Calls done(chosen[]) once.
 function openPickCards(o) {
-  const m = modal(o.title, { width: 760, sticky: true });
+  const m = modal(o.title, { width: 760, sticky: true, noClose: !!o.min });
   const chosen = new Set(), out = h('div');
   const groups = new Map();
   for (const c of o.cards) { const g = groups.get(c.name) || { name: c.name, ids: [], ok: o.isOk ? o.isOk(c) : true }; g.ids.push(c.id); groups.set(c.name, g); }
@@ -6766,7 +7473,7 @@ function openPickCards(o) {
     out.append(grid); status.textContent = `${chosen.size} of up to ${o.max} chosen.`;
   };
   m.body.append(h('div', { class: 'psub', text: o.note || '' }), status, out); draw();
-  m.foot.append(h('button', { text: o.nothing || 'Choose nothing', onclick: () => { m.close(); o.done([]); } }), h('button', { class: 'primary', text: 'Confirm', onclick: () => { m.close(); o.done(o.cards.filter(c => chosen.has(c.id))); } }));
+  m.foot.append(...(o.min ? [] : [h('button', { text: o.nothing || 'Choose nothing', onclick: () => { m.close(); o.done([]); } })]), h('button', { class: 'primary', text: 'Confirm', onclick: () => { if (chosen.size < (o.min || 0)) { toast('Choose more', `You must choose ${o.min}.`); return; } m.close(); o.done(o.cards.filter(c => chosen.has(c.id))); } }));
 }
 function wordN(w) { w = String(w || 'a').toLowerCase(); return /^\d+$/.test(w) ? +w : (TOKEN_NUMW[w] || (w === 'any' ? 99 : 1)); }
 // "Search your library for a creature card with toughness 2 or less, reveal it, put it into your hand, then shuffle."
@@ -6797,13 +7504,31 @@ function searchEffect(tx, src, obj) {
 }
 // "Return up to three target land cards from your graveyard to your hand."
 function graveReturnEffect(tx, src) {
-  const m = String(tx).replace(/\n/g, ' ').match(/return (up to (\w+)|an?|one|two|three|\w+)? ?(?:target )?([a-z\- ]*?)cards? from your graveyard to (your hand|the battlefield)/i);
+  const T = String(tx).replace(/\n/g, ' ');
+  const m = T.match(/(?:return|put)s? (up to (\w+)|all\b|an?\b|one\b|two\b|three\b|\w+\b)? ?(?:target )?([a-z\- ]*?)cards?(?: at random)?(?: with mana value \d+(?: or (?:less|greater))?)? (?:from|in) (?:your|a|an|their|each|any) graveyards?(?: to| onto) (your hand|the battlefield)/i);
   if (!m) return null;
-  const max = m[2] ? wordN(m[2]) : wordN(m[1] || 'a'), desc = (m[3] || '').trim(), to = /hand/i.test(m[4]) ? 'hand' : 'battlefield';
-  return { label: `Return ${max === 1 ? 'a' : 'up to ' + max} ${desc ? desc + ' ' : ''}card${max === 1 ? '' : 's'} from your graveyard to ${to === 'hand' ? 'your hand' : 'the battlefield'}`, fn: () => {
-    const cards = state.graveyard.filter(c => !desc || descMatchesCard(desc, c.name));
-    if (!cards.length) { toast('Nothing to return', `Your graveyard has no ${desc || ''} card.`.replace('  ', ' ')); return; }
-    openPickCards({ title: `${src}: return from your graveyard`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} to put ${to === 'hand' ? 'into your hand' : 'onto the battlefield'}.`, cards, max, done: picked => { snap(); for (const c of picked) { if (to === 'hand') { const i = state.graveyard.findIndex(x => x.id === c.id); if (i >= 0) state.hand.push(...state.graveyard.splice(i, 1)); } else { const i = state.graveyard.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.graveyard.splice(i, 1); enterBattlefield(x, { from: 'graveyard', logMsg: `${src}: ${x.name} returned to the battlefield` }); } } } log(`${src}: returned ${picked.map(c => c.name).join(', ') || 'nothing'} from the graveyard`); render(); flushTriggers(); } });
+  const all = /^all$/i.test(m[1] || ''), rnd = /\bat random\b/i.test(T), tapped = /\b(?:to|onto) the battlefield tapped\b/i.test(T);
+  const max = all ? 99 : m[2] ? wordN(m[2]) : wordN(m[1] || 'a'), desc = (m[3] || '').trim(), to = /hand/i.test(m[4]) ? 'hand' : 'battlefield';
+  const mv = T.match(/with mana value (\d+)( or (?:less|greater))?/i);
+  const lifeLoss = /you lose life equal to (?:its|that card's) mana value/i.test(T);
+  const okCard = c => (!desc || descMatchesCard(desc, c.name)) && (!mv || (() => { const i = cardInfo(c.name), v = i ? i.cmc || 0 : 0, n = +mv[1]; return mv[2] ? (/less/i.test(mv[2]) ? v <= n : v >= n) : v === n; })());
+  const noun = `${desc ? desc + ' ' : ''}card${max === 1 ? '' : 's'}${mv ? ` with mana value ${mv[1]}${mv[2] || ''}` : ''}`;
+  const lbl = all ? `Return all ${noun} from your graveyard to ${to === 'hand' ? 'your hand' : 'the battlefield' + (tapped ? ' tapped' : '')}` : `${rnd ? 'Return a random' : 'Return ' + (max === 1 ? 'a' : 'up to ' + max)} ${noun} from your graveyard to ${to === 'hand' ? 'your hand' : 'the battlefield' + (tapped ? ' tapped' : '')}`;
+  const move = picked => {
+    snap();
+    for (const c of picked) {
+      const i = state.graveyard.findIndex(x => x.id === c.id); if (i < 0) continue; const [x] = state.graveyard.splice(i, 1);
+      if (to === 'hand') state.hand.push(x);
+      else { enterBattlefield(x, { from: 'graveyard', tapped: tapped || undefined, logMsg: `${src}: ${x.name} returned to the battlefield${tapped ? ' tapped' : ''}` }); if (lifeLoss) { const inf = cardInfo(x.name), n = inf ? inf.cmc || 0 : 0; if (n) changeLife(-n); log(`${src}: you lose ${n} life (mana value of ${x.name})`); } }
+    }
+    log(`${src}: returned ${picked.map(c => c.name).join(', ') || 'nothing'} from the graveyard`); render(); flushTriggers();
+  };
+  return { label: lbl, fn: () => {
+    const cards = state.graveyard.filter(okCard);
+    if (!cards.length) { toast('Nothing to return', `Your graveyard has no matching card.`); return; }
+    if (all) { move(cards); return; }
+    if (rnd) { move([cards[Math.floor(Math.random() * cards.length)]]); return; }
+    openPickCards({ title: `${src}: return from your graveyard`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} to put ${to === 'hand' ? 'into your hand' : 'onto the battlefield'}.`, cards, max, done: move });
   } };
 }
 function flipCoin() { return Math.random() < 0.5; }
@@ -6814,9 +7539,21 @@ function flipCoin() { return Math.random() < 0.5; }
 // threshold, metalcraft, revolt, morbid, landfall, the city's blessing) and things only you know (monarch, initiative, day/night, counters), which you set by clicking.
 function noteCast(c) {
   if (!state) return; const sc = state.spellsCast; state.spellsCast = { turn: state.turn, n: (sc && sc.turn === state.turn ? sc.n : 0) + 1 };
+  // v0.94.4 remember each spell's type line this turn, for "the second creature spell you cast this turn" (Vengevine)
+  const tl = state.castTypes && state.castTypes.turn === state.turn ? state.castTypes.list : [];
+  state.castTypes = { turn: state.turn, list: tl.concat([{ id: c.id, t: frontType(c) || '' }]) };
+}
+// Is this spell the Nth (of the given type) spell cast this turn? Counts spells already noted, including this one.
+function castNth(nth, sp) {
+  const list = state.castTypes && state.castTypes.turn === state.turn ? state.castTypes.list : [];
+  const tf = { creature: /\bCreature\b/, noncreature: /^(?!.*\bCreature\b)/, instant: /\bInstant\b/, sorcery: /\bSorcery\b/, 'instant or sorcery': /\b(Instant|Sorcery)\b/, artifact: /\bArtifact\b/, enchantment: /\bEnchantment\b/, land: /\bLand\b/ }[nth.type];
+  const matching = list.filter(x => !tf || tf.test(x.t));
+  const i = matching.findIndex(x => x.id === sp.id);
+  return i + 1 === nth.n;
 }
 const spellsCastNow = () => (state && state.spellsCast && state.spellsCast.turn === state.turn ? state.spellsCast.n : 0);
 const GS_ICON = {
+  skipdraw: '<rect x="6" y="3" width="12" height="17" rx="2"/><path d="M4 21 20 3"/>',
   storm: '<path d="M7 16a4 4 0 0 1 .5-7.9A5.500 5.500 0 0 1 18 9a3.500 3.500 0 0 1 0 7"/><path d="M12.500 11l-2.500 4h3l-2 4"/>',
   monarch: '<path d="M3 19h18M4 19 3 8l5 4 4-7 4 7 5-4-1 11z"/>',
   initiative: '<path d="M6 21V10a6 6 0 0 1 12 0v11M3 21h18M12 21v-6"/><circle cx="15" cy="15.500" r=".9" fill="currentColor"/>',
@@ -6845,6 +7582,7 @@ function gameStates() {
   add('initiative', 'Initiative', !!gs.init, '', 'You have the initiative (rule 725): venture into the Undercity when you take it and at the beginning of your upkeep. Whoever deals combat damage to the player with the initiative takes it. Click to take or lose it.', { manual: true });
   add('ascend', 'City’s blessing', !!gs.citys, gs.citys ? '' : (perms >= 1 ? perms + '/10' : ''), 'Ascend (rule 702.131): you get the city’s blessing the moment you control ten or more permanents, and you keep it for the rest of the game. The app checks this for you; click to set or clear it by hand.', { manual: true });
   add(gs.dn === 'night' ? 'night' : 'day', gs.dn === 'night' ? 'Night' : gs.dn === 'day' ? 'Day' : 'Day / night', !!gs.dn, '', 'Day and night (rule 726): once a daybound or nightbound permanent appears it becomes day. It becomes night if the active player cast no spells during their own previous turn, and day if they cast two or more. Click to cycle: not set, day, night.', { manual: true, gsKey: 'dn' });
+  if (skipDrawSource()) add('skipdraw', 'Skip draws', !!gs.skipDraw, '', 'Necrodominance lets you skip any card you would draw. While this is on, every draw is skipped (your draw step too). Click to switch it on or off. Turn it off again when you want to draw.', { manual: true, functional: true });
   add('delirium', 'Delirium', types >= 4, types || '', `Four or more card types among cards in your graveyard. You have ${types} right now.`);
   add('threshold', 'Threshold', gy >= 7, gy || '', `Seven or more cards in your graveyard. You have ${gy}.`);
   add('metalcraft', 'Metalcraft', arts >= 3, arts || '', `Three or more artifacts you control. You control ${arts}.`);
@@ -6858,11 +7596,12 @@ function gameStates() {
 }
 function drawStateIcons() {
   const box = $('#gstates'); if (!box) return;
-  const on = !!state && state.phase === 'play' && teach('stateIcons');
+  const list0 = !!state && state.phase === 'play' ? gameStates().filter(x => x.functional || teach('stateIcons')) : [];
+  const on = list0.length > 0;
   box.hidden = !on; if (!on) { box.replaceChildren(); return; }
   const gs = state.gs || (state.gs = {});
   if (!gs.citys && state.battlefield.length >= 10) { gs.citys = true; log('You get the city’s blessing (ten or more permanents; Ascend, rule 702.131)'); }
-  box.replaceChildren(...gameStates().map(s => {
+  box.replaceChildren(...list0.map(s => {
     const e = h('button', { class: 'sti' + (s.on ? ' on' : ' off'), 'data-gs': s.key, title: `${s.label}${s.on ? ' — active' : ''}\n${s.desc}` });
     e.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GS_ICON[s.on || s.key !== 'day' ? s.key : 'dayoff'] || ''}</svg>`;
     if (s.count !== '' && s.count !== undefined) e.append(h('i', { text: String(s.count) }));
@@ -6878,6 +7617,7 @@ document.addEventListener('click', ev => {
     if (s.gsKey === 'dn') { gs.dn = !gs.dn ? 'day' : gs.dn === 'day' ? 'night' : ''; log(`It is now ${gs.dn || 'neither day nor night'}`); }
     else if (s.key === 'monarch') { gs.monarch = !gs.monarch; log(gs.monarch ? 'You are the monarch' : 'You are no longer the monarch'); }
     else if (s.key === 'initiative') { gs.init = !gs.init; log(gs.init ? 'You have the initiative' : 'You no longer have the initiative'); }
+    else if (s.key === 'skipdraw') { gs.skipDraw = !gs.skipDraw; log(gs.skipDraw ? 'Skip draws is ON: cards you would draw are skipped' : 'Skip draws is OFF: you draw normally'); }
     else if (s.key === 'ascend') { gs.citys = !gs.citys; log(gs.citys ? 'You have the city’s blessing' : 'City’s blessing cleared'); }
     render(); return;
   }
@@ -6890,6 +7630,8 @@ document.addEventListener('contextmenu', ev => {
 
 // ---------------------------------------------------------------- board layout (v0.67)
 const LAYOUT_DEFS = [
+  ['pickCentre', 'Discard and card choices in the centre', 'When you must discard or choose cards from your hand, the choice is shown in the middle of the table next to the card that causes it, instead of the thin bar above your hand. Off: the bar above your hand.'],
+  ['resolveFirst', 'Spell stays on the stack while its effect is applied', 'Instants and sorceries stay in the middle of the table while you apply their effect, then go to the graveyard (rule 608.2n). Off: they go to the graveyard first.'],
   ['zoneDepth', 'Zone depth', 'The battlefield zones look like shelves: a soft inner shadow at the top and a lit edge at the bottom'],
   ['stackCards', 'Stack identical lands and tokens', 'Identical untapped lands (or tapped lands, tokens) pile into one card with a count. Click the count to spread them out'],
   ['dimIdle', 'Dim cards that cannot act', 'Tapped lands and summoning-sick creatures are shown a little duller, so the cards you can use stand out'],
@@ -6935,27 +7677,76 @@ function battlefieldRows(cards) {
 }
 // The stack floats in the middle of the table (v0.70.2) so you can see exactly what is on it. While you drag a card or permanent, it becomes a drop
 // target: release a card from your hand on it to cast it in response, or a permanent to activate its ability.
+// v0.94.2 What is forcing this hand choice? The ability or spell being resolved, else the card named by the choice (a cost), else the hand-size rule.
+function pickSource() {
+  if (handPick && handPick.res) return handPick.res;
+  const t = handPick && handPick.title ? String(handPick.title) : '';
+  if (state.resolving && (!t || state.resolving.name === t)) return state.resolving;
+  if (state.resolvingAb && (!t || (state.resolvingAb.sourceName || state.resolvingAb.name) === t)) return state.resolvingAb;
+  if (!handPick) return { id: 'res', name: 'Maximum hand size', pseudo: true, ability: false, text: `At the cleanup step you discard down to ${staticFx().maxHand} cards.` };
+  if (t && cardInfo(t)) return { id: 'res', name: t, ability: false, kindTxt: /cost/i.test(handPick.note || '') ? 'Cost of' : 'Effect of' };
+  return { id: 'res', name: t || 'Choice', pseudo: true, ability: false, text: handPick.note || '' };
+}
 function drawStackStage() {
   const el = $('#stackStage'); if (!el) return;
-  const on = !!state && state.phase === 'play' && state.stack.length > 0;
-  el.hidden = !on; if (!on) { el.replaceChildren(); return; }
-  const items = [...state.stack].reverse(), shown = items.slice(0, 5);
+  const resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied
+  const resPick = !!state && state.phase === 'play' && state.discarding > 0 && (layoutOn('pickCentre') || (!state.stack.length && !!handPick && !!handPick.res));   // v0.94.2 every hand choice, not only ones from a resolving ability
+  const resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
+  const on = !!state && state.phase === 'play' && (state.stack.length > 0 || resPick || resSpell || resAb);
+  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { el.replaceChildren(); return; }
+  const pickSrc = resPick ? pickSource() : null;
+  const items = resPick ? [handPick && handPick.res ? (state.resolving || Object.assign({}, handPick.res, { id: 'res', ability: true })) : pickSrc] : resSpell ? [state.resolving] : resAb ? [state.resolvingAb, ...[...state.stack].reverse()] : [...state.stack].reverse(), shown = items.slice(0, 5);
   const face = (c, i) => {
     const base = c.ability ? (c.sourceName || String(c.name).replace(/ — ability$/, '')) : c.name, im = showImages ? imgFor(base) : null;   // abilities show the card they come from
-    const kind = c.opp ? "Opponent's " + (c.ability ? 'ability' : 'spell') : c.ability ? (c.trigger ? 'Triggered ability' : 'Activated ability') : 'Your spell';
-    const abText = c.ability ? String(c.text || '').replace(/\s+/g, ' ').trim() : '';
-    const body = im ? h('img', { src: im.front, alt: base, draggable: 'false' }) : h('div', { class: 'ss-text' }, h('b', { text: base }), h('span', { text: c.ability ? abText.slice(0, 150) : (cardInfo(c.name) ? (cardInfo(c.name).t || '') : '') }));
-    return h('div', { class: 'ss-card' + (i ? '' : ' top') + (c.opp ? ' opp' : c.ability ? ' abil' : ''), style: `--i:${i}`, title: `${kind}: ${base}${abText ? ' — ' + abText : ''}` }, body, im && abText ? h('div', { class: 'ss-abil', text: abText.length > 120 ? abText.slice(0, 117) + '…' : abText }) : null, h('i', { class: 'ss-tag', text: (i ? '' : 'TOP · ') + kind }));
+    const kind = c.kindTxt ? c.kindTxt + ' ' + base : c.pseudo ? 'Rule' : c.opp ? "Opponent's " + (c.ability ? 'ability' : 'spell') : c.ability ? (c.trigger ? 'Triggered ability' : 'Activated ability') : c.copy ? 'Copy of your spell' : 'Your spell';
+    const abText = c.ability || c.pseudo ? String(c.text || '').replace(/\s+/g, ' ').trim() : '';
+    const body = im && !c.pseudo ? h('img', { src: im.front, alt: base, draggable: 'false' }) : h('div', { class: 'ss-text' }, h('b', { text: base }), h('span', { text: c.ability || c.pseudo ? abText.slice(0, 150) : (cardInfo(c.name) ? (cardInfo(c.name).t || '') : '') }));
+    return h('div', { class: 'ss-card' + (i ? '' : ' top') + (c.opp ? ' opp' : c.ability ? ' abil' : ''), style: `--i:${i}`, 'data-id': c.id, title: `${kind}: ${base}${abText ? ' — ' + abText : ''}` }, body, im && abText ? h('div', { class: 'ss-abil', text: abText.length > 120 ? abText.slice(0, 117) + '…' : abText }) : null, h('i', { class: 'ss-tag', text: (i ? '' : 'TOP · ') + kind }));
   };
-  el.replaceChildren(h('div', { class: 'ss-row' }, shown.map(face)), items.length > shown.length ? h('div', { class: 'ss-more', text: `+${items.length - shown.length} more below` }) : null, h('div', { class: 'ss-hint', text: 'Drag a card or permanent onto the stack to respond' }));
+  const resLinesEl = () => (state.resLines && state.resLines.length) ? h('div', { class: 'ss-lines' }, h('div', { class: 'ss-lh', text: 'What the app did' }), ...state.resLines.slice(-4).map(t => h('div', { text: t }))) : null;
+  const stepsEl = (cur) => h('div', { class: 'ss-steps' }, ...['On the stack', 'Resolving', 'Done'].map((t, i) => h('span', { class: 'ss-st' + (i === cur ? ' now' : i < cur ? ' past' : ''), text: `${i + 1} ${t}` })));
+  if (resAb) {
+    const r = state.resolvingAb;
+    el.replaceChildren(stepsEl(1), h('div', { class: 'ss-row' }, shown.map(face)),
+      h('div', { class: 'ss-pick' }, h('b', { text: `${r.trigger ? 'Triggered ability' : r.pw ? 'Loyalty ability' : 'Activated ability'}: ${r.sourceName || r.name}` }), h('div', { class: 'muted small', text: 'Choose what it does in the window next to the card.' })),
+      resLinesEl(), h('div', { class: 'ss-btns' }, h('button', { class: 'primary', text: 'Finish', title: 'Done applying this ability', onclick: () => { state.resolvingAb = null; state.resLines = []; render(); } })));
+    return;
+  }
+  if (resPick) {
+    const n = state.discarding, verb = handPick ? handPick.verb : 'discard', cnt = bottomSel.size, r = pickSrc;
+    el.replaceChildren(h('div', { class: 'ss-row' }, shown.map(face)),
+      h('div', { class: 'ss-pick' }, h('b', { text: !handPick ? 'Cleanup: hand size' : pickSrc.kindTxt ? `${pickSrc.kindTxt}: ${pickSrc.name}` : `${r.trigger ? 'Triggered ability' : 'Resolving'}: ${handPick.title || r.sourceName || pickSrc.name}` }),
+        h('div', { text: `Select ${n} card${n === 1 ? '' : 's'} in your hand to ${verb} (${cnt}/${n})` }), handPick && handPick.note ? h('div', { class: 'muted small', text: handPick.note }) : null, state.stack.length ? h('div', { class: 'muted small', text: `${state.stack.length} object${state.stack.length === 1 ? '' : 's'} on the stack wait${state.stack.length === 1 ? 's' : ''} behind this.` }) : null),
+      resLinesEl(),
+      h('div', { class: 'ss-btns' }, handPick && handPick.cancel ? h('button', { text: 'Cancel', onclick: cancelHandPick }) : null,
+        h('button', { class: 'primary', text: verb.charAt(0).toUpperCase() + verb.slice(1) + (n > 1 ? ` ${cnt}/${n}` : ''), disabled: cnt !== n, onclick: confirmDiscard })));
+    return;
+  }
+  if (resSpell) {
+    el.classList.add('resolving');
+    el.replaceChildren(stepsEl(1), h('div', { class: 'ss-row' }, shown.map(face)), h('div', { class: 'ss-pick' }, h('b', { text: `Resolving: ${state.resolving.name}` }), h('div', { class: 'muted small', text: 'It stays here while its effect is applied, then goes to the graveyard.' })),
+      resLinesEl(),
+      h('div', { class: 'ss-btns' }, h('button', { class: 'primary', text: 'Finish: to graveyard', title: 'Done applying the effect', onclick: () => finishResolving() })));
+    return;
+  }
+  const orderEl = items.length > 1 ? h('ol', { class: 'ss-order', title: 'The top of the stack resolves first' }, ...items.slice(0, 8).map((c, i) => h('li', { class: i ? '' : 'first' }, h('span', { class: 'ss-on', text: i ? `then ${i + 1}` : 'resolves first' }), ' ', h('b', { text: c.ability ? `${c.sourceName || c.name}` : c.name }), h('span', { class: 'muted', text: ' \u00b7 ' + (c.opp ? (c.ability ? "opponent's ability" : "opponent's spell") : c.ability ? (c.trigger ? 'triggered ability' : c.pw ? 'loyalty ability' : 'activated ability') : c.copy ? 'copy' : 'spell') })))) : null;
+  const ssOn = splitSecondOn() ? h('div', { class: 'ss-split', text: 'Split second: no spells or abilities (except mana abilities) until it resolves' }) : null;
+  el.replaceChildren(stepsEl(0), h('div', { class: 'ss-row' }, shown.map(face)), orderEl, ssOn, items.length > shown.length ? h('div', { class: 'ss-more', text: `+${items.length - shown.length} more below` }) : null, h('div', { class: 'ss-btns' },
+      h('button', { text: 'Pass priority', title: 'Do not respond: the top object will resolve', onclick: () => passPriority() }),
+      (!items[0].ability && !items[0].opp && !isPermanentCard(items[0])) ? h('button', { text: 'Copy', title: 'A copy of this spell goes on the stack (Twincast, Fork, Reverberate…). It is not cast, so it does not count for Storm.', onclick: () => { snap(); makeSpellCopies(items[0].id, 1, 'Copy effect'); render(); } }) : null,
+      h('button', { class: 'danger', text: 'Countered', title: 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }),
+      h('button', { class: 'primary', text: items[0].opp ? 'Resolve (opponent)' : 'Resolve top', title: 'Resolve ' + (items[0].ability ? (items[0].sourceName || items[0].name) : items[0].name), onclick: () => resolveTopOfStack() })),
+    h('div', { class: 'ss-hint', text: 'Drag a card or permanent onto the stack to respond' }));
 }
+let bsActionsNode = null;
+function bsActionsEl() { return bsActionsNode || (bsActionsNode = $('#bsActions')); }
 function drawBoardStrip() {
   // v0.76 The turn tracker: every step of the turn, grouped, with the one you are in lit. It sits in the table's flow under the top bar (so it never
   // covers a card, and stays visible while the stack is up) and replaces the old Now/Next box.
   const el = $('#boardstrip'); if (!el) return;
   const on = layoutOn('boardStrip') && state && state.phase === 'play';
   document.body.classList.toggle('strip-on', !!on);
-  el.hidden = !on; if (!on) { el.replaceChildren(); return; }
+  el.hidden = !on; if (!on) { el.replaceChildren(); const a = bsActionsEl(), g = $('.gbtns'); if (g && a.parentNode !== g) g.prepend(a); return; }
   const cur = state.step, p = state.manaPool || {};
   const groups = []; STEPS.forEach((st, i) => { const last = groups[groups.length - 1]; if (last && last.g === st.g && !(st.g === 'Main')) last.steps.push(i); else groups.push({ g: st.g, steps: [i] }); });
   const track = h('div', { class: 'bs-track' }, ...groups.map(gr => h('div', { class: 'bs-grp' + (gr.steps.includes(cur) ? ' cur' : '') + (gr.steps[gr.steps.length - 1] < cur ? ' past' : ''), 'data-g': gr.g },
@@ -6964,12 +7755,10 @@ function drawBoardStrip() {
       const st = STEPS[i], isNow = i === cur, ahead = i > cur;
       return h('button', { class: 'bs-step' + (isNow ? ' now' : i < cur ? ' done' : ''), 'data-step': st.id, text: st.label, title: `${st.label}: ${st.tip}${ahead ? '\n(Click to skip ahead to this step.)' : ''}`, 'aria-current': isNow ? 'step' : null, onclick: () => { if (ahead) jumpToStep(i); } });
     })))));
-  const chips = ['W', 'U', 'B', 'R', 'G', 'C'].filter(k => (p[k] || 0) > 0).map(k => h('span', { class: `mana-chip ${k}`, text: `${p[k]}${k}` }));
+  // v0.90.2 floating mana is shown once (top bar), not twice; the strip carries the Next phase / Next turn buttons instead.
   const info = h('div', { class: 'bs-info' },
-    h('span', { class: 'bs-mana' }, ...(chips.length ? chips : [h('span', { class: 'mana-empty', text: 'no mana' })])),
-    h('span', { class: 'bs-land' + (landDropUsed() ? ' used' : ''), text: landDropUsed() ? 'land drop used' : 'land drop ready', title: 'Whether you can still play a land this turn' }),
     state.stack.length ? h('span', { class: 'bs-stack', text: `stack: ${state.stack.length}` }) : null);
-  el.replaceChildren(track, info);
+  const acts = bsActionsEl(); el.replaceChildren(track, info, acts);
   placeBoardStrip();
 }
 // The tracker floats across the top of the battlefield, in the gap between the creature lane and the lands (v0.76.1).
@@ -6977,6 +7766,10 @@ function placeBoardStrip() {
   const el = $('#boardstrip'), zc = $('#zone-creatures'); if (!el || el.hidden || !zc) return;
   const gap = parseFloat(getComputedStyle($('#mat')).rowGap) || 10;
   el.style.left = (zc.offsetLeft + 6) + 'px'; el.style.width = Math.max(200, zc.offsetWidth - 12) + 'px';
+  // v0.90.4 never let the buttons run into the steps: tighten step by step (smaller chips, no group labels, then zoom) until everything fits.
+  const zs = [...el.children]; const setZ = v => zs.forEach(k => { k.style.zoom = v; }); el.classList.remove('tight', 'tighter'); setZ('');
+  const over = () => el.scrollWidth > el.clientWidth + 1;
+  if (over()) { el.classList.add('tight'); if (over()) { el.classList.add('tighter'); let z = 0.95; while (over() && z > 0.6) { setZ(z.toFixed(2)); z -= 0.05; } } }
   el.style.top = Math.round(zc.offsetTop + zc.offsetHeight + gap / 2 - el.offsetHeight / 2) + 'px';
 }
 window.addEventListener('resize', () => { try { placeBoardStrip(); } catch (e) { /* ignore */ } });
@@ -7021,15 +7814,19 @@ function sagaSacrifice(id) {
 
 // ---------------------------------------------------------------- settings (card sizes, playmat)
 const SET_DEFAULT = {
-  bfs: 1, hs: 1, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c',
+  bfs: 1, hs: 1, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c', frameC: '#fff1c9',
   layout: { zoneDepth: true, stackCards: true, dimIdle: true, boardStrip: true, combatLane: true, gyFan: true }, layoutMode: 'updated', lay: {}, matMotion: 'off', matSpeed: 1, sleevePreset: '', matPreset: '', uiTheme: 'default',
   anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
-  sound: { on: true, vol: 0.5, music: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
+  sound: { on: true, vol: 0.5, music: true, musicStyle: 'ambient', musicBeat: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
   teaching: { master: true, playability: true, phasePopups: true, phasePauses: true, stackGuidance: true,
     triggerPrompts: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
-    keywordTips: true, keywordIcons: true, stateIcons: true, durationHints: true, costGuidance: true, preGame: true, autoStart: true, summoningSick: true, libraryMenu: true }
+    keywordTips: true, autoResolve: true, vaultPrompt: true, keywordIcons: true, stateIcons: true, durationHints: true, replaceNotes: true, costGuidance: true, preGame: true, autoStart: true, summoningSick: true, libraryMenu: true }
 };
 let settings = Object.assign({}, SET_DEFAULT, lsGet('mtgpt.settings', {}));
+if (/^set-/.test(String(settings.matPreset || ''))) settings.matPreset = 'kitchen';
+if (/^set-/.test(String(settings.sleevePreset || ''))) settings.sleevePreset = 'worn';   // colour sets were removed in v0.89
+if (settings.uiTheme === 'set') settings.uiTheme = 'default';
+for (const k of ['border', 'borderSize', 'borderAnim', 'setApply', 'uiSet']) delete settings[k];
 settings.teaching = Object.assign({}, SET_DEFAULT.teaching, settings.teaching || {});
 settings.layout = Object.assign({}, SET_DEFAULT.layout, settings.layout || {});
 settings.sound = Object.assign({}, SET_DEFAULT.sound, settings.sound || {});
@@ -7048,19 +7845,19 @@ const THEMES = {
 // Board frames: a coloured, glowing outline for the playmat, zones and hand. Each is two colours + a glow colour.
 const FRAMES = {
   none:   { label: 'None' },
-  fire:   { label: 'Fire',      a: '#ff4a1c', b: '#ffc23a', glow: 'rgba(255,110,30,.55)' },
-  ice:    { label: 'Ice',       a: '#6fd6ff', b: '#e8fbff', glow: 'rgba(120,214,255,.5)' },
-  grass:  { label: 'Grass',     a: '#3fbf54', b: '#b6e86a', glow: 'rgba(90,200,90,.45)' },
-  storm:  { label: 'Storm',     a: '#7b6bff', b: '#f4e86a', glow: 'rgba(140,120,255,.5)' },
-  shadow: { label: 'Shadow',    a: '#8a3fd1', b: '#d96bff', glow: 'rgba(160,70,220,.5)' },
-  gold:   { label: 'Royal gold',a: '#d9a53a', b: '#fff0b0', glow: 'rgba(235,185,70,.45)' },
+  fire:   { label: 'Fire',      a: '#ff4a1c', b: '#ffc23a', c: '#fff1c9', glow: 'rgba(255,110,30,.55)' },
+  ice:    { label: 'Ice',       a: '#6fd6ff', b: '#e8fbff', c: '#4aa8ff', glow: 'rgba(120,214,255,.5)' },
+  grass:  { label: 'Grass',     a: '#3fbf54', b: '#b6e86a', c: '#2f8f4a', glow: 'rgba(90,200,90,.45)' },
+  storm:  { label: 'Storm',     a: '#7b6bff', b: '#f4e86a', c: '#6ad7ff', glow: 'rgba(140,120,255,.5)' },
+  shadow: { label: 'Shadow',    a: '#8a3fd1', b: '#d96bff', c: '#4a1a7a', glow: 'rgba(160,70,220,.5)' },
+  gold:   { label: 'Royal gold',a: '#d9a53a', b: '#fff0b0', c: '#b8741a', glow: 'rgba(235,185,70,.45)' },
   custom: { label: 'Custom' }
 };
 function frameColors() {
   const f = FRAMES[settings.frame];
   if (!f || settings.frame === 'none') return null;
-  if (settings.frame === 'custom') return { a: settings.frameA, b: settings.frameB, glow: hexA(settings.frameA, .5) };
-  return f;
+  if (settings.frame === 'custom') return { a: settings.frameA, b: settings.frameB, c: settings.frameC || settings.frameA, glow: hexA(settings.frameA, .5) };
+  return { ...f, c: f.c || f.a };
 }
 function hexA(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return `rgba(255,255,255,${a})`; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
 function applyFrame() {
@@ -7068,9 +7865,9 @@ function applyFrame() {
   b.dataset.frame = fc ? settings.frame : 'none';
   b.classList.toggle('frame-anim', !!fc && settings.frameAnim !== false);
   if (fc) {
-    b.style.setProperty('--fa', fc.a); b.style.setProperty('--fb', fc.b); b.style.setProperty('--fglow', fc.glow);
+    b.style.setProperty('--fa', fc.a); b.style.setProperty('--fb', fc.b); b.style.setProperty('--fc', fc.c); b.style.setProperty('--fglow', fc.glow);
     b.style.setProperty('--fi', String(settings.frameGlow));
-  } else for (const k of ['--fa', '--fb', '--fglow', '--fi']) b.style.removeProperty(k);
+  } else for (const k of ['--fa', '--fb', '--fc', '--fglow', '--fi']) b.style.removeProperty(k);
 }
 function applySettings() {
   applyFrame(); applyCursor(); applyUiTheme();
@@ -7115,12 +7912,14 @@ function applySleeve() {
   else{el.style.backgroundImage='';el.classList.remove('custom-sleeve');}
 }
 async function loadSleeve() {
-  try{const blob=await idbGet('sleeve');if(blob){sleeveUrl=URL.createObjectURL(blob);applySleeve();}}catch(e){}
+  try{const blob=await idbGet('sleeve');if(blob){sleeveUrl=URL.createObjectURL(blob);}}catch(e){}
+  applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['layout', 'Layout'], ['gfx', 'Graphics'], ['board', 'Playmat & frame'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode']];
+const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode']];
+const TAB_INFO = { gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'] };
 function openSettings() {
-  const m = modal('Settings', { width: 560 });
+  const m = modal('Settings', { width: 860 }); m.el.classList.add('settingsModal');
   const slider = (label, key, min, max, step, fmt) => {
     const val = h('span', { class: 'val', text: fmt(settings[key]) });
     const inp = h('input', { type: 'range', min, max, step, value: settings[key] });
@@ -7183,20 +7982,21 @@ function openSettings() {
     frameBox.replaceChildren();
     const sw = h('div', { class: 'swatches' });
     for (const [k, f] of Object.entries(FRAMES)) {
-      const c = k === 'custom' ? { a: settings.frameA, b: settings.frameB } : f;
-      const bg = k === 'none' ? 'var(--panel-2)' : `linear-gradient(135deg, ${c.a}, ${c.b})`;
+      const c = k === 'custom' ? { a: settings.frameA, b: settings.frameB, c: settings.frameC || settings.frameA } : f;
+      const bg = k === 'none' ? 'var(--panel-2)' : `linear-gradient(135deg, ${c.a}, ${c.b}, ${c.c || c.a})`;
       const b = h('button', { class: 'fswatch' + (settings.frame === k ? ' on' : ''), title: f.label }, h('span', { class: 'fsw-dot', style: `background:${bg}` }), h('span', { text: f.label }));
       b.addEventListener('click', () => { settings.frame = k; saveSettings(); drawFrame(); });
       sw.append(b);
     }
-    const colA = h('input', { type: 'color', value: settings.frameA }), colB = h('input', { type: 'color', value: settings.frameB });
+    const colA = h('input', { type: 'color', value: settings.frameA }), colB = h('input', { type: 'color', value: settings.frameB }), colC = h('input', { type: 'color', value: settings.frameC || settings.frameA });
     colA.addEventListener('input', () => { settings.frameA = colA.value; saveSettings(); });
     colB.addEventListener('input', () => { settings.frameB = colB.value; saveSettings(); });
+    colC.addEventListener('input', () => { settings.frameC = colC.value; saveSettings(); });
     const anim = h('input', { type: 'checkbox' }); anim.checked = settings.frameAnim !== false;
     anim.addEventListener('change', () => { settings.frameAnim = anim.checked; saveSettings(); });
     frameBox.append(...[
       h('div', { class: 'setrow' }, h('label', { text: 'Board frame' }), sw),
-      settings.frame === 'custom' ? h('div', { class: 'setrow' }, h('label', { text: 'Custom colours' }), colA, colB, h('span', { class: 'muted small', text: 'Edge colour and highlight colour' })) : null,
+      settings.frame === 'custom' ? h('div', { class: 'setrow' }, h('label', { text: 'Custom colours' }), colA, colB, colC, h('span', { class: 'muted small', text: 'Edge, highlight and accent (the glow follows the first)' })) : null,
       h('div', { class: 'setrow' }, h('label', { text: 'Animated glow' }), anim, h('span', { class: 'muted small', text: 'Slowly moving light around the frame (off = still outline)' })),
       slider('Frame glow strength', 'frameGlow', 0.1, 1, 0.05, pct)].filter(Boolean));
   };
@@ -7210,9 +8010,12 @@ function openSettings() {
     ['autoStart','Auto-run start of turn','When pauses are off: untap, upkeep and draw happen by themselves'],
     ['preGame','Pre-game actions screen','Pause after keeping a hand for Leylines, Serum Powder and similar'],
     ['stackGuidance','Stack & priority guidance','Explains priority and opens the mana payment window; off = auto-pay'],
+    ['vaultPrompt','Time Vault prompt','When you press Next turn while Time Vault (or a card like it) is tapped, ask whether to skip that turn and untap it. Off = just take the turn.'],
+    ['autoResolve','Auto-apply obvious effects','When you press Resolve and exactly one clear effect applies (a +1/+1 counter, draw a card, 3 damage to your chosen target), it is applied at once. You are only asked when there is a real choice. Off = always show the effect window'],
     ['keywordIcons','Active keyword icons','Small icons on creatures for keywords they have right now from another permanent or a condition (wings = flying, wizard hat = hexproof…). Hover one for its name and source'],
     ['stateIcons','Game-state icons','A row of small pictures in the top bar (Storm, Monarch, Day/Night, Delirium, Threshold, Metalcraft, Poison…) that light up while that state applies. Hover one for the rule; the grey ones you set by clicking'],
     ['durationHints','Effect timers','Hourglass badge on permanents with a lasting effect, the explanation in the Active effects window, and a reminder when an effect tied to a source ends'],
+    ['replaceNotes','Replacement-effect notes','Log line showing which replacement effects changed an event and in what order (the order choice itself is always asked when it matters)'],
     ['costGuidance','Cost explanations','Explains alternative costs, taxes and Delve/Convoke when you cast (the cost windows themselves always appear)'],
     ['triggerPrompts','Triggered ability prompts','Stops to show detected triggered abilities'],
     ['dredgePrompts','Dredge prompt','When you would draw and have a dredge card in your graveyard, asks whether to dredge instead (the dredge rule itself is always correct)'],
@@ -7244,7 +8047,12 @@ function openSettings() {
         mk('Spell spotlight size','spotSize',0.6,1.5,0.1,v=>Math.round(v*100)+'%','Size of the card shown when a spell is cast or resolves')); })()
   ); }; drawAnim();
   const themeBox=h('div'); themeBox.append((()=>{ const sel=h('select'); for(const [v,l] of UI_THEMES) sel.append(h('option',{value:v,text:l})); sel.value=settings.uiTheme||'default'; sel.addEventListener('change',()=>{settings.uiTheme=sel.value;saveSettings();}); return h('div',{class:'setrow'},h('label',{text:'Interface theme'}),sel,h('span',{class:'muted small',text:'Colours of the panels and buttons'})); })());
-  const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'});
+  themeBox.append((()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicStyle==='lofi'; const go=h('button',{text:'Apply Pixel cosmos set',onclick:()=>{ settings.uiTheme='cosmos'; settings.sleevePreset='pixcosmos'; settings.matPreset='pixcosmos'; settings.custom=false;
+      saveSettings(); try{applySettings();}catch(e){} try{applyUiTheme();}catch(e){} try{applySleeve();}catch(e){} toast('Pixel cosmos','Theme, sleeve and playmat set.'); }});
+    // the music switch is the same setting as Settings > Sound > Music style, so it keeps its state
+    cb.addEventListener('change',()=>{ settings.sound.musicStyle=cb.checked?'lofi':'ambient'; if(cb.checked){settings.sound.music=true;settings.sound.on=true;} saveSettings(); try{musicSettingsChanged();}catch(e){} });
+    return h('div',{class:'setrow'},h('label',{text:'One-click set'}),go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center'},cb,'Cosmic low-fi music')); })());
+  const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox);
   { const box = h('div'), draw = () => {
       const mk = (v, label, desc) => { const r = h('input', { type: 'radio', name: 'laymode' }); r.checked = (settings.layoutMode || 'updated') === v; r.addEventListener('change', () => { settings.layoutMode = v; saveSettings(); applyLayout(); render(); draw(); });
@@ -7287,6 +8095,8 @@ function openSettings() {
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.vol; r.addEventListener('input',()=>{settings.sound.vol=+r.value;saveSettings();}); r.addEventListener('change',()=>sfx('draw')); return h('div',{class:'setrow'},h('label',{text:'Volume'}),r); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.music!==false; cb.addEventListener('change',()=>{settings.sound.music=cb.checked;saveSettings();musicSettingsChanged();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Background music'}),h('span',{class:'muted small',text:'A calm, never-ending ambient loop generated in the app. It starts after your first click.'}))); })(),
+    (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),h('option',{value:'lofi',text:'Cosmic low-fi (beat, electric piano, vinyl)'})); sel.value=settings.sound.musicStyle==='lofi'?'lofi':'ambient'; sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
+    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Soft kick, snare and swung hats in the Cosmic low-fi style. Turn off for just keys, bass and crackle.'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.musicVol; r.addEventListener('input',()=>{settings.sound.musicVol=+r.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music volume'}),r); })(),
     ...SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })
   ); }; drawSound();
@@ -7298,7 +8108,7 @@ function openSettings() {
     slider('Hand cards', 'hs', 0.6, 1.6, 0.05, pct),
     h('div',{class:'fhead',text:'Card sleeves'}), sleeveBox);
   P.board.append(
-    h('div', { class: 'fhead', text: 'Board layout' }),
+    P.layout,
     ...LAYOUT_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = layoutOn(k); cb.addEventListener('change', () => { settings.layout[k] = cb.checked; saveSettings(); render(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); }),
     h('div', { class: 'fhead', text: 'Playmat' }),
     matBox,
@@ -7306,10 +8116,36 @@ function openSettings() {
     h('div', { class: 'fhead', text: 'Board frame' }),
     frameBox,
     h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Playmat images are stored in this browser only, so they work offline.' }));
-  const tabbar = h('div', { class: 'settabs' }), stage = h('div');
-  const showTab = k => { settingsTab = k; for (const b of tabbar.children) b.classList.toggle('on', b.dataset.k === k); stage.replaceChildren(P[k]); };
-  for (const [k, label] of SET_TABS) tabbar.append(h('button', { class: 'settabbtn', 'data-k': k, text: label, onclick: () => showTab(k) }));
-  body.append(tabbar, stage); showTab(P[settingsTab] ? settingsTab : 'gfx');
+  // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
+  const tabbar = h('div', { class: 'setnav' }), stage = h('div', { class: 'setmain' });
+  const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings…' });
+  const applyFilter = q => {
+    q = q.trim().toLowerCase();
+    for (const k of Object.keys(P)) { if (k === 'layout') continue;
+      const kids = [...P[k].children]; for (const el of kids) el.hidden = false;
+      if (!q) continue;
+      for (const el of kids) if (!el.classList.contains('fhead')) el.hidden = !el.textContent.toLowerCase().includes(q);
+      kids.forEach((el, i) => { if (!el.classList.contains('fhead')) return; let any = false; for (let n = i + 1; n < kids.length && !kids[n].classList.contains('fhead'); n++) if (!kids[n].hidden) any = true; el.hidden = !any; });
+    }
+  };
+  const showTab = k => {
+    settingsTab = k; search.value = ''; applyFilter('');
+    for (const b of tabbar.querySelectorAll('.settabbtn')) b.classList.toggle('on', b.dataset.k === k);
+    const lbl = SET_TABS.find(t => t[0] === k)[1];
+    stage.replaceChildren(h('div', { class: 'settitle' }, h('h3', { text: lbl }), h('div', { class: 'muted small', text: TAB_INFO[k][1] })), P[k]); stage.scrollTop = 0;
+  };
+  search.addEventListener('input', () => {
+    const q = search.value; for (const b of tabbar.querySelectorAll('.settabbtn')) b.classList.remove('on');
+    if (!q.trim()) { showTab(settingsTab); search.focus(); return; }
+    applyFilter(q);
+    const out = [];
+    for (const [k, label] of SET_TABS) { if (![...P[k].children].some(el => !el.hidden && !el.classList.contains('fhead'))) continue; out.push(h('div', { class: 'settitle' }, h('h3', { text: label })), P[k]); }
+    stage.replaceChildren(...(out.length ? out : [h('div', { class: 'muted', style: 'padding:18px 4px', text: 'No setting matches \u201c' + q + '\u201d.' })])); stage.scrollTop = 0;
+  });
+  tabbar.append(search);
+  for (const [k, label] of SET_TABS) tabbar.append(h('button', { class: 'settabbtn', 'data-k': k, onclick: () => showTab(k) }, h('span', { class: 'ti', text: TAB_INFO[k][0] }), h('span', { text: label })));
+  const shell = h('div', { class: 'setshell' }, tabbar, stage);
+  body.append(shell); showTab(P[settingsTab] ? settingsTab : 'gfx');
   m.foot.append(
     h('button', { text: 'Welcome tour…', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
     h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); saveSettings(); m.close(); openSettings(); } }),
@@ -7415,6 +8251,7 @@ function dropCardOn(id, kind, x) {
 let dragJustEnded = false;
 document.addEventListener('click', ev => { if (dragJustEnded) { ev.stopPropagation(); ev.preventDefault(); } }, true);
 function pointerDragBegin(ev, e, c, zone) {
+  if (state && state.discarding) return;
   if (ev.button !== 0 || !state || (ev.target.closest && ev.target.closest('button, input, select'))) return;
   const sx = ev.clientX, sy = ev.clientY;
   let clone = null, cx = 0, cy = 0, w = 0, h2 = 0, offX = 0, offY = 0, lx = sx, ly = sy, vx = 0, vy = 0, tapped = false;
@@ -7475,6 +8312,13 @@ function pointerDragBegin(ev, e, c, zone) {
 // status: 'ok' = the app handles it, 'part' = recognised but some of it is done by hand, 'unk' = not understood, 'info' = reminder text.
 const KW_ENFORCED = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'spree', 'suspend', 'living weapon', 'dredge']);
 const STATIC_PATTERNS = [
+  [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
+  [/^if you would draw a card, you may skip that draw instead\.?$/i, 'A "Skip draws" icon appears in the top bar while this is on the battlefield. Switch it on and every card you would draw is skipped (rule 614.1a); switch it off to draw normally.'],
+  [/^if you would begin your turn while (?:this artifact|~) is tapped, you may skip that turn instead\. If you do, untap (?:this artifact|~)\.?$/i, 'When you press Next turn while it is tapped, a window asks whether to skip that turn. Skipping untaps it. (Turn off under Tutor mode \u2192 Time Vault prompt.)'],
+  [/^if an opponent would draw a card except the first one they draw in each of their draw steps, instead you create a Treasure token\./i, 'Press the \uD83C\uDCCF button by your opponent\u2019s life and choose "an extra draw": the draw is replaced by a Treasure token for you, and "whenever an opponent draws" triggers do not fire.'],
+  [/^if a creature an opponent controls would die, exile it instead\.?$/i, 'A replacement effect (rule 614) that only matters for your opponent\u2019s creatures. The app does not track an opposing board, so if you play one out by hand, exile their dying creatures instead of putting them in the graveyard.', 'info'],
+  [/^you may play lands from your graveyard\.?$/i, 'Open your graveyard and press "Play land" on a land card: it uses a land drop and goes through the normal land-play steps (landfall, shock lands, and so on).'],
+  [/^as long as (?:~|this artifact) is untapped, each spell that would cost less than three mana to cast costs three mana to cast/i, 'Cost floor: while it is untapped, spells you cast cost at least three mana in total. The app raises the cost it asks you to pay (the hand tooltip says why).'],
   [/\bskip your draw step\b/i, 'Skips your draw step (the app skips the draw).'],
   [/maximum hand size/i, 'Changes your maximum hand size (applied at cleanup).'],
   [/would be put into (?:your |a )?graveyard from anywhere, exile/i, 'Replacement effect: cards that would go to a graveyard are exiled instead.'],
@@ -7620,6 +8464,7 @@ function compileCardOne(c) {
       const rn = restrictionNote(stripped);
       if (isLand) push(text, 'mana', 'ok', 'Mana ability of a land: taps for the listed mana' + (/ for each | \{C\}\{C\}\./.test(stripped) ? ' (the amount is counted from the board when you tap)' : '') + '.' + rn.note);
       else if (r && !extra) push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability: taps for ${r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')}.` + rn.note, { restriction: rn });
+      else if (extra && /^\{T\},\s*Sacrifice [^,:]+:/.test(stripped) && !/,\s*(?!Sacrifice)[A-Z{]/.test(stripped.split(':')[0].replace(/^\{T\},\s*Sacrifice [^,:]+/, '')) && recognizedEffects(stripped.replace(/^[^:]+:\s*/, '').replace(nameRe, '~')).length) push(text, 'mana', 'ok', 'Mana ability with a sacrifice cost: the tap and the sacrifice are paid as you activate it, and the mana is added at once without using the stack (rule 605.3b).' + rn.note);
       else push(text, 'mana', 'part', (extra ? 'Mana ability with an extra cost. The tap is handled, the extra cost (' + stripped.split(':')[0].replace('{T},', '').trim() + ') is not enforced.' : 'Mana ability the app cannot produce automatically: float the mana by hand.') + rn.note);
       continue;
     }
@@ -7645,7 +8490,7 @@ function compileCardOne(c) {
       push(text, 'static', 'ok', note); continue;
     }
     const sp = STATIC_PATTERNS.find(([re]) => re.test(stripped) || re.test(norml));
-    if (sp && sp[1]) { push(text, 'static', 'ok', sp[1]); continue; }
+    if (sp && sp[1]) { push(text, 'static', sp[2] || 'ok', sp[1]); continue; }
     // spell effect
     if (isSpell) {
       const eff = recognizedEffects(stripped);
@@ -7679,7 +8524,7 @@ function compileCardOne(c) {
   // v0.80 hand-written definitions override whatever the reader decided for the lines they cover.
   if (defFor(info.name)) for (const l of lines) {
     if (!['spell', 'triggered', 'activated', 'modal'].includes(l.kind)) continue;
-    let part = String(l.text).replace(nameRe, '~'), mm;
+    let part = String(l.text).replace(nameRe, '~').replace(/^[A-Z][A-Za-z' ]+\s\u2014\s/, ''), mm;   // v0.86: drop a "Landfall — " style word
     if (l.kind === 'triggered' && (mm = part.match(/^(?:When|Whenever|At)\b[^,]*,\s*([\s\S]*)$/i))) part = mm[1];
     else if (l.kind === 'activated' && (mm = part.match(/^[^:]+:\s*([\s\S]*)$/))) part = mm[1];
     const L = defLine(info.name, part) || defLine(info.name, l.text);
@@ -7710,7 +8555,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i];
+const DEP_HANDLED = [/^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 function uncoveredClauses(effectText) {
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
@@ -7718,6 +8563,7 @@ function uncoveredClauses(effectText) {
   try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; } catch (e) { /* ignore */ }
   const missed = [];
   sents.forEach((x, i) => {
+    if (/^(?:Flashback|Kicker|Multikicker|Buyback|Cycling|Escape|Jump-start|Retrace|Entwine|Storm|Foretell|Suspend)\b/i.test(x)) return;
     if (/^(?:Activate|Cast this spell|This ability|You can't|Spend only|Play this|Cast only|Cast it|This spell can't be countered)\b/i.test(x)) return;
     if (i > 0 && DEP_SENT.test(x)) { if (!DEP_HANDLED.some(r => r.test(x))) missed.push(x); return; }
     let ok = false; try { ok = recognizedEffects(x).length > 0; } catch (e) { /* ignore */ }
@@ -7900,7 +8746,7 @@ function init() {
   $('#utilityMenu').addEventListener('click', e => e.stopPropagation());
   $('#btnDeckEdit').addEventListener('click', () => { toggleUtilityMenu(false); openDeckEditor(); });
   setupVersionBadge();
-  if (window.desktop && window.desktop.ghCheck && settings.autoUpdateCheck !== false) setTimeout(async () => { try { const r = await window.desktop.ghCheck(); if (r && r.ok && r.newer) { toast('Update available', `Version ${r.latest} is on GitHub. Open the menu → Update app to read what changed and install it.`); const b = $('#btnUpdate'); if (b) b.textContent = b.textContent.replace(/ ●$/, '') + ' ●'; } } catch (e) { /* offline: stay quiet */ } }, 4000);
+  if (window.desktop && window.desktop.ghCheck && settings.autoUpdateCheck !== false) setTimeout(async () => { try { const r = await window.desktop.ghCheck(); if (r && r.ok && r.newer) { const b = $('#btnUpdate'); if (b) b.textContent = b.textContent.replace(/ \u25CF$/, '') + ' \u25CF'; if (settings.updatePrompt !== false) { if (settings.skipUpdate !== r.latest) openUpdatePrompt(r); } else toast('Update available', `Version ${r.latest} is on GitHub. Open the menu \u2192 Update app to read what changed and install it.`); } } catch (e) { /* offline: stay quiet */ } }, 3500);
   if (window.desktop) { $('#btnUpdate').hidden = false; $('#btnUpdate').addEventListener('click', () => { toggleUtilityMenu(false); openUpdate(); }); }
   if ($('#btnFx')) $('#btnFx').addEventListener('click', openEffects);
   if ($('#btnFxMenu')) $('#btnFxMenu').addEventListener('click', () => { toggleUtilityMenu(false); openEffects(); });
@@ -7930,6 +8776,7 @@ function init() {
   window.addEventListener('offline', () => setImgStatus('Images: offline'));
   for (const b of $$('[data-open]')) b.addEventListener('click', () => openZone(b.dataset.open));
   $('#btnOppDraw').addEventListener('click', openOppDraw);
+  $('#btnOppSearch').addEventListener('click', openOppSearch);
   $('#btnTokens').addEventListener('click', openTokenTray);
   for (const b of $$('[data-opp]')) b.addEventListener('click', () => changeOppLife(parseInt(b.dataset.opp, 10)));
   $('#btnCombat').addEventListener('click', openCombatHelper);
