@@ -2,9 +2,10 @@
 // CR 702.128a Embalm: "[Cost], Exile this card from your graveyard: Create a token that's a copy of this card, except it's white, it has no mana cost, and it's a Zombie in addition to its other types. Activate only as a sorcery."
 // CR 702.129a Eternalize: the same, except the token is black and 4/4.
 // CR 702.84a  Unearth: "[Cost]: Return this card from your graveyard to the battlefield. It gains haste. Exile it at the beginning of the next end step. If it would leave the battlefield, exile it instead of putting it anywhere else. Activate only as a sorcery."
+// CR 702.97a  Scavenge: "[Cost], Exile this card from your graveyard: Put a number of +1/+1 counters equal to this card's power on target creature. Activate only as a sorcery."  (The power is the one it had in the graveyard: its printed power.)
 // CR 702.107a Outlast: "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."  (read in activatedAbilitiesFor)
 // CR 702.88a  Rebound: "If this spell was cast from your hand, instead of putting it into your graveyard as it resolves, exile it and, at the beginning of your next upkeep, you may cast this card from exile without paying its mana cost."
-const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
+const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth|Scavenge)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
 function gyAbilitiesFor(c) {
   if (!c || c.token || !state) return [];
   const info = cardInfo(c.name); if (!info) return []; const out = [];
@@ -35,6 +36,12 @@ function useGyAbility(id, kind) {
       b.card.exileInstead = true; addKwFx(id, 'haste', { until: 'manual' });
       addFx({ kind: 'delayed', when: 'end', action: 'exile', targetId: id, targetName: b.card.name, text: `Exile ${b.card.name} (unearth).`, srcName: b.card.name });
       log(`${b.card.name}: unearthed. It has haste, is exiled at the beginning of the next end step, and is exiled instead if it would leave the battlefield`);
+    } else if (kind === 'scavenge') {
+      const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling it is part of the cost
+      const n = Math.max(0, ptCalc(c0).p || 0), crs = state.battlefield.filter(x => permTypeInfo(x).types.has('creature'));
+      log(`${c0.name}: scavenge paid; choose a creature to get ${n} +1/+1 counter${n === 1 ? '' : 's'}`);
+      if (!crs.length) log('Scavenge: there is no creature to target'); else if (crs.length === 1) addCounter(crs[0].id, n, 'plus');
+      else openPickCards({ title: `Scavenge: put ${n} +1/+1 counter${n === 1 ? '' : 's'} on target creature`, cards: crs, max: 1, min: 1, note: `Counters equal to ${c0.name}'s power (${n}).`, done: picked => { if (picked[0]) addCounter(picked[0].id, n, 'plus'); } });
     } else {
       const info = cardInfo(g.name); const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling this card is part of the cost
       makeTokensFromDef(copyTokenDef(info, kind), 1, `${c0.name} (${kind})`);

@@ -129,7 +129,7 @@ function drawBoardStrip() {
     })))));
   // v0.90.2 floating mana is shown once (top bar), not twice; the strip carries the Next phase / Next turn buttons instead.
   const info = h('div', { class: 'bs-info' },
-    state.stack.length ? h('span', { class: 'bs-stack', text: `stack: ${state.stack.length}` }) : null);
+    state.stack.length ? h('span', { class: 'bs-stack', text: `stack ${state.stack.length}` }) : null);
   const acts = bsActionsEl(); el.replaceChildren(track, info, acts);
   scheduleLayout();
 }
@@ -139,6 +139,9 @@ function placeBoardStrip() {
   const zs = [...el.children]; const setZ = v => zs.forEach(k => { k.style.zoom = v; }); el.classList.remove('tight', 'tighter'); setZ('');
   const over = () => el.scrollWidth > el.clientWidth + 1;
   if (over()) { el.classList.add('tight'); if (over()) { el.classList.add('tighter'); let z = 0.95; while (over() && z > 0.6) { setZ(z.toFixed(2)); z -= 0.05; } } }
+  // v0.96.18 the bar fills like a loading bar up to the end of the step you are in
+  const now = el.querySelector('.bs-step.now'), r = el.getBoundingClientRect();
+  if (now && r.width) { const nr = now.getBoundingClientRect(); el.style.setProperty('--fill', Math.max(0, Math.round(nr.right - r.left + 5)) + 'px'); } else el.style.setProperty('--fill', '0px');
 }
 window.addEventListener('resize', () => { try { placeBoardStrip(); } catch (e) { /* ignore */ } });
 

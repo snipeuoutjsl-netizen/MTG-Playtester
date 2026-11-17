@@ -1564,3 +1564,18 @@ body.responding #row-hand .card.cast-ready { animation: respondGlow 1.4s ease-in
 #boardstrip { grid-area: strip; align-self: center; justify-self: stretch; width: auto; margin: 0; }
 body.strip-on #mat { grid-template-rows: minmax(0, 1fr) auto minmax(0, 40%); grid-template-areas: "creatures creatures piles" "strip strip piles" "noncreature lands piles"; }
 body.strip-on.lay-lanes #mat { grid-template-rows: minmax(0, 1fr) auto minmax(calc(var(--ch) + 44px), 44%); grid-template-areas: "creatures creatures piles" "strip strip piles" "lands noncreature piles"; }
+
+/* v0.96.18 the turn-flow bar never changes size: fixed height, fixed button slot, steady chip weight, stack count floats; and it fills like a loading bar */
+#boardstrip { height: 54px; box-sizing: border-box; flex-wrap: nowrap; overflow: hidden; --fill: 0px; }
+#boardstrip > * { position: relative; z-index: 1; }
+#boardstrip .bs-actions { flex: 0 0 auto; min-width: 440px; justify-content: flex-end; }
+#boardstrip .bs-step.now, #boardstrip .bs-step { font-weight: 600; }
+#boardstrip .bs-info { position: relative; flex: 0 0 0; width: 0; padding: 0; margin: 0; gap: 0; overflow: visible; }
+#boardstrip .bs-stack { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); white-space: nowrap; padding: 1px 8px; border-radius: 999px; background: rgba(255,157,110,.16); border: 1px solid rgba(255,157,110,.5); font-size: 10px; }
+#boardstrip::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 0; width: var(--fill, 0px); border-radius: inherit; pointer-events: none;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #e3b95c) 10%, transparent), color-mix(in srgb, var(--accent, #e3b95c) 34%, transparent)); box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent, #e3b95c) 85%, transparent), 4px 0 14px -4px color-mix(in srgb, var(--accent, #e3b95c) 55%, transparent); transition: width .7s cubic-bezier(.22,.8,.2,1); }
+#boardstrip::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 0; width: var(--fill, 0px); border-radius: inherit; pointer-events: none; transition: width .7s cubic-bezier(.22,.8,.2,1);
+  background: repeating-linear-gradient(115deg, rgba(255,255,255,.07) 0 8px, transparent 8px 16px); background-size: 32px 100%; animation: bsStripes 1.6s linear infinite; }
+@keyframes bsStripes { to { background-position: 32px 0; } }
+@media (prefers-reduced-motion: reduce) { #boardstrip::after { animation: none; } #boardstrip::before { transition: none; } }
+body.responding #boardstrip .bs-step { opacity: .55; }
