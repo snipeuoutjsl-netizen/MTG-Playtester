@@ -42,7 +42,9 @@ function spendOnlyOk(only, ctx) {
   if (/\bcreature spells?\b/.test(lo)) return /\bCreature\b/.test(t);
   return true;
 }
-function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => norm(x.name) === norm(n)))) return ab.alt.fixed; return ab.fixed; }
+// Card names compare without punctuation: the data calls it "Urza's Power Plant" while the other Tron lands' Oracle text says "Urza's Power-Plant".
+const nameKey = n => norm(String(n || '').split(' // ')[0]).replace(/[^a-z0-9]/g, '');
+function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => nameKey(x.name) === nameKey(n)))) return ab.alt.fixed; return ab.fixed; }
 // The most productive fixed multi-mana ability of a land that may be used for ctx, or null (a normal one-mana land).
 function landMulti(c, anyCtx) {
   let best = null;
