@@ -25,6 +25,7 @@ function landManaAbilities(c) {
     for (const sn of sents.slice(1)) { let q;
       if ((q = sn.match(/^Spend this mana only (?:to|on) (.*?)\.?$/i))) ab.only = c.chosen ? q[1].replace(/the chosen type/i, 'the ' + c.chosen.toLowerCase() + ' type') : q[1];
       else if ((q = sn.match(/^~ deals (\d+) damage to you\.?$/i))) ab.dmg += +q[1];
+      else if ((q = sn.match(/^If a card is exiled with ~, add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.altExiled = [...q[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);   // imprint-style: "If a card is exiled with this land, add {C}{C} instead"
       else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; 
       else if ((q = sn.match(/^You lose (\d+) life\.?$/i))) ab.dmg += +q[1];
       else if (sn.trim()) ab.unread.push(sn.trim()); }   // v0.96.6 every sentence of the ability is read; what is not understood is reported, never skipped silently
@@ -46,11 +47,11 @@ function spendOnlyOk(only, ctx) {
 // (supertypes, card types and subtypes, punctuation ignored) \u2014 never against what the card is called.
 const typeKey = t => String(t || '').toLowerCase().replace(/[\u2019']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 function hasTypePhrase(c, phrase) { const line = typeKey(frontType(c) || ''), want = typeKey(phrase); return !!want && (' ' + line + ' ').includes(' ' + want + ' '); }
-function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => hasTypePhrase(x, n)))) return ab.alt.fixed; return ab.fixed; }
+function abFixed(ab, c) { if (ab.altExiled && c && c.imprint) return ab.altExiled; if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => hasTypePhrase(x, n)))) return ab.alt.fixed; return ab.fixed; }
 // The most productive fixed multi-mana ability of a land that may be used for ctx, or null (a normal one-mana land).
 function landMulti(c, anyCtx) {
   let best = null;
-  for (const ab of landManaAbilities(c)) { const f = abFixed(ab); if (!f || f.length < 2) continue; if (ab.only && !anyCtx && !spendOnlyOk(ab.only, PAY_CTX)) continue; if (!best || f.length > best.fixed.length) best = { fixed: f, dmg: ab.dmg, life: ab.life, only: ab.only }; }
+  for (const ab of landManaAbilities(c)) { const f = abFixed(ab, c); if (!f || f.length < 2) continue; if (ab.only && !anyCtx && !spendOnlyOk(ab.only, PAY_CTX)) continue; if (!best || f.length > best.fixed.length) best = { fixed: f, dmg: ab.dmg, life: ab.life, only: ab.only }; }
   return best;
 }
 // Damage or life you pay each time a one-ability land is tapped (Mana Confluence, City of Brass). Lands with several abilities are left alone.

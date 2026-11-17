@@ -457,7 +457,7 @@ function onBattlefield(c) { return !!state && state.battlefield.some(x => x.id =
 function parseSubject(raw, g) {
   let s = String(raw).toLowerCase().replace(/[’]/g, "'").replace(/\.$/, '').trim();
   const nm = g.name.split(' // ')[0].toLowerCase();
-  if (s === nm || s === '~' || s === 'this creature' || s === 'this permanent') return { self: true, test: c => c.id === g.id };
+  if (s === nm || s === '~' || s === 'this creature' || s === 'this permanent' || s === 'this token') return { self: true, test: c => c.id === g.id };
   if (/opponent/.test(s) || /\b(that|with|target|enchanted|equipped|attached|named|who|whose|which|dealt|not)\b/.test(s)) return null;
   const mine = /\byou control\b/.test(s), general = /^(each|all|every)\b/.test(s) || /^other\b/.test(s);
   if (!mine && !general && !/^(creatures|lands|artifacts|enchantments|permanents|planeswalkers)\b/.test(s)) return null;

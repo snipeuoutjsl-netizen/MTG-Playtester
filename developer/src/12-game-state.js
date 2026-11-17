@@ -88,7 +88,7 @@ function moveCard(id, to, pos) {
   } else {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
-    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
     delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });

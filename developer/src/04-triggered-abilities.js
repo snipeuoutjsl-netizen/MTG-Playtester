@@ -8,7 +8,7 @@ const MAIN_STEPS = [[/\b(?:precombat|first) main phase\b/, 'main1'], [/\b(?:post
 function selfNameRe(full) {
   const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : '';
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
-  return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
+  return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle|token)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
 function parseTriggers(c) {
   if (!c) return [];
@@ -553,9 +553,9 @@ function effectOptionsBase(tx, obj) {
     } });
   }
   // v0.95.2 Imprint: "you may exile a [nonartifact, nonland] card from your hand" (Chrome Mox). The exiled card is remembered on the source; its colours feed the mana ability.
-  { const im = tx.match(/\bexile (?:an?|one) ([a-z, \-]*?)card from your hand\b/i); if (im && obj.sourceId && /imprint/i.test(cardText((findCard(obj.sourceId) || {}).card || {}) || '')) {
+  { const im = tx.match(/\bexile (?:an?|one) ([a-z, \-]*?)card(?: with mana value (\d+) or (greater|less))? from your hand\b/i); if (im && obj.sourceId && /imprint/i.test(cardText((findCard(obj.sourceId) || {}).card || {}) || '')) {
     const words = im[1].toLowerCase().split(/[ ,]+/).filter(Boolean), srcN = obj.sourceName;
-    const okType = c => { const t = frontType(c); return words.every(w => /^non(.+)$/.test(w) ? !new RegExp('\\b' + w.slice(3) + '\\b', 'i').test(t) : new RegExp('\\b' + w + '\\b', 'i').test(t)); };
+    const okType = c => { const t = frontType(c), inf = cardInfo(c.name) || {}; if (im[2] && (im[3].toLowerCase() === 'greater' ? (inf.cmc || 0) < +im[2] : (inf.cmc || 0) > +im[2])) return false; return words.every(w => w === 'colorless' ? !((inf.col || []).length) :  /^non(.+)$/.test(w) ? !new RegExp('\\b' + w.slice(3) + '\\b', 'i').test(t) : new RegExp('\\b' + w + '\\b', 'i').test(t)); };   // v0.96.30 "colorless" and "with mana value N or greater/less" (Ugin's Labyrinth)
     opts.push({ full: true, label: `Imprint: exile ${im[1].trim() ? 'a ' + im[1].trim() + ' ' : 'a '}card from your hand`, fn: () => {
       const cands = state.hand.filter(okType);
       if (!cands.length) { toast('Nothing to imprint', `You have no ${im[1].trim() || ''} card in hand to exile, so ${srcN} stays without an imprinted card.`); return; }

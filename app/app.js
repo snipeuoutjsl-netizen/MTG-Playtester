@@ -538,7 +538,7 @@ function onBattlefield(c) { return !!state && state.battlefield.some(x => x.id =
 function parseSubject(raw, g) {
   let s = String(raw).toLowerCase().replace(/[’]/g, "'").replace(/\.$/, '').trim();
   const nm = g.name.split(' // ')[0].toLowerCase();
-  if (s === nm || s === '~' || s === 'this creature' || s === 'this permanent') return { self: true, test: c => c.id === g.id };
+  if (s === nm || s === '~' || s === 'this creature' || s === 'this permanent' || s === 'this token') return { self: true, test: c => c.id === g.id };
   if (/opponent/.test(s) || /\b(that|with|target|enchanted|equipped|attached|named|who|whose|which|dealt|not)\b/.test(s)) return null;
   const mine = /\byou control\b/.test(s), general = /^(each|all|every)\b/.test(s) || /^other\b/.test(s);
   if (!mine && !general && !/^(creatures|lands|artifacts|enchantments|permanents|planeswalkers)\b/.test(s)) return null;
@@ -1076,7 +1076,7 @@ const MAIN_STEPS = [[/\b(?:precombat|first) main phase\b/, 'main1'], [/\b(?:post
 function selfNameRe(full) {
   const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : '';
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
-  return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
+  return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle|token)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
 function parseTriggers(c) {
   if (!c) return [];
@@ -1621,9 +1621,9 @@ function effectOptionsBase(tx, obj) {
     } });
   }
   // v0.95.2 Imprint: "you may exile a [nonartifact, nonland] card from your hand" (Chrome Mox). The exiled card is remembered on the source; its colours feed the mana ability.
-  { const im = tx.match(/\bexile (?:an?|one) ([a-z, \-]*?)card from your hand\b/i); if (im && obj.sourceId && /imprint/i.test(cardText((findCard(obj.sourceId) || {}).card || {}) || '')) {
+  { const im = tx.match(/\bexile (?:an?|one) ([a-z, \-]*?)card(?: with mana value (\d+) or (greater|less))? from your hand\b/i); if (im && obj.sourceId && /imprint/i.test(cardText((findCard(obj.sourceId) || {}).card || {}) || '')) {
     const words = im[1].toLowerCase().split(/[ ,]+/).filter(Boolean), srcN = obj.sourceName;
-    const okType = c => { const t = frontType(c); return words.every(w => /^non(.+)$/.test(w) ? !new RegExp('\\b' + w.slice(3) + '\\b', 'i').test(t) : new RegExp('\\b' + w + '\\b', 'i').test(t)); };
+    const okType = c => { const t = frontType(c), inf = cardInfo(c.name) || {}; if (im[2] && (im[3].toLowerCase() === 'greater' ? (inf.cmc || 0) < +im[2] : (inf.cmc || 0) > +im[2])) return false; return words.every(w => w === 'colorless' ? !((inf.col || []).length) :  /^non(.+)$/.test(w) ? !new RegExp('\\b' + w.slice(3) + '\\b', 'i').test(t) : new RegExp('\\b' + w + '\\b', 'i').test(t)); };   // v0.96.30 "colorless" and "with mana value N or greater/less" (Ugin's Labyrinth)
     opts.push({ full: true, label: `Imprint: exile ${im[1].trim() ? 'a ' + im[1].trim() + ' ' : 'a '}card from your hand`, fn: () => {
       const cands = state.hand.filter(okType);
       if (!cands.length) { toast('Nothing to imprint', `You have no ${im[1].trim() || ''} card in hand to exile, so ${srcN} stays without an imprinted card.`); return; }
@@ -3626,7 +3626,7 @@ function moveCard(id, to, pos) {
   } else {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
-    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
     delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });
@@ -4638,6 +4638,7 @@ function landManaAbilities(c) {
     for (const sn of sents.slice(1)) { let q;
       if ((q = sn.match(/^Spend this mana only (?:to|on) (.*?)\.?$/i))) ab.only = c.chosen ? q[1].replace(/the chosen type/i, 'the ' + c.chosen.toLowerCase() + ' type') : q[1];
       else if ((q = sn.match(/^~ deals (\d+) damage to you\.?$/i))) ab.dmg += +q[1];
+      else if ((q = sn.match(/^If a card is exiled with ~, add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.altExiled = [...q[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);   // imprint-style: "If a card is exiled with this land, add {C}{C} instead"
       else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; 
       else if ((q = sn.match(/^You lose (\d+) life\.?$/i))) ab.dmg += +q[1];
       else if (sn.trim()) ab.unread.push(sn.trim()); }   // v0.96.6 every sentence of the ability is read; what is not understood is reported, never skipped silently
@@ -4659,11 +4660,11 @@ function spendOnlyOk(only, ctx) {
 // (supertypes, card types and subtypes, punctuation ignored) \u2014 never against what the card is called.
 const typeKey = t => String(t || '').toLowerCase().replace(/[\u2019']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 function hasTypePhrase(c, phrase) { const line = typeKey(frontType(c) || ''), want = typeKey(phrase); return !!want && (' ' + line + ' ').includes(' ' + want + ' '); }
-function abFixed(ab) { if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => hasTypePhrase(x, n)))) return ab.alt.fixed; return ab.fixed; }
+function abFixed(ab, c) { if (ab.altExiled && c && c.imprint) return ab.altExiled; if (ab.per) return Array(Math.max(1, countPermsOf(ab.per.what))).fill(ab.per.col); if (ab.alt && state && ab.alt.need.every(n => state.battlefield.some(x => hasTypePhrase(x, n)))) return ab.alt.fixed; return ab.fixed; }
 // The most productive fixed multi-mana ability of a land that may be used for ctx, or null (a normal one-mana land).
 function landMulti(c, anyCtx) {
   let best = null;
-  for (const ab of landManaAbilities(c)) { const f = abFixed(ab); if (!f || f.length < 2) continue; if (ab.only && !anyCtx && !spendOnlyOk(ab.only, PAY_CTX)) continue; if (!best || f.length > best.fixed.length) best = { fixed: f, dmg: ab.dmg, life: ab.life, only: ab.only }; }
+  for (const ab of landManaAbilities(c)) { const f = abFixed(ab, c); if (!f || f.length < 2) continue; if (ab.only && !anyCtx && !spendOnlyOk(ab.only, PAY_CTX)) continue; if (!best || f.length > best.fixed.length) best = { fixed: f, dmg: ab.dmg, life: ab.life, only: ab.only }; }
   return best;
 }
 // Damage or life you pay each time a one-ability land is tapped (Mana Confluence, City of Brass). Lands with several abilities are left alone.
@@ -6130,8 +6131,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.29';
+const APP_VERSION = '0.96.30';
 const CHANGELOG = [
+  { v: '0.96.30', title: 'Urza\'s Saga Construct, imprint with conditions', notes: ['Fixed: the 0/0 Construct token that Urza\'s Saga makes ("This token gets +1/+1 for each artifact you control") was put into the graveyard the moment it was created. "This token" is now understood as the token itself in every static ability, so the Construct counts itself and your other artifacts.','Imprint (CR 607) now reads conditions on the exiled card: "a colorless card with mana value 7 or greater" (Ugin\'s Labyrinth), and "If a card is exiled with this land, add {C}{C} instead" makes the land tap for two.'] },
   { v: '0.96.29', title: 'Tron checks land types, not names', notes: ['"If you control an Urza\'s Mine and an Urza\'s Power-Plant" is now checked the way the rules define it (CR 205.3i): Urza\'s Mine, Urza\'s Power-Plant and Urza\'s Tower are land types, so the app looks at each permanent\'s type line and never at what the card is called. Any land with those types counts.'] },
   { v: '0.96.28', title: 'Lands stay on one row when they fit', notes: ['A row of lands (or artifacts) no longer wraps to a second row while there is room: the zone now measures the real width of its cards (a tapped land is turned sideways and a stack of copies is wider) instead of assuming every card is the same width. Cards still shrink only when they truly cannot fit.'] },
   { v: '0.96.27', title: 'Tron lands fixed', notes: ['Urza\'s Mine, Power Plant and Tower now tap for their full amounts in any order. The cause: the card is named "Urza\'s Power Plant" but the Oracle text of the Mine and Tower says "Urza\'s Power-Plant", so they never found it. Names are now compared without punctuation.'] },
