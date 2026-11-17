@@ -1,0 +1,11 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.setViewportSize({width:1366,height:768});
+const box=async()=>p.evaluate(()=>{const r=document.querySelector('#handWrap > .zlabel').getBoundingClientRect();return [Math.round(r.left),Math.round(r.top),!!document.getElementById('btnHandSort')]});
+console.log(await box());
+const r=await p.evaluate(()=>{const r=document.querySelector('#handWrap > .zlabel').getBoundingClientRect();return {x:r.left+8,y:r.top+r.height/2}});
+await p.mouse.move(r.x,r.y);await p.mouse.down();await p.mouse.move(r.x+300,r.y-200,{steps:5});await p.mouse.up();
+console.log(await box());
+console.log(await p.evaluate(()=>localStorage.getItem('mtgpt.handBarPos')));await p.reload();console.log(await p.evaluate(()=>localStorage.getItem('mtgpt.handBarPos')));await p.waitForTimeout(1200);console.log(await box());
+await p.locator('#handWrap > .zlabel').dblclick({position:{x:6,y:6}});console.log(await box());
+await b.close()})();

@@ -1,0 +1,12 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+const st=()=>p.evaluate(()=>({style:__d.settings.sound.musicStyle,beat:__d.settings.sound.musicBeat,music:__d.settings.sound.music,on:__d.settings.sound.on,live:__d.music&&__d.music.style,ls:(localStorage.getItem('mtgpt.settings')||'').match(/"sound":\{[^}]*\}/)?.[0]}));
+console.log('start',JSON.stringify(await st()));
+await p.locator('button:has-text("⚙")').first().click();await p.click('#btnSettings');await p.click('.settabbtn[data-k=snd]');await p.waitForTimeout(300);
+await p.locator('.setmain select').first().selectOption('lofi');await p.waitForTimeout(500);
+console.log('after select',JSON.stringify(await st()));
+await p.click('.modal footer >> text=Close');await p.waitForTimeout(600);
+console.log('after close',JSON.stringify(await st()));
+await p.locator('button:has-text("⚙")').first().click();await p.click('#btnSettings');await p.click('.settabbtn[data-k=snd]');await p.waitForTimeout(300);
+console.log('reopen select value',await p.locator('.setmain select').first().inputValue());
+await b.close()})();

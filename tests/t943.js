@@ -1,0 +1,11 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.evaluate(()=>{const s=__d.state;s.step=__d.STEPS.findIndex(x=>x.id==='attack');s.stack=[];s.battlefield=[];const mk=(n)=>{const i=s.library.findIndex(x=>x.name===n);const [c]=s.library.splice(i,1);s.battlefield.push(c);return c};
+const a=mk('Grizzly Bears'),t=mk('Memnite'),n=mk('Psychic Frog'),sick=mk('Merfolk Looter');
+for(const c of [a,t,n,sick])c.sick=false;t.tapped=true;sick.sick=true;sick.enteredTurn=s.turn;a.counters={plus:5};__d.render()});
+console.log(await p.evaluate(()=>[...document.querySelectorAll('.cbadge')].map(e=>e.innerText.replace(/\n/g,' '))));
+await p.evaluate(()=>__d.openCombatHelper());await p.waitForTimeout(300);
+const btn=p.locator('.modal button:has-text("Attack with all")');
+console.log('label',await btn.innerText());await btn.click();
+console.log(await p.evaluate(()=>({on:[...document.querySelectorAll('.modal .tgl.on')].length,dis:[...document.querySelectorAll('.modal .tgl[disabled]')].length,note:[...document.querySelectorAll('.modal .muted')].map(e=>e.innerText)})));
+await b.close()})();

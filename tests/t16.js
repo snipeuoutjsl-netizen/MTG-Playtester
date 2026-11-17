@@ -1,0 +1,10 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+const ev=f=>p.evaluate(f);const dump=async l=>console.log(l,await ev(()=>JSON.stringify({m:[...document.querySelectorAll('.modal')].map(m=>m.innerText.replace(/\n/g,' | ').slice(0,260)),stack:__d.state.stack.map(c=>c.name),bf:__d.state.battlefield.map(c=>c.name),life:__d.state.life})));
+const click=async sel=>{const l=p.locator(sel);if(await l.count()){await l.first().click({timeout:3000});await p.waitForTimeout(450);return true}return false};
+await ev(()=>{const s=__d.state;s.step=3;const mv=(n,z)=>{const i=s.library.findIndex(c=>c.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c.id};mv('Swamp','battlefield');window.__fr=mv('Psychic Frog','graveyard');window.__re=mv('Reanimate','hand');__d.render()});
+await ev(()=>__d.castSpell(window.__re));await p.waitForTimeout(500);await dump('1');
+await click('.modal button:has-text("Choose")');await dump('2');await click('.modal button:has-text("Confirm targets")');await dump('3');
+for(const t of ['Continue','Pay and cast']){await click('.modal button:has-text("'+t+'")')}await dump('4');
+await click('#stackStage button:has-text("Resolve")');await dump('5');
+console.log(await ev(()=>[...document.querySelectorAll('.modal')].map(m=>m.innerText.replace(/\n/g,' | '))));await b.close()})();

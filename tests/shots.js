@@ -1,0 +1,12 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+const D='/tmp/claude-0/-home-claude/935b9de7-136a-5eff-9567-6732905a6b60/scratchpad/';
+await p.evaluate(()=>{window.desktop={info:async()=>({running:'0.94.6',source:'built-in',bundled:'0.94.6',override:null}),ghCheck:async()=>({ok:true,newer:true,current:'0.94.6',latest:'0.94.7',title:'Ninjutsu, one update window',notes:['Ninjutsu now works from your hand.','One update window instead of two.'],bytes:900000}),ghInstall:async()=>({ok:true,version:'0.94.7'}),onProgress:()=>()=>{},restart:()=>{},fromFolder:async()=>({cancelled:true}),fromUrl:async()=>({}),reset:async()=>({})}});
+await p.evaluate(()=>__d.openUpdate());await p.waitForTimeout(700);await p.screenshot({path:D+'s_update.png'});
+await p.evaluate(()=>document.querySelectorAll('.modal button:has-text("Close")').forEach(x=>x.click())).catch(()=>{});
+await p.keyboard.press('Escape');await p.waitForTimeout(300);
+await p.evaluate(()=>{const s=__d.state;s.stack=[];s.battlefield=[];const mk=(n,z)=>{const i=s.library.findIndex(x=>x.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c};
+ for(const n of ['Grizzly Bears','Memnite','Psychic Frog','Merfolk Looter'])mk(n,'battlefield').sick=false;s.battlefield[1].tapped=true;s.battlefield[3].sick=true;
+ s.step=__d.STEPS.findIndex(x=>x.id==='attack');__d.render();__d.openCombatHelper()});
+await p.waitForTimeout(500);await p.screenshot({path:D+'s_attack.png'});
+await b.close()})();

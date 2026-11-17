@@ -1,0 +1,11 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.evaluate(()=>{let cbs=[];window.__restarted=0;window.desktop={onProgress:cb=>{cbs.push(cb);return()=>{cbs=cbs.filter(x=>x!==cb)}},ghInstall:async()=>{const files=[['index.html',10236],['app.js',785166],['style.css',116717],['package.json',1519]],total=912638;let done=0;cbs.forEach(c=>c({phase:'start',total,done:0}));for(const [f,sz] of files){for(let k=1;k<=5;k++){await new Promise(r=>setTimeout(r,120));done+=sz/5;cbs.forEach(c=>c({phase:'download',file:f,done:Math.round(done),total}))}cbs.forEach(c=>c({phase:'verify',file:f,done:Math.round(done),total}))}cbs.forEach(c=>c({phase:'install'}));await new Promise(r=>setTimeout(r,200));cbs.forEach(c=>c({phase:'done'}));return {ok:true,version:'0.94.0'}},restart:()=>{window.__restarted++}};
+__d.openUpdatePrompt({ok:true,current:'0.93.2',latest:'0.94.0',newer:true,title:'Update window',notes:['A','B'],bytes:912638,needsInstaller:false});});
+await p.waitForTimeout(400);await p.screenshot({path:'/tmp/u1.png'});
+await p.click('.modal button:has-text("Update now")');await p.waitForTimeout(1300);await p.screenshot({path:'/tmp/u2.png'});
+console.log('mid',await p.evaluate(()=>({w:document.querySelector('.upd-fill').style.width,t:document.querySelector('.upd-txt').textContent})));
+await p.waitForTimeout(3000);await p.screenshot({path:'/tmp/u3.png'});
+console.log('end',await p.evaluate(()=>({w:document.querySelector('.upd-fill').style.width,btns:[...document.querySelectorAll('.modal footer button')].map(x=>x.innerText)})));
+await p.click('.modal button:has-text("Restart now")');console.log('restarted',await p.evaluate(()=>window.__restarted));
+await b.close()})();

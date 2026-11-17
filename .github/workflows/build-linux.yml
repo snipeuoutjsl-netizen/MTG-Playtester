@@ -1,0 +1,31 @@
+# Builds the Linux / Steam Deck AppImage on GitHub's own Ubuntu machine and attaches it to a release.
+# Run it from the repository's Actions tab: "Build Linux app" > Run workflow > type the release tag (for example v0.85.0).
+name: Build Linux app
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag of the release to attach the AppImage to (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install packages
+        run: npm install
+      - name: Build AppImage
+        run: npm run dist:linux
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.inputs.tag }}" dist/MTG-Playtester-*.AppImage --clobber --repo "${{ github.repository }}"

@@ -72,8 +72,14 @@ ipcMain.handle('upd:url', async (e, base) => {
   try {
     base = String(base || '').trim().replace(/\/+$/, '');
     if (!/^https:\/\//i.test(base)) return { ok: false, error: 'Enter an https:// address.' };
-    const man = await (await net.fetch(base + '/update.json')).json();
-    if (!man.version) throw new Error('update.json has no version.');
+    // v0.96.13 read update.json, or latest.json when that is what the address holds; say plainly which file is missing
+    let man = null;
+    for (const name of ['update.json', 'latest.json']) {
+      const r = await net.fetch(base + '/' + name, { cache: 'no-store' });
+      if (!r.ok) continue;
+      try { const j = await r.json(); if (j && /^\d+\.\d+\.\d+$/.test(String(j.version || ''))) { man = j; break; } } catch (err) { /* not JSON: try the next name */ }
+    }
+    if (!man) throw new Error('Neither update.json nor latest.json with a version was found at that address. Upload all six release files (index.html, app.js, style.css, package.json, latest.json, update.json) to the GitHub release.');
     if (!newer(man.version, readVersion(activeDir()))) return { ok: true, upToDate: true, version: readVersion(activeDir()) };
     const tmp = path.join(app.getPath('temp'), 'mtgpt-update');
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -88,16 +94,17 @@ ipcMain.handle('upd:url', async (e, base) => {
   } catch (e) { return { ok: false, error: e.message }; }
 });
 // ------------------------------------------------------------------ GitHub updates (v0.66)
-// Each GitHub release carries index.html, app.js, style.css, package.json and latest.json (version, notes, SHA-256 of every file).
+// Each GitHub release carries index.html, app.js, style.css, package.json, latest.json (version, notes, SHA-256 of every file) and update.json (what older shells read).
 // The file names come from APP_FILES here, never from the downloaded manifest, and every file must match its SHA-256 before anything is installed.
-const SHELL_VERSION = 3;   // v0.94.0: download progress events
+const SHELL_VERSION = 4;   // v0.96.8: unchanged files are reused, no-cache + timeouts
+// (older line kept for history:) const SHELL_VERSION = 3;   // v0.94.0: download progress events
 const SHELL_MIN_FOR_FILES = 2;   // the oldest shell that can still install this release's files (written to latest.json as "shell"); raise it only when files need newer shell features   // bump when main.js / preload.js change in a way a file update cannot deliver
 const GH_BASE = process.env.MTGPT_UPDATE_BASE || 'https://github.com/snipeuoutjsl-netizen/MTG-Playtester/releases/latest/download';
 const MAX_FILE = 25 * 1024 * 1024;
 // Downloads one file and reports bytes as they arrive (for the progress bar).
 async function fetchWithProgress(url, onBytes) {
-  const res = await net.fetch(url);
-  if (!res.ok) throw new Error('Could not download ' + path.basename(url) + ' (HTTP ' + res.status + ').');
+  const res = await net.fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(120000) });
+  if (!res.ok) throw new Error('Could not download ' + path.basename(url) + ' (HTTP ' + res.status + ')' + (res.status === 404 ? '. The newest GitHub release is missing this file: upload all six files (index.html, app.js, style.css, package.json, latest.json, update.json) to the release.' : '.'));
   const chunks = []; let got = 0;
   if (res.body && typeof res.body.getReader === 'function') {
     const rd = res.body.getReader();
@@ -106,8 +113,11 @@ async function fetchWithProgress(url, onBytes) {
   }
   const buf = Buffer.from(await res.arrayBuffer()); onBytes(buf.length); return buf;
 }
+const sha256 = buf => crypto.createHash('sha256').update(buf).digest('hex');
+// v0.96.8: a release does not have to carry every file. A file whose SHA-256 already matches the copy that is running (index.html and style.css usually do not change) is reused, never downloaded.
+function localCopy(f, want) { try { const b = fs.readFileSync(path.join(activeDir(), f)); return sha256(b) === want ? b : null; } catch (e) { return null; } }
 async function ghManifest() {
-  const res = await net.fetch(GH_BASE + '/latest.json');
+  const res = await net.fetch(GH_BASE + '/latest.json', { cache: 'no-store', signal: AbortSignal.timeout(20000) });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('GitHub answered HTTP ' + res.status + '.');
   const man = await res.json();
@@ -122,13 +132,13 @@ ipcMain.handle('upd:ghcheck', async () => {
     const notes = Array.isArray(man.notes) ? man.notes.map(String).slice(0, 40) : [];
     const bytes = Object.values(man.files || {}).reduce((a, f) => a + (Number(f && f.size) || 0), 0);
     return { ok: true, current: cur, latest: man.version, newer: newer(man.version, cur), title: String(man.title || ''), notes, bytes, needsInstaller: Number(man.shell || 0) > SHELL_VERSION };
-  } catch (e) { return { ok: false, error: /fetch failed|ENOTFOUND|ECONN|ERR_/i.test(e.message) ? 'Could not reach GitHub (are you online?).' : e.message }; }
+  } catch (e) { return { ok: false, error: /fetch failed|ENOTFOUND|ECONN|ERR_|aborted|timed? ?out/i.test(e.message) ? 'Could not reach GitHub (are you online?).' : e.message }; }
 });
 ipcMain.handle('upd:ghinstall', async (ev) => {
   const send = d => { try { ev.sender.send('upd:progress', d); } catch (e) { /* window gone */ } };
   try {
     const man = await ghManifest();
-    if (!man) throw new Error('No release was found on GitHub.');
+    if (!man) throw new Error('No release with a latest.json file was found on GitHub. The newest release must be published (not a draft or pre-release) and include latest.json.');
     if (Number(man.shell || 0) > SHELL_VERSION) throw new Error('This release needs a new app shell. Download the full package from the release page and run Build-Installer.bat once.');
     if (!newer(man.version, readVersion(activeDir()))) return { ok: true, upToDate: true, version: readVersion(activeDir()) };
     const tmp = path.join(app.getPath('temp'), 'mtgpt-update');
@@ -140,9 +150,11 @@ ipcMain.handle('upd:ghinstall', async (ev) => {
     for (const f of APP_FILES) {
       const want = String((files[f] && files[f].sha256) || files[f] || '').toLowerCase();
       if (!/^[0-9a-f]{64}$/.test(want)) throw new Error('latest.json has no checksum for ' + f + ', so nothing was installed.');
-      const buf = await fetchWithProgress(GH_BASE + '/' + f, n => { done += n; send({ phase: 'download', file: f, done, total }); });
+      let buf = localCopy(f, want);
+      if (buf) { done += Number(files[f] && files[f].size) || buf.length; send({ phase: 'download', file: f, done, total }); }
+      else buf = await fetchWithProgress(GH_BASE + '/' + f, n => { done += n; send({ phase: 'download', file: f, done, total }); });
       send({ phase: 'verify', file: f, done, total });
-      if (crypto.createHash('sha256').update(buf).digest('hex') !== want) throw new Error('Checksum mismatch for ' + f + ': the download is damaged or was changed, so nothing was installed.');
+      if (sha256(buf) !== want) throw new Error('Checksum mismatch for ' + f + ': the download is damaged or was changed, so nothing was installed.');
       fs.writeFileSync(path.join(tmp, f), buf);
     }
     if (readVersion(tmp) !== man.version) throw new Error('The downloaded package.json does not match the announced version, so nothing was installed.');
@@ -191,6 +203,12 @@ else {
       for (const k of Object.keys(h)) if (k.toLowerCase() === 'access-control-allow-origin') delete h[k];
       h['Access-Control-Allow-Origin'] = ['*'];
       cb({ responseHeaders: h });
+    });
+    // Scryfall's API rules ask every client to send a descriptive User-Agent and an Accept header.
+    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://api.scryfall.com/*', 'https://*.scryfall.io/*'] }, (details, cb) => {
+      const h = { ...details.requestHeaders }; h['User-Agent'] = 'MTGPlaytester/' + (app.getVersion ? app.getVersion() : '0') + ' (unofficial fan tool; goldfish playtester)';
+      if (!h['Accept'] || h['Accept'] === '*/*') h['Accept'] = 'application/json;q=0.9,image/*;q=0.8,*/*;q=0.7';
+      cb({ requestHeaders: h });
     });
     createWindow();
   });

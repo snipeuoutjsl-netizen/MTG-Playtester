@@ -1,0 +1,5 @@
+node_modules/
+dist/
+tests/pt/
+# test fixtures that contain verbatim card text: keep local, never publish
+tests/corpus.json

@@ -1,0 +1,10 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+const ev=f=>p.evaluate(f);
+await ev(()=>{const s=__d.state;s.step=3;s.battlefield=[];s.hand=[];const mv=(n,z)=>{const i=s.library.findIndex(c=>c.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c.id};window.__b=mv('Bloodghast','graveyard');window.__g=mv('Gravecrawler','graveyard');window.__f=mv('Forest','hand');__d.render()});
+console.log('gravecrawler gy opts (no zombie)',await ev(()=>JSON.stringify(__d.gyCastOptions(__d.state.graveyard.find(c=>c.id===window.__g)).map(o=>o.kind))));
+await ev(()=>__d.playLand(window.__f));await p.waitForTimeout(700);
+console.log('bloodghast trigger',await ev(()=>JSON.stringify({pend:__d.state.pendingTriggers.length,m:[...document.querySelectorAll('.modal')].map(m=>m.innerText.replace(/\n/g,' | ').slice(0,260)),bf:__d.state.battlefield.map(c=>c.name)})));
+await ev(()=>{const s=__d.state;const mv=(n,z)=>{const i=s.library.findIndex(c=>c.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c.id};s.battlefield.push(Object.assign(__d.newCard('Gravecrawler'),{id:s.nextId++}));});
+console.log('with zombie (gravecrawler itself is a zombie but in gy; add a bf zombie?)',await ev(()=>JSON.stringify(__d.gyCastOptions(__d.state.graveyard.find(c=>c.id===window.__g)||{}).map(o=>o.kind+':'+o.mana))));
+await b.close()})();

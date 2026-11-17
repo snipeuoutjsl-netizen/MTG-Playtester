@@ -1,0 +1,10 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+const open=async()=>{await p.locator('button:has-text("⚙")').first().click();await p.click('#btnSettings');await p.click('.settabbtn[data-k=snd]');await p.waitForTimeout(300)};
+const rd=()=>p.evaluate(()=>({sound:JSON.stringify(__d.settings.sound).slice(0,160),live:__d.music&&__d.music.style,boxes:[...document.querySelectorAll('.setmain .teachopt')].map(l=>l.innerText.split('\n')[0]+'='+l.querySelector('input').checked).join(' | ')}));
+await open();console.log(await rd());
+await p.locator('.setmain select').first().selectOption('lofi');await p.waitForTimeout(400);
+await p.locator('.setmain .teachopt:has-text("Low-fi drums") input').uncheck();await p.waitForTimeout(300);console.log('after drums off',await rd());
+await p.click('.modal footer >> text=Close');await p.waitForTimeout(500);
+await open();console.log('reopened',await rd());
+await b.close()})();
