@@ -2948,7 +2948,7 @@ function parseTargetSpecs(text) {
     else if (/\b(?:abilit(?:y|ies))\b/.test(p)) { sp.kind = 'ability'; sp.label = 'target ' + p; }
     else {
       const ty = TYPE_WORDS.filter(w => new RegExp('\\b' + w + 's?\\b').test(p));
-      const pl = /\b(?:player|opponent)s?\b/.test(p);
+      const pl = /\b(?:player|opponent)s?\b/.test(p.replace(/\b(?:an opponent controls|you don't control|your opponents? controls?|opponents? control|an opponent's|your opponents?'s?)\b/g, ' '));   // v0.96.19 "permanent an opponent controls" names a permanent, not a player
       if (pl && !ty.length) { sp.kind = 'player'; sp.player = true; sp.pctrl = /\bopponent\b/.test(p) ? 'opp' : 'any'; }
       else { sp.kind = 'perm'; sp.types = ty; sp.player = pl; }
       sp.mods = (p.match(/\b(?:non)?legendary|nonland|noncreature|nonartifact|nonbasic|basic|nontoken|token|tapped|untapped|attacking|blocking|other\b/g) || []);
@@ -6089,8 +6089,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.18';
+const APP_VERSION = '0.96.19';
 const CHANGELOG = [
+  { v: '0.96.19', title: 'Targeting fix: "an opponent controls"', notes: ['Spells and abilities that say "target nonland permanent an opponent controls" (Leyline Binding, Banishing Light-style cards) or "target creature an opponent controls" no longer offer You and Opponent as targets. Only permanents are legal targets there (CR 115.2); because the opponent\'s board is not tracked, the single "a permanent your opponent controls" choice remains.'] },
   { v: '0.96.18', title: 'Steady, filling turn bar; one-click sets; more music', notes: ['The turn-flow bar is now always the same size and its steps never shift: the button slot is fixed, the stack count floats, and the current step no longer gets wider. It also fills like a loading bar up to the step you are in, in your theme colours.','One-click sets now exist for every interface theme (Midnight, Obsidian & gold, Abyss blue, Forest, Neon, Parchment, Light, Pixel cosmos): the theme, card sleeve, playmat, board frame and a matching song all change together (Settings > Look). Untick Matching music to leave your song alone.','Five new generated songs (Settings > Sound > Music style): Dusty boom-bap, Rainy window, Midnight jazz-hop, Arcade chill and Golden hour, next to Cosmic low-fi.','Frenzy (702.68): +N/+0 when it attacks unblocked. Scavenge (702.97): exile it from the graveyard for +1/+1 counters equal to its power on a creature.'] },
   { v: '0.96.17', title: 'Keyword batch 5', notes: ['Exploit (702.110): when it enters you may sacrifice a creature (it can sacrifice itself); "when this creature exploits a creature" then triggers.','Enlist (702.154): as it attacks, tap an untapped nonattacking creature that is not summoning sick; it gets +X/+0 for that creature\'s power.','Mobilize N (702.181): N tapped and attacking 1/1 red Warrior tokens, sacrificed at the next end step; they do not trigger attack abilities.','Unleash (702.98): optional +1/+1 counter, and the creature cannot be assigned as a blocker while it has one (decayed now also blocks that way).','Devour N (702.82): sacrifice any number of creatures for N counters each. Ravenous (702.156): X counters, draw a card if X is 5 or more.','Fixed: Bolster with tied creatures now actually puts the counters on the creature you pick.'] },
   { v: '0.96.16', title: 'Smoother play, fixed turn-flow bar', notes: ['The turn-flow bar now sits in its own row between the battlefield and the lower zones, so it no longer moves when the combat notice appears. The pre-game actions panel now sits above the floating hand. Drawing and re-rendering are much lighter (layout runs once per frame, repeated rules lookups are cached), and the GPU is used for rasterising for a higher frame rate.'] },

@@ -426,6 +426,11 @@ const { setup } = require('./common.js');
     const r = await ev(i => { const s = __d.state, k = s.hand.findIndex(c => c.id === i), [c] = s.hand.splice(k, 1); s.graveyard.push(c); s.manaPool = { C: 1 }; s.step = __d.STEPS.findIndex(x => x.id === 'main1'); __d.useGyAbility(i, 'scavenge'); document.querySelectorAll('.backdrop').forEach(x => x.remove());
       const b = s.battlefield[0]; return { counters: b.counters && b.counters.plus, ex: s.exile.some(x => x.id === i), gy: s.graveyard.some(x => x.id === i) }; }, id);
     return { ok: r.counters === 4 && r.ex && !r.gy, why: JSON.stringify(r) }; });
+
+  await T('115.2', 'only permanents are legal targets for "target nonland permanent an opponent controls": players are never offered (Leyline Binding)', async () => { await reset(); await bfSet(['Grizzly Bears']);
+    const r = await ev(() => { const out = {}; for (const t of ['exile target nonland permanent an opponent controls until this enchantment leaves the battlefield.', 'destroy target creature an opponent controls.', 'target opponent loses 2 life.']) { const sp = __d.parseTargetSpecs(t); out[t.slice(0, 22)] = sp.length ? __d.legalTargets(sp[0]).map(x => x.kind + ':' + x.name).join(' | ') : 'none'; } return out; });
+    const v = Object.values(r);
+    return { ok: !/player/.test(v[0]) && !/player/.test(v[1]) && /Grizzly/.test(v[1] + '') === false && /player:Opponent/.test(v[2]) && /not tracked/.test(v[0]), why: JSON.stringify(r) }; });
   console.log('\nRULES CHECK (Comprehensive Rules, 19 June 2026)\n');
   for (const t of out) console.log((t.ok ? 'PASS' : 'FAIL') + '  CR ' + t.rule.padEnd(14) + t.name + (t.ok ? '' : '\n        -> ' + t.why));
   console.log(`\n${out.filter(t => t.ok).length}/${out.length} pass`);
