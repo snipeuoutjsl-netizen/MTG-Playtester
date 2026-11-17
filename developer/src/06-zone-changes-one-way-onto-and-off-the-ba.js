@@ -43,6 +43,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   const i = state.battlefield.findIndex(x => x.id === c.id);
   if (i >= 0) state.battlefield.splice(i, 1);
   memNote('left', c);
+  if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
   detachFrom(c);
   for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
