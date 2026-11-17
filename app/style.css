@@ -1537,3 +1537,15 @@ body.handfloat #row-hand .card:hover, body.handfloat #row-hand .card.dragging, b
 #emblemBar .emblem b { color: var(--gold, #e3b95c); }
 #emblemBar .emblem .etx { display: none; margin-top: 3px; color: var(--muted, #aab); font-size: 11px; line-height: 1.3; }
 #emblemBar .emblem:hover .etx { display: block; }
+
+/* v0.96.14 centred pop-ups sit in the free space above the floating hand instead of behind it; docked and resolving panels keep their own places */
+#modalRoot .backdrop:not(.dock):not(.resolve) { padding-bottom: calc(var(--handcover-root, 0px) + 20px); }
+
+/* v0.96.14 glowing playability outline on hand cards (green = playable now, red = not enough mana, amber = wrong timing), kept on top of the floating-hand shadow */
+#row-hand .card.cast-ready  { box-shadow: 0 0 0 2px rgba(70,220,120,.95), 0 0 14px 3px rgba(70,220,120,.55), 0 0 30px 6px rgba(70,220,120,.25), 0 8px 14px -4px rgba(0,0,0,.65); }
+#row-hand .card.cast-mana   { box-shadow: 0 0 0 2px rgba(235,80,80,.9),  0 0 14px 3px rgba(235,80,80,.5),  0 0 28px 5px rgba(235,80,80,.22), 0 8px 14px -4px rgba(0,0,0,.65); }
+#row-hand .card.cast-timing { box-shadow: 0 0 0 2px rgba(235,178,70,.9), 0 0 14px 3px rgba(235,178,70,.5), 0 0 28px 5px rgba(235,178,70,.22), 0 8px 14px -4px rgba(0,0,0,.65); }
+@keyframes readyPulse { 0%, 100% { box-shadow: 0 0 0 2px rgba(70,220,120,.95), 0 0 12px 2px rgba(70,220,120,.45), 0 0 24px 4px rgba(70,220,120,.18), 0 8px 14px -4px rgba(0,0,0,.65); } 50% { box-shadow: 0 0 0 2px rgba(110,255,160,1), 0 0 20px 5px rgba(70,220,120,.7), 0 0 38px 9px rgba(70,220,120,.32), 0 8px 14px -4px rgba(0,0,0,.65); } }
+body.handfloat #row-hand .card.cast-ready { animation: handFloat 4.6s ease-in-out infinite, readyPulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { body.handfloat #row-hand .card.cast-ready { animation: none; } }
+body.responding #row-hand .card.cast-ready { animation: respondGlow 1.4s ease-in-out infinite; }

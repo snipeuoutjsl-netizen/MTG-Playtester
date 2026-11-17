@@ -5164,6 +5164,7 @@ function reserveHandSpace() {
   const card = hc.querySelector('.card'), h = card ? card.offsetHeight : 0;
   const cover = h ? Math.round(h * 0.82) + 8 : 0;
   stage.style.setProperty('--handcover', cover + 'px');
+  document.documentElement.style.setProperty('--handcover-root', (h ? h + 28 : 0) + 'px');   // v0.96.14 pop-ups centre in the space ABOVE the hand
 }
 function fitBattlefieldCards() {
   try { reserveHandSpace(); } catch (e) { /* layout only */ }
@@ -6071,8 +6072,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.13';
+const APP_VERSION = '0.96.14';
 const CHANGELOG = [
+  { v: '0.96.14', title: 'Pop-ups stay above your hand', notes: ['The glowing outline is back on hand cards: green glow for playable now (gently pulsing), red for not enough mana, amber for wrong timing.', 'Centred pop-ups (pre-game actions, choices, search windows) now sit in the space above your hand, so the hand no longer covers their buttons.'] },
   { v: '0.96.13', title: 'Release set fixed, movable Hand label', notes: ['Updater: releases now always come with a SIXTH file, update.json, which older app shells read (its absence caused "update.json has no version"). The release script bundles all six files into one zip and the update window names the missing file.','The small Hand label (count and Key) can be dragged anywhere on the table; its place is remembered and double-clicking puts it back. The Sort button is gone: drag cards sideways in the hand to order them.'] },
   { v: '0.96.12', title: 'Tezzeret, Cruel Captain in full, emblems', notes: ['Tezzeret, Cruel Captain now follows his real Oracle text: "Whenever an artifact you control enters" adds a loyalty counter; 0: untap target artifact or creature and, if it is an artifact creature, put a +1/+1 counter on it; \u22123: search for an artifact card with mana value 1 or less, reveal it, put it into your hand, shuffle; \u22127: you get an emblem.','Emblems (CR 114) are new: "You get an emblem with \u2026" creates a permanent emblem that lives outside the battlefield, shown in a small panel on the mat, and its abilities trigger like any other (Tezzeret\'s emblem puts three +1/+1 counters on a target artifact at the beginning of combat and turns a non-creature one into a 0/0 Robot artifact creature).','Effects that make a permanent a creature (CR 613.1d, 613.4b) now change its types, subtypes and base power/toughness, so it moves to the creature row and counts as a creature everywhere.','"Put a +1/+1 counter on it" after a target no longer puts the counter on the ability\'s source. Mana value for searches is now worked out from the mana cost (CR 202.3).'] },
   { v: '0.96.11', title: 'Battlefield never hides behind the hand', notes: ['The hand now overlaps only the very bottom edge of the playmat. The mat reserves the rest, so second rows of artifacts, enchantments and lands are no longer covered, and cards shrink further (down to about a third of full size) on crowded boards so every card stays visible.', 'The battlefield re-fits itself whenever a zone or the hand changes size (resizing, drawing, playing cards).'] },
