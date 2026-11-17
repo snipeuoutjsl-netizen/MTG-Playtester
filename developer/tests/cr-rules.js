@@ -616,6 +616,11 @@ const { setup } = require('./common.js');
       const tr = Object.assign(__d.newCard('Treasure', { token: true, tk: { pt: '', subs: ['treasure'], col: [], types: ['Artifact'], type: 'Token Artifact \u2014 Treasure', tx: __d.TOKEN_PRE.treasure.tx } }), { id: s.nextId++ }); s.battlefield.push(tr);
       return { any, forBear, forRock, glow: !!__d.activationReady(tr) || __d.activationReady(tr) === '' ? __d.activationReady(tr) : null, has: ['junk', 'shard', 'lander', 'incubator'].every(k => __d.TOKEN_PRE[k]) }; });
     return { ok: r.any >= 1 && r.forBear === r.any - 1 && r.forRock === r.any && r.has, why: JSON.stringify(r) }; });
+  await T('111.10', 'token art: a token always has art (generic by default, your own picture wins, off = none); real cards are unaffected', async () => { await reset();
+    const r = await ev(() => { const s = __d.state; const tk = Object.assign(__d.newCard('Soldier', { token: true, tk: { pt: '1/1', subs: ['soldier'], col: ['W'], types: ['Creature'], type: 'Token Creature \u2014 Soldier', tx: '' } }), { id: s.nextId++ });
+      const a = __d.cardArt(tk), real = __d.cardArt(Object.assign(__d.newCard('Grizzly Bears'), { id: s.nextId++ }));
+      return { gen: !!(a && a.generic && /svg/.test(a.front) && decodeURIComponent(a.front).includes('Soldier')), real: real === null || !real.generic }; });
+    return { ok: r.gen && r.real, why: JSON.stringify(r) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });

@@ -2,6 +2,8 @@
 function init() {
   refreshDeckSelect();
   loadCustomArt().then(n => { if (n) render(); });
+  loadTokenArt().then(n => { if (n) render(); });
+  $('#btnTokenGloss').addEventListener('click', () => { toggleUtilityMenu(false); openTokenGlossary(); });
   if (!settings.kitchenSeen) { settings.kitchenSeen = true; if (!settings.matPreset) settings.matPreset = 'kitchen'; if (!settings.sleevePreset) settings.sleevePreset = 'worn'; saveSettings(); try { applySettings(); applySleeve(); } catch (e) { /* ignore */ } }   // v0.69.3: the new table and card back become the look once; change them in Settings > Graphics
   $('#deckSelect').addEventListener('change', e => { lsSet('mtgpt.current', e.target.value); prepareImages(); });
   $('#btnDecks').addEventListener('click', openDeckPicker);
