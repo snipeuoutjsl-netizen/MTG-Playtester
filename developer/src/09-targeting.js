@@ -36,7 +36,7 @@ function parseTargetSpecs(text) {
     else if (/\b(?:abilit(?:y|ies))\b/.test(p)) { sp.kind = 'ability'; sp.label = 'target ' + p; }
     else {
       const ty = TYPE_WORDS.filter(w => new RegExp('\\b' + w + 's?\\b').test(p));
-      const pl = /\b(?:player|opponent)s?\b/.test(p);
+      const pl = /\b(?:player|opponent)s?\b/.test(p.replace(/\b(?:an opponent controls|you don't control|your opponents? controls?|opponents? control|an opponent's|your opponents?'s?)\b/g, ' '));   // v0.96.19 "permanent an opponent controls" names a permanent, not a player
       if (pl && !ty.length) { sp.kind = 'player'; sp.player = true; sp.pctrl = /\bopponent\b/.test(p) ? 'opp' : 'any'; }
       else { sp.kind = 'perm'; sp.types = ty; sp.player = pl; }
       sp.mods = (p.match(/\b(?:non)?legendary|nonland|noncreature|nonartifact|nonbasic|basic|nontoken|token|tapped|untapped|attacking|blocking|other\b/g) || []);
