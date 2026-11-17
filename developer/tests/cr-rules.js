@@ -370,6 +370,54 @@ const { setup } = require('./common.js');
     const r = await ev(i => { const s = __d.state; s.battlefield = s.battlefield.filter(x => x.id === i); s.pendingTriggers = []; const a = __d.newCard('Memnite', {}); a.id = s.nextId++; s.battlefield.push(a); __d.fireTrigger('etb', { card: a }); const n1 = s.pendingTriggers.length; s.pendingTriggers = []; const g = __d.newCard('Mock Monster', {}); g.id = s.nextId++; s.battlefield.push(g); __d.fireTrigger('etb', { card: g }); return { n1, n2: s.pendingTriggers.length }; }, id);
     return { ok: r.n1 === 1 && r.n2 === 0, why: JSON.stringify(r) }; });
 
+
+  // ---- v0.96.16 keyword batch 5
+  const optByLabel = (srcId, kw, n, re, setup) => ev(a => { const f = __d.state.battlefield.find(c => c.id === a.id); if (a.setup) a.setup.split(';').forEach(kv => { const [k, v] = kv.split('='); f[k] = +v; }); const o = __d.effectOptions('x', { sourceId: a.id, sourceName: f.name, kw: a.kw, n: a.n }); const lab = o.map(x => x.label); const m = o.find(x => new RegExp(a.re, 'i').test(x.label)); if (m) m.fn(); document.querySelectorAll('.backdrop').forEach(x => x.remove()); return { lab, ran: !!m }; }, { id: srcId, kw, n, re, setup });
+  await T('702.110a', 'exploit: may sacrifice a creature when it enters (itself or another); "when this creature exploits a creature" then triggers', async () => { await reset(); const [ex, b] = await bfSet(['Mock Exploiter', 'Grizzly Bears']);
+    const r = await optByLabel(ex, 'exploit', 0, 'Sacrifice Grizzly Bears');
+    const st = await ev(a => ({ gy: __d.state.graveyard.map(c => c.name), bf: __d.state.battlefield.map(c => c.name), trig: __d.state.pendingTriggers.map(t => t.effect) }), 0);
+    const r2 = await optByLabel(ex, 'exploit', 0, 'itself');
+    const st2 = await ev(() => __d.state.graveyard.map(c => c.name));
+    return { ok: r.ran && r.lab.some(l => /Don't sacrifice/.test(l)) && st.gy.includes('Grizzly Bears') && st.trig.some(t => /draw a card/i.test(t)) && r2.ran && st2.includes('Mock Exploiter'), why: JSON.stringify({ r, st, st2 }) }; });
+  await T('702.154a', 'enlist: tap a nonattacking untapped creature (not summoning sick); this creature gets +X/+0, X = its power', async () => { await reset(); const [en, b] = await bfSet(['Mock Enlister', 'Grizzly Bears']);
+    await ev(i => { __d.state.combat.attackers = [i]; }, en);
+    const r = await optByLabel(en, 'enlist', 0, 'Tap Grizzly Bears');
+    const st = await ev(a => { const e = __d.state.battlefield.find(c => c.id === a[0]), g = __d.state.battlefield.find(c => c.id === a[1]); return { bearsTapped: g.tapped, p: __d.ptCalc(e).p }; }, [en, b]);
+    const r2 = await optByLabel(en, 'enlist', 0, 'Tap ');
+    const nobody = !r2.lab.some(l => /^Tap /.test(l));   // the only other creature is tapped now
+    await ev(a => { __d.state.combat.attackers = a; }, [en, b]); await ev(i => { __d.state.battlefield.find(c => c.id === i).tapped = false; }, b);
+    const r3 = await optByLabel(en, 'enlist', 0, 'Tap ');
+    return { ok: r.ran && st.bearsTapped && st.p === 4 && nobody && !r3.lab.some(l => /^Tap /.test(l)), why: JSON.stringify({ r, st, r2: r2.lab, r3: r3.lab }) }; });
+  await T('702.181a', 'mobilize N: N tapped and attacking 1/1 red Warrior tokens, sacrificed at the beginning of the next end step; they were not declared (no attack triggers)', async () => { await reset(); const [mb] = await bfSet(['Mock Mobilizer']);
+    await ev(i => { __d.state.combat.attackers = [i]; }, mb);
+    const r = await optByLabel(mb, 'mobilize', 2, 'Create 2 tapped and attacking');
+    const st = await ev(() => { const w = __d.state.battlefield.filter(c => c.name === 'Warrior'); return { n: w.length, tapped: w.every(c => c.tapped), inCombat: w.every(c => __d.state.combat.attackers.includes(c.id)), pt: w.map(c => __d.ptCalc(c).p + '/' + __d.ptCalc(c).t).join(), fx: __d.state.fx.filter(e => e.action === 'sacrifice' && e.targetName === 'Warrior token').length }; });
+    await ev(() => { __d.state.step = __d.STEPS.findIndex(x => x.id === 'end'); __d.runDelayed('end'); });
+    const after = await ev(() => __d.state.battlefield.filter(c => c.name === 'Warrior').length);
+    return { ok: r.ran && st.n === 2 && st.tapped && st.inCombat && st.pt === '1/1,1/1' && st.fx === 2 && after === 0, why: JSON.stringify({ r, st, after }) }; });
+  await T('702.98a', 'unleash: may enter with a +1/+1 counter; it can\'t block as long as it has a +1/+1 counter', async () => { await reset(); const [u] = await bfSet(['Mock Unleasher']);
+    const before = await ev(i => __d.kwCantBlock(__d.state.battlefield.find(c => c.id === i)), u);
+    await optByLabel(u, 'unleash', 0, 'enters with a \\+1/\\+1 counter');
+    const st = await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); return { plus: c.counters.plus, cant: __d.kwCantBlock(c) }; }, u);
+    await ev(i => { __d.state.battlefield.find(c => c.id === i).counters.plus = 0; }, u);
+    const gone = await ev(i => __d.kwCantBlock(__d.state.battlefield.find(c => c.id === i)), u);
+    return { ok: !before && st.plus === 1 && st.cant && !gone, why: JSON.stringify({ before, st, gone }) }; });
+  await T('702.82a', 'devour N: sacrifice any number of creatures; enters with N +1/+1 counters for each', async () => { await reset(); const ids = await bfSet(['Mock Devourer', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears']);
+    await optByLabel(ids[0], 'devour', 2, 'sacrifice any number');   // fn runs openPickCards; remove the modal and call the same path directly
+    const res = await ev(a => { const f = __d.effectOptions('x', { sourceId: a[0], sourceName: 'Mock Devourer', kw: 'devour', n: 2 }); return !!f; }, ids);
+    await ev(() => { document.querySelectorAll('.backdrop').forEach(x => x.remove()); });
+    await ev(a => { const o = __d.effectOptions('x', { sourceId: a[0], sourceName: 'Mock Devourer', kw: 'devour', n: 2 }); o[0].fn(); }, ids);
+    await p.waitForTimeout(250); const row = p.locator('.modal .fetchgrid .frow'); const nc = await row.count();
+    if (nc) { await row.first().click(); await p.waitForTimeout(100); await row.first().click(); await p.waitForTimeout(100); }
+    const btn = p.locator('.modal button.primary:has-text("Confirm")'); const bc = await btn.count(); if (bc) await btn.first().click(); await p.waitForTimeout(300); const dbg = await ev(() => document.querySelector('.modal') ? document.querySelector('.modal').innerText.slice(0, 200) : 'nomodal');
+    const st = await ev(a => ({ c: (__d.state.battlefield.find(x => x.id === a[0]).counters || {}).plus || 0, bears: __d.state.battlefield.filter(x => x.name === 'Grizzly Bears').length, gy: __d.state.graveyard.length }), ids);
+    return { ok: res && nc >= 1 && st.c === 4 && st.bears === 1 && st.gy === 2, why: JSON.stringify({ nc, bc, dbg, st }) }; });
+  await T('702.156a', 'ravenous: enters with X +1/+1 counters; draws a card if X is 5 or more', async () => { await reset(); const [r1] = await bfSet(['Mock Ravener']);
+    const h0 = await ev(() => __d.state.hand.length); await optByLabel(r1, 'ravenous', 0, 'Enters with X', 'xValue=3');
+    const a = await ev(i => ({ c: __d.state.battlefield.find(x => x.id === i).counters.plus, h: __d.state.hand.length }), r1);
+    const [r2] = await bfSet(['Mock Ravener']); await optByLabel(r2, 'ravenous', 0, 'Enters with X', 'xValue=5');
+    const b2 = await ev(i => ({ c: __d.state.battlefield.find(x => x.id === i).counters.plus, h: __d.state.hand.length }), r2);
+    return { ok: a.c === 3 && a.h === h0 && b2.c === 5 && b2.h === h0 + 1, why: JSON.stringify({ h0, a, b2 }) }; });
   console.log('\nRULES CHECK (Comprehensive Rules, 19 June 2026)\n');
   for (const t of out) console.log((t.ok ? 'PASS' : 'FAIL') + '  CR ' + t.rule.padEnd(14) + t.name + (t.ok ? '' : '\n        -> ' + t.why));
   console.log(`\n${out.filter(t => t.ok).length}/${out.length} pass`);

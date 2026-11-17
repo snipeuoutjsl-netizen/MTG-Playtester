@@ -27,7 +27,7 @@ function kwTriggersFor(info) {
   const items = kwItems(info.tx);
   for (const k of KW_TRIGGERS) for (const it of items) {
     const m = it.match(new RegExp('^' + k.kw + '(?:(?:\\s+|\\s*[\\u2014-]\\s*)(.+))?$', 'i')); if (!m) continue;   // v0.96.7 the argument can be a number, a mana cost or a whole cost ("Cumulative upkeep\u2014Pay 1 life")
-    const n = m[1] && /^\d+$/.test(m[1]) ? +m[1] : (k.kw === 'modular' || k.kw === 'fabricate' || k.kw === 'renown' || k.kw === 'bloodthirst' || k.kw === 'annihilator' ? 1 : 0);
+    const n = m[1] && /^\d+$/.test(m[1]) ? +m[1] : (k.kw === 'modular' || k.kw === 'mobilize' || k.kw === 'devour' || k.kw === 'fabricate' || k.kw === 'renown' || k.kw === 'bloodthirst' || k.kw === 'annihilator' ? 1 : 0);
     const arg = m[1] || ''; out.push({ arg, ev: k.ev, cond: k.cond, effect: k.text.replace(/\bN\b/g, String(n)), line: `${it} (keyword, CR ${k.cr}): ${k.text.replace(/\bN\b/g, String(n))}`, filter: k.filter || '', optional: false, special: 'kw', kw: k.kw, n, arg, test: k.test || null });
     break;
   }
@@ -68,7 +68,7 @@ function kwActionOptions(tx, obj, opts) {
       const cr = state.battlefield.filter(c => /\bCreature\b/.test(permTypeLine(c))); if (!cr.length) { log('Bolster: you control no creatures'); return; }
       const low = Math.min(...cr.map(c => ptCalc(c).t)), tied = cr.filter(c => ptCalc(c).t === low);
       if (tied.length === 1) { addCounter(tied[0].id, n, 'plus'); return; }
-      openPickCards({ title: 'Bolster: choose among the tied creatures', cards: tied, max: 1, min: 1, note: `These creatures are tied for the least toughness (${low}). You choose which gets the counters.`, done: ids => { if (ids[0]) addCounter(ids[0], n, 'plus'); } });
+      openPickCards({ title: 'Bolster: choose among the tied creatures', cards: tied, max: 1, min: 1, note: `These creatures are tied for the least toughness (${low}). You choose which gets the counters.`, done: picked => { const c = picked[0]; if (c) addCounter(c.id ?? c, n, 'plus'); } });   // openPickCards hands back the chosen cards
     } });
   }
   if ((m = t.match(/\badapt (\d+)\b/i)) && obj && obj.sourceId) {   // CR 701.46: only if it has no +1/+1 counters on it

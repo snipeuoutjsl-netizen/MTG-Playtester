@@ -487,7 +487,7 @@ function openCombatHelper(){
       fireTrigger('attack',{cards:atk});m.close();render();flushTriggers();}}));
   }else{
     const attackers=state.combat.attackers||[]; const assigns={...(state.combat.blockers||{})}; const rows=h('div',{class:'prelist'});
-    const blockers=state.battlefield.filter(c=>permZone(c)==='creatures'&&!c.tapped);
+    const blockers=state.battlefield.filter(c=>permZone(c)==='creatures'&&!c.tapped&&!kwCantBlock(c));
     blockers.forEach(b=>{const sel=h('select');sel.append(h('option',{value:'',text:'No block'}));for(const aid of attackers){const ac=findCard(aid)?.card;if(ac)sel.append(h('option',{value:String(aid),text:ac.name}));}sel.value=assigns[b.id]||'';sel.addEventListener('change',()=>assigns[b.id]=sel.value?+sel.value:null);rows.append(h('div',{class:'row'},h('span',{class:'nm'},b.name),sel));});
     m.body.append(h('div',{class:'psub'},'Assign each available blocker to one attacker. This helper records assignments for teaching; it does not calculate combat damage automatically.'),rows);
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare blockers',onclick:()=>{snap();state.combat.blockers=assigns;log('Declared blockers');m.close();render();}}));

@@ -5413,7 +5413,7 @@ function openCombatHelper(){
       fireTrigger('attack',{cards:atk});m.close();render();flushTriggers();}}));
   }else{
     const attackers=state.combat.attackers||[]; const assigns={...(state.combat.blockers||{})}; const rows=h('div',{class:'prelist'});
-    const blockers=state.battlefield.filter(c=>permZone(c)==='creatures'&&!c.tapped);
+    const blockers=state.battlefield.filter(c=>permZone(c)==='creatures'&&!c.tapped&&!kwCantBlock(c));
     blockers.forEach(b=>{const sel=h('select');sel.append(h('option',{value:'',text:'No block'}));for(const aid of attackers){const ac=findCard(aid)?.card;if(ac)sel.append(h('option',{value:String(aid),text:ac.name}));}sel.value=assigns[b.id]||'';sel.addEventListener('change',()=>assigns[b.id]=sel.value?+sel.value:null);rows.append(h('div',{class:'row'},h('span',{class:'nm'},b.name),sel));});
     m.body.append(h('div',{class:'psub'},'Assign each available blocker to one attacker. This helper records assignments for teaching; it does not calculate combat damage automatically.'),rows);
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare blockers',onclick:()=>{snap();state.combat.blockers=assigns;log('Declared blockers');m.close();render();}}));
@@ -6089,8 +6089,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.16';
+const APP_VERSION = '0.96.17';
 const CHANGELOG = [
+  { v: '0.96.17', title: 'Keyword batch 5', notes: ['Exploit (702.110): when it enters you may sacrifice a creature (it can sacrifice itself); "when this creature exploits a creature" then triggers.','Enlist (702.154): as it attacks, tap an untapped nonattacking creature that is not summoning sick; it gets +X/+0 for that creature\'s power.','Mobilize N (702.181): N tapped and attacking 1/1 red Warrior tokens, sacrificed at the next end step; they do not trigger attack abilities.','Unleash (702.98): optional +1/+1 counter, and the creature cannot be assigned as a blocker while it has one (decayed now also blocks that way).','Devour N (702.82): sacrifice any number of creatures for N counters each. Ravenous (702.156): X counters, draw a card if X is 5 or more.','Fixed: Bolster with tied creatures now actually puts the counters on the creature you pick.'] },
   { v: '0.96.16', title: 'Smoother play, fixed turn-flow bar', notes: ['The turn-flow bar now sits in its own row between the battlefield and the lower zones, so it no longer moves when the combat notice appears. The pre-game actions panel now sits above the floating hand. Drawing and re-rendering are much lighter (layout runs once per frame, repeated rules lookups are cached), and the GPU is used for rasterising for a higher frame rate.'] },
   { v: '0.96.15', title: 'Rules-check panel, no Draw 7', notes: ['The opening-hand screen no longer has a Draw 7 button. The rules-check pop-up for discarding to hand size now uses the same panel style as other pop-ups instead of a blank card.'] },
   { v: '0.96.14', title: 'Pop-ups stay above your hand', notes: ['The glowing outline is back on hand cards: green glow for playable now (gently pulsing), red for not enough mana, amber for wrong timing.', 'Centred pop-ups (pre-game actions, choices, search windows) now sit in the space above your hand, so the hand no longer covers their buttons.'] },
@@ -9304,7 +9305,7 @@ const RULES_TABLE = [
   ['702.79', 'Persist', 'ability', 'named'],
   ['702.80', 'Wither', 'ability', 'none'],
   ['702.81', 'Retrace', 'ability', 'named'],
-  ['702.82', 'Devour', 'ability', 'none'],
+  ['702.82', 'Devour', 'ability', 'tested'],
   ['702.83', 'Exalted', 'ability', 'tested'],
   ['702.84', 'Unearth', 'ability', 'tested'],
   ['702.85', 'Cascade', 'ability', 'named'],
@@ -9320,7 +9321,7 @@ const RULES_TABLE = [
   ['702.95', 'Soulbond', 'ability', 'none'],
   ['702.96', 'Overload', 'ability', 'tested'],
   ['702.97', 'Scavenge', 'ability', 'none'],
-  ['702.98', 'Unleash', 'ability', 'none'],
+  ['702.98', 'Unleash', 'ability', 'tested'],
   ['702.99', 'Cipher', 'ability', 'none'],
   ['702.100', 'Evolve', 'ability', 'tested'],
   ['702.101', 'Extort', 'ability', 'named'],
@@ -9332,7 +9333,7 @@ const RULES_TABLE = [
   ['702.107', 'Outlast', 'ability', 'tested'],
   ['702.108', 'Prowess', 'ability', 'named'],
   ['702.109', 'Dash', 'ability', 'tested'],
-  ['702.110', 'Exploit', 'ability', 'none'],
+  ['702.110', 'Exploit', 'ability', 'tested'],
   ['702.111', 'Menace', 'ability', 'named'],
   ['702.112', 'Renown', 'ability', 'tested'],
   ['702.113', 'Awaken', 'ability', 'none'],
@@ -9376,9 +9377,9 @@ const RULES_TABLE = [
   ['702.151', 'Reconfigure', 'ability', 'none'],
   ['702.152', 'Blitz', 'ability', 'tested'],
   ['702.153', 'Casualty', 'ability', 'tested'],
-  ['702.154', 'Enlist', 'ability', 'none'],
+  ['702.154', 'Enlist', 'ability', 'tested'],
   ['702.155', 'Read Ahead', 'ability', 'none'],
-  ['702.156', 'Ravenous', 'ability', 'none'],
+  ['702.156', 'Ravenous', 'ability', 'tested'],
   ['702.157', 'Squad', 'ability', 'none'],
   ['702.158', 'Space Sculptor', 'ability', 'none'],
   ['702.159', 'Visit', 'ability', 'none'],
@@ -9403,7 +9404,7 @@ const RULES_TABLE = [
   ['702.178', 'Max Speed', 'ability', 'none'],
   ['702.179', 'Start Your Engines!', 'ability', 'none'],
   ['702.180', 'Harmonize', 'ability', 'none'],
-  ['702.181', 'Mobilize', 'ability', 'none'],
+  ['702.181', 'Mobilize', 'ability', 'tested'],
   ['702.182', 'Job Select', 'ability', 'none'],
   ['702.183', 'Tiered', 'ability', 'none'],
   ['702.184', 'Station', 'ability', 'none'],
@@ -9451,7 +9452,7 @@ function kwTriggersFor(info) {
   const items = kwItems(info.tx);
   for (const k of KW_TRIGGERS) for (const it of items) {
     const m = it.match(new RegExp('^' + k.kw + '(?:(?:\\s+|\\s*[\\u2014-]\\s*)(.+))?$', 'i')); if (!m) continue;   // v0.96.7 the argument can be a number, a mana cost or a whole cost ("Cumulative upkeep\u2014Pay 1 life")
-    const n = m[1] && /^\d+$/.test(m[1]) ? +m[1] : (k.kw === 'modular' || k.kw === 'fabricate' || k.kw === 'renown' || k.kw === 'bloodthirst' || k.kw === 'annihilator' ? 1 : 0);
+    const n = m[1] && /^\d+$/.test(m[1]) ? +m[1] : (k.kw === 'modular' || k.kw === 'mobilize' || k.kw === 'devour' || k.kw === 'fabricate' || k.kw === 'renown' || k.kw === 'bloodthirst' || k.kw === 'annihilator' ? 1 : 0);
     const arg = m[1] || ''; out.push({ arg, ev: k.ev, cond: k.cond, effect: k.text.replace(/\bN\b/g, String(n)), line: `${it} (keyword, CR ${k.cr}): ${k.text.replace(/\bN\b/g, String(n))}`, filter: k.filter || '', optional: false, special: 'kw', kw: k.kw, n, arg, test: k.test || null });
     break;
   }
@@ -9492,7 +9493,7 @@ function kwActionOptions(tx, obj, opts) {
       const cr = state.battlefield.filter(c => /\bCreature\b/.test(permTypeLine(c))); if (!cr.length) { log('Bolster: you control no creatures'); return; }
       const low = Math.min(...cr.map(c => ptCalc(c).t)), tied = cr.filter(c => ptCalc(c).t === low);
       if (tied.length === 1) { addCounter(tied[0].id, n, 'plus'); return; }
-      openPickCards({ title: 'Bolster: choose among the tied creatures', cards: tied, max: 1, min: 1, note: `These creatures are tied for the least toughness (${low}). You choose which gets the counters.`, done: ids => { if (ids[0]) addCounter(ids[0], n, 'plus'); } });
+      openPickCards({ title: 'Bolster: choose among the tied creatures', cards: tied, max: 1, min: 1, note: `These creatures are tied for the least toughness (${low}). You choose which gets the counters.`, done: picked => { const c = picked[0]; if (c) addCounter(c.id ?? c, n, 'plus'); } });   // openPickCards hands back the chosen cards
     } });
   }
   if ((m = t.match(/\badapt (\d+)\b/i)) && obj && obj.sourceId) {   // CR 701.46: only if it has no +1/+1 counters on it
@@ -9862,6 +9863,72 @@ function emblemEffect(tx, src) {
   const m = /\byou get an emblem with ["“](.+)["”]\s*\.?\s*$/is.exec(String(tx || '').replace(/\n/g, ' ').trim()); if (!m) return null;
   const text = m[1].trim();
   return { full: true, label: 'Get an emblem', fn: () => makeEmblem(text, src) };
+}
+// ---------------------------------------------------------------- v0.96.16 keyword batch 5 (rules text): Exploit, Enlist, Mobilize, Unleash, Devour, Ravenous
+// CR 702.110a Exploit: "When this creature enters, you may sacrifice a creature." (702.110b: it "exploits" a creature when it sacrifices one this way; "when this creature exploits a creature" is a linked ability.)
+//             Wizards ruling: the exploiting creature may sacrifice itself, and its linked ability still happens.
+// CR 702.154a Enlist: "As this creature attacks, you may tap up to one untapped nonattacking creature you control that either has haste or has been under your control continuously since this turn began. When you do, this creature gets +X/+0 until end of turn, where X is the tapped creature's power."
+// CR 702.181a Mobilize N: "Whenever this creature attacks, create N tapped and attacking 1/1 red Warrior creature tokens. Sacrifice them at the beginning of the next end step." (508.4: they were never declared as attackers, so "whenever attacks" abilities do not trigger for them.)
+// CR 702.98a  Unleash: "You may have this permanent enter with a +1/+1 counter on it. It can't block as long as it has a +1/+1 counter on it."
+// CR 702.82a  Devour N: "As this object enters, you may sacrifice any number of creatures. This permanent enters with N +1/+1 counters on it for each creature sacrificed this way."  (702.82b: it "devours" those creatures.)
+// CR 702.156a Ravenous: "This permanent enters with X +1/+1 counters on it. When it enters, if X is 5 or more, draw a card."
+KW_TRIGGERS.push(
+  { cr: '702.110', kw: 'exploit', ev: 'etb-self', cond: 'Exploit: when this creature enters', text: 'When this creature enters, you may sacrifice a creature.' },
+  { cr: '702.154', kw: 'enlist', ev: 'attack-self', cond: 'Enlist: as this creature attacks', text: 'As this creature attacks, you may tap up to one untapped nonattacking creature you control (with haste, or controlled since the turn began). This creature gets +X/+0, X being that creature\'s power.', test: (c, atk) => kwEnlistCandidates(c, atk).length > 0 },
+  { cr: '702.181', kw: 'mobilize', ev: 'attack-self', cond: 'Mobilize: whenever this creature attacks', text: 'Whenever this creature attacks, create N tapped and attacking 1/1 red Warrior creature tokens. Sacrifice them at the beginning of the next end step.' },
+  { cr: '702.98', kw: 'unleash', ev: 'etb-self', cond: 'Unleash: as this creature enters', text: 'You may have this permanent enter with a +1/+1 counter on it. It can\'t block as long as it has a +1/+1 counter on it.' },
+  { cr: '702.82', kw: 'devour', ev: 'etb-self', cond: 'Devour: as this permanent enters', text: 'As this object enters, you may sacrifice any number of creatures. It enters with N +1/+1 counters for each creature sacrificed.' },
+  { cr: '702.156', kw: 'ravenous', ev: 'etb-self', cond: 'Ravenous: this permanent enters with X +1/+1 counters', text: 'This permanent enters with X +1/+1 counters on it. When it enters, if X is 5 or more, draw a card.' }
+);
+const kwIsCreature = c => permTypeInfo(c).types.has('creature');
+function kwEnlistCandidates(c, atk) {
+  const ids = new Set((atk || state.combat.attackers || []).map(a => a.id ?? a));
+  return state.battlefield.filter(x => x.id !== c.id && kwIsCreature(x) && !x.tapped && !ids.has(x.id) && !isSick(x));
+}
+function kwSacrifice(card, why) { const f = findCard(card.id); if (!f || f.zone !== 'battlefield') return false; log(`${why}: sacrificed ${card.name}`); leaveBattlefield(f.card, 'graveyard'); return true; }
+KW_EFFECTS['exploit'] = obj => {
+  const src = findCard(obj.sourceId), name = obj.sourceName || 'It';
+  const linked = (() => { const tx = src ? cardText(src.card) : ''; const m = String(tx).replace(/\([^)]*\)/g, ' ').match(/When (?:~|this creature|[^,.]*?) exploits a creature,\s*([^\n]*)/i); return m ? m[1].trim() : ''; })();
+  const opts = state.battlefield.filter(kwIsCreature).map(c => ({ full: true, label: `Sacrifice ${c.id === obj.sourceId ? name + ' itself' : c.name} (exploit)`, fn: () => {
+    if (!kwSacrifice(c, `${name}: exploit`)) return;
+    if (linked) state.pendingTriggers.push({ kind: 'ability', cardId: obj.sourceId, cardName: name, text: 'When this creature exploits a creature, ' + linked, effect: linked, special: null, optional: false, why: `${name} exploited ${c.name}.` });
+    render(); } }));
+  opts.push({ full: true, label: `Don't sacrifice a creature`, fn: () => log(`${name}: exploit, no creature sacrificed`) });
+  return opts;
+};
+KW_EFFECTS['enlist'] = obj => {
+  const f = findCard(obj.sourceId); if (!f) return [];
+  const opts = kwEnlistCandidates(f.card).map(c => { const p = Math.max(0, ptCalc(c).p || 0); return { full: true, label: `Tap ${c.name}: ${f.card.name} gets +${p}/+0 until end of turn (enlist)`, fn: () => { c.tapped = true; addTempPT(f.card.id, p, 0); log(`${f.card.name}: enlisted ${c.name}, +${p}/+0 until end of turn`); render(); } }; });
+  opts.push({ full: true, label: `Don't enlist`, fn: () => log(`${f.card.name}: no creature enlisted`) });
+  return opts;
+};
+KW_EFFECTS['mobilize'] = obj => { const n = obj.n || 1, f = findCard(obj.sourceId); return [{ full: true, label: `Create ${n} tapped and attacking 1/1 red Warrior token${n === 1 ? '' : 's'}; sacrifice them at the next end step`, fn: () => {
+  snap();
+  for (let i = 0; i < n; i++) {
+    const t = newCard('Warrior', { token: true, tk: { pt: '1/1', col: ['R'], subs: ['Warrior'], types: ['Creature'], type: 'Token Creature — Warrior' } }); t.id = state.nextId++;
+    enterBattlefield(t, { from: 'effect', tapped: true, logMsg: `${obj.sourceName}: mobilize created a tapped and attacking Warrior` });
+    state.combat.attackers = (state.combat.attackers || []).concat([t.id]);   // CR 508.4: never declared, so no attack triggers
+    addFx({ kind: 'delayed', when: 'end', action: 'sacrifice', targetId: t.id, targetName: 'Warrior token', text: 'Sacrifice the Warrior token (mobilize).', srcName: obj.sourceName });
+  }
+  render(); flushTriggers(); } }]; };
+KW_EFFECTS['unleash'] = obj => [
+  { full: true, label: `${obj.sourceName} enters with a +1/+1 counter (it can't block while it has one)`, fn: () => { addCounter(obj.sourceId, 1, 'plus'); const f = findCard(obj.sourceId); if (f) f.card.unleashed = true; log(`${obj.sourceName}: unleashed, it can't block while it has a +1/+1 counter`); } },
+  { full: true, label: `Don't put a +1/+1 counter on ${obj.sourceName}`, fn: () => log(`${obj.sourceName}: not unleashed`) }];
+KW_EFFECTS['devour'] = obj => {
+  const n = obj.n || 1, name = obj.sourceName, others = state.battlefield.filter(c => c.id !== obj.sourceId && kwIsCreature(c));
+  const finish = picked => { let k = 0; for (const x of picked) { const f = findCard(x.id ?? x); if (f && kwSacrifice(f.card, `${name}: devour`)) k++; } if (k) { addCounter(obj.sourceId, n * k, 'plus'); log(`${name}: devoured ${k} creature${k === 1 ? '' : 's'}, enters with ${n * k} +1/+1 counter${n * k === 1 ? '' : 's'}`); } render(); };
+  return [{ full: true, label: `Devour ${n}: sacrifice any number of other creatures (${others.length} available)`, fn: () => {
+    if (!others.length) { log(`${name}: devour, no other creatures to sacrifice`); return; }
+    openPickCards({ title: `Devour ${n}: choose creatures to sacrifice`, cards: others, max: others.length, min: 0, note: `${name} enters with ${n} +1/+1 counter${n === 1 ? '' : 's'} for each creature sacrificed.`, done: finish }); } },
+    { full: true, label: `Don't devour anything`, fn: () => log(`${name}: devoured nothing`) }];
+};
+KW_EFFECTS['ravenous'] = obj => { const f = findCard(obj.sourceId), x = (f && f.card.xValue) || 0; return [{ full: true, label: x ? `Enters with X = ${x} +1/+1 counter${x === 1 ? '' : 's'}${x >= 5 ? ' and draw a card (X is 5 or more)' : ''}` : 'X is 0: no counters', fn: () => { if (x) addCounter(obj.sourceId, x, 'plus'); if (x >= 5) { drawCards(1); log(`${obj.sourceName}: ravenous, X was ${x}, drew a card`); } } }]; };
+// CR 702.147a Decayed and CR 702.98a Unleash (while it has a +1/+1 counter): this creature can't block.
+function kwCantBlock(c) {
+  const items = kwItems(cardText(c) || ''), has = k => items.some(i => new RegExp('^' + k + '\\b', 'i').test(i));
+  if (has('decayed')) return true;
+  const plus = c.counters && typeof c.counters === 'object' ? (c.counters.plus || 0) - (c.counters.minus || 0) : 0;
+  return has('unleash') && plus > 0;
 }
 init();
 
