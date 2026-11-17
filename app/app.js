@@ -1343,13 +1343,45 @@ function openModeChoice(name, md, cb, baseCost) {
   refresh();
 }
 
+// ---- "Always yield" (like Magic Online): remember, for the rest of THIS game, that a given triggered ability should go on the stack by itself
+// with the same targets and apply the same effect, so it stops asking every time. The first time each ability appears you are asked once.
+const ayKey = (name, text) => String(name || '') + '|' + String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+function ayGet(name, text) { return state && state.ay ? state.ay[ayKey(name, text)] || null : null; }
+function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
+function askAlwaysYield(list, next) {
+  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect)); if (!t) { next(); return; }
+  state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect), tg = t._picked && t._picked.length ? t._picked : null;
+  state.ay[key] = { auto: false, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
+  const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
+  m.body.append(h('div', { class: 'psub', text: `${t.cardName}: ${t._text || t.effect}` }),
+    h('div', { class: 'psub', text: `Always put this ability on the stack${tg ? ' targeting ' + tg.map(x => x.name).join(', ') : ''} and apply the same effect for the rest of this game, without asking each time? (You can undo this from \u2699 \u2192 Always yield. It resets when the game ends.)` }));
+  m.foot.append(h('button', { text: 'Ask every time', onclick: () => { m.close(); askAlwaysYield(list, next); } }),
+    h('button', { class: 'primary', text: 'Always yield', onclick: () => { state.ay[key].auto = true; state.ay[key].targets = tg; m.close(); log(`Always yield: ${t.cardName}'s ability will go on the stack automatically this game`); askAlwaysYield(list, next); } }));
+}
+function ayResolveAuto() {   // resolve always-yield abilities from the top of the stack while their effect is already known
+  for (let i = 0; i < 12; i++) {
+    const top = state.stack[state.stack.length - 1]; if (!top || !top.ability || !top.trigger) break;
+    const e = ayGet(top.sourceName, top.text); if (!e || !e.auto || !e.label || document.querySelector('#modalRoot .backdrop')) break;
+    resolveTopOfStack();
+  }
+  if (state.stack.length && !document.querySelector('#modalRoot .backdrop')) openStack();
+}
+function openAlwaysYield() {
+  const m = modal('Always yield (this game)', { width: 560 });
+  const draw = () => {
+    const ents = Object.entries((state && state.ay) || {}).filter(([, e]) => e.auto);
+    m.body.replaceChildren(h('div', { class: 'psub', text: 'Triggered abilities that go on the stack and resolve by themselves for the rest of this game. Remove one to be asked again. All of these reset when the game ends.' }),
+      ...(ents.length ? ents.map(([k, e]) => h('div', { class: 'row' }, h('span', { class: 'nm', text: `${e.name}: ${e.text}${e.targets ? ' \u2192 ' + e.targets.map(x => x.name).join(', ') : ''}${e.label ? ' (' + e.label + ')' : ''}` }), h('button', { text: 'Remove', onclick: () => { delete state.ay[k]; draw(); } }))) : [h('div', { class: 'muted', text: 'Nothing is set to always yield.' })]));
+  };
+  draw(); m.foot.append(h('button', { text: 'Clear all', onclick: () => { if (state) state.ay = {}; draw(); } }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+}
 function openTriggerBatch(batch) {
   const m = modal(batch.length > 1 ? `${batch.length} triggered abilities` : 'Triggered ability', { width: 640, sticky: true, noClose: true });
   const remaining = [...batch], placed = [];
   const body = m.body;
   const finish = () => {
     m.close();
-    if (placed.length) { render(); openStack(); }
+    if (placed.length) { render(); askAlwaysYield(placed, () => { render(); if (placed.every(x => x._auto)) ayResolveAuto(); else openStack(); }); }
     else { render(); resolvePendingTrigger(); }
   };
   const put = t => {
@@ -1365,7 +1397,7 @@ function openTriggerBatch(batch) {
     pushWith(t, text, null);
   };
   const pushWith = (t, text, picked) => {
-    remaining.splice(remaining.indexOf(t), 1);
+    remaining.splice(remaining.indexOf(t), 1); t._picked = picked; t._text = text;
     const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, spellId: t.spellId, otherId: t.otherId, kw: t.kw, n: t.n, arg: t.arg };
     if (picked) { obj.targets = picked; obj._tgtAsked = true; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; }
     state.stack.push(obj);
@@ -1388,7 +1420,13 @@ function openTriggerBatch(batch) {
       placed.length ? h('div', { class: 'muted small', text: 'On the stack so far (bottom to top): ' + placed.map(t => t.cardName).join(', ') }) : null
     ].filter(Boolean));
   };
-  draw();
+  for (const t of [...remaining]) {   // always-yield abilities go on the stack by themselves
+    const e = ayGet(t.cardName, t.effect); if (!e || !e.auto || !remaining.includes(t) || parseModal(t.effect)) continue;
+    const specs = t.special ? [] : parseTargetSpecs(t.effect);
+    if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
+    else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
+  }
+  if (remaining.length) draw();
 }
 const NUMW = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const numOf = w => NUMW[String(w).toLowerCase()] || parseInt(w, 10) || 1;
@@ -1767,6 +1805,11 @@ function openAbilityEffect(obj, done) {
     const specs = parseTargetSpecs(tx);
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
+  if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
+    const e = ayGet(obj.sourceName, tx);
+    if (e && e.auto && e.label) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
+      if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
+  }
   // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.
   if (teach('autoResolve') && !obj.special) {
     let pre = []; try { pre = effectOptions(tx, obj).filter(o => !o.hidden); } catch (e) { pre = []; }
@@ -1775,7 +1818,7 @@ function openAbilityEffect(obj, done) {
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
     if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
     if (clean) {
-      const lbl = one.label || 'its effect';
+      const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
       log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
       one.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
     }
@@ -1819,7 +1862,7 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; o.fn(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && o.label) e.label = o.label; } o.fn(); } });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
   }
@@ -6122,6 +6165,7 @@ function openWelcome(onDone) {
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
       P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.'),
+      P('Tired of the same trigger asking every time? The first time an ability goes on the stack you are asked about ', B('Always yield'), ': say yes and it goes on the stack, picks the same targets and applies the same effect by itself for the rest of that game. Review or remove them under ', B('\u2699 \u2192 Always yield'), '.'),
       P('To play a friend on the same network open ', B('⚙ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.'),
       P('For coin flips and die rolls open ', B('⚙ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
     ['5. Settings', [P('Open ', B('⚙ → Settings'), '. The tabs are:'),
@@ -6168,8 +6212,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.97.2';
+const APP_VERSION = '0.97.3';
 const CHANGELOG = [
+  { v: '0.97.3', title: 'Always yield', notes: ['New "Always yield" (like Magic Online): the first time each triggered ability goes on the stack in a game you are asked once whether to always do the same thing. Say yes and from then on it goes on the stack by itself with the same targets, applies the same effect you chose the first time, and resolves without asking (e.g. a creature that pings your opponent every time you cast a spell).', 'Manage or remove entries from ⚙ → Always yield. Everything resets when the game ends.'] },
   { v: '0.97.2', title: 'Soulbond and Reinforce', notes: ['Soulbond (CR 702.95): when a soulbond creature enters you may pair it with another unpaired creature, and when another creature enters while a soulbond creature is unpaired you may pair them. Paired creatures show a "Paired" badge, both gain the keywords or +N/+N the card\'s own "as long as this creature is paired with another creature, each of those creatures ..." line gives, and they unpair when either leaves the battlefield.', 'Reinforce (CR 702.77): right-click the card in your hand to pay the reinforce cost, discard it and put N +1/+1 counters on a target creature (the ability uses the stack).'] },
   { v: '0.97.1', title: 'Mana Drain delayed mana, interactive preview, Hand tab', notes: ['Delayed mana from rules text (CR 603.7): "At the beginning of your next precombat main phase, add an amount of {C} equal to that spell\'s mana value" (Mana Drain) is now set up when the counter resolves and adds the mana at the start of your next precombat main phase.', 'The enlarged card preview is interactive again: it only changes after the pointer rests on a card for a moment and never changes while the pointer is on it, so you can click to flip a double-faced card or hover its keyword chips.', 'The Hand / Key tab moved to the bottom right.'] },
   { v: '0.97.0', title: 'LAN multiplayer (shared table)', notes: ['New ⚙ → Multiplayer (LAN): play a friend on the same network with no server and no account. One player creates an invite code, the other pastes it and sends back a reply code (direct peer-to-peer connection).', 'You each play your own deck as usual. A docked panel shows your opponent\'s live battlefield, graveyard, exile, stack, life, hand and library SIZES, and a chat box. Hands and libraries never leave your computer.', 'Combat damage you deal and the opponent life buttons change your friend\'s real life total. This first stage is a shared table; automatic priority and targeting across players come next.'] },
@@ -9280,6 +9325,7 @@ function init() {
   $('#imgStatus').addEventListener('click', () => { if (!imgJob.running) { imgMissing.clear(); downloadImages(currentDeckNames()); } });
   $('#btnLogToggle').addEventListener('click', () => { lsSet('mtgpt.logopen', lsGet('mtgpt.logopen', '0') === '1' ? '0' : '1'); render(); });
   $('#btnStats').addEventListener('click', () => { toggleUtilityMenu(false); openStats(); });
+  $('#btnYield').addEventListener('click', () => { toggleUtilityMenu(false); openAlwaysYield(); });
   $('#btnMulti').addEventListener('click', () => { toggleUtilityMenu(false); openMultiplayer(); });
   $('#btnDiceCoin').addEventListener('click', () => { toggleUtilityMenu(false); openDiceCoin(); });
   $('#btnReading').addEventListener('click', () => { toggleUtilityMenu(false); openCoverage(); });
