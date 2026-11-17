@@ -128,6 +128,7 @@ function costAdjustmentsRaw(c) {
     }
   }
   for (const mod of (state.costMods || [])) test(mod.label, mod.dir, mod.amt, mod.subj);
+  out.push(...perSpellTaxAdj(c));
   return out;
 }
 // Returns { base, cost, reduced, increased, why, add, cut } for a card in the current game.

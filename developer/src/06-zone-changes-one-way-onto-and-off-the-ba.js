@@ -17,10 +17,12 @@ function enterBattlefield(c, o = {}) {
   if (!state || !c) return c;
   // o.from: 'hand' | 'stack' | 'library' | 'graveyard' | 'exile' | 'effect'   o.tapped: force tapped/untapped
   // o.logMsg: logged first   o.afterPlace(c): runs once it is on the battlefield, before any triggers (counters, flags)
+  if (cageBlocksEnter(c, o.from)) { const g = globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i); log(`${g.g.name}: ${c.name} can't enter the battlefield from your ${o.from}; it stays there`); toast("It can't enter", `${g.g.name}: creature cards in graveyards and libraries can't enter the battlefield.`); if (o.from === 'graveyard' && !state.graveyard.includes(c)) state.graveyard.push(c); else if (o.from === 'library' && !state.library.includes(c)) state.library.unshift(c); return c; }
   c.counters = c.counters || { plus: 0, minus: 0 };
   sfx(!c.token && isLandName(c.name) ? 'land' : 'enter');
   if (o.logMsg) log(o.logMsg);
   const et = o.tapped !== undefined ? { tapped: !!o.tapped, why: o.why || '' } : (c.token ? { tapped: false, why: '' } : etbTapped(c));
+  if (et.tapped && o.tapped === undefined && landsEnterUntapped(c)) { et.tapped = false; et.why = ''; }
   state.battlefield.push(c);
   applyEtbTapped(c, et);
   etbCounters(c);

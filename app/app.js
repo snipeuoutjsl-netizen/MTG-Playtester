@@ -494,6 +494,7 @@ function splitSecondOn() { return !!state && state.stack.some(x => !x.ability &&
 function canCastNow(c) {
   if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding) return false;
   if (splitSecondOn()) return false;
+  if (c.fromGy && cageBlocksCast()) return false;   // "Players can't cast spells from graveyards or libraries"
   if (c.miracleNow) return true;   // v0.96.3 a miracle is cast as its trigger resolves, whatever the step
   // No player receives priority during untap or the normal cleanup step.
   if (state.step === 0 || state.step === CLEANUP) return false;
@@ -1041,6 +1042,7 @@ function attackBlock(c) {   // why this creature cannot attack right now ('' = i
   if (c.tapped) return 'It is tapped.';
   if (isSick(c)) return 'Summoning sickness: it came under your control this turn (and has no haste).';
   if (hasKw(c, 'defender')) return 'Defender: this creature cannot attack.';
+  { const gb = globalAttackBlock(c); if (gb) return gb; }
   { const cb = statics().find(e => e.kind === 'cant' && e.attack && e.subj.test(c)); if (cb) return `${cb.g.name}: this creature can't attack.`; }
   return '';
 }
@@ -1050,7 +1052,7 @@ const selfTxt = c => String(cardText(c) || '').replace(/\([^)]*\)/g, ' ').replac
 function beginsOnBattlefield(c) { return /if ~ is in your opening hand, you may begin the game with it on the battlefield/i.test(selfTxt(c)); }
 function mulliganHandSwap(c) { return /any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards/i.test(selfTxt(c)); }
 // "Enter tapped as a copy of any land on the battlefield" is a clone-style replacement effect (CR 614.12, 707.2).
-function entersAsLandCopy(c) { return /you may have ~ enter the battlefield tapped as a copy of any land on the battlefield/i.test(selfTxt(c)); }
+function entersAsLandCopy(c) { return /you may have ~ enter (?:the battlefield )?tapped as a copy of any land on the battlefield/i.test(selfTxt(c)); }   // v0.96.26 current Oracle wording drops "the battlefield"
 function landETBTrigger(c) {
   const tx=cardText(c); let m=tx.match(/enters(?: the battlefield)?[^.]*\bscry\s+(\d+)/i);
   if(m) return {kind:'ability',cardId:c.id,cardName:c.name,special:'scry',n:+m[1],optional:false,why:'A land with an enters-the-battlefield trigger.',text:`When ${c.name} enters, scry ${m[1]}.`,effect:`Scry ${m[1]}.`};
@@ -1165,8 +1167,9 @@ function filterMatches(filter, card) {
   return mentioned.some(([, re]) => re.test(t));
 }
 function fireTrigger(ev, ctx = {}) {
-  if (state && ev === 'step' && ctx.id === 'upkeep') { runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
+  if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
   if (!state || !teach('triggerPrompts')) return;
+  if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
   const add = (src, t, why) => { if ((t.zone === 'graveyard') !== inGy(src)) return; state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
@@ -1747,6 +1750,7 @@ function openAbilityEffect(obj, done) {
   }
   if (obj.special === 'storm') { makeSpellCopies(obj.spellId, obj.n || 0, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'suspendCast') { suspendCastFree(obj.sourceId, done); return; }
+  if (obj.special === 'openingReveal' && openingRevealEffect(obj, done)) return;
   if (obj.special === 'reboundCast') { suspendCastFree(obj.sourceId, done, 'Rebound'); return; }
   if ((obj.special === 'surveil' || obj.special === 'scry') && obj.n) {
     openScry(obj.n, obj.special === 'surveil', obj.text || '', () => { log(`Resolved: ${obj.name}`); if (done) done(); }); return;
@@ -1881,10 +1885,12 @@ function enterBattlefield(c, o = {}) {
   if (!state || !c) return c;
   // o.from: 'hand' | 'stack' | 'library' | 'graveyard' | 'exile' | 'effect'   o.tapped: force tapped/untapped
   // o.logMsg: logged first   o.afterPlace(c): runs once it is on the battlefield, before any triggers (counters, flags)
+  if (cageBlocksEnter(c, o.from)) { const g = globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i); log(`${g.g.name}: ${c.name} can't enter the battlefield from your ${o.from}; it stays there`); toast("It can't enter", `${g.g.name}: creature cards in graveyards and libraries can't enter the battlefield.`); if (o.from === 'graveyard' && !state.graveyard.includes(c)) state.graveyard.push(c); else if (o.from === 'library' && !state.library.includes(c)) state.library.unshift(c); return c; }
   c.counters = c.counters || { plus: 0, minus: 0 };
   sfx(!c.token && isLandName(c.name) ? 'land' : 'enter');
   if (o.logMsg) log(o.logMsg);
   const et = o.tapped !== undefined ? { tapped: !!o.tapped, why: o.why || '' } : (c.token ? { tapped: false, why: '' } : etbTapped(c));
+  if (et.tapped && o.tapped === undefined && landsEnterUntapped(c)) { et.tapped = false; et.why = ''; }
   state.battlefield.push(c);
   applyEtbTapped(c, et);
   etbCounters(c);
@@ -2237,6 +2243,7 @@ function costAdjustmentsRaw(c) {
     }
   }
   for (const mod of (state.costMods || [])) test(mod.label, mod.dir, mod.amt, mod.subj);
+  out.push(...perSpellTaxAdj(c));
   return out;
 }
 // Returns { base, cost, reduced, increased, why, add, cut } for a card in the current game.
@@ -3761,6 +3768,7 @@ function finishSerumPowder() {
 }
 function pregameAction(id,action) {
   if(!state||state.phase!=='pregame')return; const f=findCard(id); if(!f||f.zone!=='hand')return;
+  if(action==='reveal'){ pregameReveal(id); return; }
   snap(); const [c]=state.hand.splice(f.idx,1);
   if(action==='battlefield'){enterBattlefield(c,{from:'hand',tapped:false,logMsg:`Pre-game: ${c.name} begins on the battlefield`});}
   else {state.exile.push(c);log(`Pre-game: ${c.name} exiled`);}
@@ -4015,11 +4023,12 @@ function manaKeepers() {
 }
 function clearManaPool(reason='') {
   if (!state || !state.manaPool || !manaTotal()) return;
-  const keep = manaKeepers(), kept = {}; let lost = 0, held = 0;
+  const keep = manaKeepers(), kept = {}; let lost = 0, held = 0, toC = 0;
   for (const k of Object.keys(state.manaPool)) {
     const v = state.manaPool[k] || 0;
-    if (keep.all || keep.colors.has(k)) { kept[k] = v; held += v; } else { kept[k] = 0; lost += v; }
+    if (keep.all || keep.colors.has(k)) { kept[k] = v; held += v; } else { kept[k] = 0; lost += v; if (v && k !== 'C' && omnathColorless()) { toC += v; lost -= v; held += v; } }
   }
+  kept.C = (kept.C || 0) + toC;   // Omnath: unspent mana becomes colorless instead of being lost
   state.manaPool = Object.assign({W:0,U:0,B:0,R:0,G:0,C:0}, kept);
   if (reason && lost) log(`${lost} floating mana emptied (${reason})`);
   if (reason && held) log(`${held} floating mana stayed in your pool (${[...new Set(keep.by)].join(', ')})`);
@@ -5512,7 +5521,11 @@ function renderOverlay() {
         ? h('div',{class:'prelist'},candidates.map(c=>h('div',{class:'prerow'},
             h('div',{class:'pre-info'},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c)})),
             h('button',{class:'primary',text:'Start on battlefield',onclick:()=>pregameAction(c.id,'battlefield')}))))
-        : h('div',{class:'pre-none',text:'Nothing in your hand can start on the battlefield.'}),
+        : null,
+      state.hand.some(c=>openingReveal(c)) ? h('div',{class:'prelist'},state.hand.filter(c=>openingReveal(c)).map(c=>h('div',{class:'prerow'},
+            h('div',{class:'pre-info'},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c)})),
+            h('button',{class:'primary',text:c.revealedOpening?'Revealed \u2713':'Reveal',disabled:!!c.revealedOpening,onclick:()=>pregameAction(c.id,'reveal')})))) : null,
+      (!candidates.length && !state.hand.some(c=>openingReveal(c))) ? h('div',{class:'pre-none',text:'Nothing in your hand can begin the game in a special way.'}) : null,
       h('div',{class:'phint'},h('span',{class:'phint-i',text:'i'}),h('span',{text:'This pause is on purpose: opening-hand abilities happen before the first turn begins.'})),
       h('div',{class:'pbtns pre-go'},h('button',{class:'primary',text:'Continue to first turn',onclick:finishPregame})));
     return;
@@ -6110,8 +6123,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.25';
+const APP_VERSION = '0.96.26';
 const CHANGELOG = [
+  { v: '0.96.26', title: 'Opening-hand reveals, global rules from your deck report', notes: ['Devourer of Destiny and every card worded "You may reveal this card from your opening hand. If you do, at the beginning of your first upkeep, ...": the pre-game screen now has a Reveal button, and the effect goes on the stack at your first upkeep (Devourer: look at the top four, keep one on top, exile the rest).','Ensnaring Bridge: creatures with power greater than the number of cards in your hand can\'t attack (the attack list updates live as your hand changes).','Torpor Orb: creatures entering no longer cause abilities to trigger. Grafdigger\'s Cage: creature cards can\'t enter the battlefield from a graveyard or library, and spells can\'t be cast from graveyards. Omnath: unspent mana becomes colorless instead of emptying. Damping Sphere: each spell costs {1} more for each other spell cast this turn. "Lands you control enter untapped" is applied.','Vesuva and similar lands are recognised in the current Oracle wording. The card-reading report counts all of these as understood.'] },
   { v: '0.96.25', title: 'Token doubling, honest card report, Serum Powder only when usable', notes: ['The opening-hand screen only shows the Serum Powder button when a card in your hand allows it (CR 103.5b); it is no longer shown greyed out all the time.','Token-creation replacement effects (CR 614): "If an effect would create one or more tokens under your control, it creates twice that many instead" (Doubling Season, Parallel Lives, Anointed Procession) and "that many plus N" are read from the rules text and applied whenever an effect creates tokens. Doubling Season only doubled counters before.','The card-reading report (How the app reads your deck) now counts everything the engine really handles: it picks up keywords with triggers, effects, alternative costs or a rules test by itself, plus Warp/Flashback lines, "cast from your graveyard" lines, token replacement lines and Reanimate-style life loss. On the sample deck, lines the report did not understand went from 7 to 0.'] },
   { v: '0.96.24', title: 'Green glow, popups above the hand, rules-driven statics', notes: ['Permanents and planeswalkers with an ability you can activate right now get a soft pulsing green glow; when nothing can be activated there is no glow.','The stack and the resolving prompt (including its Discard / Resolve buttons) now sit in the space above your hand, so the hand can no longer cover them.','Kaito, Bane of Nightmares: during your turn, while he has loyalty counters, he is now a 3/4 Ninja creature with hexproof (type, power/toughness, creature row and keyword). This is read from the words of the static ability, not from his name, so every card with that wording works.','New general reader for a permanent\'s own statics: "As long as [condition], ~ is a N/N [types] creature with [keywords]", "~ has [keyword] as long as [condition]" (Bloodghast) and "~ can\'t block" (Gravecrawler, Bloodghast). The card-reading report now counts these as understood.'] },
   { v: '0.96.23', title: 'Zones resize to fit, keyword batch 7', notes: ['Every battlefield zone now measures its cards after layout and shrinks them in real time until all of them fit, so a fourth or fifth land no longer wraps under the zone or gets clipped.','Hideaway N (702.75): when it enters, look at the top N cards, exile one face down, put the rest on the bottom in a random order; right-click the permanent and choose Hideaway to play the exiled card free (a land is put onto the battlefield).','Undaunted (702.125): costs {1} less for the opponent. Encore (702.141): from your graveyard at sorcery speed, exile the card to create a hasty token copy that is sacrificed at the next end step.'] },
@@ -8935,6 +8949,8 @@ function compileCardOne(c) {
     if (/^\+\s*(?:\{[^}]+\})+\s*\u2014/.test(stripped)) { const eff = recognizedEffects(stripped.replace(/^[^\u2014]*\u2014\s*/, '').replace(nameRe, '~')); push(text, 'spell', eff.length ? 'ok' : 'part', `Spree mode: you pick it as you cast, and its cost is added to the spell.` + (eff.length ? ` The app can apply: ${eff.join('; ')}.` : ' You apply its effect by hand.')); continue; }
     { const rl = rulingFor(norml); if (rl) { push(text, 'other', 'part', rl); continue; } }
     if (/^You may cast (?:~|this card|this creature|[A-Z][\w' ,-]*?) from your graveyard (?:as long as|using its)\b/i.test(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Cast from your graveyard: the card shows a Cast option in your graveyard while its condition holds (or for its alternative cost).'); continue; }
+    if (globalStaticLine(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Static rule read from its words: the app applies it automatically while this is on the battlefield (attack limits, enter-trigger suppression, zone locks, cost and mana effects). Evasion against blockers is not needed in a goldfish game.'); continue; }
+    if (OPEN_REVEAL_RE.test(selfTxt({ name: info.name, tx: info.tx }).split('\n').find(l => /opening hand/i.test(l)) || '') && /opening hand/i.test(stripped)) { push(text, 'other', 'ok', 'Opening-hand reveal: the pre-game screen offers a Reveal button; the effect goes on the stack at your first upkeep.'); continue; }
     if (tokenReplLine(stripped)) { push(text, 'static', 'ok', 'Replacement effect (rule 614): every time an effect creates tokens for you, the app changes the number as it creates them and logs it.'); continue; }
     { const sb = sbParseLine(stripped.replace(nameRe, '~')); if (sb) { push(text, 'static', 'ok', sb.becomes ? `Static ability: ${sb.cond ? 'as long as ' + sb.cond + ', ' : ''}it is a ${sb.pt || ''} ${sb.subs.join(' ')} creature${sb.kws.length ? ' with ' + sb.kws.join(', ') : ''}; the app applies the type, P/T and keywords while the condition holds.` : sb.cantBlock ? `Static ability: it can't block${sb.cond ? ' as long as ' + sb.cond : ''}; the app keeps it out of the blocker list.` : `Static ability: it has ${sb.kws.join(', ')}${sb.cond ? ' as long as ' + sb.cond : ''}; the app checks the condition each time it reads the card.`); continue; } }
     push(text, 'other', 'unk', 'Not understood: the app does nothing for this line. Handle it by hand.');
@@ -10304,6 +10320,76 @@ function adjustTokenCount(n, d, src) {
   if (teach('replaceNotes')) log(`Replacement effect${effects.length > 1 ? 's' : ''} (rule 614): ${n} ${(d && d.name) || ''} token${n === 1 ? '' : 's'} would be created${src ? ' by ' + src : ''}; ${r.order.map(e => `${e.src.name}: ${e.label}`).join(', then ')} → ${r.value}`);
   return r.value;
 }
+// ---------------------------------------------------------------- v0.96.26 opening-hand reveal (CR 103.6 / Chancellor-style cards), read from the rules text
+// CR 103.6: "...a player may take any special actions that let a card begin the game ... before the first turn."  The wording is:
+//   "You may reveal this card from your opening hand. If you do, at the beginning of your first upkeep, <effect>."   (Chancellor of the Annex, Devourer of Destiny, ...)
+// The pre-game screen offers a Reveal button for every such card; at your first upkeep the effect is put on the stack.
+const OPEN_REVEAL_RE = /^You may reveal ~ from your opening hand\. If you do, (?:at the beginning of your first upkeep, )?(.+)$/i;
+function openingReveal(c) { if (!c || c.token) return null; for (const ln of selfTxt(c).split('\n')) { const m = ln.trim().match(OPEN_REVEAL_RE); if (m) return { text: m[1].replace(/\s+$/, ''), upkeep: /at the beginning of your first upkeep/i.test(ln) }; } return null; }
+function pregameReveal(id) {
+  if (!state || state.phase !== 'pregame') return; const f = findCard(id); if (!f || f.zone !== 'hand' || !openingReveal(f.card) || f.card.revealedOpening) return;
+  snap(); f.card.revealedOpening = true; log(`Pre-game: revealed ${f.card.name} from your opening hand; its effect happens at the beginning of your first upkeep`); render();
+}
+function openingRevealTriggers() {
+  if (!state) return;
+  for (const c of state.hand) if (c.revealedOpening) {
+    const r = openingReveal(c); delete c.revealedOpening; if (!r) continue;
+    state.pendingTriggers.push({ kind: 'ability', cardId: c.id, cardName: c.name, special: 'openingReveal', text: `Opening-hand reveal — At the beginning of your first upkeep, ${r.text}`, effect: r.text, why: `You revealed ${c.name} from your opening hand.` });
+  }
+}
+// "Look at the top four cards of your library. You may put one of those cards back on top of your library. Exile the rest."
+function openingRevealEffect(obj, done) {
+  const m = String(obj.effect || obj.text).match(/look at the top (\w+) cards? of your library\. You may put one of those cards back on top of your library\. Exile the rest/i); if (!m) return false;
+  const n = wordN(m[1]), top = state.library.slice(0, n); if (!top.length) { log(`${obj.cardName || obj.sourceName}: your library is empty`); if (done) done(); return true; }
+  openPickCards({ title: `${obj.cardName || obj.sourceName}: put one back on top`, cards: top, max: 1, min: 0, note: `Look at the top ${top.length}. You may put one back on top of your library; the rest are exiled.`, done: picked => {
+    snap(); const keep = picked && picked[0] ? picked[0].id : null;
+    for (const c of top) { if (c.id === keep) continue; const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); state.exile.push(x); } }
+    log(`${obj.cardName || obj.sourceName}: ${keep ? 'one card stays on top, ' : ''}${top.length - (keep ? 1 : 0)} exiled`); render(); if (done) done(); } });
+  return true;
+}
+// ---------------------------------------------------------------- v0.96.26 global static abilities of permanents, read from rules text
+// Each is a short pattern for a whole FAMILY of cards (Oracle wording), checked against every permanent on the battlefield.
+//  CR 508.1c-style attack restriction:  "Creatures with power greater than the number of cards in your hand can't attack."   (Ensnaring Bridge)
+//  CR 603.2g (events that don't cause abilities to trigger):  "Creatures entering don't cause abilities to trigger."   (Torpor Orb)
+//  CR 614.12 / 401.? zone restrictions:  "Creature cards in graveyards and libraries can't enter the battlefield." / "Players can't cast spells from graveyards or libraries."  (Grafdigger's Cage)
+//  CR 614.1 replacement of mana loss:  "If you would lose unspent mana, that mana becomes colorless instead."   (Omnath, Locus of the Void)
+//  CR 118.7 cost increase per spell cast:  "Each spell a player casts costs {1} more to cast for each other spell that player has cast this turn."   (Damping Sphere)
+//  CR 614.12 enters untapped:  "Lands you control enter untapped." / "Permanents you control enter untapped."
+function globalLines() {
+  if (!state) return [];
+  const out = [];
+  for (const g of state.battlefield) { if (g.token) continue; const i = cardInfo(g.name); if (!i || !i.tx) continue;
+    for (const ln of i.tx.replace(/\([^)]*\)/g, '').replace(/[’]/g, "'").split('\n')) out.push({ g, ln: ln.trim() }); }
+  return out;
+}
+function globalHas(re) { return globalLines().find(x => re.test(x.ln)) || null; }
+// Ensnaring Bridge family
+function globalAttackBlock(c) {
+  const cr = ptCalc(c);
+  for (const { g, ln } of globalLines()) {
+    let m = ln.match(/^Creatures with power greater than the number of cards in your hand can't attack\.?$/i);
+    if (m && cr.p > state.hand.length) return `${g.name}: creatures with power greater than the number of cards in your hand (${state.hand.length}) can't attack.`;
+    m = ln.match(/^Creatures with power (\d+) or (greater|less) can't attack\.?$/i);
+    if (m && (m[2].toLowerCase() === 'greater' ? cr.p >= +m[1] : cr.p <= +m[1])) return `${g.name}: creatures with power ${m[1]} or ${m[2]} can't attack.`;
+  }
+  return '';
+}
+const torporOrbOn = c => !!c && /\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering don't cause abilities to trigger\.?$/i);
+const cageBlocksEnter = (c, from) => (from === 'graveyard' || from === 'library') && !!c && /\bCreature\b/.test(frontType(c) || '') && globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i);
+const cageBlocksCast = () => !!globalHas(/^Players can't cast spells from graveyards or libraries\.?$/i);
+const omnathColorless = () => !!globalHas(/^If you would lose unspent mana, that mana becomes colorless instead\.?$/i);
+const landsEnterUntapped = c => !!c && !c.token && /\bLand\b/.test(frontType(c) || '') && !!globalHas(/^(?:Lands|Permanents) you control enter untapped\.?$/i);
+function perSpellTaxAdj(c) {
+  const out = []; if (!state || !c) return out; const n = spellsCastNow();
+  for (const { g, ln } of globalLines()) { const m = ln.match(/^Each spell a player casts costs \{(\d+)\} more to cast for each other spell that player has cast this turn\.?$/i); if (m && n > 0) out.push({ src: g.name, dir: 'more', amt: +m[1] * n }); }
+  return out;
+}
+const GLOBAL_STATIC_RES = [
+  /^Creatures with power (?:greater than the number of cards in your hand|\d+ or (?:greater|less)) can't attack\.?$/i, /^Creatures entering don't cause abilities to trigger\.?$/i,
+  /^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i, /^Players can't cast spells from graveyards or libraries\.?$/i,
+  /^If you would lose unspent mana, that mana becomes colorless instead\.?$/i, /^Each spell a player casts costs \{\d+\} more to cast for each other spell that player has cast this turn\.?$/i,
+  /^(?:Lands|Permanents) you control enter untapped\.?$/i, /^~ can't be blocked by creatures with power \d+ or less\.?$/i];
+const globalStaticLine = line => GLOBAL_STATIC_RES.some(re => re.test(String(line || '').trim().replace(/[\u2019]/g, "'")));
 init();
 
 })();
