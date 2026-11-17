@@ -5188,13 +5188,13 @@ function fitBattlefieldCards() {
     const zone = row.parentElement;
     const count = row.children.length;
     if (!count || !zone) {
-      row.style.setProperty('--zone-scale', '1');
+      row.style.setProperty('--zone-scale', '1'); row.style.maxWidth = '';
       continue;
     }
 
     const availW = Math.max(1, zone.clientWidth - 20);
-    const availH = Math.max(1, zone.clientHeight - 42);
-    let scale = 1;
+    const availH = Math.max(1, zone.clientHeight - 48);   // v0.96.20 a few px of margin so a borderline fit cannot flip between two layouts
+    let scale = 1, usedCols = 0;
     if (spec.id === 'row-creatures' && zone.classList.contains('combat-on')) {   // combat (v0.69.3): a single row, non-attackers overlapped to the side
       const na = row.querySelectorAll('.card.attacking').length, no = row.querySelectorAll('.card:not(.attacking)').length;
       const need = na * (baseW + gap) + no * (baseW * 0.54 + gap) + 24;
@@ -5207,7 +5207,7 @@ function fitBattlefieldCards() {
       // become progressively more compact.
       const idealCols = Math.max(1, Math.ceil(Math.sqrt((count * availW * baseH) / Math.max(availH * baseW, 1))));
       const cols = Math.min(count, idealCols);
-      const rows = Math.ceil(count / cols);
+      const rows = Math.ceil(count / cols); usedCols = cols;
       scale = Math.min(
         1,
         (availW - Math.max(0, cols - 1) * gap) / (cols * baseW),
@@ -5221,6 +5221,9 @@ function fitBattlefieldCards() {
 
     scale = Math.max(minScale, scale);
     row.style.setProperty('--zone-scale', String(scale));
+    // v0.96.20 make the browser wrap into exactly the columns this calculation assumed (a razor-thin fit used to wrap or not from frame to frame: the flicker with 5 permanents)
+    if (usedCols) usedCols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * scale + gap) + 1e-6)));   // as many columns as truly fit at this size
+    if (spec.id !== 'row-creatures') row.style.maxWidth = usedCols ? Math.ceil(usedCols * baseW * scale + (usedCols - 1) * gap + 3) + 'px' : '';
   }
 }
 
@@ -6089,8 +6092,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.19';
+const APP_VERSION = '0.96.20';
 const CHANGELOG = [
+  { v: '0.96.20', title: 'Battlefield flicker fix', notes: ['Fixed the flicker with five or more permanents in a zone: a card kept hopping between sitting in the row and wrapping underneath. The zones no longer show a scrollbar (it appeared and disappeared, changing how many cards fit), the number of columns is now set exactly from the card size so the browser cannot round it differently from frame to frame, and the fit keeps a few pixels of margin. Zones still scroll with the mouse wheel.'] },
   { v: '0.96.19', title: 'Targeting fix: "an opponent controls"', notes: ['Spells and abilities that say "target nonland permanent an opponent controls" (Leyline Binding, Banishing Light-style cards) or "target creature an opponent controls" no longer offer You and Opponent as targets. Only permanents are legal targets there (CR 115.2); because the opponent\'s board is not tracked, the single "a permanent your opponent controls" choice remains.'] },
   { v: '0.96.18', title: 'Steady, filling turn bar; one-click sets; more music', notes: ['The turn-flow bar is now always the same size and its steps never shift: the button slot is fixed, the stack count floats, and the current step no longer gets wider. It also fills like a loading bar up to the step you are in, in your theme colours.','One-click sets now exist for every interface theme (Midnight, Obsidian & gold, Abyss blue, Forest, Neon, Parchment, Light, Pixel cosmos): the theme, card sleeve, playmat, board frame and a matching song all change together (Settings > Look). Untick Matching music to leave your song alone.','Five new generated songs (Settings > Sound > Music style): Dusty boom-bap, Rainy window, Midnight jazz-hop, Arcade chill and Golden hour, next to Cosmic low-fi.','Frenzy (702.68): +N/+0 when it attacks unblocked. Scavenge (702.97): exile it from the graveyard for +1/+1 counters equal to its power on a creature.'] },
   { v: '0.96.17', title: 'Keyword batch 5', notes: ['Exploit (702.110): when it enters you may sacrifice a creature (it can sacrifice itself); "when this creature exploits a creature" then triggers.','Enlist (702.154): as it attacks, tap an untapped nonattacking creature that is not summoning sick; it gets +X/+0 for that creature\'s power.','Mobilize N (702.181): N tapped and attacking 1/1 red Warrior tokens, sacrificed at the next end step; they do not trigger attack abilities.','Unleash (702.98): optional +1/+1 counter, and the creature cannot be assigned as a blocker while it has one (decayed now also blocks that way).','Devour N (702.82): sacrifice any number of creatures for N counters each. Ravenous (702.156): X counters, draw a card if X is 5 or more.','Fixed: Bolster with tied creatures now actually puts the counters on the creature you pick.'] },

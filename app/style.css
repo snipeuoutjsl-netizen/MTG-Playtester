@@ -1579,3 +1579,7 @@ body.strip-on.lay-lanes #mat { grid-template-rows: minmax(0, 1fr) auto minmax(ca
 @keyframes bsStripes { to { background-position: 32px 0; } }
 @media (prefers-reduced-motion: reduce) { #boardstrip::after { animation: none; } #boardstrip::before { transition: none; } }
 body.responding #boardstrip .bs-step { opacity: .55; }
+
+/* v0.96.20 battlefield zones never show a scrollbar: its appearing and disappearing changed the zone width, which changed how many cards fit per row, which toggled the scrollbar again (the flicker with 5+ permanents). They still scroll with the wheel. */
+#zone-creatures, #zone-noncreature, #zone-lands { scrollbar-width: none; -ms-overflow-style: none; }
+#zone-creatures::-webkit-scrollbar, #zone-noncreature::-webkit-scrollbar, #zone-lands::-webkit-scrollbar { width: 0; height: 0; display: none; }
