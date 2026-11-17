@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.15';
+const APP_VERSION = '0.96.16';
 const CHANGELOG = [
+  { v: '0.96.16', title: 'Smoother play, fixed turn-flow bar', notes: ['The turn-flow bar now sits in its own row between the battlefield and the lower zones, so it no longer moves when the combat notice appears. The pre-game actions panel now sits above the floating hand. Drawing and re-rendering are much lighter (layout runs once per frame, repeated rules lookups are cached), and the GPU is used for rasterising for a higher frame rate.'] },
   { v: '0.96.15', title: 'Rules-check panel, no Draw 7', notes: ['The opening-hand screen no longer has a Draw 7 button. The rules-check pop-up for discarding to hand size now uses the same panel style as other pop-ups instead of a blank card.'] },
   { v: '0.96.14', title: 'Pop-ups stay above your hand', notes: ['The glowing outline is back on hand cards: green glow for playable now (gently pulsing), red for not enough mana, amber for wrong timing.', 'Centred pop-ups (pre-game actions, choices, search windows) now sit in the space above your hand, so the hand no longer covers their buttons.'] },
   { v: '0.96.13', title: 'Release set fixed, movable Hand label', notes: ['Updater: releases now always come with a SIXTH file, update.json, which older app shells read (its absence caused "update.json has no version"). The release script bundles all six files into one zip and the update window names the missing file.','The small Hand label (count and Key) can be dragged anywhere on the table; its place is remembered and double-clicking puts it back. The Sort button is gone: drag cards sideways in the hand to order them.'] },

@@ -319,7 +319,23 @@ function renderManaPool() {
   el.replaceChildren(...(chips.length?chips:[h('span',{class:'mana-empty',text:'—'})]));
 }
 
-function render() {
+// v0.96.16 Redraws are cheap now: (1) values that depend only on the board (cost reductions, land-type effects) are worked out once per redraw, and
+// (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
+let renderCache = null, layoutQueued = false;
+function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
+function render() { const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } }
+function layoutPass() {
+  layoutQueued = false;
+  try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
+  try { fitBattlefieldCards(); } catch (e) { /* layout only */ }
+  try { layoutHand(); } catch (e) { /* layout only */ }
+  try { placeBoardStrip(); } catch (e) { /* layout only */ }
+  try { const lg = $('#log'); if (lg) lg.scrollTop = lg.scrollHeight; } catch (e) { /* layout only */ }   // reading scrollHeight forces a re-measure: once per frame, not once per redraw
+  try { animApply(); } catch (e) { console.error(e); }
+}
+function scheduleLayout() { if (layoutQueued) return; layoutQueued = true; requestAnimationFrame(layoutPass); }
+function flushLayout() { if (layoutQueued) layoutPass(); }
+function renderInner() {
   if (state) { healHalves(); if (state.halfChosen) setTimeout(checkHalfAbandon, 80); }
   if (state && state.sagaWait && state.sagaWait.length) setTimeout(() => { try { sagaCheck(); } catch (e) { console.error(e); } }, 0);
   animCapture();
@@ -378,9 +394,9 @@ function render() {
   document.body.classList.toggle('l-strip', layoutOn('boardStrip')); document.body.classList.toggle('l-depth', layoutOn('zoneDepth')); document.body.classList.toggle('l-fangy', layoutOn('gyFan'));
   $('#zc-creatures').textContent = counts.creatures ? `(${counts.creatures})` : '';
   $('#zc-lands').textContent = (counts.lands ? `(${counts.lands})` : '') + (has && state.phase === 'play' ? (counts.lands ? ' · ' : '') + (landDropUsed() ? 'land drop used' : 'land drop ready') : '');   // v0.90.2 moved here from the turn bar
-  fitBattlefieldCards();
+  scheduleLayout();
   try { renderEmblems(); } catch (e) { /* display only */ }
-  layoutHand(); applyFan();
+  applyFan();
   $('#phases')?.classList.toggle('hidden', !teach('phaseBar') || (layoutOn('boardStrip') && !!state && state.phase === 'play'));
   renderPhaseBar(); phaseFlash(); drawBoardStrip(); drawStackStage(); drawHandPickBar();
   if (state && (state.resolving || state.resolvingAb) && state.resolvingWait && !state.discarding && !handPick) setTimeout(() => { try { finishResolving(); finishAbilityResolving(); } catch (e) { /* ignore */ } }, 0);
@@ -390,9 +406,8 @@ function render() {
   const logOpen = lsGet('mtgpt.logopen', '0') === '1';
   { const lb = $('#logBox'); if (lb) { lb.classList.toggle('collapsed', !logOpen); const t = $('#btnLogToggle'); if (t) t.textContent = logOpen ? 'Show less ▴' : 'Show all ▾'; } }
   if (has) for (const line of state.log.slice(logOpen ? -120 : -2)) logEl.append(h('div', { text: line }));
-  logEl.scrollTop = logEl.scrollHeight;
   if (stackPanelVisible()) { ensureStackPanel(); stackPanelDraw(); }
-  animApply();
+  scheduleLayout();   // animApply runs after the layout pass
 }
 
 function renderTop() {

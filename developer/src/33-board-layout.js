@@ -131,18 +131,14 @@ function drawBoardStrip() {
   const info = h('div', { class: 'bs-info' },
     state.stack.length ? h('span', { class: 'bs-stack', text: `stack: ${state.stack.length}` }) : null);
   const acts = bsActionsEl(); el.replaceChildren(track, info, acts);
-  placeBoardStrip();
+  scheduleLayout();
 }
-// The tracker floats across the top of the battlefield, in the gap between the creature lane and the lands (v0.76.1).
+// v0.96.16 The tracker is a fixed row of the mat between the creature lane and the lower zones, so nothing around it moves (combat notice included); here it only tightens to fit.
 function placeBoardStrip() {
-  const el = $('#boardstrip'), zc = $('#zone-creatures'); if (!el || el.hidden || !zc) return;
-  const gap = parseFloat(getComputedStyle($('#mat')).rowGap) || 10;
-  el.style.left = (zc.offsetLeft + 6) + 'px'; el.style.width = Math.max(200, zc.offsetWidth - 12) + 'px';
-  // v0.90.4 never let the buttons run into the steps: tighten step by step (smaller chips, no group labels, then zoom) until everything fits.
+  const el = $('#boardstrip'); if (!el || el.hidden) return;
   const zs = [...el.children]; const setZ = v => zs.forEach(k => { k.style.zoom = v; }); el.classList.remove('tight', 'tighter'); setZ('');
   const over = () => el.scrollWidth > el.clientWidth + 1;
   if (over()) { el.classList.add('tight'); if (over()) { el.classList.add('tighter'); let z = 0.95; while (over() && z > 0.6) { setZ(z.toFixed(2)); z -= 0.05; } } }
-  el.style.top = Math.round(zc.offsetTop + zc.offsetHeight + gap / 2 - el.offsetHeight / 2) + 'px';
 }
 window.addEventListener('resize', () => { try { placeBoardStrip(); } catch (e) { /* ignore */ } });
 

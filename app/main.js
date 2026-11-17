@@ -2,6 +2,8 @@
 const { app, BrowserWindow, shell, Menu, ipcMain, dialog, net } = require('electron');
 // Linux / Steam Deck: an AppImage cannot use Chromium's setuid sandbox helper, so run without it (the game only loads its own local files).
 if (process.platform === 'linux' && process.env.APPIMAGE) require('electron').app.commandLine.appendSwitch('no-sandbox');
+// v0.96.16 smoothness: Chromium already draws at the monitor's refresh rate (120/144 Hz when the display is set to it). These switches make sure the GPU does the painting.
+{ const cl = require('electron').app.commandLine; cl.appendSwitch('ignore-gpu-blocklist'); cl.appendSwitch('enable-gpu-rasterization'); cl.appendSwitch('enable-zero-copy'); }
 const vm = require('vm');
 const crypto = require('crypto');
 const path = require('path');
@@ -172,7 +174,7 @@ function createWindow() {
     minWidth: 1000, minHeight: 640,
     backgroundColor: '#0d1013', title: 'MTG Playtester', autoHideMenuBar: true,
     icon: path.join(__dirname, 'build', 'icon.png'),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.js') }
+    webPreferences: { backgroundThrottling: false, contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.js') }
   });
   if (saved.max) win.maximize();
   const dir = activeDir();

@@ -51,6 +51,7 @@ function init() {
 
   let fitResizeTimer = 0;
 try { const ro = new ResizeObserver(() => { clearTimeout(fitResizeTimer); fitResizeTimer = setTimeout(() => { fitBattlefieldCards(); layoutHand(); }, 30); }); for (const id of ['mat', 'zone-creatures', 'zone-noncreature', 'zone-lands', 'row-hand']) { const el = document.getElementById(id); if (el) ro.observe(el); } } catch (e) { /* no ResizeObserver */ }   // v0.96.11 re-fit whenever the zones or the hand change size
+window.addEventListener('resize', () => { try { scheduleLayout(); } catch (e) { /* ignore */ } });
 window.addEventListener('resize', () => {
   clearTimeout(fitResizeTimer);
   fitResizeTimer = setTimeout(() => { fitBattlefieldCards(); layoutHand(); }, 60);

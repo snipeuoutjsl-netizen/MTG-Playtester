@@ -42,7 +42,8 @@ function shuffle(arr) {
   return arr;
 }
 
-const norm = s => String(s).toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+const NORM_CACHE = new Map();   // v0.96.16 pure and called thousands of times per redraw: remember results (bounded)
+const norm = s => { const k = String(s); let v = NORM_CACHE.get(k); if (v === undefined) { v = k.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim(); if (NORM_CACHE.size > 20000) NORM_CACHE.clear(); NORM_CACHE.set(k, v); } return v; };
 
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode etc. */ } };
@@ -2218,7 +2219,8 @@ function spellSubjTest(subj) {
   });
   return c => tests.some(t => t(c));
 }
-function costAdjustments(c) {
+function costAdjustments(c) { return c && c.id != null ? renderMemo('ca:' + c.id + ':' + c.name, () => costAdjustmentsRaw(c)).slice() : costAdjustmentsRaw(c); }
+function costAdjustmentsRaw(c) {
   const out = []; if (!state || !c) return out;
   const test = (src, dir, amt, subj) => { if (amt > 0 && spellSubjTest(subj)(c)) out.push({ src, dir, amt }); };
   for (const g of state.battlefield) {
@@ -4503,7 +4505,8 @@ function openShockChoice(id, fetched) {
 }
 let stackDock=null, stackPanelDraw=null, stackUI=null;
 // The stack lives in a permanent panel on the right (v0.70.0), so it never covers the table. On narrow windows (no right column) it falls back to a floating tray.
-const stackPanelVisible=()=>{ const b=$('#stackBox'); return !!(b&&b.offsetParent); };
+let stackBoxShown = true;   // v0.96.16 measured once per frame in layoutPass(): reading offsetParent on every redraw forced a full re-measure
+const stackPanelVisible=()=>stackBoxShown;
 function buildStack(m, panel){
   if(!stackUI){
     stackUI={ oppName:h('input',{type:'text',placeholder:'Opponent casts… (card name)',style:'flex:1;min-width:0'}),
@@ -5242,7 +5245,23 @@ function renderManaPool() {
   el.replaceChildren(...(chips.length?chips:[h('span',{class:'mana-empty',text:'—'})]));
 }
 
-function render() {
+// v0.96.16 Redraws are cheap now: (1) values that depend only on the board (cost reductions, land-type effects) are worked out once per redraw, and
+// (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
+let renderCache = null, layoutQueued = false;
+function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
+function render() { const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } }
+function layoutPass() {
+  layoutQueued = false;
+  try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
+  try { fitBattlefieldCards(); } catch (e) { /* layout only */ }
+  try { layoutHand(); } catch (e) { /* layout only */ }
+  try { placeBoardStrip(); } catch (e) { /* layout only */ }
+  try { const lg = $('#log'); if (lg) lg.scrollTop = lg.scrollHeight; } catch (e) { /* layout only */ }   // reading scrollHeight forces a re-measure: once per frame, not once per redraw
+  try { animApply(); } catch (e) { console.error(e); }
+}
+function scheduleLayout() { if (layoutQueued) return; layoutQueued = true; requestAnimationFrame(layoutPass); }
+function flushLayout() { if (layoutQueued) layoutPass(); }
+function renderInner() {
   if (state) { healHalves(); if (state.halfChosen) setTimeout(checkHalfAbandon, 80); }
   if (state && state.sagaWait && state.sagaWait.length) setTimeout(() => { try { sagaCheck(); } catch (e) { console.error(e); } }, 0);
   animCapture();
@@ -5301,9 +5320,9 @@ function render() {
   document.body.classList.toggle('l-strip', layoutOn('boardStrip')); document.body.classList.toggle('l-depth', layoutOn('zoneDepth')); document.body.classList.toggle('l-fangy', layoutOn('gyFan'));
   $('#zc-creatures').textContent = counts.creatures ? `(${counts.creatures})` : '';
   $('#zc-lands').textContent = (counts.lands ? `(${counts.lands})` : '') + (has && state.phase === 'play' ? (counts.lands ? ' · ' : '') + (landDropUsed() ? 'land drop used' : 'land drop ready') : '');   // v0.90.2 moved here from the turn bar
-  fitBattlefieldCards();
+  scheduleLayout();
   try { renderEmblems(); } catch (e) { /* display only */ }
-  layoutHand(); applyFan();
+  applyFan();
   $('#phases')?.classList.toggle('hidden', !teach('phaseBar') || (layoutOn('boardStrip') && !!state && state.phase === 'play'));
   renderPhaseBar(); phaseFlash(); drawBoardStrip(); drawStackStage(); drawHandPickBar();
   if (state && (state.resolving || state.resolvingAb) && state.resolvingWait && !state.discarding && !handPick) setTimeout(() => { try { finishResolving(); finishAbilityResolving(); } catch (e) { /* ignore */ } }, 0);
@@ -5313,9 +5332,8 @@ function render() {
   const logOpen = lsGet('mtgpt.logopen', '0') === '1';
   { const lb = $('#logBox'); if (lb) { lb.classList.toggle('collapsed', !logOpen); const t = $('#btnLogToggle'); if (t) t.textContent = logOpen ? 'Show less ▴' : 'Show all ▾'; } }
   if (has) for (const line of state.log.slice(logOpen ? -120 : -2)) logEl.append(h('div', { text: line }));
-  logEl.scrollTop = logEl.scrollHeight;
   if (stackPanelVisible()) { ensureStackPanel(); stackPanelDraw(); }
-  animApply();
+  scheduleLayout();   // animApply runs after the layout pass
 }
 
 function renderTop() {
@@ -6071,8 +6089,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.15';
+const APP_VERSION = '0.96.16';
 const CHANGELOG = [
+  { v: '0.96.16', title: 'Smoother play, fixed turn-flow bar', notes: ['The turn-flow bar now sits in its own row between the battlefield and the lower zones, so it no longer moves when the combat notice appears. The pre-game actions panel now sits above the floating hand. Drawing and re-rendering are much lighter (layout runs once per frame, repeated rules lookups are cached), and the GPU is used for rasterising for a higher frame rate.'] },
   { v: '0.96.15', title: 'Rules-check panel, no Draw 7', notes: ['The opening-hand screen no longer has a Draw 7 button. The rules-check pop-up for discarding to hand size now uses the same panel style as other pop-ups instead of a blank card.'] },
   { v: '0.96.14', title: 'Pop-ups stay above your hand', notes: ['The glowing outline is back on hand cards: green glow for playable now (gently pulsing), red for not enough mana, amber for wrong timing.', 'Centred pop-ups (pre-game actions, choices, search windows) now sit in the space above your hand, so the hand no longer covers their buttons.'] },
   { v: '0.96.13', title: 'Release set fixed, movable Hand label', notes: ['Updater: releases now always come with a SIXTH file, update.json, which older app shells read (its absence caused "update.json has no version"). The release script bundles all six files into one zip and the update window names the missing file.','The small Hand label (count and Key) can be dragged anywhere on the table; its place is remembered and double-clicking puts it back. The Sort button is gone: drag cards sideways in the hand to order them.'] },
@@ -6670,7 +6689,8 @@ function baseLandTypesOf(name) {
 // Battlefield-wide land-type effects. These are evaluated from permanents
 // currently on the battlefield, so the effect updates immediately when the
 // source enters/leaves play.
-function landTypeEffects() {
+function landTypeEffects() { return renderMemo('lte', landTypeEffectsRaw); }
+function landTypeEffectsRaw() {
   const all = new Set();
   let bloodMoon = false;
   if (!state) return { all: false, add: [], override: false };
@@ -7364,7 +7384,8 @@ function noteFlightFrom(id, sel) {
 const flightCounter = new Set();   // ids of spells that were just countered: their flight to the graveyard is tinted red
 let animPrev = null;
 function animCapture() {
-  animPrev = null; if (!animOn('move') || !state) return;
+  if (animPrev) return;   // v0.96.16 several redraws inside one frame: keep the EARLIEST snapshot (the last settled layout); the animation is applied once, after layout
+  if (!animOn('move') || !state) return;
   const cards = new Map(), nodes = new Map(); let n = 0;
   for (const el of document.querySelectorAll(CARD_SEL)) {
     const r = el.getBoundingClientRect(); if (!r.width) continue;
@@ -8039,18 +8060,14 @@ function drawBoardStrip() {
   const info = h('div', { class: 'bs-info' },
     state.stack.length ? h('span', { class: 'bs-stack', text: `stack: ${state.stack.length}` }) : null);
   const acts = bsActionsEl(); el.replaceChildren(track, info, acts);
-  placeBoardStrip();
+  scheduleLayout();
 }
-// The tracker floats across the top of the battlefield, in the gap between the creature lane and the lands (v0.76.1).
+// v0.96.16 The tracker is a fixed row of the mat between the creature lane and the lower zones, so nothing around it moves (combat notice included); here it only tightens to fit.
 function placeBoardStrip() {
-  const el = $('#boardstrip'), zc = $('#zone-creatures'); if (!el || el.hidden || !zc) return;
-  const gap = parseFloat(getComputedStyle($('#mat')).rowGap) || 10;
-  el.style.left = (zc.offsetLeft + 6) + 'px'; el.style.width = Math.max(200, zc.offsetWidth - 12) + 'px';
-  // v0.90.4 never let the buttons run into the steps: tighten step by step (smaller chips, no group labels, then zoom) until everything fits.
+  const el = $('#boardstrip'); if (!el || el.hidden) return;
   const zs = [...el.children]; const setZ = v => zs.forEach(k => { k.style.zoom = v; }); el.classList.remove('tight', 'tighter'); setZ('');
   const over = () => el.scrollWidth > el.clientWidth + 1;
   if (over()) { el.classList.add('tight'); if (over()) { el.classList.add('tighter'); let z = 0.95; while (over() && z > 0.6) { setZ(z.toFixed(2)); z -= 0.05; } } }
-  el.style.top = Math.round(zc.offsetTop + zc.offsetHeight + gap / 2 - el.offsetHeight / 2) + 'px';
 }
 window.addEventListener('resize', () => { try { placeBoardStrip(); } catch (e) { /* ignore */ } });
 
@@ -9100,6 +9117,7 @@ function init() {
 
   let fitResizeTimer = 0;
 try { const ro = new ResizeObserver(() => { clearTimeout(fitResizeTimer); fitResizeTimer = setTimeout(() => { fitBattlefieldCards(); layoutHand(); }, 30); }); for (const id of ['mat', 'zone-creatures', 'zone-noncreature', 'zone-lands', 'row-hand']) { const el = document.getElementById(id); if (el) ro.observe(el); } } catch (e) { /* no ResizeObserver */ }   // v0.96.11 re-fit whenever the zones or the hand change size
+window.addEventListener('resize', () => { try { scheduleLayout(); } catch (e) { /* ignore */ } });
 window.addEventListener('resize', () => {
   clearTimeout(fitResizeTimer);
   fitResizeTimer = setTimeout(() => { fitBattlefieldCards(); layoutHand(); }, 60);
