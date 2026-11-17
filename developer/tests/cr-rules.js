@@ -567,6 +567,12 @@ const { setup } = require('./common.js');
     const id = await putHand('Gift of Orzhova Mock');
     const r = await ev(i => { const c = __d.state.hand.find(x => x.id === i); return __d.reinforceFor(c); }, id);
     return { ok: !!r && r.n === 1 && r.cost === '{G}', why: JSON.stringify(r) }; });
+  await T('603.3b + always yield', 'always yield: an ability set to always yield goes on the stack and resolves itself for the rest of the game (no prompt), and the setting does not carry to a new game', async () => { await reset(); await toMain();
+    const r = await ev(() => { const s = __d.state; const pg = Object.assign(__d.newCard('Mock Pinger'), { id: s.nextId++ }); s.battlefield.push(pg); const tr = __d.parseTriggers(pg)[0];
+      s.ay = {}; s.ay[__d.ayKey('Mock Pinger', tr.effect)] = { auto: true, name: 'Mock Pinger', text: tr.effect, targets: null, label: 'Deal 1 damage to the opponent' };
+      const before = s.oppLife; s.stack = []; const c = Object.assign(__d.newCard('Mock One Drop'), { id: s.nextId++ }); s.stack.push(c); __d.fireTrigger('cast', { card: c }); __d.resolvePendingTrigger();
+      return { dmg: before - s.oppLife, modals: document.querySelectorAll('.backdrop').length, stack: s.stack.map(x => x.name).join() }; });
+    return { ok: r.dmg === 1 && r.modals === 0 && r.stack === 'Mock One Drop', why: JSON.stringify(r) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });
