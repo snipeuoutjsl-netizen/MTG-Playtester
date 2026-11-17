@@ -213,6 +213,7 @@ function attackBlock(c) {   // why this creature cannot attack right now ('' = i
   if (c.tapped) return 'It is tapped.';
   if (isSick(c)) return 'Summoning sickness: it came under your control this turn (and has no haste).';
   if (hasKw(c, 'defender')) return 'Defender: this creature cannot attack.';
+  { const gb = globalAttackBlock(c); if (gb) return gb; }
   { const cb = statics().find(e => e.kind === 'cant' && e.attack && e.subj.test(c)); if (cb) return `${cb.g.name}: this creature can't attack.`; }
   return '';
 }
@@ -222,7 +223,7 @@ const selfTxt = c => String(cardText(c) || '').replace(/\([^)]*\)/g, ' ').replac
 function beginsOnBattlefield(c) { return /if ~ is in your opening hand, you may begin the game with it on the battlefield/i.test(selfTxt(c)); }
 function mulliganHandSwap(c) { return /any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards/i.test(selfTxt(c)); }
 // "Enter tapped as a copy of any land on the battlefield" is a clone-style replacement effect (CR 614.12, 707.2).
-function entersAsLandCopy(c) { return /you may have ~ enter the battlefield tapped as a copy of any land on the battlefield/i.test(selfTxt(c)); }
+function entersAsLandCopy(c) { return /you may have ~ enter (?:the battlefield )?tapped as a copy of any land on the battlefield/i.test(selfTxt(c)); }   // v0.96.26 current Oracle wording drops "the battlefield"
 function landETBTrigger(c) {
   const tx=cardText(c); let m=tx.match(/enters(?: the battlefield)?[^.]*\bscry\s+(\d+)/i);
   if(m) return {kind:'ability',cardId:c.id,cardName:c.name,special:'scry',n:+m[1],optional:false,why:'A land with an enters-the-battlefield trigger.',text:`When ${c.name} enters, scry ${m[1]}.`,effect:`Scry ${m[1]}.`};

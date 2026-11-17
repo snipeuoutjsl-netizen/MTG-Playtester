@@ -574,7 +574,11 @@ function renderOverlay() {
         ? h('div',{class:'prelist'},candidates.map(c=>h('div',{class:'prerow'},
             h('div',{class:'pre-info'},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c)})),
             h('button',{class:'primary',text:'Start on battlefield',onclick:()=>pregameAction(c.id,'battlefield')}))))
-        : h('div',{class:'pre-none',text:'Nothing in your hand can start on the battlefield.'}),
+        : null,
+      state.hand.some(c=>openingReveal(c)) ? h('div',{class:'prelist'},state.hand.filter(c=>openingReveal(c)).map(c=>h('div',{class:'prerow'},
+            h('div',{class:'pre-info'},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c)})),
+            h('button',{class:'primary',text:c.revealedOpening?'Revealed \u2713':'Reveal',disabled:!!c.revealedOpening,onclick:()=>pregameAction(c.id,'reveal')})))) : null,
+      (!candidates.length && !state.hand.some(c=>openingReveal(c))) ? h('div',{class:'pre-none',text:'Nothing in your hand can begin the game in a special way.'}) : null,
       h('div',{class:'phint'},h('span',{class:'phint-i',text:'i'}),h('span',{text:'This pause is on purpose: opening-hand abilities happen before the first turn begins.'})),
       h('div',{class:'pbtns pre-go'},h('button',{class:'primary',text:'Continue to first turn',onclick:finishPregame})));
     return;

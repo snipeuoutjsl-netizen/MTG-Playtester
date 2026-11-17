@@ -230,6 +230,7 @@ function finishSerumPowder() {
 }
 function pregameAction(id,action) {
   if(!state||state.phase!=='pregame')return; const f=findCard(id); if(!f||f.zone!=='hand')return;
+  if(action==='reveal'){ pregameReveal(id); return; }
   snap(); const [c]=state.hand.splice(f.idx,1);
   if(action==='battlefield'){enterBattlefield(c,{from:'hand',tapped:false,logMsg:`Pre-game: ${c.name} begins on the battlefield`});}
   else {state.exile.push(c);log(`Pre-game: ${c.name} exiled`);}
@@ -484,11 +485,12 @@ function manaKeepers() {
 }
 function clearManaPool(reason='') {
   if (!state || !state.manaPool || !manaTotal()) return;
-  const keep = manaKeepers(), kept = {}; let lost = 0, held = 0;
+  const keep = manaKeepers(), kept = {}; let lost = 0, held = 0, toC = 0;
   for (const k of Object.keys(state.manaPool)) {
     const v = state.manaPool[k] || 0;
-    if (keep.all || keep.colors.has(k)) { kept[k] = v; held += v; } else { kept[k] = 0; lost += v; }
+    if (keep.all || keep.colors.has(k)) { kept[k] = v; held += v; } else { kept[k] = 0; lost += v; if (v && k !== 'C' && omnathColorless()) { toC += v; lost -= v; held += v; } }
   }
+  kept.C = (kept.C || 0) + toC;   // Omnath: unspent mana becomes colorless instead of being lost
   state.manaPool = Object.assign({W:0,U:0,B:0,R:0,G:0,C:0}, kept);
   if (reason && lost) log(`${lost} floating mana emptied (${reason})`);
   if (reason && held) log(`${held} floating mana stayed in your pool (${[...new Set(keep.by)].join(', ')})`);

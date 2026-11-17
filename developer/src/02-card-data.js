@@ -413,6 +413,7 @@ function splitSecondOn() { return !!state && state.stack.some(x => !x.ability &&
 function canCastNow(c) {
   if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding) return false;
   if (splitSecondOn()) return false;
+  if (c.fromGy && cageBlocksCast()) return false;   // "Players can't cast spells from graveyards or libraries"
   if (c.miracleNow) return true;   // v0.96.3 a miracle is cast as its trigger resolves, whatever the step
   // No player receives priority during untap or the normal cleanup step.
   if (state.step === 0 || state.step === CLEANUP) return false;

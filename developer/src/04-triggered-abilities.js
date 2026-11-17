@@ -99,8 +99,9 @@ function filterMatches(filter, card) {
   return mentioned.some(([, re]) => re.test(t));
 }
 function fireTrigger(ev, ctx = {}) {
-  if (state && ev === 'step' && ctx.id === 'upkeep') { runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
+  if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
   if (!state || !teach('triggerPrompts')) return;
+  if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
   const add = (src, t, why) => { if ((t.zone === 'graveyard') !== inGy(src)) return; state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
@@ -681,6 +682,7 @@ function openAbilityEffect(obj, done) {
   }
   if (obj.special === 'storm') { makeSpellCopies(obj.spellId, obj.n || 0, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'suspendCast') { suspendCastFree(obj.sourceId, done); return; }
+  if (obj.special === 'openingReveal' && openingRevealEffect(obj, done)) return;
   if (obj.special === 'reboundCast') { suspendCastFree(obj.sourceId, done, 'Rebound'); return; }
   if ((obj.special === 'surveil' || obj.special === 'scry') && obj.n) {
     openScry(obj.n, obj.special === 'surveil', obj.text || '', () => { log(`Resolved: ${obj.name}`); if (done) done(); }); return;
