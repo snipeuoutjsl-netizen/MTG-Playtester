@@ -1094,7 +1094,7 @@ function parseTriggers(c) {
     const cm = body.match(/^((?:When|Whenever|At)\b[^,]*),\s*(.*)$/s);
     if (!cm) continue;
     const cond = cm[1].toLowerCase(), word = lm[1] || '';
-    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false;
+    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false, castAny = null, cAny = null;
     if (/^at\b/.test(cond)) {
       if (!/opponent|\bnext\b/.test(cond)) {
         if (/end of combat/.test(cond)) ev = 'step:end_combat';
@@ -1103,6 +1103,8 @@ function parseTriggers(c) {
       }
     } else if (/^(?:when|whenever) you cast (?:this spell|~)/.test(cond)) ev = 'cast-self';
     else if (/^(?:when|whenever) you cast /.test(cond)) { ev = 'cast'; filter = cond.replace(/^(?:when|whenever) you cast /, ''); }
+    else if ((cAny = cond.match(/^(?:when|whenever) a player casts a spell(?: with mana value (equal to the number of ([a-z+\/-]+) counters on (?:~|this \w+)|(\d+)(?: or (less|greater))?))?$/)) && /^counter that spell\.?$/i.test(cm[2].trim())) {   // v0.96.31 Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
+      ev = 'cast-any'; castAny = { counters: cAny[2] || '', mv: cAny[3] !== undefined ? +cAny[3] : null, cmp: cAny[4] || 'equal' }; }
     else if (/^(?:when|whenever) (?:~|this \w+) enters/.test(cond)) ev = 'etb-self';
     else if (word === 'Landfall' || /\ba land (?:you control )?enters|land enters the battlefield under your control/.test(cond)) ev = 'landfall';
     else if (/^(?:when|whenever) (?:another|a|an|one or more) .*enters/.test(cond) && !/opponent/.test(cond)) { ev = 'etb-other'; filter = cond; }
@@ -1134,7 +1136,7 @@ function parseTriggers(c) {
     if (ev === 'cast') { const nm = /^if it'?s the (first|second|third|fourth) (?:(noncreature|creature|instant|sorcery|artifact|enchantment|land|instant or sorcery) )?spell you cast (?:this|each) turn,\s*/i.exec(cm[2]); if (nm) { nth = { n: ['first', 'second', 'third', 'fourth'].indexOf(nm[1].toLowerCase()) + 1, type: (nm[2] || '').toLowerCase() }; cm[2] = cm[2].slice(nm[0].length); } }
     if (/^if (?:~|this \w+) is in your graveyard\b/i.test(cm[2]) || (ev === 'gy-self')) zone = 'graveyard';
     if (ev !== 'gy-self' && /\breturn (?:~|this \w+|it) from your graveyard to the battlefield/i.test(cm[2])) zone = 'graveyard';   // v0.94.1 Bloodghast: Landfall \u2014 you may return ~ from your graveyard to the battlefield
-    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth });
+    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, castAny });
     if (ev === 'etb-self' && /enters(?: the battlefield)? or attacks/.test(cond)) out.push({ ev: 'attack-self', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ko) out.push({ ev: 'etb-other', cond: cm[1], effect: cm[2], line: body, filter: 'another ' + ko[1], optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
@@ -1158,10 +1160,11 @@ function frontType(c) {
 }
 function filterMatches(filter, card) {
   const t = frontType(card);
-  if (!t) return true;
   const f = filter.toLowerCase();
+  if (!t) return true;
   if (/\bnoncreature\b/.test(f) && /\bCreature\b/.test(t)) return false;
   const words = [['instant or sorcery', /\b(Instant|Sorcery)\b/], ['instant', /\bInstant\b/], ['sorcery', /\bSorcery\b/], ['artifact', /\bArtifact\b/], ['enchantment', /\bEnchantment\b/], ['planeswalker', /\bPlaneswalker\b/], ['land', /\bLand\b/], ['creature', /\bCreature\b/]];
+  { const cw = f.match(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/); if (cw && !colorWordOk(cw[1], cardColorSet(card))) return false; }
   const mentioned = words.filter(([w]) => new RegExp('(?<!non)\\b' + w + '\\b').test(f));
   if (!mentioned.length) return true;
   return mentioned.some(([, re]) => re.test(t));
@@ -1186,6 +1189,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'cast') {
     const sp = ctx.card;
     for (const t of parseTriggers(sp)) if (t.ev === 'cast-self') add(sp, t, `You cast ${sp.name}. "When you cast this spell" abilities trigger immediately and go on the stack above the spell, so they resolve first.`);
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast-any' && castAnyOk(t.castAny, sp, c)) { const n0 = state.pendingTriggers.length; add(c, t, `${sp.name} was cast with mana value ${spellMV(sp)}${t.castAny.counters ? ', equal to the number of ' + t.castAny.counters + ' counters on ' + c.name : ''}.`); if (state.pendingTriggers.length > n0) Object.assign(state.pendingTriggers[state.pendingTriggers.length - 1], { special: 'counterCast', spellId: sp.id }); }
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
@@ -1360,7 +1364,7 @@ function openTriggerBatch(batch) {
   };
   const pushWith = (t, text, picked) => {
     remaining.splice(remaining.indexOf(t), 1);
-    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, kw: t.kw, n: t.n, arg: t.arg };
+    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, spellId: t.spellId, kw: t.kw, n: t.n, arg: t.arg };
     if (picked) { obj.targets = picked; obj._tgtAsked = true; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; }
     state.stack.push(obj);
     state.priority = { active: true, passed: false };
@@ -1750,6 +1754,7 @@ function openAbilityEffect(obj, done) {
   }
   if (obj.special === 'storm') { makeSpellCopies(obj.spellId, obj.n || 0, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'suspendCast') { suspendCastFree(obj.sourceId, done); return; }
+  if (obj.special === 'counterCast') { counterStackObject(obj.spellId, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'openingReveal' && openingRevealEffect(obj, done)) return;
   if (obj.special === 'reboundCast') { suspendCastFree(obj.sourceId, done, 'Rebound'); return; }
   if ((obj.special === 'surveil' || obj.special === 'scry') && obj.n) {
@@ -2948,6 +2953,7 @@ function parseTargetSpecs(text) {
     if (/\bany number of\s*$/i.test(before)) { sp.min = 0; sp.max = 99; }
     else if ((cm = before.match(/\bup to (one|two|three|four|five|x|\d+)\s*$/i))) { sp.min = 0; sp.max = wnum(cm[1]) === 'X' ? 1 : wnum(cm[1]); }
     else if ((cm = before.match(/\b(one|two|three|four|five|\d+)\s+(?:other\s+)?$/i)) && !/choose\s+\w+\s*$/i.test(before)) { sp.min = sp.max = wnum(cm[1]); }
+    { const cq = (' ' + phrase + ' ' + after).match(/\s+that(?:'s| is| are) (one or more colors|colorless|multicolored|white|blue|black|red|green)\b/i) || after.match(/^\s+that(?:'s| is| are) (one or more colors|colorless|multicolored|white|blue|black|red|green)\b/i); if (cq) sp.colorWord = cq[1].toLowerCase(); }   // "target permanent that's one or more colors"
     const wq = after.match(/^\s+with ([^.,;:]+)/i); if (wq) sp.qual = 'with ' + wq[1];
     const p = phrase.toLowerCase();
     if (isAny && !p) { sp.kind = 'any'; sp.types = ['creature', 'planeswalker', 'battle']; sp.player = true; sp.label = 'any target'; }
@@ -2979,8 +2985,22 @@ function parseTargetSpecs(text) {
   return specs;
 }
 function permTypeLine(c) { return c.token ? (c.tk && c.tk.type ? c.tk.type : c.tk && c.tk.pt ? 'Token Creature' : 'Token Artifact') : (frontType(c) || (isLandName(c.name) ? 'Land' : '')); }
+// CR 105.2: an object's colors come from its mana cost (colorless when it has none); tokens use their listed colors.
+function cardColorSet(c) {
+  if (c.token) return new Set(((c.tk && (c.tk.colors || c.tk.color)) || '').toString().toUpperCase().replace(/[^WUBRG]/g, '').split(''));
+  const inf = cardInfo(c.name); return new Set(((String((inf && (inf.mc || '')) || '').split(' // ')[0].match(/\{[^}]*\}/g) || []).join('')).replace(/[^WUBRG]/g, '').split('').filter(Boolean));
+}
+const CARD_COLOR_LETTER = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+function colorWordOk(word, colors) {   // "colorless", "one or more colors", "multicolored", or one color word
+  const w = String(word).toLowerCase();
+  if (w === 'colorless') return colors.size === 0;
+  if (/^(?:one or more colors|colored)$/.test(w)) return colors.size > 0;
+  if (w === 'multicolored') return colors.size > 1;
+  return CARD_COLOR_LETTER[w] ? colors.has(CARD_COLOR_LETTER[w]) : true;
+}
 function permMatchesSpec(c, sp, ctx) {
   const tl = permTypeLine(c);
+  if (sp.colorWord && !colorWordOk(sp.colorWord, cardColorSet(c))) return false;
   if (sp.types.length && !sp.types.includes('permanent') && !sp.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl))) return false;
   for (const md of sp.mods) {
     if (md === 'legendary' && !/Legendary/i.test(tl)) return false;
@@ -3626,7 +3646,7 @@ function moveCard(id, to, pos) {
   } else {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
-    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.xValue; delete c.freeCastTurn; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
     delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });
@@ -5499,7 +5519,7 @@ function renderOverlay() {
       h('div', { class: 'psub', text: 'Get set up in three quick steps.' }),
       h('ol', null,
         h('li', {}, h('b', { text: 'Import / edit deck' }), ' – paste a decklist.'),
-        h('li', {}, h('b', { text: 'Card data… ' }), '(optional) – load the Scryfall bulk file. Without it, card info is picked up from Scryfall when you are online.'),
+        h('li', {}, h('b', { text: 'Card data ' }), '(optional) – load the Scryfall bulk file. Without it, card info is picked up from Scryfall when you are online.'),
         h('li', {}, h('b', { text: 'New game' }), ' – draw your opening hand.')),
       h('div', { class: 'pbtns' }, h('button', { class: 'primary', text: 'Import a deck', onclick: () => openDeckEditor({ blank: true }) })));
     else show(
@@ -5886,6 +5906,7 @@ function openZone(zone) {
       } });
       if(teach('libraryPreview')) row.addEventListener('mouseenter', () => showPreview(c));
       if (zone === 'exile' && c.mayPlayTurn === state.turn) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
+      if (zone === 'exile' && c.freeCastTurn === state.turn && !isLandName(c.name)) row.append(h('button', { class: 'primary', text: 'Cast free (this turn)', title: 'An effect lets you cast this exiled card without paying its mana cost until end of turn', onclick: () => { m.close(); suspendCastFree(c.id, null, 'Free cast'); } }));
       if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && stashReady(c)) row.append(h('button', { class: 'primary', text: c.plotted ? 'Cast free (plotted)' : 'Cast (foretold)', title: c.plotted ? 'You plotted this on an earlier turn: cast it without paying its mana cost, at sorcery speed' : 'You foretold this on an earlier turn: cast it for its foretell cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && c.onAdv) row.append(h('button', { class: 'primary', text: 'Cast creature', title: 'This card was exiled on an adventure: you may cast it from exile', onclick: () => { m.close(); castFromExile(c.id); } }));
@@ -6079,14 +6100,14 @@ function openWelcome(onDone) {
     ['Welcome to MTG Playtester', [P('A solo "goldfish" table for Magic: The Gathering. Load your deck, draw a hand, and practise sequencing your turns with no opponent needed. It runs fully offline once your card data is loaded.'),
       P('This short tour covers getting set up, how a turn works, and how to make the table look the way you like. You can skip it now and reopen it any time from the ', B('⚙ menu → Welcome tour'), '.')]],
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It then works offline.'),
-      P('Open it later from ', B('⚙ → Card data…'), '. Card pictures are separate: ', B('⚙ → Images…'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
+      P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
       P('The deck button at the top left lists your saved decks and switches between them.')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
       P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.'),
-      P('For coin flips and die rolls open ', B('⚙ → Dice & coin…'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
+      P('For coin flips and die rolls open ', B('⚙ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
     ['5. Settings', [P('Open ', B('⚙ → Settings'), '. The tabs are:'),
       h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, foil, cursor, card sizes, turn-flow bar opacity and card sleeves.'), h('li', null, B('Board'), ' – board layout, playmat and the frame around it.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
     ['6. Themes, playmats and sleeves', [P('Under ', B('Settings → Look & feel'), ' the ', B('One-click set'), ' picker changes everything at once: interface theme, card sleeve, playmat, board frame and (if ticked) a matching song. Or choose each part yourself.'),
@@ -6095,11 +6116,11 @@ function openWelcome(onDone) {
       P('The row of small icons at the top shows game states (monarch, initiative, storm count, energy, poison and more); they light up when active, and you can click them to change them. Tapped cards are turned sideways, summoning-sick creatures are dimmed, and a count badge like ', B('×4'), ' means identical cards are piled together (click it to spread them out).'),
       P('Round icons on a creature are keywords it has right now. The ', B('Key'), ' button by the Hand label explains the glow colours, and you can drag that label wherever you like. The Stack panel shows what is waiting to resolve.')]],
     ['8. Learning and honesty', [P('Tutor mode adds hints such as phase pauses, mana payment help and rules reminders. Turn off whatever you do not want.'),
-      P('The app reads the rules text on each card and applies what it understands, then tells you what is left for you to do by hand. ', B('⚙ → How the app reads cards…'), ' shows, card by card, which lines it handles and which it does not. When in doubt, the official rules text is what counts.'),
+      P('The app reads the rules text on each card and applies what it understands, then tells you what is left for you to do by hand. ', B('⚙ → How the app reads cards'), ' shows, card by card, which lines it handles and which it does not. When in doubt, the official rules text is what counts.'),
       P('In "How the app reads cards", ', B('understood'), ' means the app carries out every part of that line; ', B('partly'), ' or ', B('by hand'), ' means some of it is left to you, and the app says which part.')]],
     ['9. Updates', [P('The version number at the top right shows what changed in each release when you click it. New versions are published on GitHub.'),
-      P('Open ', B('⚙ → Update app…'), ' to check for a new version. If one is found it shows what is new and installs it; restart the app when asked. A few releases change the app shell itself (for example graphics settings); for those, run the installer from the Windows or SteamDeck-and-Linux folder once.'),
-      P('Your decks, settings, playmats and sleeves stay on this computer through updates. You can reopen this tour any time from ', B('⚙ → Welcome tour…'), ' or from the Settings window.')]]
+      P('Open ', B('⚙ → Update app'), ' to check for a new version. If one is found it shows what is new and installs it; restart the app when asked. A few releases change the app shell itself (for example graphics settings); for those, run the installer from the Windows or SteamDeck-and-Linux folder once.'),
+      P('Your decks, settings, playmats and sleeves stay on this computer through updates. You can reopen this tour any time from ', B('⚙ → Welcome tour'), ' or from the Settings window.')]]
   ];
   let i = 0;
   const m = modal('Welcome', { width: 600, sticky: true, onClose: () => { lsSet('mtgpt.welcomeSeen', true); if (onDone) onDone(); } });
@@ -6131,8 +6152,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.30';
+const APP_VERSION = '0.96.31';
 const CHANGELOG = [
+  { v: '0.96.31', title: 'Chalice of the Void, Ugin −11, cleaner menus', notes: ['Chalice of the Void now works from its rules text (CR 603.2): "whenever a player casts a spell with mana value equal to the number of charge counters on it, counter that spell" triggers for the matching spell only, X spells count as X=0 on the stack, and the trigger really counters the spell.', 'Search effects that exile their finds ("search your library for any number of colorless nonland cards, exile them, then shuffle. Until end of turn, you may cast those cards without paying their mana costs", e.g. Ugin, Eye of the Storms −11) now work: you pick any number of matching cards, they are exiled, and the Exile window shows a "Cast free (this turn)" button.', 'Colors are read from rules text (CR 105.2): "colorless spell", "target permanent that\'s one or more colors" and color words in trigger filters and targets are enforced.', 'Removed the trailing "…" from the Tools menu and Settings labels.'] },
   { v: '0.96.30', title: 'Urza\'s Saga Construct, imprint with conditions', notes: ['Fixed: the 0/0 Construct token that Urza\'s Saga makes ("This token gets +1/+1 for each artifact you control") was put into the graveyard the moment it was created. "This token" is now understood as the token itself in every static ability, so the Construct counts itself and your other artifacts.','Imprint (CR 607) now reads conditions on the exiled card: "a colorless card with mana value 7 or greater" (Ugin\'s Labyrinth), and "If a card is exiled with this land, add {C}{C} instead" makes the land tap for two.'] },
   { v: '0.96.29', title: 'Tron checks land types, not names', notes: ['"If you control an Urza\'s Mine and an Urza\'s Power-Plant" is now checked the way the rules define it (CR 205.3i): Urza\'s Mine, Urza\'s Power-Plant and Urza\'s Tower are land types, so the app looks at each permanent\'s type line and never at what the card is called. Any land with those types counts.'] },
   { v: '0.96.28', title: 'Lands stay on one row when they fit', notes: ['A row of lands (or artifacts) no longer wraps to a second row while there is room: the zone now measures the real width of its cards (a tapped land is turned sideways and a stack of copies is wider) instead of assuming every card is the same width. Cards still shrink only when they truly cannot fit.'] },
@@ -7843,6 +7865,7 @@ function descMatchesCard(desc, name) {
   if ((m = d.match(/mana value (\d+)(?! or)/))) { if (mvOf(info) !== +m[1]) return false; any = true; }
   if ((m = d.match(/toughness (\d+) or less/))) { const pt = (info.pt || '').split('/')[1]; if (pt === undefined || parseInt(pt, 10) > +m[1]) return false; any = true; }
   if ((m = d.match(/power (\d+) or less/))) { const pt = (info.pt || '').split('/')[0]; if (pt === undefined || parseInt(pt, 10) > +m[1]) return false; any = true; }
+  if (/\bcolorless\b/.test(d)) { any = true; if (/\{[^}]*[WUBRG]/.test(String(info.mc || '').split(' // ')[0])) return false; }   // CR 105.2c: a colorless object has no color (no colored mana symbol in its cost)
   { const CM = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' }, mc0 = String(info.mc || '').split(' // ')[0];
     for (const [w, L] of Object.entries(CM)) { if (new RegExp('\\bnon-?' + w + '\\b').test(d)) { any = true; if (mc0.includes('{' + L)||mc0.includes('/' + L)) return false; } else if (new RegExp('\\b' + w + '\\b').test(d)) { any = true; if (!(mc0.includes('{' + L) || mc0.includes('/' + L))) return false; } } }
   if ((m = d.match(/named ([a-z' ,-]+)/))) { if (norm(info.name) !== norm(m[1].trim())) return false; any = true; }
@@ -7871,19 +7894,20 @@ function openPickCards(o) {
   m.body.append(h('div', { class: 'psub', text: o.note || '' }), status, out); draw();
   m.foot.append(...(o.min ? [] : [h('button', { text: o.nothing || 'Choose nothing', onclick: () => { m.close(); o.done([]); } })]), h('button', { class: 'primary', text: 'Confirm', onclick: () => { if (chosen.size < (o.min || 0)) { toast('Choose more', `You must choose ${o.min}.`); return; } m.close(); o.done(o.cards.filter(c => chosen.has(c.id))); } }));
 }
-function wordN(w) { w = String(w || 'a').toLowerCase(); return /^\d+$/.test(w) ? +w : (TOKEN_NUMW[w] || (w === 'any' ? 99 : 1)); }
+function wordN(w) { w = String(w || 'a').toLowerCase(); return /^\d+$/.test(w) ? +w : (TOKEN_NUMW[w] || (/^any\b/.test(w) ? 99 : 1)); }
 // "Search your library for a creature card with toughness 2 or less, reveal it, put it into your hand, then shuffle."
 function searchEffect(tx, src, obj) {
   const m = String(tx).replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').match(/search your library(?: and\/or graveyard)? for (up to (\w+)|an?|one|two|three|any number of|\w+) ([^.]*?)(?:,| and| then|\.)/i);
   if (!m || /\band (?:your )?graveyard for\b|and exile the rest/i.test(tx)) return null;
   const sentence = (tx.replace(/\n/g, ' ').match(/search your library[^.]*\.(?:[^.]*\.)?/i) || [''])[0];
-  let dest = /onto the battlefield/i.test(sentence) ? 'battlefield' : /into your graveyard/i.test(sentence) ? 'graveyard' : /(?:on top|top of your library)/i.test(sentence) ? 'top' : /into your hand|put (?:it|that card) into your hand/i.test(sentence) ? 'hand' : /\breveal\b/i.test(sentence) ? 'hand' : null;
+  const exileIt = /\bexile (?:them|it|that card|those cards|the cards?)\b/i.test(sentence), freeCast = exileIt && /you may cast (?:those cards|that card|it|them|the cards?) without paying (?:its|their) mana costs?/i.test(sentence);
+  let dest = exileIt ? 'exile' : /onto the battlefield/i.test(sentence) ? 'battlefield' : /into your graveyard/i.test(sentence) ? 'graveyard' : /(?:on top|top of your library)/i.test(sentence) ? 'top' : /into your hand|put (?:it|that card) into your hand/i.test(sentence) ? 'hand' : /\breveal\b/i.test(sentence) ? 'hand' : null;
   if (!dest) return null;
   const tapped = /battlefield tapped/i.test(sentence);
   const max = m[2] ? wordN(m[2]) : wordN(m[1]);
   const desc = m[3].replace(/^cards?\s*/i, '').trim() || m[3];
   const full = (sentence.match(/for [^,.]*?cards?\b[^,.]*/i) || [m[3]])[0];
-  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest}`, fn: () => {
+  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}`, fn: () => {
     if (!state.library.length) { toast('Library is empty', 'There is nothing to search.'); return; }
     openPickCards({ title: `${src}: search your library`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'}: ${full.replace(/^for /i, '')}. Highlighted cards match the description; you may also choose nothing (you can't be forced to find a card). ${/shuffle/i.test(sentence) || /shuffle/i.test(tx) ? 'Your library is shuffled afterwards.' : ''}`,
       cards: state.library.slice(), max, isOk: c => descMatchesCard(full.replace(/^for (?:up to \w+ |an? |one |two |three |any number of )?/i, ''), c.name), nothing: 'Find nothing',
@@ -7891,6 +7915,7 @@ function searchEffect(tx, src, obj) {
         for (const c of picked) { names.push(c.name);
           if (dest === 'hand') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) state.hand.push(...state.library.splice(i, 1)); }
           else if (dest === 'graveyard') moveCard(c.id, 'graveyard');
+          else if (dest === 'exile') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); if (freeCast) x.freeCastTurn = state.turn; state.exile.push(x); } }   // CR 701.23 search, 406 exile; "until end of turn, you may cast … without paying" (CR 118.9)
           else if (dest === 'top') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); state.library.unshift(x); } }
           else { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); enterBattlefield(x, { from: 'library', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped }); if (tapped) x.tapped = true; } } }
         if (/shuffle/i.test(tx)) shuffle(state.library);
@@ -8361,7 +8386,7 @@ function openSettings() {
   const drawSleeve = () => sleeveBox.replaceChildren(
     h('div',{class:'small muted',text:'Built-in sleeves for your library pile'}),
     gallery('sleeve', SLEEVES, settings.sleevePreset || '', id => { settings.sleevePreset = id; saveSettings(); applySleeve(); drawSleeve(); }),
-    h('div',{class:'setrow'},h('label',{text:'Custom card sleeve'}),h('button',{text:sleeveUrl?'Change sleeve…':'Upload sleeve…',onclick:()=>sleeveFile.click()}),sleeveFile),
+    h('div',{class:'setrow'},h('label',{text:'Custom card sleeve'}),h('button',{text:sleeveUrl?'Change sleeve':'Upload sleeve',onclick:()=>sleeveFile.click()}),sleeveFile),
     sleeveUrl ? h('div',{class:'setrow'},h('label',{text:'Status'}),h('button',{class:'tgl on',text:'Enabled',onclick:async()=>{try{URL.revokeObjectURL(sleeveUrl);}catch(e){} sleeveUrl=null;try{await idbDelete(['sleeve']);}catch(e){} applySleeve();drawSleeve();}})) : null
   );
   sleeveFile.addEventListener('change',async()=>{const f=sleeveFile.files[0];if(!f)return;if(sleeveUrl)URL.revokeObjectURL(sleeveUrl);sleeveUrl=URL.createObjectURL(f);try{await idbSet('sleeve',f);}catch(e){}applySleeve();drawSleeve();});
@@ -8393,7 +8418,7 @@ function openSettings() {
     matBox.append(
       h('div', { class: 'setrow' }, h('label', { text: 'Colour' }), sw),
       h('div', { class: 'setrow' }, h('label', { text: 'Custom playmat' }),
-        h('button', { text: matUrl ? 'Change image…' : 'Upload image…', onclick: () => file.click() }), file,
+        h('button', { text: matUrl ? 'Change image' : 'Upload image', onclick: () => file.click() }), file,
         matUrl ? h('button', { class: settings.custom ? 'tgl on' : 'tgl', text: settings.custom ? 'In use' : 'Use it', onclick: () => { settings.custom = !settings.custom; saveSettings(); drawMat(); } }) : '',
         matUrl ? h('button', { class: 'danger', text: 'Remove', onclick: async () => { settings.custom = false; if (matUrl) URL.revokeObjectURL(matUrl); matUrl = null; saveSettings(); try { await idbDelete(['playmat']); } catch (e) { /* ignore */ } drawMat(); } }) : ''),
       h('div', { class: 'setrow' }, h('label', { text: 'Image fit' }), fit),
@@ -8513,7 +8538,7 @@ function openSettings() {
     const hot=h('select'); for(const [v,l] of [['tl','Top-left corner'],['center','Centre']]) hot.append(h('option',{value:v,text:l})); hot.value=settings.cursorHot||'tl';
     hot.addEventListener('change',()=>{settings.cursorHot=hot.value;saveSettings();});
     curBox.replaceChildren(h('div',{class:'setrow'},h('label',{text:'Cursor'}),sel,sz),
-      settings.cursor==='custom'?h('div',{class:'setrow'},h('label',{text:'My image'}),h('button',{text:settings.cursorImg?'Change image…':'Choose image…',onclick:()=>file.click()}),file,h('label',{text:'Click point'}),hot,h('span',{class:'muted small',text:'Any picture; it is shrunk to a cursor. Transparent PNGs look best.'})):null);
+      settings.cursor==='custom'?h('div',{class:'setrow'},h('label',{text:'My image'}),h('button',{text:settings.cursorImg?'Change image':'Choose image',onclick:()=>file.click()}),file,h('label',{text:'Click point'}),hot,h('span',{class:'muted small',text:'Any picture; it is shrunk to a cursor. Transparent PNGs look best.'})):null);
   }; drawCursor();
   P.gfx.append(h('div',{class:'fhead',text:'Mouse cursor'}),curBox);
   const soundBox=h('div');
@@ -8546,7 +8571,7 @@ function openSettings() {
     h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Playmat images are stored in this browser only, so they work offline.' }));
   // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
   const tabbar = h('div', { class: 'setnav' }), stage = h('div', { class: 'setmain' });
-  const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings…' });
+  const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings' });
   const applyFilter = q => {
     q = q.trim().toLowerCase();
     for (const k of Object.keys(P)) { if (k === 'layout') continue;
@@ -8575,7 +8600,7 @@ function openSettings() {
   const shell = h('div', { class: 'setshell' }, tabbar, stage);
   body.append(shell); showTab(P[settingsTab] ? settingsTab : 'gfx');
   m.foot.append(
-    h('button', { text: 'Welcome tour…', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
+    h('button', { text: 'Welcome tour', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
     h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); saveSettings(); m.close(); openSettings(); } }),
     h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
 }
@@ -10402,6 +10427,18 @@ const GLOBAL_STATIC_RES = [
   /^If you would lose unspent mana, that mana becomes colorless instead\.?$/i, /^Each spell a player casts costs \{\d+\} more to cast for each other spell that player has cast this turn\.?$/i,
   /^(?:Lands|Permanents) you control enter untapped\.?$/i, /^~ can't be blocked by creatures with power \d+ or less\.?$/i];
 const globalStaticLine = line => GLOBAL_STATIC_RES.some(re => re.test(String(line || '').trim().replace(/[\u2019]/g, "'")));
+
+// CR 202.3: a spell's mana value, with X taken from the value chosen for it on the stack (CR 202.3e). "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
+function spellMV(sp) {
+  const info = sp && !sp.token ? cardInfo(sp.name) : null; if (!info) return 0; const mc = String(info.mc || '').split(' // ')[0], nx = (mc.match(/\{X\}/g) || []).length;
+  return symCmc(mc.replace(/\{X\}/g, '')) + nx * (sp.xValue || 0);
+}
+function castAnyOk(ca, sp, src) {
+  if (!ca) return false; const mv = spellMV(sp);
+  if (ca.counters) { const kk = ca.counters.toLowerCase() === '+1/+1' ? 'plus' : ca.counters.toLowerCase(); return mv === counterCount(src, kk); }
+  if (ca.mv === null) return true;
+  return ca.cmp === 'less' ? mv <= ca.mv : ca.cmp === 'greater' ? mv >= ca.mv : mv === ca.mv;
+}
 init();
 
 })();

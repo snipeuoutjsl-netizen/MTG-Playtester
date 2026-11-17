@@ -19,6 +19,7 @@ function parseTargetSpecs(text) {
     if (/\bany number of\s*$/i.test(before)) { sp.min = 0; sp.max = 99; }
     else if ((cm = before.match(/\bup to (one|two|three|four|five|x|\d+)\s*$/i))) { sp.min = 0; sp.max = wnum(cm[1]) === 'X' ? 1 : wnum(cm[1]); }
     else if ((cm = before.match(/\b(one|two|three|four|five|\d+)\s+(?:other\s+)?$/i)) && !/choose\s+\w+\s*$/i.test(before)) { sp.min = sp.max = wnum(cm[1]); }
+    { const cq = (' ' + phrase + ' ' + after).match(/\s+that(?:'s| is| are) (one or more colors|colorless|multicolored|white|blue|black|red|green)\b/i) || after.match(/^\s+that(?:'s| is| are) (one or more colors|colorless|multicolored|white|blue|black|red|green)\b/i); if (cq) sp.colorWord = cq[1].toLowerCase(); }   // "target permanent that's one or more colors"
     const wq = after.match(/^\s+with ([^.,;:]+)/i); if (wq) sp.qual = 'with ' + wq[1];
     const p = phrase.toLowerCase();
     if (isAny && !p) { sp.kind = 'any'; sp.types = ['creature', 'planeswalker', 'battle']; sp.player = true; sp.label = 'any target'; }
@@ -50,8 +51,22 @@ function parseTargetSpecs(text) {
   return specs;
 }
 function permTypeLine(c) { return c.token ? (c.tk && c.tk.type ? c.tk.type : c.tk && c.tk.pt ? 'Token Creature' : 'Token Artifact') : (frontType(c) || (isLandName(c.name) ? 'Land' : '')); }
+// CR 105.2: an object's colors come from its mana cost (colorless when it has none); tokens use their listed colors.
+function cardColorSet(c) {
+  if (c.token) return new Set(((c.tk && (c.tk.colors || c.tk.color)) || '').toString().toUpperCase().replace(/[^WUBRG]/g, '').split(''));
+  const inf = cardInfo(c.name); return new Set(((String((inf && (inf.mc || '')) || '').split(' // ')[0].match(/\{[^}]*\}/g) || []).join('')).replace(/[^WUBRG]/g, '').split('').filter(Boolean));
+}
+const CARD_COLOR_LETTER = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+function colorWordOk(word, colors) {   // "colorless", "one or more colors", "multicolored", or one color word
+  const w = String(word).toLowerCase();
+  if (w === 'colorless') return colors.size === 0;
+  if (/^(?:one or more colors|colored)$/.test(w)) return colors.size > 0;
+  if (w === 'multicolored') return colors.size > 1;
+  return CARD_COLOR_LETTER[w] ? colors.has(CARD_COLOR_LETTER[w]) : true;
+}
 function permMatchesSpec(c, sp, ctx) {
   const tl = permTypeLine(c);
+  if (sp.colorWord && !colorWordOk(sp.colorWord, cardColorSet(c))) return false;
   if (sp.types.length && !sp.types.includes('permanent') && !sp.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl))) return false;
   for (const md of sp.mods) {
     if (md === 'legendary' && !/Legendary/i.test(tl)) return false;

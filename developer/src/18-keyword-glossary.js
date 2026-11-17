@@ -547,7 +547,7 @@ function renderOverlay() {
       h('div', { class: 'psub', text: 'Get set up in three quick steps.' }),
       h('ol', null,
         h('li', {}, h('b', { text: 'Import / edit deck' }), ' – paste a decklist.'),
-        h('li', {}, h('b', { text: 'Card data… ' }), '(optional) – load the Scryfall bulk file. Without it, card info is picked up from Scryfall when you are online.'),
+        h('li', {}, h('b', { text: 'Card data ' }), '(optional) – load the Scryfall bulk file. Without it, card info is picked up from Scryfall when you are online.'),
         h('li', {}, h('b', { text: 'New game' }), ' – draw your opening hand.')),
       h('div', { class: 'pbtns' }, h('button', { class: 'primary', text: 'Import a deck', onclick: () => openDeckEditor({ blank: true }) })));
     else show(
