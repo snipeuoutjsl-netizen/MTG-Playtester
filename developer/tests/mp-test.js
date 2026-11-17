@@ -1,0 +1,17 @@
+const { setup } = require('./common.js');
+(async()=>{const A=await setup(), B=await setup();
+const a=A.p,b=B.p;
+const inv=await a.evaluate(()=>__d.mpHostInvite()); console.log('invite len',inv.length);
+const rep=await b.evaluate(c=>__d.mpGuestReply(c),inv);
+await a.evaluate(c=>__d.mpHostAccept(c),rep);
+await a.waitForFunction(()=>__d.mpOn(),null,{timeout:15000}); await b.waitForFunction(()=>__d.mpOn(),null,{timeout:15000});
+console.log('connected');
+await a.evaluate(()=>{const s=__d.state; const c=Object.assign(__d.newCard('Forest'),{id:s.nextId++}); s.battlefield.push(c); s.life=17; __d.render();});
+await b.waitForFunction(()=>__d.MP.opp && __d.MP.opp.bf.some(c=>c.name==='Forest'),null,{timeout:8000});
+console.log('B sees', await b.evaluate(()=>JSON.stringify({life:__d.MP.opp.life,bf:__d.MP.opp.bf.length,hand:__d.MP.opp.hand, panel:!!document.querySelector('#mpPanel'), cards:document.querySelectorAll('#mpPanel .mpcard').length, oppNum:document.querySelector('#oppNum').textContent})));
+await b.evaluate(()=>{__d.mpOppLife(-3);});
+await a.waitForFunction(()=>__d.state.life===14,null,{timeout:8000}); console.log('A life now',await a.evaluate(()=>__d.state.life));
+await b.evaluate(()=>__d.mpChat('hello')); await a.waitForTimeout(400);
+console.log('A chat',await a.evaluate(()=>JSON.stringify(__d.MP.chat)));
+await b.screenshot({path:'/tmp/claude-0/-home-claude/935b9de7-136a-5eff-9567-6732905a6b60/scratchpad/mp.png'});
+await A.b.close();await B.b.close()})().catch(e=>{console.log('ERR',e.message);process.exit(1)});
