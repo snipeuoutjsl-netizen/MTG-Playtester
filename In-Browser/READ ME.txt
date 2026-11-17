@@ -1,0 +1,3 @@
+In a browser
+
+Play-in-Browser.bat / Play-in-Browser.sh opens app/index.html in your browser. Nothing to install. Decks and settings stay in that browser.
