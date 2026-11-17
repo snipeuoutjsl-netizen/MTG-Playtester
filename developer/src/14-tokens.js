@@ -7,6 +7,10 @@ const TOKEN_PRE = {
   'powerstone': { types: ['Artifact'], tx: "{T}: Add {C}. This mana can't be spent to cast a nonartifact spell." },
   'gold': { types: ['Artifact'], tx: 'Sacrifice this artifact: Add one mana of any color.' },
   'map': { types: ['Artifact'], tx: '{1}, {T}, Sacrifice this artifact: Target creature you control explores. Activate only as a sorcery.' },
+  'junk': { types: ['Artifact'], tx: '{T}, Sacrifice this artifact: Exile the top card of your library. You may play that card this turn. Activate only as a sorcery.' },
+  'shard': { types: ['Artifact'], tx: '{2}, {T}, Sacrifice this artifact: Scry 1, then draw a card.' },
+  'lander': { types: ['Artifact'], tx: '{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.' },
+  'incubator': { types: ['Artifact'], tx: '{2}: Transform this artifact.' },
   'eldrazi spawn': { pt: '0/1', types: ['Creature'], tx: 'Sacrifice this creature: Add {C}.' },
   'eldrazi scion': { pt: '1/1', types: ['Creature'], tx: 'Sacrifice this creature: Add {C}.' }
 };
@@ -80,6 +84,28 @@ function makeTokensFromDef(d, n, src) {
   }
   render(); flushTriggers();
 }
+// Token ability audit (v0.97.7): classify every rules-text line of a token and say whether the app can run it.
+function tokenAbilityAudit(d) {
+  const out = [];
+  try {
+    const tc = newCard(d.name, { token: true, tk: { pt: d.pt, subs: [...d.subs], col: [...d.col], tx: d.tx || '', types: [...d.types], type: d.type } });
+    const acts = (typeof activatedAbilitiesFor === 'function' ? activatedAbilitiesFor(tc) : []) || [];
+    const trigs = (typeof parseTriggers === 'function' ? parseTriggers(tc) : []) || [];
+    const rock = typeof rockInfo === 'function' ? rockInfo(tc) : null;
+    for (const raw of String(d.tx || '').split('\n').map(x => x.trim()).filter(Boolean)) {
+      const line = raw.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+      let kind, st;
+      if (!line) continue;
+      if (/^(When|Whenever|At)\b/i.test(line)) { kind = 'triggered'; st = trigs.length ? 'ok' : 'no'; }
+      else if (/^\{T\}: Add /i.test(line) && rock) { kind = 'mana'; st = 'ok'; }
+      else if (/^[^:]{1,80}:\s/.test(line)) { kind = 'activated'; const cost = line.split(':')[0].toLowerCase(); st = acts.some(a => String(a.cost || '').toLowerCase().replace(/\s+/g, '') === cost.replace(/\s+/g, '')) || acts.length ? 'ok' : 'no'; }
+      else if (/^(flying|first strike|double strike|deathtouch|lifelink|vigilance|trample|haste|reach|menace|defender|indestructible|hexproof|flash|ward|prowess|infect|wither)\b/i.test(line)) { kind = 'keyword'; st = 'ok'; }
+      else { kind = 'static'; st = 'part'; }
+      out.push({ line: raw, kind, st });
+    }
+  } catch (e) { /* audit is advisory only */ }
+  return out;
+}
 function openTokenTray() {
   if (!state) return;
   const defs = deckTokenDefs();
@@ -92,6 +118,7 @@ function openTokenTray() {
       h('span', { class: 'tokpt', text: d.pt || '—' }),
       h('span', { class: 'nm' }, h('b', { text: d.name }), h('span', { class: 'muted small', text: ` ${d.type.replace('Token ', '')}${d.col.length ? ' · ' + d.col.join('') : ' · colorless'}` }), h('div', { class: 'muted small', text: [d.tx.replace(/\n/g, '; '), 'from ' + d.froms.join(', ')].filter(Boolean).join(' — ') })),
       q, h('button', { class: 'primary', text: 'Create', onclick: () => makeTokensFromDef(d, Math.max(1, parseInt(q.value, 10) || 1), '') })));
+    m.body.append(h('div', { class: 'tokabs' }, ...tokenAbilityAudit(d).map(a => h('div', { class: 'muted small tokab', title: a.st === 'ok' ? 'Implemented' : a.st === 'part' ? 'Read as a static/other effect; check it applies' : 'Not implemented yet', text: (a.st === 'ok' ? '\u2713 ' : a.st === 'part' ? '\u25d0 ' : '\u2717 ') + a.kind + ': ' + a.line }))));
   }
   const nm = h('input', { type: 'text', placeholder: 'Other token name', style: 'flex:1;min-width:0' }), pt = h('input', { type: 'text', placeholder: 'P/T (blank = noncreature)', style: 'width:120px' });
   m.body.append(h('div', { class: 'fhead', text: 'Other token' }), h('div', { class: 'row' }, nm, pt, h('button', { text: 'Create', onclick: () => { const n = nm.value.trim(); if (n) makeToken(n, pt.value.trim()); } })));

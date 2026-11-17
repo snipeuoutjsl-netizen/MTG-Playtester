@@ -4,11 +4,11 @@
 // Extra sentences like "Activate only if you control a Dragon." are checked softly (see staticCheck).
 const ROCK_CACHE = new Map();
 function rockInfo(c) {
-  if (!c || c.token || isLandName(c.name)) return null;
+  if (!c || (!c.token && isLandName(c.name))) return null;
   const tx = cardText(c);
   if (!tx) return null;
-  const key = norm(c.name);
-  if (ROCK_CACHE.has(key + '|' + tx.length)) return ROCK_CACHE.get(key + '|' + tx.length);
+  const key = (c.token ? 'tok:' : '') + norm(c.name);
+  if (ROCK_CACHE.has(key + '|' + tx.length + '|' + tx.slice(0, 40))) return ROCK_CACHE.get(key + '|' + tx.length + '|' + tx.slice(0, 40));
   let out = null;
   for (const line of tx.split('\n')) {
     const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^\{T\}: Add (.+)$/);   // v0.95.2 ability words (Metalcraft \u2014, Threshold \u2014 ...) are just labels
@@ -25,9 +25,10 @@ function rockInfo(c) {
     if (!r) continue;
     const cm = (rest + ' ' + first).match(/Activate (?:this ability )?only ([^.]+)\./i);
     r.cond = cm ? cm[1].trim() : null;
+    { const rs = (rest + ' ' + first).replace(/\s+/g, ' '); if (/this mana can'?t be spent to cast (?:a )?nonartifact spells?/i.test(rs)) r.noSpend = 'nonartifact'; const so = rs.match(/spend this mana only (?:to|on) ([^.]+)\./i); if (so) r.only = so[1].trim(); }   // CR 106.6 restrictions on what the mana may pay for (Powerstone, Mishra's Workshop style)
     out = r; break;
   }
-  ROCK_CACHE.set(key + '|' + tx.length, out);
+  ROCK_CACHE.set(key + '|' + tx.length + '|' + tx.slice(0, 40), out);
   return out;
 }
 // Soft check of a restriction phrase such as "if you control a Dragon" or "as a sorcery".

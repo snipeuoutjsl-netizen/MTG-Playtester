@@ -4126,11 +4126,11 @@ function addFloatingMana(color, amount=1) {
 // Extra sentences like "Activate only if you control a Dragon." are checked softly (see staticCheck).
 const ROCK_CACHE = new Map();
 function rockInfo(c) {
-  if (!c || c.token || isLandName(c.name)) return null;
+  if (!c || (!c.token && isLandName(c.name))) return null;
   const tx = cardText(c);
   if (!tx) return null;
-  const key = norm(c.name);
-  if (ROCK_CACHE.has(key + '|' + tx.length)) return ROCK_CACHE.get(key + '|' + tx.length);
+  const key = (c.token ? 'tok:' : '') + norm(c.name);
+  if (ROCK_CACHE.has(key + '|' + tx.length + '|' + tx.slice(0, 40))) return ROCK_CACHE.get(key + '|' + tx.length + '|' + tx.slice(0, 40));
   let out = null;
   for (const line of tx.split('\n')) {
     const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^\{T\}: Add (.+)$/);   // v0.95.2 ability words (Metalcraft \u2014, Threshold \u2014 ...) are just labels
@@ -4147,9 +4147,10 @@ function rockInfo(c) {
     if (!r) continue;
     const cm = (rest + ' ' + first).match(/Activate (?:this ability )?only ([^.]+)\./i);
     r.cond = cm ? cm[1].trim() : null;
+    { const rs = (rest + ' ' + first).replace(/\s+/g, ' '); if (/this mana can'?t be spent to cast (?:a )?nonartifact spells?/i.test(rs)) r.noSpend = 'nonartifact'; const so = rs.match(/spend this mana only (?:to|on) ([^.]+)\./i); if (so) r.only = so[1].trim(); }   // CR 106.6 restrictions on what the mana may pay for (Powerstone, Mishra's Workshop style)
     out = r; break;
   }
-  ROCK_CACHE.set(key + '|' + tx.length, out);
+  ROCK_CACHE.set(key + '|' + tx.length + '|' + tx.slice(0, 40), out);
   return out;
 }
 // Soft check of a restriction phrase such as "if you control a Dragon" or "as a sorcery".
@@ -4377,6 +4378,10 @@ const TOKEN_PRE = {
   'powerstone': { types: ['Artifact'], tx: "{T}: Add {C}. This mana can't be spent to cast a nonartifact spell." },
   'gold': { types: ['Artifact'], tx: 'Sacrifice this artifact: Add one mana of any color.' },
   'map': { types: ['Artifact'], tx: '{1}, {T}, Sacrifice this artifact: Target creature you control explores. Activate only as a sorcery.' },
+  'junk': { types: ['Artifact'], tx: '{T}, Sacrifice this artifact: Exile the top card of your library. You may play that card this turn. Activate only as a sorcery.' },
+  'shard': { types: ['Artifact'], tx: '{2}, {T}, Sacrifice this artifact: Scry 1, then draw a card.' },
+  'lander': { types: ['Artifact'], tx: '{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.' },
+  'incubator': { types: ['Artifact'], tx: '{2}: Transform this artifact.' },
   'eldrazi spawn': { pt: '0/1', types: ['Creature'], tx: 'Sacrifice this creature: Add {C}.' },
   'eldrazi scion': { pt: '1/1', types: ['Creature'], tx: 'Sacrifice this creature: Add {C}.' }
 };
@@ -4450,6 +4455,28 @@ function makeTokensFromDef(d, n, src) {
   }
   render(); flushTriggers();
 }
+// Token ability audit (v0.97.7): classify every rules-text line of a token and say whether the app can run it.
+function tokenAbilityAudit(d) {
+  const out = [];
+  try {
+    const tc = newCard(d.name, { token: true, tk: { pt: d.pt, subs: [...d.subs], col: [...d.col], tx: d.tx || '', types: [...d.types], type: d.type } });
+    const acts = (typeof activatedAbilitiesFor === 'function' ? activatedAbilitiesFor(tc) : []) || [];
+    const trigs = (typeof parseTriggers === 'function' ? parseTriggers(tc) : []) || [];
+    const rock = typeof rockInfo === 'function' ? rockInfo(tc) : null;
+    for (const raw of String(d.tx || '').split('\n').map(x => x.trim()).filter(Boolean)) {
+      const line = raw.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+      let kind, st;
+      if (!line) continue;
+      if (/^(When|Whenever|At)\b/i.test(line)) { kind = 'triggered'; st = trigs.length ? 'ok' : 'no'; }
+      else if (/^\{T\}: Add /i.test(line) && rock) { kind = 'mana'; st = 'ok'; }
+      else if (/^[^:]{1,80}:\s/.test(line)) { kind = 'activated'; const cost = line.split(':')[0].toLowerCase(); st = acts.some(a => String(a.cost || '').toLowerCase().replace(/\s+/g, '') === cost.replace(/\s+/g, '')) || acts.length ? 'ok' : 'no'; }
+      else if (/^(flying|first strike|double strike|deathtouch|lifelink|vigilance|trample|haste|reach|menace|defender|indestructible|hexproof|flash|ward|prowess|infect|wither)\b/i.test(line)) { kind = 'keyword'; st = 'ok'; }
+      else { kind = 'static'; st = 'part'; }
+      out.push({ line: raw, kind, st });
+    }
+  } catch (e) { /* audit is advisory only */ }
+  return out;
+}
 function openTokenTray() {
   if (!state) return;
   const defs = deckTokenDefs();
@@ -4462,6 +4489,7 @@ function openTokenTray() {
       h('span', { class: 'tokpt', text: d.pt || '—' }),
       h('span', { class: 'nm' }, h('b', { text: d.name }), h('span', { class: 'muted small', text: ` ${d.type.replace('Token ', '')}${d.col.length ? ' · ' + d.col.join('') : ' · colorless'}` }), h('div', { class: 'muted small', text: [d.tx.replace(/\n/g, '; '), 'from ' + d.froms.join(', ')].filter(Boolean).join(' — ') })),
       q, h('button', { class: 'primary', text: 'Create', onclick: () => makeTokensFromDef(d, Math.max(1, parseInt(q.value, 10) || 1), '') })));
+    m.body.append(h('div', { class: 'tokabs' }, ...tokenAbilityAudit(d).map(a => h('div', { class: 'muted small tokab', title: a.st === 'ok' ? 'Implemented' : a.st === 'part' ? 'Read as a static/other effect; check it applies' : 'Not implemented yet', text: (a.st === 'ok' ? '\u2713 ' : a.st === 'part' ? '\u25d0 ' : '\u2717 ') + a.kind + ': ' + a.line }))));
   }
   const nm = h('input', { type: 'text', placeholder: 'Other token name', style: 'flex:1;min-width:0' }), pt = h('input', { type: 'text', placeholder: 'P/T (blank = noncreature)', style: 'width:120px' });
   m.body.append(h('div', { class: 'fhead', text: 'Other token' }), h('div', { class: 'row' }, nm, pt, h('button', { text: 'Create', onclick: () => { const n = nm.value.trim(); if (n) makeToken(n, pt.value.trim()); } })));
@@ -4831,7 +4859,9 @@ function manaSources() {
     if(c.tapped || !isManaPermanent(c)) continue;
     if(!isLandName(c.name)){
       const r=rockInfo(c), st=rockStatus(c);
-      if(st.ok===false) continue;               // restriction clearly not met: not offered automatically (tap it by hand to override)
+      if(st.ok===false) continue;
+      if(PAY_CTX && r.noSpend==='nonartifact' && !state.battlefield.includes(PAY_CTX) && !/\bArtifact\b/.test(PAY_CTX.token ? ((PAY_CTX.tk&&PAY_CTX.tk.type)||'') : ((cardInfo(PAY_CTX.name)||{}).t||'').split(' // ')[0])) continue;   // "This mana can't be spent to cast a nonartifact spell"
+      if(PAY_CTX && r.only && !spendOnlyOk(r.only, PAY_CTX)) continue;               // restriction clearly not met: not offered automatically (tap it by hand to override)
       if(r.fixed) r.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:r.fixed.length}));
       else out.push({card:c, colors:new Set(rockColors(c)), any:true, slot:0, of:1});
       continue;
@@ -4913,8 +4943,8 @@ function handTip(c){ const i=handInteraction(c); if(!i) return ''; return i==='r
 // Does this permanent have a non-mana activated ability (or loyalty / fetch ability) that can be activated right now?
 // Mana abilities of lands and rocks are not highlighted, otherwise every land would glow.
 function activationReady(c) {
-  if (!state || c.token || state.phase !== 'play' || holdForTriggers() || state.discarding || state.step === 0 || state.step === CLEANUP) return '';
-  if (isPlaneswalker(c)) { const a = pwAbilities(c).find(x => !pwBlock(c, x)); return a ? `A loyalty ability can be activated (${a.label})` : ''; }
+  if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding || state.step === 0 || state.step === CLEANUP) return '';
+  if (!c.token && isPlaneswalker(c)) { const a = pwAbilities(c).find(x => !pwBlock(c, x)); return a ? `A loyalty ability can be activated (${a.label})` : ''; }
   if (isLandName(c.name) && fetchInfo(c)) return !c.tapped ? 'Can be sacrificed to search for a land' : '';
   const list = activatedAbilitiesFor(c);
   const ok = list.find(ab => !abilityReady(c, ab));
@@ -6226,8 +6256,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.97.6';
+const APP_VERSION = '0.97.7';
 const CHANGELOG = [
+  { v: '0.97.7', title: 'Token abilities and tracker', notes: ['Tokens with activated abilities (Treasure, Junk, Food, Clue, Shard, Lander...) now glow green when you can activate them, like any other permanent.', 'Mana tokens work as mana sources. Powerstone\'s "can\'t be spent to cast a nonartifact spell" and "spend this mana only to..." restrictions are enforced when paying (CR 106.6).', 'New token presets: Junk, Shard, Lander, Incubator.', 'The Tokens tracker now lists each token\'s ability lines with a status mark: implemented, read as a static effect, or not implemented.'] },
   { v: '0.97.6', title: 'Linked effects: "this, then that" are one effect', notes: ['Effects whose second part depends on the first are now one unit instead of two separate buttons (CR 608.2b, 608.2c). "Destroy up to one target nonland permanent. Its controller creates a tapped Powerstone token." (Cityscape Leveler): with no target chosen nothing happens; if the target was your permanent you get the token; if it was your opponent\'s permanent they get it (your opponent\'s life changes are applied, other results are logged for you to apply at the table).', '"If you do" / "When you do": the second part happens only if the first part was actually done. If the app can do the first part it checks the game changed; if you have to do it by hand (sacrifice, behold ...) it asks "did you do it?".', '"That player ..." after a target is read the same way as "its controller".'] },
   { v: '0.97.5', title: 'Becomes-a-creature and base P/T effects', notes: ['New rules-text readers (CR 613.1d, 613.4b, 611.2): "~ becomes a 2/2 creature [with flying] until end of turn. It\'s still a land" (manlands), "target land you control becomes a 4/4 Elemental creature with haste until end of turn", "target creature has base power and toughness 1/1 until end of turn" and "until your next turn" versions now apply the new type, power/toughness and keywords and end on time (before they were only a "Remember" note).', 'The card now shows its changed type line (for example Artifact Creature / Land Creature) and its P/T, and the effects end when the permanent leaves the battlefield.'] },
   { v: '0.97.4', title: 'Glow fix, no duplicate draw, Karn the Great Creator', notes: ['Fixed: the green glow on cards with a usable activated ability was hidden by the "cards float" battlefield effect, so it never showed. Both now run together.', 'Fixed: an effect such as Kozilek\'s Command ("scries X, then draws a card") listed the draw twice ("Draw 1 card" and "You draw 1 card"), so applying both drew two cards. Each step is now listed once, in the order the text gives them, and "scries" is understood.', 'Karn, the Great Creator now works from its rules text: +1 makes up to one target noncreature artifact an artifact creature with power and toughness equal to its mana value until your next turn (it stops at the start of your next upkeep); −2 lets you put an artifact card from your sideboard or face up in exile into your hand.'] },

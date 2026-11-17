@@ -609,6 +609,13 @@ const { setup } = require('./common.js');
     const r = await ev(() => { const s = __d.state; const o = __d.effectOptions('Sacrifice an artifact. If you do, you gain 3 life.', { sourceName: 'X', ability: true }); const l0 = s.life; o[0].fn(); const btn = t => [...document.querySelectorAll('.backdrop button')].find(x => x.textContent === t);
       btn("I didn't").click(); const l1 = s.life; o[0].fn(); btn('I did it').click(); return { n: o.length, l0, l1, l2: s.life }; });
     return { ok: r.n === 1 && r.l1 === r.l0 && r.l2 === r.l0 + 3, why: JSON.stringify(r) }; });
+  await T('106.6 + 111.10', 'tokens: a Powerstone token is a mana source whose mana cannot pay for a nonartifact spell (but can for an artifact spell); Treasure glows when activatable; Junk/Shard/Lander tokens exist', async () => { await reset();
+    const r = await ev(() => { const s = __d.state; const ps = Object.assign(__d.newCard('Powerstone', { token: true, tk: { pt: '', subs: ['powerstone'], col: [], types: ['Artifact'], type: 'Token Artifact \u2014 Powerstone', tx: __d.TOKEN_PRE.powerstone.tx } }), { id: s.nextId++ }); s.battlefield.push(ps);
+      const bear = Object.assign(__d.newCard('Grizzly Bears'), { id: s.nextId++ }); const rock = Object.assign(__d.newCard('Mock Colorless Rock'), { id: s.nextId++ });
+      const any = __d.manaSources().length, forBear = __d.withCtx(bear, __d.manaSources).length, forRock = __d.withCtx({ token: true, name: 'Mock Art', tk: { type: 'Token Artifact' } }, __d.manaSources).length;
+      const tr = Object.assign(__d.newCard('Treasure', { token: true, tk: { pt: '', subs: ['treasure'], col: [], types: ['Artifact'], type: 'Token Artifact \u2014 Treasure', tx: __d.TOKEN_PRE.treasure.tx } }), { id: s.nextId++ }); s.battlefield.push(tr);
+      return { any, forBear, forRock, glow: !!__d.activationReady(tr) || __d.activationReady(tr) === '' ? __d.activationReady(tr) : null, has: ['junk', 'shard', 'lander', 'incubator'].every(k => __d.TOKEN_PRE[k]) }; });
+    return { ok: r.any >= 1 && r.forBear === r.any - 1 && r.forRock === r.any && r.has, why: JSON.stringify(r) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });
