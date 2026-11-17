@@ -589,6 +589,14 @@ const { setup } = require('./common.js');
     const r = await ev(() => { const tx = 'Target player creates 3 0/1 colorless Eldrazi Spawn creature tokens with "Sacrifice this token: Add {C}." Target player scries 3, then draws a card.';
       return __d.effectOptions(tx, { sourceName: "Kozilek's Command", targets: [{ kind: 'player', id: 'you', name: 'You', spec: 0 }, { kind: 'player', id: 'you', name: 'You', spec: 1 }] }).filter(o => !o.hidden).map(o => o.label); });
     return { ok: r.length === 3 && /^Create/.test(r[0]) && /^Scry/.test(r[1]) && /draw 1 card$/i.test(r[2]), why: JSON.stringify(r) }; });
+  await T('613.1d + 613.4b', 'animation and base P/T effects from rules text: "~ becomes a 2/2 creature until end of turn. It\'s still a land" (self), "target land becomes a 4/4 Elemental creature with haste", "base power and toughness 1/1"; all end at end of turn', async () => { await reset();
+    const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const land = mk("Urza's Mine"), bear = mk('Grizzly Bears'); s.battlefield.push(land, bear);
+      const run = (t, n, tg) => __d.effectOptions(t, { sourceName: n, sourceId: land.id, targets: tg })[0];
+      run("Urza's Mine becomes a 2/2 creature with all creature types until end of turn. It's still a land.", "Urza's Mine").fn(); const a = [__d.frontType(land), __d.ptCalc(land).p + '/' + __d.ptCalc(land).t];
+      run('Target land you control becomes a 4/4 Elemental creature with haste until end of turn. It\'s still a land.', 'X', [{ kind: 'perm', id: land.id, name: land.name, spec: 0 }]).fn(); const b = [__d.ptCalc(land).p + '/' + __d.ptCalc(land).t, __d.hasKw(land, 'haste')];
+      run('Target creature has base power and toughness 1/1 until end of turn.', 'X', [{ kind: 'perm', id: bear.id, name: bear.name, spec: 0 }]).fn(); const c = __d.ptCalc(bear).p + '/' + __d.ptCalc(bear).t;
+      s.turn++; s.step = 0; __d.runDelayed('end'); return { a, b, c, after: [__d.frontType(land), __d.ptCalc(bear).p + '/' + __d.ptCalc(bear).t] }; });
+    return { ok: /Land Creature/.test(r.a[0]) && r.a[1] === '2/2' && r.b[0] === '4/4' && r.b[1] === true && r.c === '1/1' && r.after[0] === "Land \u2014 Urza's Mine" && r.after[1] === '2/2', why: JSON.stringify(r) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });

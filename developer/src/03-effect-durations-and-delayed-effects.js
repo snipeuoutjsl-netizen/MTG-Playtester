@@ -67,6 +67,7 @@ function runDelayed(when) {
   for (const e of due) {
     const f = e.targetId ? findCard(e.targetId) : null, nm = e.targetName || (f && f.card.name) || 'it';
     if (e.mana) { for (const [k, n] of Object.entries(e.mana)) state.manaPool[k] = (state.manaPool[k] || 0) + n; log(`${e.srcName}: delayed trigger at the beginning of the ${where}: added ${Object.entries(e.mana).map(([k, n]) => '{' + k + '}'.repeat(1) + (n > 1 ? '×' + n : '')).join('')} to your mana pool`); toast('Delayed mana', `${e.srcName}: ${e.text}`); continue; }
+    if (e.action === 'unbase') { if (f && f.card.basePT) { delete f.card.basePT; log(`${e.srcName}: ${nm}'s base power and toughness are back to normal`); } continue; }
     if (e.action === 'unbecome') { if (f && f.zone === 'battlefield' && f.card.becomes) { delete f.card.becomes; log(`${e.srcName}: ${nm} is no longer a creature (the effect ended)`); } continue; }
     if (e.action === 'exile') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was exiled at the beginning of the ${where}`); delete f.card.exileInstead; leaveBattlefield(f.card, 'exile'); } }
     else if (e.action === 'sacrifice') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was sacrificed at the beginning of the ${where}`); leaveBattlefield(f.card, 'graveyard'); } }

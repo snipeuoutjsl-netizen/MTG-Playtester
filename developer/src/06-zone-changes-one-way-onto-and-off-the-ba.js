@@ -46,7 +46,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
   detachFrom(c);
-  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)

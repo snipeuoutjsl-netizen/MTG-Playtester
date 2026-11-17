@@ -567,7 +567,7 @@ function effectOptionsInner(tx, obj) {
 function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
   if (obj.kw && KW_EFFECTS[obj.kw]) return KW_EFFECTS[obj.kw](obj);   // v0.96.1 a keyword trigger resolving (exalted, evolve ...)
-  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
+  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || animateGeneralEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
   { const L = defLine(obj.sourceName, tx);
     if (L) {
       const o = L.options(obj, L._line || tx);

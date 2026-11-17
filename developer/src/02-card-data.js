@@ -609,7 +609,7 @@ function hasKw(c, kw) {
   if (state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)) return true;   // "gains haste until end of turn"
   if (kw === 'haste' && c.suspHaste && state && state.battlefield.includes(c)) return true;   // cast from suspend
   if (kwLine(cardText(c), kw)) return true;
-  if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw)) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
+  if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
 const GRANTABLE = ['flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
@@ -711,7 +711,7 @@ function cdaValues(c) {
 }
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
-  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; }   // CR 613.4b: an effect that sets base power and toughness
+  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; }   // CR 613.4b: an effect that sets base power and toughness
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
