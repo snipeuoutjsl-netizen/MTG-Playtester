@@ -609,7 +609,7 @@ function hasKw(c, kw) {
   if (state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)) return true;   // "gains haste until end of turn"
   if (kw === 'haste' && c.suspHaste && state && state.battlefield.includes(c)) return true;   // cast from suspend
   if (kwLine(cardText(c), kw)) return true;
-  if (sbKeywords(c).includes(kw)) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
+  if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw)) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
 const GRANTABLE = ['flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
@@ -619,7 +619,7 @@ function grantedKeywords(c) {
   if (!state || !c || c.tapped === undefined && !c.id) return out;
   for (const kw of GRANTABLE) {
     if (kwLine(cardText(c), kw)) continue;
-    let from = kwGrant(c, kw) || (sbKeywords(c).includes(kw) ? 'its own ability' : null);
+    let from = kwGrant(c, kw) || (sbKeywords(c).includes(kw) ? 'its own ability' : null) || (pairedKeywords(c).includes(kw) ? 'soulbond pairing' : null);
     if (!from) { const fe = fxOn(c, 'kw').find(e => e.kw === kw); if (fe) from = `${fe.srcName && fe.srcName !== 'manual' ? fe.srcName : 'an effect'}, ${UNTIL_WORDS[fe.until]}`; }
     if (from) out.push({ kw, from });
   }
@@ -730,6 +730,7 @@ function ptCalc(c) {
   const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {});
   const net = (cc.plus || 0) - (cc.minus || 0);
   if (state) for (const e of fxOn(c, 'pt')) { out.p += e.p; out.t += e.t; out.modified = true; out.why.push(`${sgnN(e.p)}/${sgnN(e.t)} ${UNTIL_WORDS[e.until] || ''}${e.srcName && e.srcName !== 'manual' ? ' (' + e.srcName + ')' : ''}`); }
+  if (state && c.pairedWith) { const pb = pairedPT(c); if (pb) { out.p += pb.p; out.t += pb.t; out.modified = true; out.why.push(`${sgnN(pb.p)}/${sgnN(pb.t)} from being paired (soulbond)`); } }
   if (net) { out.p += net; out.t += net; out.modified = true; out.why.push(`${net > 0 ? '+' : ''}${net}/${net > 0 ? '+' : ''}${net} from counters`); }
   if (state && onBattlefield(c)) for (const e of statics()) {
     if (e.kind !== 'pt' || !e.subj.test(c)) continue;

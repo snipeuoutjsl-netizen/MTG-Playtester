@@ -152,6 +152,7 @@ function showCardMenu(c, zone, x, y) {
     { const pl = plotFor(c); if (pl) items.push({ label: `Plot (${pl.cost})`, title: 'Pay the plot cost and exile it; cast it free on a later turn at sorcery speed', fn: () => stashCard(c.id, 'plot') }); const ft = foretellFor(c); if (ft) items.push({ label: `Foretell ({2})`, title: `Pay {2} and exile it; cast it later for ${ft.castCost}`, fn: () => stashCard(c.id, 'foretell') }); }
     { const su = suspendFor(c); if (su) items.push({ label: `Suspend ${su.n} (${su.cost})`, fn: () => suspendCard(c.id) }); }
     { const nj = ninjutsuFor(c); if (nj) { const w = ninjutsuWhy(c); items.push({ label: `Ninjutsu (${nj.cost})` + (w ? ' \u2014 not now' : ''), title: w || 'Return an unblocked attacker and put this onto the battlefield tapped and attacking', fn: () => activateNinjutsu(c.id) }); } }
+    { const rf = reinforceFor(c); if (rf) items.push({ label: `Reinforce ${rf.n} (${rf.cost})`, title: 'Pay the cost and discard this card: put counters on target creature', fn: () => reinforceCard(c.id) }); }
     { const cy = cyclingFor(c); if (cy) items.push({ label: `Cycle (${cy.label.replace(/^Cycling\s*(?:\u2014\s*)?/, '') || 'free'})`, fn: () => cycleCard(c.id) }); }
   }
   if (c.token) {

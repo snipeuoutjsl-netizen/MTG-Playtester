@@ -690,7 +690,7 @@ function hasKw(c, kw) {
   if (state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)) return true;   // "gains haste until end of turn"
   if (kw === 'haste' && c.suspHaste && state && state.battlefield.includes(c)) return true;   // cast from suspend
   if (kwLine(cardText(c), kw)) return true;
-  if (sbKeywords(c).includes(kw)) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
+  if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw)) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
 const GRANTABLE = ['flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
@@ -700,7 +700,7 @@ function grantedKeywords(c) {
   if (!state || !c || c.tapped === undefined && !c.id) return out;
   for (const kw of GRANTABLE) {
     if (kwLine(cardText(c), kw)) continue;
-    let from = kwGrant(c, kw) || (sbKeywords(c).includes(kw) ? 'its own ability' : null);
+    let from = kwGrant(c, kw) || (sbKeywords(c).includes(kw) ? 'its own ability' : null) || (pairedKeywords(c).includes(kw) ? 'soulbond pairing' : null);
     if (!from) { const fe = fxOn(c, 'kw').find(e => e.kw === kw); if (fe) from = `${fe.srcName && fe.srcName !== 'manual' ? fe.srcName : 'an effect'}, ${UNTIL_WORDS[fe.until]}`; }
     if (from) out.push({ kw, from });
   }
@@ -811,6 +811,7 @@ function ptCalc(c) {
   const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {});
   const net = (cc.plus || 0) - (cc.minus || 0);
   if (state) for (const e of fxOn(c, 'pt')) { out.p += e.p; out.t += e.t; out.modified = true; out.why.push(`${sgnN(e.p)}/${sgnN(e.t)} ${UNTIL_WORDS[e.until] || ''}${e.srcName && e.srcName !== 'manual' ? ' (' + e.srcName + ')' : ''}`); }
+  if (state && c.pairedWith) { const pb = pairedPT(c); if (pb) { out.p += pb.p; out.t += pb.t; out.modified = true; out.why.push(`${sgnN(pb.p)}/${sgnN(pb.t)} from being paired (soulbond)`); } }
   if (net) { out.p += net; out.t += net; out.modified = true; out.why.push(`${net > 0 ? '+' : ''}${net}/${net > 0 ? '+' : ''}${net} from counters`); }
   if (state && onBattlefield(c)) for (const e of statics()) {
     if (e.kind !== 'pt' || !e.subj.test(c)) continue;
@@ -1181,7 +1182,7 @@ function fireTrigger(ev, ctx = {}) {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id && (!t.test || t.test(c))) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
   } else if (ev === 'etb') {
-    const e = ctx.card;
+    const e = ctx.card; soulbondOnEnter(e);
     for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
@@ -1365,7 +1366,7 @@ function openTriggerBatch(batch) {
   };
   const pushWith = (t, text, picked) => {
     remaining.splice(remaining.indexOf(t), 1);
-    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, spellId: t.spellId, kw: t.kw, n: t.n, arg: t.arg };
+    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, spellId: t.spellId, otherId: t.otherId, kw: t.kw, n: t.n, arg: t.arg };
     if (picked) { obj.targets = picked; obj._tgtAsked = true; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; }
     state.stack.push(obj);
     state.priority = { active: true, passed: false };
@@ -1755,6 +1756,7 @@ function openAbilityEffect(obj, done) {
   }
   if (obj.special === 'storm') { makeSpellCopies(obj.spellId, obj.n || 0, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'suspendCast') { suspendCastFree(obj.sourceId, done); return; }
+  if (obj.special === 'soulbondSelf' || obj.special === 'soulbondOther') { soulbondResolve(obj, done); return; }
   if (obj.special === 'counterCast') { counterStackObject(obj.spellId, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'openingReveal' && openingRevealEffect(obj, done)) return;
   if (obj.special === 'reboundCast') { suspendCastFree(obj.sourceId, done, 'Rebound'); return; }
@@ -1917,6 +1919,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   const i = state.battlefield.findIndex(x => x.id === c.id);
   if (i >= 0) state.battlefield.splice(i, 1);
   memNote('left', c);
+  if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
   detachFrom(c);
   for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
@@ -4891,6 +4894,7 @@ function cardEl(c, zone) {
       return h('div', { class: 'cpt' + (ptc && (ptc.dynamic || ptc.modified) ? ' ptmod' : '') + (d ? ' pt-' + d + ' ptshow' : '') + (flash ? ' ptflash' : ''), text: pt, 'data-len': String(String(pt).length), title: ptc ? ptTitle(c, ptc) : '' }); })() : null,
     pw && zone === 'battlefield' ? h('div', { class: 'cloyalty', text: String(c.loyalty ?? '?'), title: 'Loyalty counters. Double-click to use loyalty abilities.' }) : null,
     !c.token && isLandName(c.name) && effectiveLandTypes(c).types.length && effectiveLandTypes(c).types.join('|') !== baseLandTypesOf(c.name).types.join('|') ? h('div', { class: 'land-effect-badge', text: effectiveLandTypes(c).types.map(t => t[0]).join(' '), title: `Effective land types: ${effectiveLandTypes(c).types.join(', ')}` }) : null,
+    zone === 'battlefield' && c.pairedWith ? h('div', { class: 'fxbadge', text: '\u26D3 Paired', title: 'Soulbond: paired with another creature for as long as you control both' }) : null,
     zone === 'battlefield' ? kwIconsOnTile(c) : null,
     zone === 'battlefield' && state && teach('durationHints') && fxOn(c).length ? h('div', { class: 'fxbadge', title: fxOn(c).map(e => `${e.kind === 'pt' ? sgnN(e.p) + '/' + sgnN(e.t) : e.kind === 'kw' ? e.kw : e.text} ${UNTIL_WORDS[e.until] || ''}`).join('\n'), text: '\u23F3' }) : null,
     !c.token && usesDelirium(c) && state ? (() => { const n = deliriumCount(); return h('div', { class: 'delirium-badge' + (n >= 4 ? ' on' : ''), text: `\u0394 ${Math.min(n, 4)}/4`, title: `Delirium: ${n} card type${n === 1 ? '' : 's'} among cards in your graveyard (${n >= 4 ? 'active' : 'needs four'})` }); })() : null,
@@ -5750,6 +5754,7 @@ function showCardMenu(c, zone, x, y) {
     { const pl = plotFor(c); if (pl) items.push({ label: `Plot (${pl.cost})`, title: 'Pay the plot cost and exile it; cast it free on a later turn at sorcery speed', fn: () => stashCard(c.id, 'plot') }); const ft = foretellFor(c); if (ft) items.push({ label: `Foretell ({2})`, title: `Pay {2} and exile it; cast it later for ${ft.castCost}`, fn: () => stashCard(c.id, 'foretell') }); }
     { const su = suspendFor(c); if (su) items.push({ label: `Suspend ${su.n} (${su.cost})`, fn: () => suspendCard(c.id) }); }
     { const nj = ninjutsuFor(c); if (nj) { const w = ninjutsuWhy(c); items.push({ label: `Ninjutsu (${nj.cost})` + (w ? ' \u2014 not now' : ''), title: w || 'Return an unblocked attacker and put this onto the battlefield tapped and attacking', fn: () => activateNinjutsu(c.id) }); } }
+    { const rf = reinforceFor(c); if (rf) items.push({ label: `Reinforce ${rf.n} (${rf.cost})`, title: 'Pay the cost and discard this card: put counters on target creature', fn: () => reinforceCard(c.id) }); }
     { const cy = cyclingFor(c); if (cy) items.push({ label: `Cycle (${cy.label.replace(/^Cycling\s*(?:\u2014\s*)?/, '') || 'free'})`, fn: () => cycleCard(c.id) }); }
   }
   if (c.token) {
@@ -6163,8 +6168,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.97.1';
+const APP_VERSION = '0.97.2';
 const CHANGELOG = [
+  { v: '0.97.2', title: 'Soulbond and Reinforce', notes: ['Soulbond (CR 702.95): when a soulbond creature enters you may pair it with another unpaired creature, and when another creature enters while a soulbond creature is unpaired you may pair them. Paired creatures show a "Paired" badge, both gain the keywords or +N/+N the card\'s own "as long as this creature is paired with another creature, each of those creatures ..." line gives, and they unpair when either leaves the battlefield.', 'Reinforce (CR 702.77): right-click the card in your hand to pay the reinforce cost, discard it and put N +1/+1 counters on a target creature (the ability uses the stack).'] },
   { v: '0.97.1', title: 'Mana Drain delayed mana, interactive preview, Hand tab', notes: ['Delayed mana from rules text (CR 603.7): "At the beginning of your next precombat main phase, add an amount of {C} equal to that spell\'s mana value" (Mana Drain) is now set up when the counter resolves and adds the mana at the start of your next precombat main phase.', 'The enlarged card preview is interactive again: it only changes after the pointer rests on a card for a moment and never changes while the pointer is on it, so you can click to flip a double-faced card or hover its keyword chips.', 'The Hand / Key tab moved to the bottom right.'] },
   { v: '0.97.0', title: 'LAN multiplayer (shared table)', notes: ['New ⚙ → Multiplayer (LAN): play a friend on the same network with no server and no account. One player creates an invite code, the other pastes it and sends back a reply code (direct peer-to-peer connection).', 'You each play your own deck as usual. A docked panel shows your opponent\'s live battlefield, graveyard, exile, stack, life, hand and library SIZES, and a chat box. Hands and libraries never leave your computer.', 'Combat damage you deal and the opponent life buttons change your friend\'s real life total. This first stage is a shared table; automatic priority and targeting across players come next.'] },
   { v: '0.96.31', title: 'Chalice of the Void, Ugin −11, cleaner menus', notes: ['Chalice of the Void now works from its rules text (CR 603.2): "whenever a player casts a spell with mana value equal to the number of charge counters on it, counter that spell" triggers for the matching spell only, X spells count as X=0 on the stack, and the trigger really counters the spell.', 'Search effects that exile their finds ("search your library for any number of colorless nonland cards, exile them, then shuffle. Until end of turn, you may cast those cards without paying their mana costs", e.g. Ugin, Eye of the Storms −11) now work: you pick any number of matching cards, they are exiled, and the Exile window shows a "Cast free (this turn)" button.', 'Colors are read from rules text (CR 105.2): "colorless spell", "target permanent that\'s one or more colors" and color words in trigger filters and targets are enforced.', 'Removed the trailing "…" from the Tools menu and Settings labels.'] },
@@ -8794,7 +8800,7 @@ function pointerDragBegin(ev, e, c, zone) {
 // compileCard() walks the Oracle text line by line and says, for each line, what kind of rule it is
 // (keyword, mana ability, activated, triggered, static, loyalty, spell effect) and how much of it the app handles.
 // status: 'ok' = the app handles it, 'part' = recognised but some of it is done by hand, 'unk' = not understood, 'info' = reminder text.
-const KW_ENFORCED_BASE = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'overload', 'bestow', 'escalate', 'replicate', 'emerge', 'prowl', 'miracle', 'plot', 'foretell', 'blitz', 'dash', 'spectacle', 'surge', 'casualty', 'exalted', 'battle cry', 'annihilator', 'evolve', 'renown', 'mentor', 'training', 'dethrone', 'melee', 'fabricate', 'modular', 'bloodthirst', 'extort', 'riot', 'ninjutsu', 'flashback', 'spree', 'suspend', 'living weapon', 'dredge', 'embalm', 'eternalize', 'unearth', 'outlast', 'rebound', 'cumulative upkeep', 'vanishing', 'fading', 'decayed', 'exert', 'monstrosity', 'populate', 'boast', 'devoid']);
+const KW_ENFORCED_BASE = new Set([...GRANTABLE, 'flash', 'changeling', 'soulbond', 'reinforce', 'cascade', 'prowess', 'overload', 'bestow', 'escalate', 'replicate', 'emerge', 'prowl', 'miracle', 'plot', 'foretell', 'blitz', 'dash', 'spectacle', 'surge', 'casualty', 'exalted', 'battle cry', 'annihilator', 'evolve', 'renown', 'mentor', 'training', 'dethrone', 'melee', 'fabricate', 'modular', 'bloodthirst', 'extort', 'riot', 'ninjutsu', 'flashback', 'spree', 'suspend', 'living weapon', 'dredge', 'embalm', 'eternalize', 'unearth', 'outlast', 'rebound', 'cumulative upkeep', 'vanishing', 'fading', 'decayed', 'exert', 'monstrosity', 'populate', 'boast', 'devoid']);
 // A keyword counts as handled when the engine has it: the older hand list above, any keyword with a trigger or effect in the keyword framework,
 // any alternative-cost keyword, and every keyword the rules table marks "tested" (a CR-numbered test exercises it). Built on first use, so new keyword batches show up here by themselves.
 let kwEnfMemo = null;
@@ -10576,6 +10582,72 @@ function openMultiplayer() {
   };
   root._refresh = draw; m.body.append(h('div', { class: 'row' }, h('span', { text: 'Name' }), nm), status, root); draw();
   m.foot.append(h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+}
+// ---------------------------------------------------------------- v0.97.2 rules text: Soulbond (CR 702.95) and Reinforce (CR 702.77)
+// 702.95a Soulbond = two triggered abilities: "When this creature enters, you may pair this creature with another unpaired creature you control" and
+//   "Whenever another creature enters under your control, if you control both this creature and the other creature and both are unpaired, you may pair this creature with the other creature."
+// 702.95c/d  Paired creatures stay paired while you control both and both are creatures; the card's own "as long as ~ is paired with another creature, each of those creatures has ..." gives both the ability.
+const soulbondText = c => /^\s*soulbond\b/im.test(cardText(c) || '');
+const isCreaturePerm = c => c && /\bCreature\b/.test(permTypeLine(c));
+const unpaired = c => c && !c.pairedWith;
+function pairedPartner(c) { return c && c.pairedWith ? (state.battlefield.find(x => x.id === c.pairedWith && x.pairedWith === c.id) || null) : null; }
+function unpairCard(c) { const p = c && c.pairedWith ? state.battlefield.find(x => x.id === c.pairedWith) : null; if (c) delete c.pairedWith; if (p && p.pairedWith === (c && c.id)) { delete p.pairedWith; log(`${c.name} and ${p.name} are no longer paired`); } }
+const PAIR_LINE_RE = /as long as (?:~|this creature) is paired with another creature,? (?:each of those creatures|both creatures|both of them) (?:has|have|gains?) ([a-z ,]+?)\.?$/i;
+const PAIR_PT_RE = /as long as (?:~|this creature) is paired with another creature,? (?:each of those creatures|both creatures|both of them) gets? ([+-]\d+)\/([+-]\d+)\.?$/i;
+function pairedPT(c) {
+  const p = pairedPartner(c); if (!p) return null; let a = 0, b = 0;
+  for (const x of [c, p]) { const tx = String(cardText(x) || '').replace(/\([^)]*\)/g, ''), re = selfNameRe(x.name); for (const raw of tx.split('\n')) { const m = raw.trim().replace(re, '~').match(PAIR_PT_RE); if (m) { a += +m[1]; b += +m[2]; } } }
+  return a || b ? { p: a, t: b } : null;
+}
+function pairedKeywords(c) {
+  const p = pairedPartner(c); if (!p) return [];
+  const out = [];
+  for (const x of [c, p]) {
+    const tx = String(cardText(x) || '').replace(/\([^)]*\)/g, ''), re = selfNameRe(x.name);
+    for (const raw of tx.split('\n')) { const m = raw.trim().replace(re, '~').match(PAIR_LINE_RE); if (m) out.push(...m[1].split(/,\s*|\s+and\s+/).map(k => k.trim().toLowerCase()).filter(k => GRANTABLE.includes(k))); }
+  }
+  return out;
+}
+function soulbondOnEnter(e) {
+  if (!state || !isCreaturePerm(e) || !state.battlefield.includes(e)) return;
+  const bf = state.battlefield;
+  if (soulbondText(e) && unpaired(e) && bf.some(x => x !== e && isCreaturePerm(x) && unpaired(x)))
+    state.pendingTriggers.push({ kind: 'ability', cardId: e.id, cardName: e.name, special: 'soulbondSelf', optional: true, text: 'Soulbond — When this creature enters, you may pair it with another unpaired creature you control.', effect: 'Pair this creature with another unpaired creature you control.', why: `${e.name} has soulbond and entered while another unpaired creature is on your side.` });
+  for (const c of bf) if (c !== e && isCreaturePerm(c) && soulbondText(c) && unpaired(c) && unpaired(e))
+    state.pendingTriggers.push({ kind: 'ability', cardId: c.id, cardName: c.name, otherId: e.id, special: 'soulbondOther', optional: true, text: `Soulbond — Whenever another creature enters under your control, you may pair ${c.name} with it (both unpaired).`, effect: `Pair ${c.name} with ${e.name}.`, why: `${e.name} entered while ${c.name} (soulbond) was unpaired.` });
+}
+function soulbondResolve(obj, done) {
+  const a = findCard(obj.sourceId), card = a && a.zone === 'battlefield' ? a.card : null;
+  const finish = (x, y) => { if (!x || !y || x.pairedWith || y.pairedWith || !state.battlefield.includes(x) || !state.battlefield.includes(y)) { log(`${obj.sourceName}: soulbond, no pair made`); render(); if (done) done(); return; } snap(); x.pairedWith = y.id; y.pairedWith = x.id; log(`${x.name} and ${y.name} are now paired`); toast('Paired', `${x.name} and ${y.name} are paired while you control both.`); render(); if (done) done(); };
+  if (!card) { if (done) done(); return; }
+  if (obj.special === 'soulbondOther') { const o = findCard(obj.otherId); finish(card, o && o.zone === 'battlefield' ? o.card : null); return; }
+  const cands = state.battlefield.filter(x => x !== card && isCreaturePerm(x) && unpaired(x));
+  if (!cands.length) { if (done) done(); return; }
+  if (cands.length === 1) { finish(card, cands[0]); return; }
+  openPickCards({ title: `${card.name}: soulbond`, note: 'Choose an unpaired creature to pair with.', cards: cands, max: 1, min: 0, nothing: 'Do not pair', done: p => finish(card, p && p[0]) });
+}
+// ---- Reinforce N—{cost} ({cost}, Discard this card: Put N +1/+1 counters on target creature.) Activated from hand at any time you have priority.
+function reinforceFor(c) {
+  const tx = cardText(c).replace(/\([^)]*\)/g, ''); let m;
+  for (const raw of tx.split('\n')) if ((m = raw.trim().match(/^Reinforce (\d+)\s*[—-]\s*((?:\{[^}]+\})+)\s*$/i))) return { n: +m[1], cost: m[2] };
+  return null;
+}
+function reinforceCard(id) {
+  const f = findCard(id); if (!f || f.zone !== 'hand') return; const rf = reinforceFor(f.card); if (!rf) return;
+  if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding || state.step === 0 || state.step === CLEANUP) { toast('Cannot reinforce now', 'You can reinforce when you have priority.'); return; }
+  if (!manaPaymentAllocation(manaCostParts(rf.cost), state.manaPool || {}, manaSources(), null).ok) { toast('Cannot reinforce', 'Not enough mana.'); return; }
+  const c = f.card, specs = parseTargetSpecs('Put counters on target creature.');
+  chooseTargets(c.name, specs, picked => {
+    const finish = ids => {
+      if (!findCard(id)) return; snap(); tapManaIds(ids || []);
+      snapMuted = true; costHold = true; discardHow = 'reinforce'; try { log(`${c.name}: reinforced (${rf.cost}, discarded)`); moveCard(id, 'graveyard'); } finally { snapMuted = false; costHold = false; discardHow = null; }
+      state.stack.push({ ability: true, id: state.nextId++, name: `${c.name} — reinforce`, sourceId: null, sourceName: c.name, cost: 'Reinforce ' + rf.n + '—' + rf.cost, text: `Put ${rf.n} +1/+1 counter${rf.n === 1 ? '' : 's'} on target creature.`, targets: picked, _tgtAsked: true });
+      state.priority = { active: true, passed: false }; render(); openStack();
+    };
+    if (teach('stackGuidance')) { openManaPayment(c, finish, rf.cost, 'Pay and reinforce'); return; }
+    const plan = manaPaymentAllocation(manaCostParts(rf.cost), state.manaPool || {}, manaSources(), null);
+    state.manaPool = plan.pool; finish(plan.used.map(i => manaSources()[i].card.id));
+  }, { srcId: null, onCancel: () => {} });
 }
 init();
 
