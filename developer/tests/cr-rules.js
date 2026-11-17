@@ -499,6 +499,10 @@ const { setup } = require('./common.js');
   await T('118.7', 'a static "Each spell a player casts costs {1} more for each other spell that player has cast this turn" raises the cost by the spells already cast (Damping Sphere)', async () => { await reset(); await bfSet(['Damping Sphere']);
     const r = await ev(() => { const s = __d.state; const c = Object.assign(__d.newCard('Mock Monster'), { id: s.nextId++ }); s.spellsCast = { turn: s.turn, n: 0 }; const a = __d.effectiveCost(c).add; s.spellsCast = { turn: s.turn, n: 2 }; const b = __d.effectiveCost(c).add; return { a, b }; });
     return { ok: r.a === 0 && r.b === 2, why: JSON.stringify(r) }; });
+  await T('605.1a', 'Urza\'s Mine, Power Plant and Tower: each taps for its bonus when the other two are on the battlefield, whatever order they were played in (the card is named "Power Plant", the Oracle text of the others says "Power-Plant")', async () => { await reset();
+    const ids = await bfSet(["Urza's Mine", "Urza's Power Plant", "Urza's Tower"]);
+    const r = await ev(() => __d.state.battlefield.filter(c => /^Urza/.test(c.name)).map(c => { const lm = __d.landMulti(c); return c.name.slice(8) + '=' + (lm ? lm.fixed.length : 1); }).join(' '));
+    return { ok: r === 'ine=2 ower Plant=2 ower=3', why: r }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });
