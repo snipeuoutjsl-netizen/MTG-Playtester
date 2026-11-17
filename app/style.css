@@ -1499,7 +1499,7 @@ body #handWrap, body[data-frame]:not([data-frame="none"]) #handWrap {
   pointer-events: none; z-index: 40;
 }
 #handWrap > .zlabel {
-  position: absolute; top: auto; left: 14px; bottom: calc(var(--ch) + 16px); height: auto; overflow: visible; min-height: 0; padding: 3px 8px; gap: 6px; z-index: 45;
+  position: absolute; top: auto; left: auto; right: 14px; bottom: calc(var(--ch) + 16px); height: auto; overflow: visible; min-height: 0; padding: 3px 8px; gap: 6px; z-index: 45;
   background: rgba(10,13,12,.78); border: 1px solid var(--line); border-radius: 999px; pointer-events: auto; font-size: 11px; justify-content: flex-start;
 }
 #handWrap > .zlabel .handsort { margin-left: 4px; min-height: 22px; }

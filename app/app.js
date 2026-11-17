@@ -886,15 +886,16 @@ function fxOnLeave(c) {
     } else { log(`Ended (${e.srcName} left the battlefield): ${fxLabel(e)}`); if (e.kind === 'note' && teach('durationHints')) toast('Effect ended', `${e.srcName} left the battlefield: ${fxLabel(e)}.`); }
   }
 }
-function delayedDue(e, when) { return e.kind === 'delayed' && e.when === when && (e.turn < state.turn || (when === 'end' && e.step < stepIndex('end')) || (when === 'endcombat' && e.step < stepIndex('end_combat'))); }
+function delayedDue(e, when) { return e.kind === 'delayed' && e.when === when && (e.turn < state.turn || (when === 'end' && e.step < stepIndex('end')) || (when === 'main1' && e.step < stepIndex('main1')) || (when === 'endcombat' && e.step < stepIndex('end_combat'))); }
 // Fire the delayed triggers that are due at the beginning of this upkeep / end step.
 function runDelayed(when) {
   if (!state || !state.fx || !state.fx.length) return;
   const due = state.fx.filter(e => delayedDue(e, when)); if (!due.length) return;
   state.fx = state.fx.filter(e => !due.includes(e));
-  const where = when === 'end' ? 'end step' : when === 'endcombat' ? 'end of combat' : 'upkeep';
+  const where = when === 'main1' ? 'precombat main phase' : when === 'end' ? 'end step' : when === 'endcombat' ? 'end of combat' : 'upkeep';
   for (const e of due) {
     const f = e.targetId ? findCard(e.targetId) : null, nm = e.targetName || (f && f.card.name) || 'it';
+    if (e.mana) { for (const [k, n] of Object.entries(e.mana)) state.manaPool[k] = (state.manaPool[k] || 0) + n; log(`${e.srcName}: delayed trigger at the beginning of the ${where}: added ${Object.entries(e.mana).map(([k, n]) => '{' + k + '}'.repeat(1) + (n > 1 ? '×' + n : '')).join('')} to your mana pool`); toast('Delayed mana', `${e.srcName}: ${e.text}`); continue; }
     if (e.action === 'exile') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was exiled at the beginning of the ${where}`); delete f.card.exileInstead; leaveBattlefield(f.card, 'exile'); } }
     else if (e.action === 'sacrifice') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was sacrificed at the beginning of the ${where}`); leaveBattlefield(f.card, 'graveyard'); } }
     else if (e.action === 'returnHand') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} returned to its owner's hand at the beginning of the ${where}`); leaveBattlefield(f.card, 'hand'); } }
@@ -3137,7 +3138,7 @@ function targetedOptions(tx, obj) {
     else if (/\buntap\b/i.test(s)) each((t, c) => { if (c && c.tapped) untapByEffect(c.id); }, t => `Untap ${t.name}`);
     else if (/\btap\b/i.test(s) && /\btap target/i.test(s)) each((t, c) => { if (c && !c.tapped) toggleTap(c.id); }, t => `Tap ${t.name}`);
     else if ((mm = s.match(/put (a|an|one|two|three|four|five|\d+) \+1\/\+1 counters? on/i))) { const n = wnum(mm[1]); each((t, c) => { if (c) addCounter(c.id, n, 'plus'); }, t => `Put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${t.name}`); }
-    else if (/\bcounter\b/i.test(s) && /\bcounter target\b/i.test(s)) each((t) => { counterStackObject(t.id, src); }, t => `Counter ${t.name}`);
+    else if (/\bcounter\b/i.test(s) && /\bcounter target\b/i.test(s)) each((t) => { const sp = state.stack.find(x => x.id === t.id), mv = sp ? spellMV(sp) : 0; counterStackObject(t.id, src); delayedManaFromText(tx, mv, src); }, t => `Counter ${t.name}`);
     else if ((mm = s.match(/\bgains? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(n, true) : changeOppLife(n); }, t => `${t.name} ${t.id === 'you' ? 'gain' : 'gains'} ${n} life`); }
     else if ((mm = s.match(/\bloses? (\d+) life/i))) { const n = +mm[1]; each((t) => { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); }, t => `${t.name} ${t.id === 'you' ? 'lose' : 'loses'} ${n} life`); }
     else if (parseDrawDiscard(s)) { const dd = parseDrawDiscard(s); each((t) => { if (t.id === 'you') runDrawDiscard(dd, src); else { log(`${src}: your opponent: ${ddLabel(dd).toLowerCase()} (not tracked here)`); render(); } }, t => `${t.name}: ${ddLabel(dd).toLowerCase()}`); }
@@ -3851,6 +3852,7 @@ function enterStep(i, quiet) {
   } else if (id === 'upkeep') {
     if (state.gs && state.gs.init) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'At the beginning of your upkeep, venture into the Undercity.', effect: 'Venture into the Undercity.', special: null, optional: false, why: 'You have the initiative (rule 725.2). The app does not track the dungeon; move your marker by hand.' });
   } else if (id === 'main1') {
+    runDelayed('main1');
     for (const c of state.battlefield.slice()) if (isSaga(c)) sagaAdvance(c, false);
   } else if (id === 'end_combat') {
     runDelayed('endcombat');
@@ -5117,7 +5119,15 @@ function setupKeywordTips() {
 }
 
 function sickNote(c) { return state && teach('summoningSick') && state.battlefield.some(x => x.id === c.id) && isSick(c) ? h('div', { class: 'sicknote', text: SICK_TEXT }) : null; }
+// The enlarged preview stays interactive (click to flip, hover keyword chips): it only swaps to another card after the pointer rests on it
+// briefly, so crossing other cards on the way to the right column no longer replaces it, and it never changes while the pointer is on it.
+let previewTimer = 0, previewHold = false, previewWired = false;
 function showPreview(c) {
+  if (!previewWired) { const b = $('#preview'); if (b) { previewWired = true; b.addEventListener('mouseenter', () => { previewHold = true; clearTimeout(previewTimer); }); b.addEventListener('mouseleave', () => { previewHold = false; }); } }
+  if (previewHold) return;
+  clearTimeout(previewTimer); previewTimer = setTimeout(() => { if (!previewHold) showPreviewNow(c); }, 170);
+}
+function showPreviewNow(c) {
   const box = $('#preview');
   const im = !c.token && showImages ? imgFor(c.name) : null;
   if (im) {
@@ -6153,8 +6163,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.97.0';
+const APP_VERSION = '0.97.1';
 const CHANGELOG = [
+  { v: '0.97.1', title: 'Mana Drain delayed mana, interactive preview, Hand tab', notes: ['Delayed mana from rules text (CR 603.7): "At the beginning of your next precombat main phase, add an amount of {C} equal to that spell\'s mana value" (Mana Drain) is now set up when the counter resolves and adds the mana at the start of your next precombat main phase.', 'The enlarged card preview is interactive again: it only changes after the pointer rests on a card for a moment and never changes while the pointer is on it, so you can click to flip a double-faced card or hover its keyword chips.', 'The Hand / Key tab moved to the bottom right.'] },
   { v: '0.97.0', title: 'LAN multiplayer (shared table)', notes: ['New ⚙ → Multiplayer (LAN): play a friend on the same network with no server and no account. One player creates an invite code, the other pastes it and sends back a reply code (direct peer-to-peer connection).', 'You each play your own deck as usual. A docked panel shows your opponent\'s live battlefield, graveyard, exile, stack, life, hand and library SIZES, and a chat box. Hands and libraries never leave your computer.', 'Combat damage you deal and the opponent life buttons change your friend\'s real life total. This first stage is a shared table; automatic priority and targeting across players come next.'] },
   { v: '0.96.31', title: 'Chalice of the Void, Ugin −11, cleaner menus', notes: ['Chalice of the Void now works from its rules text (CR 603.2): "whenever a player casts a spell with mana value equal to the number of charge counters on it, counter that spell" triggers for the matching spell only, X spells count as X=0 on the stack, and the trigger really counters the spell.', 'Search effects that exile their finds ("search your library for any number of colorless nonland cards, exile them, then shuffle. Until end of turn, you may cast those cards without paying their mana costs", e.g. Ugin, Eye of the Storms −11) now work: you pick any number of matching cards, they are exiled, and the Exile window shows a "Cast free (this turn)" button.', 'Colors are read from rules text (CR 105.2): "colorless spell", "target permanent that\'s one or more colors" and color words in trigger filters and targets are enforced.', 'Removed the trailing "…" from the Tools menu and Settings labels.'] },
   { v: '0.96.30', title: 'Urza\'s Saga Construct, imprint with conditions', notes: ['Fixed: the 0/0 Construct token that Urza\'s Saga makes ("This token gets +1/+1 for each artifact you control") was put into the graveyard the moment it was created. "This token" is now understood as the token itself in every static ability, so the Construct counts itself and your other artifacts.','Imprint (CR 607) now reads conditions on the exiled card: "a colorless card with mana value 7 or greater" (Ugin\'s Labyrinth), and "If a card is exiled with this land, add {C}{C} instead" makes the land tap for two.'] },
@@ -10441,6 +10452,19 @@ function castAnyOk(ca, sp, src) {
   if (ca.counters) { const kk = ca.counters.toLowerCase() === '+1/+1' ? 'plus' : ca.counters.toLowerCase(); return mv === counterCount(src, kk); }
   if (ca.mv === null) return true;
   return ca.cmp === 'less' ? mv <= ca.mv : ca.cmp === 'greater' ? mv >= ca.mv : mv === ca.mv;
+}
+
+// CR 603.7: "At the beginning of your next precombat main phase, add an amount of {C} equal to that spell's mana value." (Mana Drain)
+// A delayed triggered ability from the rules text: it is created when the effect resolves and fires in the next precombat main phase.
+const DELAYED_MANA_RE = /at the beginning of your next (?:precombat )?main phase,? add (an amount of )?((?:\{[WUBRGC]\})+)(?: equal to that (?:spell|card)['\u2019]s mana value)?/i;
+function delayedManaFromText(tx, mv, src) {
+  const m = String(tx).replace(/\n/g, ' ').match(DELAYED_MANA_RE); if (!m) return false;
+  const sy = m[2].match(/[WUBRGC]/g), per = /equal to that (?:spell|card)['\u2019]s mana value/i.test(m[0]), mana = {};
+  for (const k of sy) mana[k] = (mana[k] || 0) + (per ? (m[1] ? mv : mv) : 1);
+  if (!Object.values(mana).some(n => n > 0)) return false;
+  addFx({ kind: 'delayed', when: 'main1', mana, text: `Add ${Object.entries(mana).map(([k, n]) => '{' + k + '}'.repeat(n)).join('')} to your mana pool.`, srcName: src || 'effect', srcId: null });
+  log(`${src}: delayed trigger set — at the beginning of your next precombat main phase you add ${Object.entries(mana).map(([k, n]) => n + ' {' + k + '}').join(' ')}`);
+  return true;
 }
 // ---- v0.97 LAN / local multiplayer (stage 1: a shared table).
 // Two copies of the app connect straight to each other over WebRTC (no server, no install change): the host makes an invite code,

@@ -57,15 +57,16 @@ function fxOnLeave(c) {
     } else { log(`Ended (${e.srcName} left the battlefield): ${fxLabel(e)}`); if (e.kind === 'note' && teach('durationHints')) toast('Effect ended', `${e.srcName} left the battlefield: ${fxLabel(e)}.`); }
   }
 }
-function delayedDue(e, when) { return e.kind === 'delayed' && e.when === when && (e.turn < state.turn || (when === 'end' && e.step < stepIndex('end')) || (when === 'endcombat' && e.step < stepIndex('end_combat'))); }
+function delayedDue(e, when) { return e.kind === 'delayed' && e.when === when && (e.turn < state.turn || (when === 'end' && e.step < stepIndex('end')) || (when === 'main1' && e.step < stepIndex('main1')) || (when === 'endcombat' && e.step < stepIndex('end_combat'))); }
 // Fire the delayed triggers that are due at the beginning of this upkeep / end step.
 function runDelayed(when) {
   if (!state || !state.fx || !state.fx.length) return;
   const due = state.fx.filter(e => delayedDue(e, when)); if (!due.length) return;
   state.fx = state.fx.filter(e => !due.includes(e));
-  const where = when === 'end' ? 'end step' : when === 'endcombat' ? 'end of combat' : 'upkeep';
+  const where = when === 'main1' ? 'precombat main phase' : when === 'end' ? 'end step' : when === 'endcombat' ? 'end of combat' : 'upkeep';
   for (const e of due) {
     const f = e.targetId ? findCard(e.targetId) : null, nm = e.targetName || (f && f.card.name) || 'it';
+    if (e.mana) { for (const [k, n] of Object.entries(e.mana)) state.manaPool[k] = (state.manaPool[k] || 0) + n; log(`${e.srcName}: delayed trigger at the beginning of the ${where}: added ${Object.entries(e.mana).map(([k, n]) => '{' + k + '}'.repeat(1) + (n > 1 ? '×' + n : '')).join('')} to your mana pool`); toast('Delayed mana', `${e.srcName}: ${e.text}`); continue; }
     if (e.action === 'exile') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was exiled at the beginning of the ${where}`); delete f.card.exileInstead; leaveBattlefield(f.card, 'exile'); } }
     else if (e.action === 'sacrifice') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was sacrificed at the beginning of the ${where}`); leaveBattlefield(f.card, 'graveyard'); } }
     else if (e.action === 'returnHand') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} returned to its owner's hand at the beginning of the ${where}`); leaveBattlefield(f.card, 'hand'); } }

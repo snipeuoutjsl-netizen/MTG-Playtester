@@ -53,3 +53,16 @@ function castAnyOk(ca, sp, src) {
   if (ca.mv === null) return true;
   return ca.cmp === 'less' ? mv <= ca.mv : ca.cmp === 'greater' ? mv >= ca.mv : mv === ca.mv;
 }
+
+// CR 603.7: "At the beginning of your next precombat main phase, add an amount of {C} equal to that spell's mana value." (Mana Drain)
+// A delayed triggered ability from the rules text: it is created when the effect resolves and fires in the next precombat main phase.
+const DELAYED_MANA_RE = /at the beginning of your next (?:precombat )?main phase,? add (an amount of )?((?:\{[WUBRGC]\})+)(?: equal to that (?:spell|card)['\u2019]s mana value)?/i;
+function delayedManaFromText(tx, mv, src) {
+  const m = String(tx).replace(/\n/g, ' ').match(DELAYED_MANA_RE); if (!m) return false;
+  const sy = m[2].match(/[WUBRGC]/g), per = /equal to that (?:spell|card)['\u2019]s mana value/i.test(m[0]), mana = {};
+  for (const k of sy) mana[k] = (mana[k] || 0) + (per ? (m[1] ? mv : mv) : 1);
+  if (!Object.values(mana).some(n => n > 0)) return false;
+  addFx({ kind: 'delayed', when: 'main1', mana, text: `Add ${Object.entries(mana).map(([k, n]) => '{' + k + '}'.repeat(n)).join('')} to your mana pool.`, srcName: src || 'effect', srcId: null });
+  log(`${src}: delayed trigger set — at the beginning of your next precombat main phase you add ${Object.entries(mana).map(([k, n]) => n + ' {' + k + '}').join(' ')}`);
+  return true;
+}

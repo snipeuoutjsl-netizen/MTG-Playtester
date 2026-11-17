@@ -543,6 +543,14 @@ const { setup } = require('./common.js');
       const sp = __d.parseTargetSpecs("Exile up to one target permanent that's one or more colors.")[0];
       return { trig: [__d.filterMatches('a colorless spell', rock), __d.filterMatches('a colorless spell', bears)], tgt: [__d.permMatchesSpec(rock, sp), __d.permMatchesSpec(bears, sp), __d.permMatchesSpec(land, sp)] }; });
     return { ok: r.trig[0] === true && r.trig[1] === false && r.tgt[0] === false && r.tgt[1] === true && r.tgt[2] === false, why: JSON.stringify(r) }; });
+  await T('603.7', 'Mana Drain: counter target spell; at the beginning of your next precombat main phase add {C} equal to that spell\'s mana value (delayed triggered ability)', async () => { await reset(); await toMain();
+    const r = await ev(() => { const s = __d.state; const sp = Object.assign(__d.newCard('Mock Two Drop'), { id: s.nextId++ }); s.stack.push(sp);
+      const txt = __d.cardInfo('Mana Drain').tx; const o = __d.effectOptions(txt, { sourceName: 'Mana Drain', targets: [{ kind: 'spell', id: sp.id, name: sp.name, spec: 0 }] }).find(x => /^Counter/.test(x.label || ''));
+      if (!o) return { err: 'no counter option', labels: __d.effectOptions(txt, { sourceName: 'Mana Drain', targets: [{ kind: 'spell', id: sp.id, name: sp.name, spec: 0 }] }).map(x => x.label) };
+      o.fn(); const set = s.fx.filter(e => e.when === 'main1' && e.mana).length; const poolNow = s.manaPool.C || 0; const gy = s.graveyard.some(x => x.id === sp.id);
+      s.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }; s.turn++; s.step = 0; __d.enterStep(__d.stepIndex('main1'), true);
+      return { set, poolNow, gy, after: s.manaPool.C || 0, left: s.fx.filter(e => e.mana).length }; });
+    return { ok: r.set === 1 && r.poolNow === 0 && r.gy && r.after === 2 && r.left === 0, why: JSON.stringify(r) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });
