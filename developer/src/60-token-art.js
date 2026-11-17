@@ -4,6 +4,9 @@
 let tokenGenericArt = lsGet('mtgpt.tokenArt', true);
 const TOKART = new Map();          // normalized token name -> { front, custom: true }
 const GENERIC_ART_CACHE = new Map();
+const TOKIMG = new Map();          // normalized token name -> { front } : official token picture downloaded from Scryfall (cached in IndexedDB as 'timg:<name>')
+const tokMissing = new Set();      // token names Scryfall had no picture for this session
+const tokJob = { running: false, cancel: false, done: 0, total: 0 };
 const tokKey = name => norm(String(name || ''));
 async function loadTokenArt() {
   let n = 0;
@@ -13,6 +16,39 @@ async function loadTokenArt() {
     for (const k of keys) { const b = rec[k]; if (!b) continue; const mk = k.slice(5), old = TOKART.get(mk); if (old) URL.revokeObjectURL(old.front); TOKART.set(mk, { front: URL.createObjectURL(b), custom: true }); n++; }
   } catch (e) { /* storage unavailable: custom token art is simply not loaded */ }
   return n;
+}
+async function loadTokenImgs(names) {
+  const keys = [...new Set(names.map(tokKey))].filter(k => !TOKIMG.has(k)); if (!keys.length) return 0;
+  const got = await idbGetMany(keys.map(k => 'timg:' + k)); let n = 0;
+  for (const k of keys) { const b = got['timg:' + k]; if (b) { TOKIMG.set(k, { front: URL.createObjectURL(b) }); n++; } }
+  return n;
+}
+// Scryfall lists the official token cards too: search for the token by name, then pick the one that matches this token's P/T, colours and type.
+async function fetchScryfallToken(d) {
+  const r = await netFetch('https://api.scryfall.com/cards/search?q=' + encodeURIComponent(`!"${d.name}" t:token`) + '&unique=art');
+  if (r.status === 404) return null;
+  const list = ((await r.json()).data || []).filter(c => c.image_uris || (c.card_faces && c.card_faces[0] && c.card_faces[0].image_uris)); if (!list.length) return null;
+  const cs = (d.col || []).slice().sort().join(''), sc = c => { const f = c.card_faces && c.card_faces[0] || c, pt = f.power != null ? f.power + '/' + f.toughness : ''; return (pt === (d.pt || '') ? 4 : 0) + ((f.colors || c.colors || []).slice().sort().join('') === cs ? 2 : 0) + (String(f.type_line || c.type_line || '').includes(d.name) ? 1 : 0); };
+  return list.reduce((b, c) => sc(c) > sc(b) ? c : b, list[0]);
+}
+async function downloadTokenArt(defs, onProgress) {
+  if (tokJob.running) { if (onProgress) onProgress('busy', tokJob.done, tokJob.total, 0); return; }
+  const todo = []; const seen = new Set(); for (const d of defs) { const k = tokKey(d.name); if (!seen.has(k) && !TOKIMG.has(k) && !tokMissing.has(k)) { seen.add(k); todo.push(d); } }
+  if (!todo.length) { if (onProgress) onProgress('done', 0, 0, 0); return; }
+  if (navigator.onLine === false) { if (onProgress) onProgress('offline', 0, 0, 0); return; }
+  tokJob.running = true; tokJob.cancel = false; tokJob.done = 0; tokJob.total = todo.length; let ok = 0, err = null;
+  for (const d of todo) {
+    if (tokJob.cancel) break;
+    try {
+      const c = await fetchScryfallToken(d), u = c ? cardImageUrls(c).front : null;
+      if (!u) tokMissing.add(tokKey(d.name));
+      else { const blob = await fetchBlob(u), k = tokKey(d.name); try { await idbSet('timg:' + k, blob); } catch (e) { /* kept for this session only */ } TOKIMG.set(k, { front: URL.createObjectURL(blob) }); ok++; }
+    } catch (e) { err = e; if (e && e.status === 429) break; }
+    tokJob.done++; if (onProgress) onProgress('run', tokJob.done, tokJob.total, ok);
+    await sleep(110);
+  }
+  tokJob.running = false; if (ok) render();
+  if (onProgress) onProgress(err ? 'error' : tokJob.cancel ? 'stopped' : 'done', tokJob.done, tokJob.total, ok, err && err.reason);
 }
 async function setTokenArt(name, file) {
   const blob = await fitArt(file), k = tokKey(name), old = TOKART.get(k);
@@ -83,6 +119,7 @@ function tokenArtFor(c) {
   if (!showImages) return null;
   const tk = c.tk || c, name = c.name || tk.name;
   const mine = TOKART.get(tokKey(name)); if (mine) return { front: mine.front, back: null, custom: true };
+  const off = TOKIMG.get(tokKey(name)); if (off) return { front: off.front, back: null, official: true };
   if (!tokenGenericArt) return null;
   return { front: genericTokenArt({ name, pt: tk.pt, col: tk.col, types: tk.types, subs: tk.subs, type: tk.type }), back: null, generic: true };
 }
@@ -110,9 +147,9 @@ function openTokenGlossary() {
     const f = all.filter(d => !q || (d.name + ' ' + d.type + ' ' + (d.tx || '')).toLowerCase().includes(q));
     const vis = f.slice(0, shown); let grp = '';
     grid.replaceChildren(...vis.flatMap(d => {
-      const art = tokenArtFor({ name: d.name, tk: d }), mine = TOKART.has(tokKey(d.name)), au = tokenAbilityAudit(d), okN = au.filter(a => a.st === 'ok').length;
+      const art = tokenArtFor({ name: d.name, tk: d }), mine = TOKART.has(tokKey(d.name)), off = !mine && TOKIMG.has(tokKey(d.name)), au = tokenAbilityAudit(d), okN = au.filter(a => a.st === 'ok').length;
       const head = d.grp !== grp ? (grp = d.grp, [h('div', { class: 'fhead', style: 'grid-column:1/-1', text: d.grp })]) : [];
-      const thumb = h('div', { class: 'cart-thumb' + (art ? '' : ' none') + (mine ? ' mine' : ''), style: art ? `background-image:url("${art.front}")` : '' }, art ? null : h('span', { text: d.name }), mine ? h('i', { class: 'cart-mine', text: 'custom' }) : null);
+      const thumb = h('div', { class: 'cart-thumb' + (art ? '' : ' none') + (mine ? ' mine' : ''), style: art ? `background-image:url("${art.front}")` : '' }, art ? null : h('span', { text: d.name }), mine ? h('i', { class: 'cart-mine', text: 'custom' }) : off ? h('i', { class: 'cart-mine', text: 'official' }) : null);
       return head.concat([h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: d.type + (d.tx ? '\n' + d.tx : ''), text: d.name + (d.pt ? ' ' + d.pt : '') }),
         au.length ? h('div', { class: 'small muted', title: au.map(a => (a.st === 'ok' ? '\u2713 ' : a.st === 'part' ? '\u25d0 ' : '\u2717 ') + a.line).join('\n'), text: `abilities ${okN}/${au.length} \u2713` }) : h('div', { class: 'small muted', text: 'no abilities' }),
         h('div', { class: 'cart-btns' }, h('button', { text: mine ? 'Change\u2026' : 'Add art\u2026', onclick: () => pick(async fl => { try { note.textContent = 'Saving\u2026'; await setTokenArt(d.name, fl); note.textContent = `Saved art for ${d.name}.`; draw(); render(); } catch (e) { note.textContent = 'Could not read that picture.'; } }) }),
@@ -121,9 +158,13 @@ function openTokenGlossary() {
     more.hidden = shown >= f.length; count.textContent = `${f.length} token${f.length === 1 ? '' : 's'} \u00b7 ${[...TOKART.keys()].length} with your own art`;
   };
   const count = h('span', { class: 'small muted' });
+  const prog = (st, done, total, ok, why) => { note.textContent = st === 'run' ? `Downloading token pictures\u2026 ${done}/${total}` : st === 'busy' ? 'A token picture download is already running (' + done + '/' + total + '). Try again when it finishes.' : st === 'offline' ? 'Offline: connect to the internet to download token pictures.' : st === 'error' ? `Stopped: ${why || 'could not reach Scryfall'}. ${ok} saved.` : st === 'stopped' ? `Stopped. ${ok} saved.` : total ? `Done: ${ok} of ${total} token pictures downloaded (the rest have none on Scryfall).` : 'Nothing new to download.'; if (st !== 'run') draw(); };
+  const dlDeck = h('button', { text: 'Download art for my deck\u2019s tokens', title: 'Fetches the official token pictures from Scryfall, the same way card pictures are fetched', onclick: () => downloadTokenArt(all.filter(d => d.grp === 'In your deck'), prog) });
+  const dlAll = h('button', { text: 'Download art for all tokens', onclick: () => { if (all.length < 80 || confirm(`Download pictures for ${all.length} tokens from Scryfall? It takes a few minutes.`)) downloadTokenArt(all, prog); } });
+  const dlStop = h('button', { text: 'Stop', onclick: () => { tokJob.cancel = true; } });
   search.addEventListener('input', () => { q = search.value.trim().toLowerCase(); shown = 60; draw(); });
-  m.body.append(h('p', { class: 'small muted', text: 'Every token in the game has generic art drawn by this app, since it ships no official art. Add your own picture to any token and it is used wherever that token appears (on the table, in the preview, in stacks). The picture is stored on this computer only. Art is per token name, so one picture covers every Soldier you make.' }),
-    h('div', { class: 'cart-bar' }, search, h('label', { class: 'small', style: 'white-space:nowrap' }, gen, ' Show generic art on tokens'), count), note, grid, h('div', { class: 'row', style: 'justify-content:center' }, more));
+  m.body.append(h('p', { class: 'small muted', text: 'Every token has generic art drawn by this app (the app ships no official art). Press a Download button to fetch the official token pictures from Scryfall, the same way card pictures are fetched, or add your own picture to any token your own picture; it always wins over the others. It is used wherever that token appears (on the table, in the preview, in stacks). The picture is stored on this computer only. Art is per token name, so one picture covers every Soldier you make.' }),
+    h('div', { class: 'cart-bar' }, search, h('label', { class: 'small', style: 'white-space:nowrap' }, gen, ' Show generic art on tokens'), count), h('div', { class: 'cart-bar' }, dlDeck, dlAll, dlStop), note, grid, h('div', { class: 'row', style: 'justify-content:center' }, more));
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() }));
   draw();
 }
