@@ -507,6 +507,18 @@ const { setup } = require('./common.js');
     await bfSet(['Mock Mine Lookalike', "Urza's Power Plant", "Urza's Tower"]);
     const r = await ev(() => __d.state.battlefield.filter(c => /^Urza/.test(c.name)).map(c => { const lm = __d.landMulti(c); return lm ? lm.fixed.length : 1; }).join(','));
     return { ok: r === '2,3', why: r }; });
+  await T('607.1', 'imprint: "you may exile a colorless card with mana value 7 or greater from your hand" and "If a card is exiled with this land, add {C}{C} instead" (Ugin\'s Labyrinth)', async () => { await reset();
+    const [lab] = await bfSet(["Ugin's Labyrinth"]); const big = await putHand('Devourer of Destiny');
+    const before = await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); const lm = __d.landMulti(c); return lm ? lm.fixed.length : 1; }, lab);
+    const opts = await ev(i => { const s = __d.state; const o = __d.effectOptions("you may exile a colorless card with mana value 7 or greater from your hand.", { sourceName: "Ugin's Labyrinth", sourceId: i }); return o.map(x => x.label); }, lab);
+    await ev(i => { const s = __d.state; const o = __d.effectOptions("you may exile a colorless card with mana value 7 or greater from your hand.", { sourceName: "Ugin's Labyrinth", sourceId: i }); o[0].fn(); }, lab);
+    await ev(i => { __d.bottomSel.add(i); __d.confirmDiscard(); }, big);
+    const after = await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); const lm = __d.landMulti(c); return { n: lm ? lm.fixed.length : 1, imp: !!c.imprint }; }, lab);
+    return { ok: before === 1 && opts.some(x => /Imprint/.test(x)) && after.n === 2 && after.imp, why: JSON.stringify({ before, opts, after }) }; });
+  await T('613.4c', 'a 0/0 token whose own ability says "This token gets +1/+1 for each artifact you control" (Urza\'s Saga Construct) is not put into the graveyard: it counts itself and the other artifacts', async () => { await reset();
+    const r = await ev(() => { const s = __d.state; s.battlefield = []; const def = { name: 'Construct', pt: '0/0', subs: ['construct'], col: [], types: ['artifact', 'creature'], type: 'Token Artifact Creature \u2014 Construct', tx: 'This token gets +1/+1 for each artifact you control.' };
+      __d.makeTokensFromDef(def, 1, 'test'); __d.makeTokensFromDef(def, 1, 'test'); return s.battlefield.map(c => __d.ptCalc(c).p + '/' + __d.ptCalc(c).t).join(','); });
+    return { ok: r === '2/2,2/2', why: r }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });
