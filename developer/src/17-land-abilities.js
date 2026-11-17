@@ -136,7 +136,9 @@ function manaSources() {
     if(c.tapped || !isManaPermanent(c)) continue;
     if(!isLandName(c.name)){
       const r=rockInfo(c), st=rockStatus(c);
-      if(st.ok===false) continue;               // restriction clearly not met: not offered automatically (tap it by hand to override)
+      if(st.ok===false) continue;
+      if(PAY_CTX && r.noSpend==='nonartifact' && !state.battlefield.includes(PAY_CTX) && !/\bArtifact\b/.test(PAY_CTX.token ? ((PAY_CTX.tk&&PAY_CTX.tk.type)||'') : ((cardInfo(PAY_CTX.name)||{}).t||'').split(' // ')[0])) continue;   // "This mana can't be spent to cast a nonartifact spell"
+      if(PAY_CTX && r.only && !spendOnlyOk(r.only, PAY_CTX)) continue;               // restriction clearly not met: not offered automatically (tap it by hand to override)
       if(r.fixed) r.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:r.fixed.length}));
       else out.push({card:c, colors:new Set(rockColors(c)), any:true, slot:0, of:1});
       continue;
@@ -218,8 +220,8 @@ function handTip(c){ const i=handInteraction(c); if(!i) return ''; return i==='r
 // Does this permanent have a non-mana activated ability (or loyalty / fetch ability) that can be activated right now?
 // Mana abilities of lands and rocks are not highlighted, otherwise every land would glow.
 function activationReady(c) {
-  if (!state || c.token || state.phase !== 'play' || holdForTriggers() || state.discarding || state.step === 0 || state.step === CLEANUP) return '';
-  if (isPlaneswalker(c)) { const a = pwAbilities(c).find(x => !pwBlock(c, x)); return a ? `A loyalty ability can be activated (${a.label})` : ''; }
+  if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding || state.step === 0 || state.step === CLEANUP) return '';
+  if (!c.token && isPlaneswalker(c)) { const a = pwAbilities(c).find(x => !pwBlock(c, x)); return a ? `A loyalty ability can be activated (${a.label})` : ''; }
   if (isLandName(c.name) && fetchInfo(c)) return !c.tapped ? 'Can be sacrificed to search for a land' : '';
   const list = activatedAbilitiesFor(c);
   const ok = list.find(ab => !abilityReady(c, ab));
