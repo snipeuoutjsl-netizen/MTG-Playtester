@@ -1719,7 +1719,8 @@ function effectOptionsBase(tx, obj) {
   // v0.63 generic effects
   { const se = searchEffect(tx, src, obj); if (se && !(/\{T\}, Sacrifice/i.test(tx))) opts.push(se);
     const ge = graveReturnEffect(tx, src); if (ge && !bound.length) opts.push(ge);
-    if (/flip a coin/i.test(tx)) { const lm = tx.match(/if you lose the flip,[^.]*?deals? (\d+) damage to you/i); opts.push({ label: lm ? `Flip a coin (lose: take ${lm[1]} damage)` : 'Flip a coin', fn: () => { const win = flipCoin(); log(`${src}: coin flip - you ${win ? 'win' : 'lose'} the flip`); toast('Coin flip', win ? 'You won the flip.' : 'You lost the flip.' + (lm ? ` ${src} deals ${lm[1]} damage to you.` : '')); if (!win && lm) changeLife(-+lm[1], true); } }); }
+    opts.push(...rollOptionsFor(tx, src));   // v0.96.21 "roll a d20"
+    if (/flip a coin/i.test(tx)) { const lm = tx.match(/if you lose the flip,[^.]*?deals? (\d+) damage to you/i); opts.push({ label: lm ? `Flip a coin (lose: take ${lm[1]} damage)` : 'Flip a coin', fn: () => { flipCoinUI(win => { log(`${src}: coin flip - you ${win ? 'win' : 'lose'} the flip`); toast('Coin flip', win ? 'You won the flip.' : 'You lost the flip.' + (lm ? ` ${src} deals ${lm[1]} damage to you.` : '')); if (!win && lm) changeLife(-+lm[1], true); }); } }); }
     else if ((mm = txs.match(/\b(?:~|it) deals? (\d+) damage to you\b/i))) { const v = +mm[1], cond = /if ~ is tapped/i.test(txs); opts.push({ label: `${cond ? 'If tapped: ' : ''}take ${v} damage`, fn: () => { if (cond) { const f = obj.sourceId && findCard(obj.sourceId); if (f && !f.card.tapped) { toast('Not tapped', `${src} is untapped, so it deals no damage.`); return; } } changeLife(-v, true); } }); }
     if (obj.sourceId && /\buntap (?:~|this \w+)\b/i.test(txs)) opts.push({ label: `Untap ${src}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield' && f.card.tapped) untapByEffect(f.card.id); } });
     if (obj.sourceId && /^(?:then )?(?:you may )?sacrifice (?:~|it|this \w+)(?: unless it escaped)?\.?$/i.test(txs.trim().replace(/^.*\.\s+(?=then sacrifice)/i, ''))) opts.push({ label: `Sacrifice ${src}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed`); moveCard(f.card.id, 'graveyard'); } } });
@@ -6092,8 +6093,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.20';
+const APP_VERSION = '0.96.21';
 const CHANGELOG = [
+  { v: '0.96.21', title: 'Next round screen, dice and coin, bar opacity', notes: ['When a game ends (opponent at 0 life, or you lose at 0 life, ten poison counters or an empty library) a Victory / Defeat screen appears with Next round (same deck), Sideboard then play, Choose another deck, or Keep playing. It also keeps a win/loss count for the session.','Coin flips and die rolls now tumble on screen and land on the real result: a 3D coin that stops on heads or tails, and dice (a real cube for d6, shaped dice for d4 to d100). The result is picked first with a true random number and the animation lands exactly on it. "Flip a coin" and "Roll a d20" in card text use it, and there is a new Dice & coin tool in the tools menu. Turn it off with Dice & coin tumble in the animation list.','New Turn-flow bar opacity slider (Settings > Look).','Settings: the panel could be taller than the space above your hand, so the last options could not be scrolled into view. It now fits the free space.'] },
   { v: '0.96.20', title: 'Battlefield flicker fix', notes: ['Fixed the flicker with five or more permanents in a zone: a card kept hopping between sitting in the row and wrapping underneath. The zones no longer show a scrollbar (it appeared and disappeared, changing how many cards fit), the number of columns is now set exactly from the card size so the browser cannot round it differently from frame to frame, and the fit keeps a few pixels of margin. Zones still scroll with the mouse wheel.'] },
   { v: '0.96.19', title: 'Targeting fix: "an opponent controls"', notes: ['Spells and abilities that say "target nonland permanent an opponent controls" (Leyline Binding, Banishing Light-style cards) or "target creature an opponent controls" no longer offer You and Opponent as targets. Only permanents are legal targets there (CR 115.2); because the opponent\'s board is not tracked, the single "a permanent your opponent controls" choice remains.'] },
   { v: '0.96.18', title: 'Steady, filling turn bar; one-click sets; more music', notes: ['The turn-flow bar is now always the same size and its steps never shift: the button slot is fixed, the stack count floats, and the current step no longer gets wider. It also fills like a loading bar up to the step you are in, in your theme colours.','One-click sets now exist for every interface theme (Midnight, Obsidian & gold, Abyss blue, Forest, Neon, Parchment, Light, Pixel cosmos): the theme, card sleeve, playmat, board frame and a matching song all change together (Settings > Look). Untick Matching music to leave your song alone.','Five new generated songs (Settings > Sound > Music style): Dusty boom-bap, Rainy window, Midnight jazz-hop, Arcade chill and Golden hour, next to Cosmic low-fi.','Frenzy (702.68): +N/+0 when it attacks unblocked. Scavenge (702.97): exile it from the graveyard for +1/+1 counters equal to its power on a creature.'] },
@@ -7412,6 +7414,7 @@ const ANIM_DEFS = [
   ['cardDrag', 'Physical card drag', 'Click and hold a card and it follows your mouse. Drop it on a zone it can go to; if it cannot be played or moved there it flies back to where it came from'],
   ['hand3d', '3D hand tilt', 'Cards in your hand tilt toward the mouse in 3D as you hover them, like the big card preview'],
   ['handFloat', 'Floating hand', 'The cards in your hand hover up and down a small amount, each at its own pace, with a soft drop shadow'],
+  ['dice', 'Dice & coin tumble', 'Coin flips and die rolls spin and land on the real random result (off = the result just appears)'],
   ['bfFloat', 'Floating battlefield', 'Cards on the battlefield drift up and down a tiny amount, each at its own pace, with a deeper shadow so the board has depth']
 ];
 const reducedMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -7555,6 +7558,7 @@ function lethalFx(which, title, sub) {
   document.body.appendChild(o); const an = wa(o, [{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: 2600 });
   an.onfinish = () => o.remove(); setTimeout(() => o.remove(), (3200) * 3);
   sparks(innerWidth / 2, innerHeight / 2, you ? '#ff5a4f' : '#ffe27a', 40, 360, 1200);
+  setTimeout(() => { try { showGameEnd(which, title, sub); } catch (e) { /* the pop-up is a convenience */ } }, 2500);   // v0.96.21 the "Next round" screen
 }
 // ---- turn banner and phase flash
 function turnBanner() {
@@ -8160,7 +8164,7 @@ function sagaSacrifice(id) {
 
 // ---------------------------------------------------------------- settings (card sizes, playmat)
 const SET_DEFAULT = {
-  bfs: 1, hs: 1, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c', frameC: '#fff1c9',
+  bfs: 1, hs: 1, stripOpacity: 0.86, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c', frameC: '#fff1c9',
   layout: { zoneDepth: true, stackCards: true, dimIdle: true, boardStrip: true, combatLane: true, gyFan: true }, layoutMode: 'updated', lay: {}, matMotion: 'off', matSpeed: 1, sleevePreset: '', matPreset: '', uiTheme: 'default',
   anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
   sound: { on: true, vol: 0.5, music: true, musicStyle: 'ambient', musicBeat: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
@@ -8237,7 +8241,7 @@ function applyUiSet(id) {
 function applySettings() {
   applyFrame(); applyCursor(); applyUiTheme();
   const b = document.body.style;
-  b.setProperty('--bfs', settings.bfs);
+  b.setProperty('--bfs', settings.bfs); b.setProperty('--bsa', String(settings.stripOpacity ?? 0.86));
   b.setProperty('--hs', settings.hs);
   b.setProperty('--zonea', settings.zonea);
   b.setProperty('--foil', String(settings.foilStr === undefined ? 0.6 : settings.foilStr));
@@ -8482,6 +8486,7 @@ function openSettings() {
     h('div',{class:'fhead',text:'Card size'}),
     slider('Battlefield cards', 'bfs', 0.6, 1.6, 0.05, pct),
     slider('Hand cards', 'hs', 0.6, 1.6, 0.05, pct),
+    slider('Turn-flow bar opacity', 'stripOpacity', 0.15, 1, 0.05, pct),
     h('div',{class:'fhead',text:'Card sleeves'}), sleeveBox);
   P.board.append(
     P.layout,
@@ -9165,6 +9170,7 @@ function init() {
   $('#imgStatus').addEventListener('click', () => { if (!imgJob.running) { imgMissing.clear(); downloadImages(currentDeckNames()); } });
   $('#btnLogToggle').addEventListener('click', () => { lsSet('mtgpt.logopen', lsGet('mtgpt.logopen', '0') === '1' ? '0' : '1'); render(); });
   $('#btnStats').addEventListener('click', () => { toggleUtilityMenu(false); openStats(); });
+  $('#btnDiceCoin').addEventListener('click', () => { toggleUtilityMenu(false); openDiceCoin(); });
   $('#btnReading').addEventListener('click', () => { toggleUtilityMenu(false); openCoverage(); });
   $('#btnWelcome').addEventListener('click', () => { toggleUtilityMenu(false); openWelcome(); });
   setupKeywordTips();
@@ -10009,6 +10015,100 @@ function kwCantBlock(c) {
 // CR 702.68a Frenzy N: "Whenever this creature attacks and isn't blocked, it gets +N/+0 until end of turn." A goldfish has no blockers, so every attacker is unblocked.
 KW_TRIGGERS.push({ cr: '702.68', kw: 'frenzy', ev: 'attack-self', cond: 'Frenzy: whenever this creature attacks and isn\'t blocked', text: 'Whenever this creature attacks and isn\'t blocked, it gets +N/+0 until end of turn.' });
 KW_EFFECTS['frenzy'] = obj => [{ full: true, label: `${obj.sourceName} is unblocked: +${obj.n || 1}/+0 until end of turn (frenzy)`, fn: () => addTempPT(obj.sourceId, obj.n || 1, 0) }];
+// ---------------------------------------------------------------- v0.96.21 dice and coins that tumble to the real result, and the end-of-game "Next round" screen
+// CR 705.1 To flip a coin, the player flips a coin that has an equal chance of landing heads or tails (the player who flips wins the flip on heads here).
+// CR 706.2 To roll a die with N sides, a random integer from 1 to N is chosen (every result equally likely). The result is picked FIRST, from the browser's
+//          cryptographic random source, and the animation is built to land on exactly that face, so what you see is what the game used.
+function rngInt(n) {   // uniform 1..n with no modulo bias
+  n = Math.max(1, Math.floor(n)); const lim = Math.floor(0x100000000 / n) * n, buf = new Uint32Array(1);
+  try { do { crypto.getRandomValues(buf); } while (buf[0] >= lim); return (buf[0] % n) + 1; } catch (e) { return Math.floor(Math.random() * n) + 1; }
+}
+const DIE_FACE_ROT = { 1: [0, 0], 2: [-90, 0], 3: [0, -90], 4: [0, 90], 5: [90, 0], 6: [0, 180] };   // [rotateX, rotateY] that bring each cube face to the front
+function rngStage() {
+  let st = $('#rngStage'); if (st) st.remove();
+  st = h('div', { id: 'rngStage', class: 'rngstage' }); document.body.appendChild(st);
+  st.addEventListener('click', () => st.remove()); setTimeout(() => { if (st.isConnected) st.remove(); }, 9000);
+  return st;
+}
+function coinAnim(heads, done) {
+  const quick = !animOn('dice');
+  const st = rngStage(), coin = h('div', { class: 'coin3d' }, h('div', { class: 'cface heads', text: 'H' }), h('div', { class: 'cface tails', text: 'T' }), h('div', { class: 'cedge' }));
+  const lab = h('div', { class: 'rnglabel', text: 'Flipping…' }); st.append(h('div', { class: 'coinwrap' }, coin), lab);
+  const spins = 5 + rngInt(3), end = spins * 360 + (heads ? 0 : 180), T = 1700 + spins * 120;
+  const fin = () => { lab.textContent = heads ? 'Heads' : 'Tails'; lab.classList.add('show'); coin.style.transform = `rotateX(${end}deg)`; if (done) done(); setTimeout(() => { if (st.isConnected) st.classList.add('out'); setTimeout(() => st.remove(), 400); }, 1400); };
+  if (quick) { fin(); return; }
+  const a = wa(coin.parentElement, [{ transform: 'translateY(40px) scale(.7)' }, { transform: 'translateY(-150px) scale(1.15)', offset: 0.45 }, { transform: 'translateY(0) scale(1)' }], { duration: T, easing: 'cubic-bezier(.3,.1,.4,1)' });
+  const b = wa(coin, [{ transform: 'rotateX(0deg)' }, { transform: `rotateX(${end}deg)` }], { duration: T, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' });
+  b.onfinish = fin;
+}
+function dieEl(sides, value, quick) {
+  const wrap = h('div', { class: 'diewrap' });
+  if (sides === 6) {
+    const cube = h('div', { class: 'die3d' }); const faces = { 1: 'f1', 2: 'f2', 3: 'f3', 4: 'f4', 5: 'f5', 6: 'f6' };
+    for (let n = 1; n <= 6; n++) cube.append(h('div', { class: 'dface ' + faces[n] }, ...Array.from({ length: n }, () => h('i'))));
+    wrap.append(cube); wrap._spin = (T) => { const [rx, ry] = DIE_FACE_ROT[value], X = rx + 360 * (2 + rngInt(2)), Y = ry + 360 * (2 + rngInt(2));
+      const a = wa(cube, [{ transform: 'rotateX(' + rngInt(360) + 'deg) rotateY(' + rngInt(360) + 'deg)' }, { transform: `rotateX(${X}deg) rotateY(${Y}deg)` }], { duration: T, easing: 'cubic-bezier(.15,.75,.25,1)', fill: 'forwards' }); return a; };
+    wrap._set = () => { const [rx, ry] = DIE_FACE_ROT[value]; cube.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`; };
+  } else {
+    const shape = h('div', { class: 'dshape s' + ([4, 8, 10, 12, 20].includes(sides) ? sides : 'x') }, h('span', { class: 'dnum', text: '?' }));
+    wrap.append(shape); wrap._spin = (T) => {
+      const a = wa(shape, [{ transform: 'rotate3d(1,1,0,0deg) rotateZ(0deg)' }, { transform: 'rotate3d(1,1,0,1080deg) rotateZ(' + (rngInt(2) ? 360 : -360) + 'deg)' }], { duration: T, easing: 'cubic-bezier(.15,.75,.25,1)', fill: 'forwards' });
+      let t0 = performance.now(), last = 0; const tick = () => { const el = performance.now() - t0; if (el >= T) { shape.querySelector('.dnum').textContent = value; return; } const gap = 45 + 260 * Math.pow(el / T, 2.2); if (el - last > gap) { last = el; shape.querySelector('.dnum').textContent = rngInt(sides); } requestAnimationFrame(tick); }; tick(); return a; };
+    wrap._set = () => { shape.querySelector('.dnum').textContent = value; };
+  }
+  return wrap;
+}
+function rollDiceUI(sides, count, done) {
+  sides = Math.max(2, Math.min(1000, Math.floor(sides) || 6)); count = Math.max(1, Math.min(20, Math.floor(count) || 1));
+  const results = Array.from({ length: count }, () => rngInt(sides)), total = results.reduce((a, b) => a + b, 0);
+  const label = `${count > 1 ? count : 'a '}d${sides}`;
+  const shown = Math.min(count, 6), quick = !animOn('dice');
+  const st = rngStage(), row = h('div', { class: 'dicerow' }), lab = h('div', { class: 'rnglabel', text: 'Rolling…' });
+  const els = results.slice(0, shown).map(v => dieEl(sides, v, quick)); row.append(...els); st.append(row, lab);
+  const finish = () => { els.forEach(e => e._set()); lab.textContent = count === 1 ? String(results[0]) : `${results.join(' + ')}${count > shown ? ' …' : ''} = ${total}`; lab.classList.add('show');
+    log(`Rolled ${label}: ${count === 1 ? results[0] : results.join(', ') + ' (total ' + total + ')'}`); if (done) done(results, total);
+    setTimeout(() => { if (st.isConnected) st.classList.add('out'); setTimeout(() => st.remove(), 400); }, 1800); };
+  if (quick) { finish(); return results; }
+  const T = 1800; let last = null; els.forEach((e, i) => { last = e._spin(T + i * 150); }); (last || { }).onfinish = finish; setTimeout(() => { if (st.isConnected && !lab.classList.contains('show')) finish(); }, T + 1200);
+  return results;
+}
+// "Flip a coin" for card effects: the result is chosen first (heads = you win the flip), the coin lands on it, then the effect continues.
+function flipCoinUI(done) { const heads = rngInt(2) === 1; coinAnim(heads, () => { try { log(`Coin flip: ${heads ? 'heads' : 'tails'}`); } catch (e) {} done && done(heads); }); return heads; }
+const DIE_WORDS = { four: 4, six: 6, eight: 8, ten: 10, twelve: 12, twenty: 20, hundred: 100 };
+// "Roll a d20", "roll two six-sided dice", "roll a d6": the app rolls and shows the result; the card's table is for you to apply.
+function rollOptionsFor(tx, src) {
+  const out = [], t = String(tx || '').replace(/\([^)]*\)/g, ' ');
+  const m = t.match(/\broll (a|an|one|two|three|four|\d+)\s+(?:(?:d(\d+))|(?:(four|six|eight|ten|twelve|twenty)-sided)|(?:(\d+)-sided))\s*(?:die|dice)?/i);
+  if (m) { const n = /^\d+$/.test(m[1]) ? +m[1] : ({ a: 1, an: 1, one: 1, two: 2, three: 3, four: 4 })[m[1].toLowerCase()] || 1, sides = m[2] ? +m[2] : m[4] ? +m[4] : DIE_WORDS[m[3].toLowerCase()];
+    out.push({ label: `Roll ${n > 1 ? n + ' ' : 'a '}d${sides}${n > 1 ? ' (dice)' : ''}`, full: true, fn: () => rollDiceUI(sides, n, (r, tot) => toast(`${src}: rolled ${tot}`, `${n > 1 ? r.join(' + ') + ' = ' + tot : 'Result: ' + tot}. Apply the card's result table.`)) }); }
+  return out;
+}
+function openDiceCoin() {
+  const m = modal('Dice & coin', { width: 420 }); let n = 1;
+  const cnt = h('select', null, ...[1, 2, 3, 4, 5, 6, 8, 10].map(v => h('option', { value: v, text: v + (v === 1 ? ' die' : ' dice') }))); cnt.addEventListener('change', () => { n = +cnt.value; });
+  const go = s => h('button', { text: 'd' + s, onclick: () => { m.close(); rollDiceUI(s, n); } });
+  m.body.append(h('div', { class: 'psub', text: 'Rolls use a true random number; the die or coin you see lands on exactly that result. Results go in the game log.' }),
+    h('div', { class: 'setrow' }, h('label', { text: 'How many' }), cnt),
+    h('div', { class: 'dicebtns' }, ...[4, 6, 8, 10, 12, 20, 100].map(go)),
+    h('div', { style: 'margin-top:10px' }, h('button', { class: 'primary', text: 'Flip a coin', onclick: () => { m.close(); flipCoinUI(); } })));
+  m.foot.append(h('button', { text: 'Close', onclick: () => m.close() }));
+}
+// ---- game over: "Next round"
+let matchRecord = { w: 0, l: 0 };
+function showGameEnd(which, title, sub) {
+  if (!state || $("#gameEndBox") || window.__noGameEnd) return;
+  const won = which !== 'you'; won ? matchRecord.w++ : matchRecord.l++;
+  const name = currentDeckName();
+  const m = modal(won ? 'You won the game' : 'You lost the game', { width: 520, sticky: true });
+  m.el.id = 'gameEndBox'; m.el.classList.add(won ? 'ge-win' : 'ge-loss');
+  m.body.append(h('div', { class: 'ge-big', text: won ? 'Victory' : 'Defeat' }), h('div', { class: 'ge-sub', text: title ? title + (sub ? ': ' + sub : '') : (won ? 'The opponent is at 0 life.' : 'You are at 0 life.') }),
+    h('div', { class: 'ge-rec', text: `This session: ${matchRecord.w} won, ${matchRecord.l} lost` }),
+    h('div', { class: 'ge-btns' },
+      h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
+      name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
+      h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { $('#btnDecks').click(); } catch (e) {} } })));
+  m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); } }));
+}
 init();
 
 })();

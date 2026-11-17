@@ -1583,3 +1583,51 @@ body.responding #boardstrip .bs-step { opacity: .55; }
 /* v0.96.20 battlefield zones never show a scrollbar: its appearing and disappearing changed the zone width, which changed how many cards fit per row, which toggled the scrollbar again (the flicker with 5+ permanents). They still scroll with the wheel. */
 #zone-creatures, #zone-noncreature, #zone-lands { scrollbar-width: none; -ms-overflow-style: none; }
 #zone-creatures::-webkit-scrollbar, #zone-noncreature::-webkit-scrollbar, #zone-lands::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* v0.96.21 turn-flow bar opacity (Settings > Look) */
+#boardstrip { background: rgba(8,12,14,var(--bsa, .86)); }
+
+/* v0.96.21 dice and coin */
+.rngstage { position: fixed; inset: 0; z-index: 9000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; background: rgba(5,6,10,.55); backdrop-filter: blur(2px); animation: rngIn .2s ease both; cursor: pointer; perspective: 900px; }
+.rngstage.out { opacity: 0; transition: opacity .4s; }
+@keyframes rngIn { from { opacity: 0; } to { opacity: 1; } }
+.rnglabel { font-size: 34px; font-weight: 800; letter-spacing: .04em; color: var(--text, #eee); text-shadow: 0 3px 18px rgba(0,0,0,.7); min-height: 44px; opacity: .75; }
+.rnglabel.show { opacity: 1; color: var(--gold, #e3b95c); transform: scale(1.06); transition: transform .25s cubic-bezier(.3,1.6,.5,1); }
+.coinwrap { width: 150px; height: 150px; perspective: 700px; }
+.coin3d { position: relative; width: 150px; height: 150px; transform-style: preserve-3d; }
+.cface { position: absolute; inset: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 70px; font-weight: 900; backface-visibility: hidden; box-sizing: border-box; border: 7px solid #8a6a1c; box-shadow: inset 0 0 22px rgba(90,60,5,.7), 0 0 26px rgba(0,0,0,.5); }
+.cface.heads { background: radial-gradient(circle at 35% 30%, #fff2b0, #e3b95c 55%, #a97c1d); color: #6b4a0d; }
+.cface.tails { background: radial-gradient(circle at 35% 30%, #e8eef2, #aab6c2 55%, #6e7c89); color: #3c4854; border-color: #55626e; transform: rotateX(180deg); }
+.dicerow { display: flex; gap: 34px; flex-wrap: wrap; justify-content: center; max-width: 80vw; }
+.diewrap { width: 110px; height: 110px; perspective: 700px; display: flex; align-items: center; justify-content: center; }
+.die3d { position: relative; width: 90px; height: 90px; transform-style: preserve-3d; }
+.dface { position: absolute; inset: 0; background: linear-gradient(145deg, #fbfbf6, #cfd0c6); border: 2px solid #8d8e83; border-radius: 14px; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 12px; box-sizing: border-box; box-shadow: inset 0 0 14px rgba(0,0,0,.18); }
+.dface i { width: 15px; height: 15px; border-radius: 50%; background: #1c1c1f; place-self: center; }
+.dface.f1 { transform: translateZ(45px); } .dface.f6 { transform: rotateY(180deg) translateZ(45px); }
+.dface.f3 { transform: rotateY(90deg) translateZ(45px); } .dface.f4 { transform: rotateY(-90deg) translateZ(45px); }
+.dface.f2 { transform: rotateX(90deg) translateZ(45px); } .dface.f5 { transform: rotateX(-90deg) translateZ(45px); }
+.dface.f1 i { grid-area: 2 / 2; }
+.dface.f2 i:nth-child(1) { grid-area: 1 / 1; } .dface.f2 i:nth-child(2) { grid-area: 3 / 3; }
+.dface.f3 i:nth-child(1) { grid-area: 1 / 1; } .dface.f3 i:nth-child(2) { grid-area: 2 / 2; } .dface.f3 i:nth-child(3) { grid-area: 3 / 3; }
+.dface.f4 i:nth-child(1) { grid-area: 1 / 1; } .dface.f4 i:nth-child(2) { grid-area: 1 / 3; } .dface.f4 i:nth-child(3) { grid-area: 3 / 1; } .dface.f4 i:nth-child(4) { grid-area: 3 / 3; }
+.dface.f5 i:nth-child(1) { grid-area: 1 / 1; } .dface.f5 i:nth-child(2) { grid-area: 1 / 3; } .dface.f5 i:nth-child(3) { grid-area: 2 / 2; } .dface.f5 i:nth-child(4) { grid-area: 3 / 1; } .dface.f5 i:nth-child(5) { grid-area: 3 / 3; }
+.dface.f6 i:nth-child(1) { grid-area: 1 / 1; } .dface.f6 i:nth-child(2) { grid-area: 1 / 3; } .dface.f6 i:nth-child(3) { grid-area: 2 / 1; } .dface.f6 i:nth-child(4) { grid-area: 2 / 3; } .dface.f6 i:nth-child(5) { grid-area: 3 / 1; } .dface.f6 i:nth-child(6) { grid-area: 3 / 3; }
+.dshape { width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; background: linear-gradient(145deg, #7f6cff, #3a2d9c); box-shadow: inset 0 0 18px rgba(255,255,255,.25); }
+.dshape .dnum { font-size: 38px; font-weight: 900; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.dshape.s4 { clip-path: polygon(50% 4%, 96% 90%, 4% 90%); } .dshape.s8 { clip-path: polygon(50% 0, 96% 50%, 50% 100%, 4% 50%); } .dshape.s10 { clip-path: polygon(50% 0, 95% 38%, 80% 95%, 20% 95%, 5% 38%); }
+.dshape.s12 { clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%); } .dshape.s20 { clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%); background: linear-gradient(145deg, #4fd0c0, #1d6f8c); }
+.dshape.sx { border-radius: 24px; }
+.dicebtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; } .dicebtns button { min-width: 54px; }
+
+/* v0.96.21 game over */
+#gameEndBox { text-align: center; }
+#gameEndBox .ge-big { font-size: 46px; font-weight: 900; letter-spacing: .08em; margin: 6px 0 2px; }
+#gameEndBox.ge-win .ge-big { color: var(--gold, #e3b95c); text-shadow: 0 0 26px rgba(227,185,92,.55); }
+#gameEndBox.ge-loss .ge-big { color: #ff7b72; text-shadow: 0 0 26px rgba(255,90,79,.45); }
+#gameEndBox .ge-sub { color: var(--muted); margin-bottom: 6px; } #gameEndBox .ge-rec { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+#gameEndBox .ge-btns { display: flex; flex-direction: column; gap: 8px; } #gameEndBox .ge-btns button { padding: 10px 14px; font-size: 14px; }
+
+/* v0.96.21 Settings: the panel was taller than the room left above the hand, so its bottom was clipped and the last options could not be scrolled into view. Its height now follows the space that is really free. */
+.setshell { height: clamp(240px, calc(100vh - var(--handcover-root, 0px) - 170px), min(70vh, 640px)); grid-template-rows: minmax(0, 1fr); }
+.setmain { min-height: 0; }
+@media (max-width: 720px) { .setshell { height: clamp(240px, calc(100vh - var(--handcover-root, 0px) - 170px), 74vh); grid-template-rows: auto minmax(0, 1fr); } }

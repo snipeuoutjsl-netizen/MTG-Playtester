@@ -30,6 +30,7 @@ function init() {
   $('#imgStatus').addEventListener('click', () => { if (!imgJob.running) { imgMissing.clear(); downloadImages(currentDeckNames()); } });
   $('#btnLogToggle').addEventListener('click', () => { lsSet('mtgpt.logopen', lsGet('mtgpt.logopen', '0') === '1' ? '0' : '1'); render(); });
   $('#btnStats').addEventListener('click', () => { toggleUtilityMenu(false); openStats(); });
+  $('#btnDiceCoin').addEventListener('click', () => { toggleUtilityMenu(false); openDiceCoin(); });
   $('#btnReading').addEventListener('click', () => { toggleUtilityMenu(false); openCoverage(); });
   $('#btnWelcome').addEventListener('click', () => { toggleUtilityMenu(false); openWelcome(); });
   setupKeywordTips();

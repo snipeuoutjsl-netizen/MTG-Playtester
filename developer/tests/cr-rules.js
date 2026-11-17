@@ -4,8 +4,9 @@ const { setup } = require('./common.js');
 (async () => {
   const { b, p } = await setup();
   const out = [];
+  await p.evaluate(() => { window.__noGameEnd = true; });
   const T = async (rule, name, fn) => { let r; try { r = await fn(); } catch (e) { r = { ok: false, why: 'threw: ' + String(e.message).split('\n')[0] }; } out.push({ rule, name, ok: !!r.ok, why: r.why || '' }); };
-  const reset = () => p.evaluate(() => { const s = __d.state; s.stack = []; s.battlefield = []; s.graveyard = []; s.exile = []; s.hand = []; s.resolving = null; s.resolvingAb = null; s.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }; s.step = 3; s.discarding = 0; s.pendingTriggers = []; s.spellsCast = { turn: s.turn, n: 0 }; __d.render(); });
+  const reset = () => p.evaluate(() => { document.querySelectorAll('.backdrop, .rngstage, .lethal').forEach(x => x.remove()); const s = __d.state; s.stack = []; s.battlefield = []; s.graveyard = []; s.exile = []; s.hand = []; s.resolving = null; s.resolvingAb = null; s.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }; s.step = 3; s.discarding = 0; s.pendingTriggers = []; s.spellsCast = { turn: s.turn, n: 0 }; __d.render(); });
   const ev = (f, a) => p.evaluate(f, a);
   await T('103.8a', 'the player who goes first skips the draw on turn 1 (opening hand stays at 7)', async () => { const r = await ev(() => ({ hand: __d.state.hand.length, onPlay: __d.state.onPlay, noDraw: __d.state.log.some(l => /No draw \(on the play\)/.test(l)) })); return { ok: r.hand === 7 && r.onPlay && r.noDraw, why: JSON.stringify(r) }; });
   await ev(() => { __d.state.step = 3; const g0 = window.__get; window.__get = (n, z) => { const s = __d.state; if (!s.library.some(x => x.name === n)) s.library.push(Object.assign(__d.newCard(n), { id: s.nextId++ })); return g0(n, z); }; });
@@ -431,6 +432,25 @@ const { setup } = require('./common.js');
     const r = await ev(() => { const out = {}; for (const t of ['exile target nonland permanent an opponent controls until this enchantment leaves the battlefield.', 'destroy target creature an opponent controls.', 'target opponent loses 2 life.']) { const sp = __d.parseTargetSpecs(t); out[t.slice(0, 22)] = sp.length ? __d.legalTargets(sp[0]).map(x => x.kind + ':' + x.name).join(' | ') : 'none'; } return out; });
     const v = Object.values(r);
     return { ok: !/player/.test(v[0]) && !/player/.test(v[1]) && /Grizzly/.test(v[1] + '') === false && /player:Opponent/.test(v[2]) && /not tracked/.test(v[0]), why: JSON.stringify(r) }; });
+
+  // ---- v0.96.21 dice, coins, game over
+  await T('706.2', 'rolling a die with N sides gives each of 1..N with equal chance, and the d6 on screen comes to rest showing exactly the rolled face', async () => { await reset();
+    const dist = await ev(() => { const c = {}; for (let i = 0; i < 6000; i++) { const v = __d.rngInt(6); c[v] = (c[v] || 0) + 1; } return c; });
+    const okDist = [1, 2, 3, 4, 5, 6].every(k => dist[k] > 800 && dist[k] < 1200) && Object.keys(dist).length === 6;
+    const r = await ev(() => new Promise(res => { const out = __d.rollDiceUI(6, 1, (rs) => { const cube = document.querySelector('.die3d'); res({ rolled: rs[0], tf: cube.style.transform }); }); }));
+    const want = { 1: [0, 0], 2: [-90, 0], 3: [0, -90], 4: [0, 90], 5: [90, 0], 6: [0, 180] }[r.rolled];
+    return { ok: okDist && r.tf === `rotateX(${want[0]}deg) rotateY(${want[1]}deg)`, why: JSON.stringify({ dist, r }) }; });
+  await T('705.1', 'a coin flip lands on the result it chose (heads = you win the flip) and reports it once the coin has stopped', async () => { await reset();
+    const rs = await ev(async () => { const out = []; for (let i = 0; i < 4; i++) { const heads = await new Promise(res => __d.flipCoinUI(h => res(h))); out.push([heads, document.querySelector('.coin3d').style.transform]); document.querySelectorAll('.rngstage').forEach(x => x.remove()); } return out; });
+    return { ok: rs.every(([h, tf]) => tf === `rotateX(${/rotateX\((\d+)deg\)/.exec(tf)[1]}deg)` && ((+/rotateX\((\d+)deg\)/.exec(tf)[1]) % 360 === (h ? 0 : 180))), why: JSON.stringify(rs) }; });
+  await T('706 + card text', '"Roll a d20" and "roll two six-sided dice" in a card\'s text give a roll option', async () => {
+    const r = await ev(() => [__d.rollOptionsFor('Roll a d20.', 'X').map(o => o.label), __d.rollOptionsFor('Roll two six-sided dice.', 'X').map(o => o.label), __d.rollOptionsFor('Draw a card.', 'X').length]);
+    return { ok: r[0][0] === 'Roll a d20' && /^Roll 2 d6/.test(r[1][0]) && r[2] === 0, why: JSON.stringify(r) }; });
+  await T('104.3a', 'a player with 0 or less life loses: the Next round screen appears with rematch, sideboard and keep playing', async () => { await reset();
+    await ev(() => { window.__noGameEnd = false; __d.state.phase = 'play'; __d.changeOppLife(-20); }); await p.waitForTimeout(3000);
+    const r = await ev(() => { const b = document.querySelector('#gameEndBox'); return b ? { t: b.innerText.replace(/\n+/g, ' | ').slice(0, 220), win: b.classList.contains('ge-win') } : null; });
+    await ev(() => { window.__noGameEnd = true; document.querySelectorAll('.backdrop, .lethal').forEach(x => x.remove()); });
+    return { ok: !!r && r.win && /Next round/.test(r.t) && /Keep playing/.test(r.t), why: JSON.stringify(r) }; });
   console.log('\nRULES CHECK (Comprehensive Rules, 19 June 2026)\n');
   for (const t of out) console.log((t.ok ? 'PASS' : 'FAIL') + '  CR ' + t.rule.padEnd(14) + t.name + (t.ok ? '' : '\n        -> ' + t.why));
   console.log(`\n${out.filter(t => t.ok).length}/${out.length} pass`);
