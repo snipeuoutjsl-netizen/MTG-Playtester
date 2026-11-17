@@ -122,7 +122,7 @@ function openTokenTray() {
   }
   const nm = h('input', { type: 'text', placeholder: 'Other token name', style: 'flex:1;min-width:0' }), pt = h('input', { type: 'text', placeholder: 'P/T (blank = noncreature)', style: 'width:120px' });
   m.body.append(h('div', { class: 'fhead', text: 'Other token' }), h('div', { class: 'row' }, nm, pt, h('button', { text: 'Create', onclick: () => { const n = nm.value.trim(); if (n) makeToken(n, pt.value.trim()); } })));
-  m.foot.append(h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+  m.foot.append(h('button', { text: 'Token glossary & art', onclick: () => { m.close(); openTokenGlossary(); } }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
 }
 // Amass (rule 701.47): put N +1/+1 counters on an Army you control; with none, first create a 0/0 black Army token. The Army becomes an <Type> in addition.
 function doAmass(type, n, src) {

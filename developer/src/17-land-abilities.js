@@ -272,7 +272,7 @@ function cardEl(c, zone) {
     zone === 'battlefield' && state && (c.att || attachmentsOf(c).length) ? (() => { const hst = hostOf(c), ats = attachmentsOf(c); return h('div', { class: 'attbadge', text: hst ? '\u2192 ' + hst.name : '\u2694 ' + ats.map(a => a.name).join(', '), title: hst ? `${c.name} is attached to ${hst.name}.` : `Attached to this: ${ats.map(a => a.name).join(', ')}` }); })() : null,
     c.token ? h('div', { class: 'ctoken', text: 'token' }) : null
   );
-  const im = !c.token && showImages ? imgFor(c.name) : null;
+  const im = cardArt(c);
   if (im) {
     e.classList.add('hasimg');
     const img = h('img', { class: 'cimg', src: im.front, draggable: 'false', alt: '' });

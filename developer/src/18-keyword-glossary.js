@@ -155,7 +155,7 @@ function showPreview(c) {
 }
 function showPreviewNow(c) {
   const box = $('#preview');
-  const im = !c.token && showImages ? imgFor(c.name) : null;
+  const im = cardArt(c);
   if (im) {
     let side = 0;
     const img = h('img', { class: 'pimg', src: im.front, alt: c.name });
@@ -206,10 +206,10 @@ function renderPileTop(zone) {
   const c = arr[arr.length - 1];
   if (layoutOn('gyFan')) {   // v0.78: graveyard AND exile, spread only while hovered
     arr.slice(-3, -1).forEach((b, i, a) => { const k = a.length - i;   // k = 2 (deepest) or 1
-      const bi = !b.token && showImages ? imgFor(b.name) : null;
+      const bi = cardArt(b);
       el.append(h('div', { class: 'fanbehind fb' + k }, bi ? h('img', { src: bi.front, alt: b.name, draggable: 'false' }) : h('div', { class: 'mini' }, h('b', { text: b.name })))); });
   }
-  const im = !c.token && showImages ? imgFor(c.name) : null;
+  const im = cardArt(c);
   if (im) {
     const img = h('img', { src: im.front, alt: c.name, draggable: 'false' });
     img.addEventListener('error', () => img.replaceWith(h('div', { class: 'mini' }, h('b', { text: c.name }))));
@@ -399,7 +399,7 @@ function renderInner() {
       shown.forEach((c, i) => {
         counts[z]++; const e = cardEl(c, 'battlefield');
         if (g.cards.length > 1 && !open) { e.classList.add('stackgrp'); counts[z] += g.cards.length - 1; e.dataset.stack = String(g.cards.length); e.style.setProperty('--sg', String(Math.min(3, g.cards.length - 1)));
-          { const nl = Math.min(4, g.cards.length - 1), im0 = showImages && !c.token ? imgFor(c.name) : null, im1 = c.token && showImages ? null : im0;
+          { const nl = Math.min(4, g.cards.length - 1), im0 = cardArt(c), im1 = im0;
             for (let k = nl; k >= 1; k--) e.prepend(h('div', { class: 'sgl', style: `--k:${k};--n:${nl}` }, im1 ? h('img', { src: im1.front, alt: '', draggable: 'false' }) : h('div', { class: 'mini' }, h('b', { text: c.name })))); }
           e.append(h('button', { class: 'grpbadge', title: `${g.cards.length} identical cards${mixed && tapN ? ` (${tapN} tapped)` : ''}. Click to spread them out.`, onclick: ev => { ev.stopPropagation(); expandedGroups.add(g.key); render(); } }, '×' + g.cards.length), mixed && tapN ? h('span', { class: 'grptap', text: tapN + ' tapped', title: `${tapN} of these ${g.cards.length} are tapped` }) : null); }
         else if (g.cards.length > 1 && i === 0) e.append(h('button', { class: 'grpbadge open', text: '▾' + g.cards.length, title: 'Click to pile these cards up again.', onclick: ev => { ev.stopPropagation(); expandedGroups.delete(g.key); render(); } }));
