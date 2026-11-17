@@ -1,7 +1,8 @@
 {
   "name": "mtg-playtester",
   "productName": "MTG Playtester",
-  "version": "0.94.4",
+  "version": "0.96.13",
+  "license": "UNLICENSED",
   "description": "Offline solo playtester for Magic: The Gathering decks",
   "main": "main.js",
   "author": "MTG Playtester",

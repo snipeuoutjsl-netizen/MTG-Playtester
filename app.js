@@ -82,6 +82,26 @@ async function idbSet(key, val) {
 let CARDS = new Map();      // normalized name -> compact card
 let cardCount = 0;
 
+// v0.95.0 Token database: the Scryfall file also holds the official token cards (name, type, rules text, power/toughness, colours). They are kept apart
+// from the playable cards and used to give every token its real rules text, so a token acts as a card (statics, triggers, abilities).
+let TOKENDB = new Map();   // norm(name) -> [{ n, t, tx, pt, col }]
+function compactToken(o) {
+  const f = o.card_faces && o.card_faces.length ? o.card_faces[0] : o, pow = f.power != null ? f.power : o.power, tou = f.toughness != null ? f.toughness : o.toughness;
+  const tx = f.oracle_text != null ? f.oracle_text : (o.oracle_text || '');
+  return { n: o.name.split(' // ')[0], t: String(f.type_line || o.type_line || ''), tx, pt: pow != null && tou != null ? pow + '/' + tou : '', col: f.colors || o.colors || [] };
+}
+function installTokens(list) {
+  TOKENDB = new Map();
+  for (const r of list || []) { const k = norm(r.n); if (!TOKENDB.has(k)) TOKENDB.set(k, []); const a = TOKENDB.get(k); if (!a.some(x => x.pt === r.pt && x.tx === r.tx && x.col.join('') === r.col.join('') && x.t === r.t)) a.push(r); }
+}
+// The official token that matches what a card says it creates ("a 0/0 colorless Construct artifact creature token ..."), or null.
+function officialToken(name, pt, col, tx) {
+  const a = TOKENDB.get(norm(name)); if (!a || !a.length) return null;
+  const cs = (col || []).slice().sort().join('');
+  const score = r => (r.pt === (pt || '') ? 4 : 0) + (r.col.slice().sort().join('') === cs ? 2 : 0) + (tx && r.tx.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() === String(tx).replace(/\s+/g, ' ').trim() ? 1 : 0);
+  let best = null, bs = -1; for (const r of a) { const sc = score(r); if (sc > bs) { bs = sc; best = r; } }
+  return bs >= 2 ? best : null;
+}
 const SKIP_LAYOUTS = new Set(['token', 'double_faced_token', 'emblem', 'art_series', 'vanguard', 'scheme', 'planar', 'augment', 'host']);
 
 function compact(o) {
@@ -202,9 +222,10 @@ async function importCardData(file) {
     if (!Array.isArray(raw)) { alert('Unexpected format. Use the "Oracle Cards" bulk file from Scryfall or an "AtomicCards" file from MTGJSON.'); updateDbStatus(); return; }
     updateDbStatus('Indexing cards…');
     await new Promise(r => setTimeout(r, 30));
-    const out = []; const seen = new Set();
+    const out = []; const seen = new Set(); const toks = [];
     for (const o of raw) {
       if (!o || !o.name) continue;
+      if (o.layout === 'token' || o.layout === 'double_faced_token') { try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
       if (SKIP_LAYOUTS.has(o.layout)) continue;
       const k = norm(o.name);
       if (seen.has(k)) continue;
@@ -212,9 +233,9 @@ async function importCardData(file) {
       out.push(compact(o));
     }
     if (!out.length) { alert('No cards found in that file.'); updateDbStatus(); return; }
-    installCards(out);
+    installCards(out); installTokens(toks);
     let saved = true;
-    try { await idbSet('cards', out); } catch (e) { saved = false; }
+    try { await idbSet('cards', out); await idbSet('tokens', toks); } catch (e) { saved = false; }
     updateDbStatus();
     if (!saved) alert('Cards loaded, but your browser would not save them. You will need to load the file again next time.');
     render();
@@ -244,6 +265,8 @@ function resolve(name) {
   if (!c) { const fr = FACES.get(k); if (fr) c = CARDS.get(norm(fr.bf)) || META.get(norm(fr.bf)); }   // a deck line that names only the back face
   return c || null;
 }
+// v0.95.0 What a permanent says, as a card record: a token's own rules text, or the card's. Used by everything that reads abilities.
+function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; return cardInfo(c.name); }
 function cardText(c) { if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); const b = i && i.tx ? i.tx : ''; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
@@ -290,14 +313,14 @@ function healHalves() {
     if (state.halfChosen === c.id) continue;
     if (c.half) restoreHalf(c);
     if (c.fromExile) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromExile; state.exile.push(c); } }
-    if (c.fromGy) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromGy; state.graveyard.push(c); } }
+    if (c.fromGy) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); if (c.fromGy.kind === 'disturb' && c.face) setFace(c, 0); delete c.fromGy; state.graveyard.push(c); } }
   }
 }
 function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.faceOf || c.name} is exiled on an adventure: you may cast it from exile later`); return 'exile'; }
 // v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
 function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && c.mayPlayTurn !== state.turn) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
@@ -316,6 +339,8 @@ function gyCastOptions(c) {
   if (/you may cast this card from your graveyard using its warp ability/i.test(tx)) { for (const w of altCostsFor(c).filter(a => a.kind === 'warp')) out.push({ kind: 'warp', label: w.label + ' (from your graveyard)', mana: w.mana, comps: w.comps, fi: null }); }
   { const gm = tx.match(/you may cast (?:this card|~|[^.\n]*?) from your graveyard as long as you control an? ([a-z]+)/i);   // v0.94.1 Gravecrawler
     if (gm && info.mc && !info.land) { const sub = gm[1].toLowerCase(); if (state.battlefield.some(b => { const pi = permTypeInfo(b); return pi.types.has(sub) || (pi.subs && [...pi.subs].some(x => String(x).toLowerCase() === sub)); })) out.push({ kind: 'static', label: `Cast from your graveyard (you control a ${gm[1]})`, mana: info.mc.split(' // ')[0], comps: [], fi: null }); } }
+  if (info.fc && info.fc.length > 1 && !info.mdfc && !info.kind && (m = tx.split('\n').map(l => l.trim().match(/^Disturb\s*(?:[\u2014-]\s*)?((?:\{[^}]+\})+)\s*$/i)).find(Boolean)))   // CR 702.146a: cast this card transformed from your graveyard for its disturb cost
+    out.push({ kind: 'disturb', label: `Disturb ${m[1]} (${info.fc[1].name})`, mana: m[1], comps: [], fi: 1 });
   if (info.kind === 'aftermath' && info.fc && info.fc[1]) { const r = info.fc[1]; out.push({ kind: 'aftermath', label: r.name + ' (aftermath)', mana: r.mc || '', comps: [], fi: 1 }); }
   if (c.gfb && c.gfb === state.turn && !out.some(o => o.kind === 'flashback') && info.mc && !info.land) out.push({ kind: 'flashback', label: 'Flashback ' + info.mc.split(' // ')[0] + ' (granted until end of turn)', mana: info.mc.split(' // ')[0], comps: [], fi: null });
   return out;
@@ -327,7 +352,8 @@ function castFromGraveyard(id, opt) {
   const ok = withGy(c, o, () => canCastNow(c));
   if (!ok) { toast('Wrong timing', 'A card cast from the graveyard follows normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.graveyard.splice(i, 1); c.fromGy = { kind: o.kind, label: o.label, mana: o.mana, comps: o.comps, fi: o.fi }; state.hand.push(c); state.halfChosen = id;
-  if (o.fi !== null && o.fi !== undefined) castAsHalf(c, o.fi);
+  if (o.kind === 'disturb') setFace(c, 1);   // CR 702.146a: it is cast transformed, so the back face is the spell (and, 702.146b, the permanent)
+  else if (o.fi !== null && o.fi !== undefined) castAsHalf(c, o.fi);
   castSpell(id);
 }
 function withGy(c, o, fn) { if (o.fi === null || o.fi === undefined) return fn(); return withHalf(c, o.fi, fn); }
@@ -467,6 +493,7 @@ function splitSecondOn() { return !!state && state.stack.some(x => !x.ability &&
 function canCastNow(c) {
   if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding) return false;
   if (splitSecondOn()) return false;
+  if (c.miracleNow) return true;   // v0.96.3 a miracle is cast as its trigger resolves, whatever the step
   // No player receives priority during untap or the normal cleanup step.
   if (state.step === 0 || state.step === CLEANUP) return false;
   if (state.stack.length) return isInstantSpeed(c);
@@ -495,8 +522,8 @@ const SUBJECT_TYPES = ['creature', 'permanent', 'artifact', 'enchantment', 'land
 function singularWord(w) { w = w.toLowerCase(); if (/(?:us|is)$/.test(w)) return w; if (w === 'elves') return 'elf'; if (/ves$/.test(w)) return w.replace(/ves$/, 'f'); if (/ies$/.test(w)) return w.replace(/ies$/, 'y'); if (/s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1); return w; }
 function printedColors(c) { const i = c && !c.token ? cardInfo(c.name) : null; return (i && i.col) || []; }
 function permTypeInfo(c) {   // lowercase type words and subtypes of a permanent
-  if (c.token) return { types: new Set(c.tk && c.tk.types ? [...c.tk.types.map(x => x.toLowerCase()), 'permanent'] : c.tk && c.tk.pt ? ['creature', 'permanent'] : ['artifact', 'permanent']), subs: new Set([...((c.tk && c.tk.subs) || []), ...(c.addSubs || [])]), legendary: !!(c.tk && c.tk.legendary), basic: false, changeling: false };
-  const t = frontType(c), parts = t.split('—');
+  if (c.token) return { types: new Set(c.tk && c.tk.types ? [...c.tk.types.map(x => x.toLowerCase()), 'permanent'] : c.tk && c.tk.type ? [...String(c.tk.type).split('\u2014')[0].split(/\s+/).filter(w => w && !/^token$/i.test(w)).map(x => x.toLowerCase()), 'permanent'] : c.tk && c.tk.pt ? ['creature', 'permanent'] : ['artifact', 'permanent']), subs: new Set([...((c.tk && c.tk.subs) || []), ...(c.addSubs || [])]), legendary: !!(c.tk && c.tk.legendary), basic: false, changeling: false };
+  const t = frontType(c), parts = t.split('—');   // (frontType already includes a type-changing 'becomes')
   const types = new Set(); for (const w of (parts[0] || '').split(/\s+/)) if (w) types.add(w.toLowerCase());
   types.add('permanent');
   const subs = new Set(); for (const w of (parts[1] || '').split(/\s+/)) if (w) subs.add(w.toLowerCase());
@@ -545,8 +572,7 @@ let _stx = { sig: '', list: [] };
 function parseStaticCard(g) {
   const list = [];
   {
-    if (g.token) return list;
-    const info = cardInfo(g.name); if (!info || !info.tx) return list;
+    const info = rulesInfo(g); if (!info || !info.tx) return list;   // v0.95.0 tokens are read like cards (their rules text is on the token itself)
     const nm = g.name.split(' // ')[0];
     const tx = info.tx.replace(/,\n/g, ', ').replace(/’/g, "'").replace(selfNameRe(nm.replace(/’/g, "'")), '~').replace(/\([^)]*\)/g, '');
     for (const raw of tx.split('\n')) {
@@ -598,9 +624,10 @@ function parseStaticCard(g) {
       // v0.90.9 "~ gets +1/+1 for each green mana you have." (Omnath, Locus of Mana)
       if ((m = line.match(/^~ gets? ([+-]\d+)\/([+-]\d+) for each (.+)$/i)) && /\bmana\b/i.test(m[3])) { const per = m[3]; list.push({ line, kind: 'pt', g, subj: { self: true, test: c => c.id === g.id }, p: +m[1], t: +m[2], perFn: () => countEachMulti(per), perText: per }); continue; }
       // power / toughness: "Other Dragons you control get +1/+1."
-      if ((m = line.match(/^(.+?) gets? ([+-]\d+)\/([+-]\d+)$/i))) {
-        const subj = parseSubject(m[1], g);
-        if (subj && !subj.self) { list.push({ line, kind: 'pt', g, subj, p: +m[2], t: +m[3] }); continue; }
+      if ((m = line.match(/^(.+?) gets? ([+-]\d+)\/([+-]\d+)(?: for each (.+))?$/i))) {
+        const per = m[4] || '';   // v0.95.0 "~ gets +1/+1 for each artifact you control" (the Construct token from Urza's Saga) and other "for each" bonuses, on itself or on others
+        const subj = m[1].trim() === '~' ? (per ? { self: true, test: c => c.id === g.id } : null) : parseSubject(m[1], g);
+        if (subj && (!subj.self || per)) { list.push({ line, kind: 'pt', g, subj, p: +m[2], t: +m[3], perFn: per ? () => countEachMulti(per) : null, perText: per }); continue; }
       }
     }
   }
@@ -608,7 +635,7 @@ function parseStaticCard(g) {
 }
 function statics() {
   if (!state) return [];
-  const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '')).join('|');
+  const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '') + (c.token && c.tk ? ':' + (c.tk.tx || '').length : '')).join('|');
   if (_stx.sig === sig) return _stx.list;
   const list = [];
   for (const g of state.battlefield) list.push(...parseStaticCard(g));
@@ -631,6 +658,7 @@ function colorEffectsFor(c) {   // [{g, cols, add}] of colour effects that curre
   try { return statics().filter(e => e.kind === 'color' && e.subj.test(c)); } finally { inColorEval = false; }
 }
 function effColors(c) {
+  if (c && /^Devoid\b/im.test(String(cardText(c) || '').replace(/\([^)]*\)/g, ''))) return [];   // CR 702.114a: a characteristic-defining ability, this object is colorless
   const base = printedColors(c);
   const fx = colorEffectsFor(c);
   if (!fx.length) return base;
@@ -746,7 +774,7 @@ function countExpr(expr) {
 }
 function cdaValues(c) {
   const i = cardInfo(c.name); if (!i || !i.tx) return null;
-  const tx = i.tx.replace(new RegExp(i.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '~').replace(/’/g, "'");
+  const tx = i.tx.replace(selfNameRe(i.name), '~').replace(/’/g, "'");
   let m;
   if ((m = tx.match(/power and toughness are each equal to (?:the )?(.+?)(?:\.|$)/im))) { const pm = m[1].match(/^(.+?) (plus|minus) (\d+)$/i); const r = countExpr(pm ? pm[1] : m[1]); const k = pm ? (/plus/i.test(pm[2]) ? 1 : -1) * +pm[3] : 0; return r && { p: r.n + k, t: r.n + k, why: [r.why + (k ? ` ${k > 0 ? 'plus' : 'minus'} ${Math.abs(k)}` : '')] }; }
   if ((m = tx.match(/power is equal to (?:the )?(.+?) and its toughness is equal to (?:the )?(.+?)(?:\.|$)/im))) {
@@ -760,7 +788,8 @@ function cdaValues(c) {
   return null;
 }
 function ptCalc(c) {
-  const pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
+  let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
+  if (c.becomes && c.becomes.pt) pt = c.becomes.pt;   // CR 613.4b: an effect that sets base power and toughness
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
@@ -782,7 +811,9 @@ function ptCalc(c) {
   if (net) { out.p += net; out.t += net; out.modified = true; out.why.push(`${net > 0 ? '+' : ''}${net}/${net > 0 ? '+' : ''}${net} from counters`); }
   if (state && onBattlefield(c)) for (const e of statics()) {
     if (e.kind !== 'pt' || !e.subj.test(c)) continue;
-    const mul = e.perFn ? e.perFn() : 1, ep = e.p * mul, et = e.t * mul;
+    // v0.96.10 CR 604.1/613: a "for each" static whose count the app cannot read is UNKNOWN, never zero (a zero would put the creature at toughness 0 and the state-based action of CR 704.5f would wrongly destroy it).
+    let mul = e.perFn ? e.perFn() : 1; if (mul == null) { out.unknown = true; out.why.push(`${e.g.name}: "for each ${e.perText}" cannot be read, so the count is unknown (not treated as 0)`); continue; }
+    const ep = e.p * mul, et = e.t * mul;
     out.p += ep; out.t += et; out.modified = true; out.why.push(`${ep >= 0 ? '+' : ''}${ep}/${et >= 0 ? '+' : ''}${et} from ${e.g.name}${e.perFn ? ' (' + mul + ' × ' + (e.p >= 0 ? '+' : '') + e.p + '/' + (e.t >= 0 ? '+' : '') + e.t + ' for each ' + e.perText + ')' : ''}`);
   }
   if (state && onBattlefield(c)) for (const e of statics()) {
@@ -852,13 +883,13 @@ function fxOnLeave(c) {
     } else { log(`Ended (${e.srcName} left the battlefield): ${fxLabel(e)}`); if (e.kind === 'note' && teach('durationHints')) toast('Effect ended', `${e.srcName} left the battlefield: ${fxLabel(e)}.`); }
   }
 }
-function delayedDue(e, when) { return e.kind === 'delayed' && e.when === when && (e.turn < state.turn || (when === 'end' && e.step < stepIndex('end'))); }
+function delayedDue(e, when) { return e.kind === 'delayed' && e.when === when && (e.turn < state.turn || (when === 'end' && e.step < stepIndex('end')) || (when === 'endcombat' && e.step < stepIndex('end_combat'))); }
 // Fire the delayed triggers that are due at the beginning of this upkeep / end step.
 function runDelayed(when) {
   if (!state || !state.fx || !state.fx.length) return;
   const due = state.fx.filter(e => delayedDue(e, when)); if (!due.length) return;
   state.fx = state.fx.filter(e => !due.includes(e));
-  const where = when === 'end' ? 'end step' : 'upkeep';
+  const where = when === 'end' ? 'end step' : when === 'endcombat' ? 'end of combat' : 'upkeep';
   for (const e of due) {
     const f = e.targetId ? findCard(e.targetId) : null, nm = e.targetName || (f && f.card.name) || 'it';
     if (e.action === 'exile') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was exiled at the beginning of the ${where}`); delete f.card.exileInstead; leaveBattlefield(f.card, 'exile'); } }
@@ -1012,8 +1043,12 @@ function attackBlock(c) {   // why this creature cannot attack right now ('' = i
   return '';
 }
 function eligibleAttackers() { return state ? state.battlefield.filter(c => permZone(c) === 'creatures' && !attackBlock(c)) : []; }
-function isLeyline(c) { return /\bopening hand\b/i.test(cardText(c)) && /\bLeyline\b/i.test(cardText(c)); }
-function isSerumPowder(c) { return norm(c.name)==='serum powder'; }
+// CR 103.6a: "If ~ is in your opening hand, you may begin the game with it on the battlefield."  CR 103.5b: "Any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards."
+const selfTxt = c => String(cardText(c) || '').replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(selfNameRe(c.name), '~').replace(/\bthis card\b/gi, '~');
+function beginsOnBattlefield(c) { return /if ~ is in your opening hand, you may begin the game with it on the battlefield/i.test(selfTxt(c)); }
+function mulliganHandSwap(c) { return /any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards/i.test(selfTxt(c)); }
+// "Enter tapped as a copy of any land on the battlefield" is a clone-style replacement effect (CR 614.12, 707.2).
+function entersAsLandCopy(c) { return /you may have ~ enter the battlefield tapped as a copy of any land on the battlefield/i.test(selfTxt(c)); }
 function landETBTrigger(c) {
   const tx=cardText(c); let m=tx.match(/enters(?: the battlefield)?[^.]*\bscry\s+(\d+)/i);
   if(m) return {kind:'ability',cardId:c.id,cardName:c.name,special:'scry',n:+m[1],optional:false,why:'A land with an enters-the-battlefield trigger.',text:`When ${c.name} enters, scry ${m[1]}.`,effect:`Scry ${m[1]}.`};
@@ -1040,10 +1075,10 @@ function selfNameRe(full) {
   return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
 function parseTriggers(c) {
-  if (!c || c.token) return [];
-  const info = cardInfo(c.name);
+  if (!c) return [];
+  const info = rulesInfo(c);
   if (!info || !info.tx) return [];
-  const key = norm(c.name);
+  const key = c.token ? 'tok:' + norm(c.name) + '|' + info.tx : norm(c.name);
   if (TRIG_CACHE.has(key)) return TRIG_CACHE.get(key);
   const out = [];
   const nameRe = selfNameRe(info.name);
@@ -1078,6 +1113,7 @@ function parseTriggers(c) {
     else if (/^whenever you gain life/.test(cond)) ev = 'lifegain';
     else if (/^(?:when|whenever) (?:~|this \w+) deals combat damage to (?:a player|an opponent|a creature or player|a player or planeswalker)/.test(cond)) ev = 'combat-damage-self';
     else if (/^(?:when|whenever) (?:one or more |a |an )?(?:other )?creatures? you control deals? combat damage to (?:a player|an opponent)/.test(cond)) ev = 'combat-damage-any';
+    if (!ev && /^(?:when|whenever) (?:~|this \w+) becomes monstrous/.test(cond)) ev = 'monstrous';   // CR 701.37
     if (!ev && /^(?:when|whenever) (?:~|this \w+) enters(?: the battlefield)? or attacks/.test(cond)) ev = 'etb-self';
     let ko = null; if (!ev && (ko = cond.match(/^(?:when|whenever) (?:~|this \w+) or another (.+?) enters/))) ev = 'etb-self';   // v0.86
     if (!ev) {   // v0.64: graveyard, discard/cycle, mana, life loss
@@ -1101,10 +1137,19 @@ function parseTriggers(c) {
   }
   if (/\bcascade\b/i.test(info.tx)) out.push({ ev: 'cast-self', cond: 'When you cast this spell', effect: 'Cascade: exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order.', line: 'Cascade (keyword): exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it free.', filter: '', optional: true, special: 'cascade' });
   if (/\bprowess\b/i.test(info.tx)) out.push({ ev: 'cast', cond: 'Prowess: whenever you cast a noncreature spell', effect: 'This creature gets +1/+1 until end of turn.', line: 'Prowess (keyword): whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.', filter: 'noncreature spell', optional: false, special: 'prowess' });
+  for (const kt of kwTriggersFor(info)) out.push(kt);   // v0.96.1 keyword triggers (exalted, evolve, renown ...)
   TRIG_CACHE.set(key, out);
   return out;
 }
-function frontType(c) { const i = c && !c.token && cardInfo(c.name); return i && i.t ? i.t.split(' // ')[0] : ''; }
+function frontType(c) {
+  const i = c && !c.token && cardInfo(c.name); let t = i && i.t ? i.t.split(' // ')[0] : '';
+  if (c && c.becomes && t) {   // v0.96.12 CR 613.1d: a type-changing effect adds its card types and subtypes to the printed ones
+    const [a, b] = t.split('\u2014').map(x => x.trim()), cap = w => w[0].toUpperCase() + w.slice(1), have = new Set(a.toLowerCase().split(/\s+/)), add = c.becomes.types.filter(w => !have.has(w)).map(cap);
+    const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(c.becomes.subs || []).map(cap)])];
+    t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
+  }
+  return t;
+}
 function filterMatches(filter, card) {
   const t = frontType(card);
   if (!t) return true;
@@ -1116,20 +1161,20 @@ function filterMatches(filter, card) {
   return mentioned.some(([, re]) => re.test(t));
 }
 function fireTrigger(ev, ctx = {}) {
-  if (state && ev === 'step' && ctx.id === 'upkeep') { runDelayed('upkeep'); suspendUpkeep(); }
+  if (state && ev === 'step' && ctx.id === 'upkeep') { runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
   if (!state || !teach('triggerPrompts')) return;
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if ((t.zone === 'graveyard') !== inGy(src)) return; state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, optional: t.optional, why }); };
-  const bf = state.battlefield.concat(state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
+  const add = (src, t, why) => { if ((t.zone === 'graveyard') !== inGy(src)) return; state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
+  const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
-    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id && (!t.test || t.test(c))) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
   } else if (ev === 'etb') {
     const e = ctx.card;
     for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
-      else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e)) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
+      else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e))) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
     }
   } else if (ev === 'cast') {
     const sp = ctx.card;
@@ -1137,10 +1182,11 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
-    for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self') add(a, t, `${a.name} was declared as an attacker.`);
-    if (atk.length) for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'attack-any') add(c, t, 'You declared attackers.');
+    for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self' && (!t.test || t.test(a, atk))) add(a, t, `${a.name} was declared as an attacker.`);
+    if (atk.length) for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'attack-any' && (!t.test || t.test(c, atk))) add(c, t, 'You declared attackers.');
   } else if (ev === 'dies') {
     const d = ctx.card;
+    if (d.blitzBody) { delete d.blitzBody; state.pendingTriggers.push({ kind: 'ability', cardId: d.id, cardName: d.name, text: 'Blitz (keyword, CR 702.152): when this creature dies, draw a card.', effect: 'Draw a card.', special: null, optional: false, why: `${d.name} was cast for its blitz cost and died.` }); }
     for (const t of parseTriggers(d)) if (t.ev === 'dies-self') add(d, t, `${d.name} was put into a graveyard from the battlefield (it died).`);
     for (const c of bf) if (c.id !== d.id) for (const t of parseTriggers(c)) if (t.ev === 'dies-other' && filterMatches(t.filter, d)) add(c, t, `${d.name} died and matches this ability's condition.`);
   } else if (ev === 'draw') {
@@ -1149,6 +1195,8 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-search') add(c, t, 'Your opponent searched their library.');
   } else if (ev === 'oppdraw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-draw') add(c, t, 'Your opponent drew a card (not the first one of their draw step), so this ability triggers.');
+  } else if (ev === 'monstrous') {
+    const d = ctx.card; for (const t of parseTriggers(d)) if (t.ev === 'monstrous') add(d, t, `${d.name} became monstrous.`);
   } else if (ev === 'leaves') {
     const d = ctx.card;
     for (const t of parseTriggers(d)) if (t.ev === 'leaves-self') add(d, t, `${d.name} left the battlefield.`);
@@ -1172,7 +1220,7 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'lifeloss') add(c, t, `You lost ${ctx.amount || ''} life.`);
   } else if (ev === 'combatdmg') {
     const a = ctx.card;
-    for (const t of parseTriggers(a)) if (t.ev === 'combat-damage-self') add(a, t, `${a.name} dealt combat damage to the opponent.`);
+    for (const t of parseTriggers(a)) if (t.ev === 'combat-damage-self' && (!t.test || t.test(a))) add(a, t, `${a.name} dealt combat damage to the opponent.`);
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'combat-damage-any') add(c, t, `${a.name} (a creature you control) dealt combat damage to the opponent.`);
   }
 }
@@ -1239,7 +1287,8 @@ function parseModal(tx) {
   // What kind of ability is this "choose one" part of? Look at the words that lead into it on the same line.
   const lead = tx.slice(tx.lastIndexOf('\n', m.index) + 1, m.index);
   const kind = /\b(?:when|whenever|at the beginning of)\b/i.test(lead) ? 'trigger' : lead.includes(':') ? 'ability' : 'spell';
-  return { spree: false, min, max, label, modes, kind };
+  const esc = tx.match(/^Escalate\s+((?:\{[^}]+\})+)/im);   // v0.96.3 escalate (CR 702.120): each mode beyond the first costs extra
+  return { spree: false, min, max, label, modes, kind, escalate: esc ? esc[1] : '' };
 }
 // The mode choice made while CASTING: only a real spell (instant/sorcery) has one. A permanent's
 // "choose one" belongs to a triggered or activated ability and is chosen when that ability goes on the stack.
@@ -1252,7 +1301,7 @@ function spellModal(c) {
 // Text of the chosen modes (in printed order), used as the text of the spell/ability as it resolves.
 function modalText(md, idxs) { return [...idxs].sort((a, b) => a - b).map(i => md.modes[i].text).join(' '); }
 function mergeGeneric(cost) { let n = 0; const rest = []; for (const m of String(cost || '').match(/\{[^}]+\}/g) || []) { if (/^\{\d+\}$/.test(m)) n += +m.slice(1, -1); else rest.push(m); } return (n ? `{${n}}` : '') + rest.join(''); }
-function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : ''; }
+function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : md.escalate ? md.escalate.repeat(Math.max(0, idxs.length - 1)) : ''; }
 function openModeChoice(name, md, cb, baseCost) {
   const chosen = new Set();
   const m = modal(`${name}: choose ${md.spree ? 'additional costs' : md.min === md.max ? md.max === 1 ? 'one mode' : md.max + ' modes' : md.label}`, { width: 640, sticky: true });
@@ -1265,7 +1314,7 @@ function openModeChoice(name, md, cb, baseCost) {
     info.textContent = md.spree ? `Pick one or more extras. Each one adds its cost to the spell. (${n} chosen)` : md.min === md.max ? `Choose ${md.max}. (${n} of ${md.max} chosen)` : `Choose ${md.min === 0 ? 'up to ' + md.max : md.label.replace(/^./, c => c.toLowerCase())}. (${n} chosen)`;
     for (const r of rows) r.box.disabled = !chosen.has(r.i) && n >= md.max;
     ok.disabled = n < md.min || n > md.max;
-    if (md.spree) total.textContent = `Total cost: ${mergeGeneric((baseCost || '') + modalCost(md, [...chosen])).replace(/[{}]/g, '') || '0'}`;
+    if (md.spree || md.escalate) total.textContent = `Total cost: ${mergeGeneric((baseCost || '') + modalCost(md, [...chosen])).replace(/[{}]/g, '') || '0'}`;
   };
   md.modes.forEach((mo, i) => {
     const box = h('input', { type: 'checkbox' });
@@ -1304,7 +1353,7 @@ function openTriggerBatch(batch) {
   };
   const pushWith = (t, text, picked) => {
     remaining.splice(remaining.indexOf(t), 1);
-    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, n: t.n };
+    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, kw: t.kw, n: t.n, arg: t.arg };
     if (picked) { obj.targets = picked; obj._tgtAsked = true; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; }
     state.stack.push(obj);
     state.priority = { active: true, passed: false };
@@ -1337,14 +1386,13 @@ const wnum = w => /^x$/i.test(w) ? 'X' : (WORD_NUM[String(w).toLowerCase()] || p
 // A definition says, for one exact piece of rules text on one card, what the app does when it resolves. It is checked BEFORE the general text reader, so a
 // card with a definition never depends on guesswork. Each definition lists the card's lines as { re, note, options(obj) } where options returns the same
 // { label, fn } choices the general reader does. Cards without a definition still use the general reader (and the scanner tells you how far it got).
-const CARD_DEFS = {};
-function defCard(name, def) { CARD_DEFS[norm(name)] = def; }
-function defFor(name) { if (!name) return null; const n = String(name); return CARD_DEFS[norm(n)] || CARD_DEFS[norm(n.split(' // ')[0])] || null; }
+const CARD_DEFS = [];   // v0.96.4: a flat list of rules-text definitions. A line is matched by what the card SAYS, never by its name, so any card with the same wording behaves the same.
+function defCard(name, def) { for (const L of def.lines) CARD_DEFS.push(Object.assign({ doc: name }, L)); }   // 'name' is documentation only
+function defFor(name) { return CARD_DEFS.length ? CARD_DEFS : null; }
 function defLine(name, text) {
-  const d = defFor(name); if (!d) return null;
-  const clean = x => x.replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(selfNameRe(name), '~').replace(/\s+/g, ' ').trim();
-  const whole = clean(String(text || '')); let L = d.lines.find(x => x.re.test(whole)); if (L) return L;
-  for (const raw of String(text || '').split('\n')) { const t = clean(raw); if (!t) continue; L = d.lines.find(x => x.re.test(t)); if (L) return Object.assign({}, L, { _line: raw }); }
+  const clean = x => x.replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(name ? selfNameRe(name) : /$^/, '~').replace(/\s+/g, ' ').trim();
+  const whole = clean(String(text || '')); let L = CARD_DEFS.find(x => x.re.test(whole)); if (L) return L;
+  for (const raw of String(text || '').split('\n')) { const t = clean(raw); if (!t) continue; L = CARD_DEFS.find(x => x.re.test(t)); if (L) return Object.assign({}, L, { _line: raw }); }
   return null;
 }
 defCard('Sink into Stupor', { lines: [{
@@ -1437,8 +1485,6 @@ defCard('Mana Vault', { lines: [{
   re: /^you may pay \{4\}\. If you do, untap ~\.?$/i,
   note: 'asks you to pay {4} with the normal payment window, then untaps it.',
   options(obj) { const c = srcCard(obj); if (!c) return []; return [{ label: 'Pay {4} and untap Mana Vault', fn: () => { if (!c.tapped) { toast('Already untapped', 'Mana Vault is already untapped.'); return; } payManaThen(c, '{4}', 'Pay {4} and untap', () => { c.tapped = false; log('Mana Vault: paid {4} and untapped it'); }); } }]; } }] });
-defCard('Mana Crypt', { lines: [{ re: /^flip a coin\. If you lose the flip, ~ deals 3 damage to you\.?$/i, note: 'flips a coin; on a loss you take 3 damage.', options: (obj, tx) => genericFor(obj, 'flip a coin. If you lose the flip, this artifact deals 3 damage to you.') }] });
-defCard('Necrodominance', { lines: [{ re: /^you may pay any amount of life\. If you do, draw that many cards\.?$/i, note: 'you choose how much life to pay; you draw that many cards.', options: (obj, tx) => genericFor(obj, tx) }] });
 // Lands from the graveyard (Icetill Explorer, Mole Man, Crucible of Worlds...)
 function gyLandPermission() { return !!state && state.battlefield.some(x => !x.token && /you may play lands from your graveyard/i.test(((cardInfo(x.name) || {}).tx || '').replace(/\s+/g, ' '))); }
 function gyLandPlayable(c) { return !!c && !c.token && gyLandPermission() && !!(cardInfo(c.name) || {}).land; }
@@ -1501,26 +1547,35 @@ function runChain(steps, src, baseModals) {
   next();
 }
 function effectOptions(tx, obj) {
+  const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
+  return res.filter(o => { const k = o && o.label && typeof o.fn === 'function' ? o.label : null; if (!k) return true; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+function effectOptionsInner(tx, obj) {
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
-    const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+    const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').replace(/,\s+then\s+(?=[a-z])/gi, '. Then ').trim();   // v0.95.3 "A, then B" is two ordered steps
     const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
     if (parseDrawDiscard(clean)) return base;
     if (sents.length < 2 || !sents.some((x, i) => i > 0 && /^(?:Then|If you do|If you can)\b/i.test(x))) return base;
-    if (/\b(?:choose one|choose two|you may|for each|X\b)/i.test(clean) || sents.some(x => /^(?:Flashback|Kicker|Storm|Cycling|Escape|Buyback|Entwine)/i.test(x))) return base;
+    if (/\b(?:choose one|choose two|you may|X\b)/i.test(clean) || sents.some(x => /^(?:Flashback|Kicker|Storm|Cycling|Escape|Buyback|Entwine)/i.test(x))) return base;
     const steps = [];
     for (let i = 0; i < sents.length; i++) {
       const o = effectOptionsBase(sents[i].replace(/^(?:Then|If you do,|If you can,)\s+/i, ''), obj).filter(x => typeof x.fn === 'function' && !x.special);
       if (o.length !== 1) return base;
       steps.push({ opt: o[0], text: sents[i], needs: /^If you (?:do|can)\b/i.test(sents[i]) });
     }
-    const src = (obj && obj.sourceName) || 'Ability', label = steps.map((st, i) => (i ? (st.needs ? ' \u2192 if you do: ' : ' \u2192 then ') : '') + (st.opt.label || st.text)).join('');
-    return [{ label: 'In order: ' + label, full: false, chain: true, fn: () => { snap(); runChain(steps, src, document.querySelectorAll('.modal').length); } }, ...base];
+    // v0.96.10 CR 608.2c: the steps of "A, then B" are applied in written order. The ordering is kept backend-side
+    // (the component abilities are listed in sentence order); no combined "In order" entry is shown to the player.
+    const ordered = steps.map(st => st.opt), keys = new Set(ordered.map(o => o.label));
+    const src = (obj && obj.sourceName) || 'Ability';
+    return [...ordered, ...base.filter(o => !keys.has(o.label)), { label: 'In order: ' + steps.map(st => st.opt.label || st.text).join(' \u2192 '), full: false, chain: true, hidden: true, fn: () => { snap(); runChain(steps, src, document.querySelectorAll('.modal').length); } }];
   } catch (e) { return base; }
 }
 function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
+  if (obj.kw && KW_EFFECTS[obj.kw]) return KW_EFFECTS[obj.kw](obj);   // v0.96.1 a keyword trigger resolving (exalted, evolve ...)
+  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
   { const L = defLine(obj.sourceName, tx);
     if (L) {
       const o = L.options(obj, L._line || tx);
@@ -1537,11 +1592,19 @@ function effectOptionsBase(tx, obj) {
   }
   const src = obj.sourceName || '~';
   const txs = tx.replace(new RegExp(src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '~');
-  const opts = []; let mm;
+  const opts = []; let mm, fe;
+  kwActionOptions(tx, obj, opts);   // v0.96.1 bolster / adapt / connive / discover
   const bound = obj.targets && obj.targets.length ? targetedOptions(tx, obj) : [];
   const pl = n => (n === 1 ? '' : 's');
   if (/pay any amount of life/i.test(tx) && /draw that many/i.test(tx)) opts.push({ special: 'payLifeDraw', summary: 'pay life and draw' });
   if (obj.special === 'cascade') opts.push({ special: 'cascade', summary: 'cascade' });
+  if (obj.special === 'ninjutsu' && obj.ninjId) opts.push({ label: `Put ${obj.sourceName} onto the battlefield tapped and attacking`, full: true, fn: () => {
+    const f = findCard(obj.ninjId); if (!f || f.zone !== 'hand') { toast('Not in hand', `${obj.sourceName} is no longer in your hand.`); return; }
+    snap(); state.hand.splice(f.idx, 1);
+    enterBattlefield(f.card, { from: 'hand', tapped: true, logMsg: `${obj.sourceName}: put onto the battlefield tapped and attacking (ninjutsu)` });
+    state.combat.attackers = (state.combat.attackers || []).concat([f.card.id]);   // it attacks without having been declared as an attacker, so "whenever attacks" does not trigger (CR 508.4)
+    render(); flushTriggers();
+  } });
   // v0.92.1 "Target player reveals their hand. You choose a [nonland] card from it. That player discards that card." (Cabal Therapist, Duress-style)
   if (/target player reveals their hand\.\s*you choose (?:a|an) ([a-z\- ]*?)card from it\.\s*that player discards (?:that card|it)/i.test(tx)) {
     const nl = /nonland/i.test(tx), tgt = obj.targets && obj.targets[0], mine = !tgt || tgt.id === 'you', srcN = obj.sourceName || 'Ability';
@@ -1550,6 +1613,19 @@ function effectOptionsBase(tx, obj) {
       pickFromHand({ n: 1, title: srcN, verb: 'discard', choose: true, ok: c => !nl || !isLandName(c.name), note: `You are the target, so you choose a ${nl ? 'nonland ' : ''}card from your own hand and discard it.`, done: ids => { const c = state.hand.find(x => x.id === ids[0]); if (c) { moveCard(c.id, 'graveyard'); log(`${srcN}: discarded ${c.name}`); } else log(`${srcN}: no ${nl ? 'nonland ' : ''}card to discard`); render(); flushTriggers(); } });
     } });
   }
+  // v0.95.2 Imprint: "you may exile a [nonartifact, nonland] card from your hand" (Chrome Mox). The exiled card is remembered on the source; its colours feed the mana ability.
+  { const im = tx.match(/\bexile (?:an?|one) ([a-z, \-]*?)card from your hand\b/i); if (im && obj.sourceId && /imprint/i.test(cardText((findCard(obj.sourceId) || {}).card || {}) || '')) {
+    const words = im[1].toLowerCase().split(/[ ,]+/).filter(Boolean), srcN = obj.sourceName;
+    const okType = c => { const t = frontType(c); return words.every(w => /^non(.+)$/.test(w) ? !new RegExp('\\b' + w.slice(3) + '\\b', 'i').test(t) : new RegExp('\\b' + w + '\\b', 'i').test(t)); };
+    opts.push({ full: true, label: `Imprint: exile ${im[1].trim() ? 'a ' + im[1].trim() + ' ' : 'a '}card from your hand`, fn: () => {
+      const cands = state.hand.filter(okType);
+      if (!cands.length) { toast('Nothing to imprint', `You have no ${im[1].trim() || ''} card in hand to exile, so ${srcN} stays without an imprinted card.`); return; }
+      pickFromHand({ n: 1, title: srcN, verb: 'exile', choose: true, ok: okType, note: `Choose the card to exile with ${srcN} (imprint). Its colours are the colours of mana ${srcN} can make.`, done: ids => {
+        const c = state.hand.find(x => x.id === ids[0]), src = findCard(obj.sourceId); if (!c || !src) return;
+        const cols = ((cardInfo(c.name) || {}).col || []).filter(k => 'WUBRG'.includes(k)); snap(); moveCard(c.id, 'exile');
+        src.card.imprint = { name: c.name, cols }; log(`${srcN}: imprinted ${c.name}${cols.length ? ' (' + cols.join('') + ')' : ' (colourless: no mana)'}`); render(); } });
+    } });
+  } }
   if (obj.special === 'sacSelf' && obj.sourceId) opts.push({ label: `Sacrifice ${obj.sourceName}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { log(`${obj.sourceName}: sacrificed (evoke)`); moveCard(f.card.id, 'graveyard'); } else toast('Already gone', `${obj.sourceName} is no longer on the battlefield.`); } });
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   if (/look at the top card of target player'?s library/i.test(tx)) opts.push({ special: 'lookTop', summary: 'look at the top card' });
@@ -1580,12 +1656,18 @@ function effectOptionsBase(tx, obj) {
     } else opts.push({ label: `Transform ${src}`, fn: () => transformPerm(obj.sourceId) });
   }
   if (delayed && /\bdraw a card\b/i.test(tx)) opts.push({ special: 'delayedDraw', summary: 'draw a card next upkeep' });
-  const ddp = !delayed ? parseDrawDiscard(tx) : null;
+  const drawBound = bound.length && /\btarget\b[^.]*\bdraws?\b/i.test(tx);   // v0.94.5 a targeted draw is already offered once, bound to its target: do not add the generic copy
+  const ddp = !delayed && !drawBound ? parseDrawDiscard(tx) : null;
   if (ddp) opts.push({ label: ddLabel(ddp), fn: () => runDrawDiscard(ddp, src), full: false });
-  else if (!delayed && !/opponent/i.test(tx) && (mm = tx.match(/\b(?:you draw|draws?)\s+(a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X)\s+cards?/i))) { const n = wnum(mm[1]); opts.push({ label: `Draw ${n} card${pl(n)}`, fn: () => { snap(); if (dredgeOptions().length && teach('dredgePrompts')) { askDredge(+n || 0); return; } const d = drawCards(+n || 0); log(`${src}: drew ${d}`); render(); } }); }
-  if ((mm = txs.match(/\byou gain (an?|\d+) life for each ([^.,]+)/i))) { const per = /^\d+$/.test(mm[1]) ? +mm[1] : 1, n = per * (countForEach(mm[2]) || 0); opts.push({ label: `Gain ${n} life (${per} for each ${mm[2].trim()})`, fn: () => changeLife(n, true) }); }
+  else if (!delayed && !drawBound && !/opponent/i.test(tx) && (fe = forEachAmount(tx, '(?:you draw|draws?)', obj))) { const fd = fe;   // v0.95.3 "draw a card for each <thing>" counts at the moment it resolves
+    const now = fd.now(), lab = now === null ? `Draw cards (for each ${fd.what}: the app cannot count that, use the card menus)` : `Draw ${fd.per === 1 ? 'a card' : fd.per + ' cards'} for each ${fd.what} (counts when it happens; now ${now})`;
+    opts.push({ label: lab, fn: () => { const n = fd.now(); if (n === null) { toast('Count it yourself', `The app cannot count "${fd.what}". Draw the right number of cards by hand.`); return; } snap(); const d = drawCards(n); log(`${src}: drew ${d} (for each ${fd.what} = ${n})`); render(); } });
+  }
+  else if (!delayed && !drawBound && !/opponent/i.test(tx) && (mm = tx.match(/\b(?:you draw|draws?)\s+(a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X)\s+cards?(?! for each)/i))) { const n = wnum(mm[1]); opts.push({ label: `Draw ${n} card${pl(n)}`, fn: () => { snap(); if (dredgeOptions().length && teach('dredgePrompts')) { askDredge(+n || 0); return; } const d = drawCards(+n || 0); log(`${src}: drew ${d}`); render(); } }); }
+  if ((mm = txs.match(/\byou gain (an?|\d+) life for each ([^.,]+)/i))) { const per = /^\d+$/.test(mm[1]) ? +mm[1] : 1, n = per * (eachQty(mm[2], obj) || 0); opts.push({ label: `Gain ${n} life (${per} for each ${mm[2].trim()})`, fn: () => changeLife(per * (eachQty(mm[2], obj) || 0), true) }); }
   else if ((mm = tx.match(/\byou gain (\d+|X) life/i)) && mm[1] !== 'X') { const v = +mm[1]; opts.push({ label: `Gain ${v} life`, fn: () => changeLife(v, true) }); }
-  if ((mm = tx.match(/\byou lose (\d+|X) life/i)) && mm[1] !== 'X') { const v = +mm[1]; opts.push({ label: `Lose ${v} life`, fn: () => changeLife(-v) }); }
+  if ((fe = forEachAmount(tx, 'you lose', obj))) { const fl = fe, now = fl.now(); opts.push({ label: now === null ? `Lose life (for each ${fl.what}: count it yourself)` : `Lose ${fl.per === 1 ? '1 life' : fl.per + ' life'} for each ${fl.what} (counts when it happens; now ${now})`, fn: () => { const n = fl.now(); if (n === null) { toast('Count it yourself', `The app cannot count "${fl.what}". Change your life by hand.`); return; } changeLife(-n); } }); }
+  else if ((mm = tx.match(/\byou lose (\d+|X) life(?! for each)/i)) && mm[1] !== 'X') { const v = +mm[1]; opts.push({ label: `Lose ${v} life`, fn: () => changeLife(-v) }); }
   if (!bound.length && (mm = tx.match(/\b(?:each opponent|target opponent|an opponent) loses (\d+) life/i))) { const v = +mm[1]; opts.push({ label: `Opponent loses ${v} life`, fn: () => changeOppLife(-v) }); }
   if (!bound.length && (mm = tx.match(/\bdeals? (\d+) damage to (?:any target|target (?:opponent|player)|each opponent|target creature or (?:player|planeswalker)|target player or planeswalker)/i))) { const v = +mm[1]; opts.push({ label: `Deal ${v} damage to the opponent`, fn: () => changeOppLife(-v) }); }
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
@@ -1600,7 +1682,7 @@ function effectOptionsBase(tx, obj) {
     const combo = /\byou may exile (?:it|~)\b[^.]*\.\s*If you do, create\b/i.test(txs), defs = combo ? tokenDefsFromText(txs, src).filter(d => !d.amassOnly) : [];
     opts.push({ full: combo && defs.length > 0, label: combo && defs.length ? `Exile ${src}, then create ${defs.map(d => d.name).join(', ')}` : `Exile ${src}`, fn: () => { const f = findCard(obj.sourceId); if (f && (f.zone === 'battlefield' || f.zone === 'graveyard')) { log(`${src}: exiled`); moveCard(f.card.id, 'exile'); for (const d of defs) makeTokensFromDef(d, typeof d.count === 'number' ? d.count : 1, src); } else toast('Already gone', `${src} is no longer on the battlefield, so you cannot exile it.`); } });
   }
-  if ((mm = txs.match(/put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) \+1\/\+1 counters? on (?:~|this \w+\b|it\b)/i)) && obj.sourceId) { const v = wnum(mm[1]); opts.push({ label: v === 1 ? 'Add a +1/+1 counter' : `Add ${v} +1/+1 counters`, fn: () => addCounter(obj.sourceId, v, 'plus') }); }
+  if ((mm = txs.match(/put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) \+1\/\+1 counters? on (?:~|this \w+\b|it\b)/i)) && obj.sourceId && !(/^it$/i.test(mm[0].split(' ').pop()) && /\btarget\b/i.test(txs))) { const v = wnum(mm[1]); opts.push({ label: v === 1 ? 'Add a +1/+1 counter' : `Add ${v} +1/+1 counters`, fn: () => addCounter(obj.sourceId, v, 'plus') }); }
   { const sp0 = parseTargetSpecs(tx);
     for (const d of tokenDefsFromText(tx, src)) {
       if (d.amassOnly) continue;
@@ -1660,6 +1742,7 @@ function openAbilityEffect(obj, done) {
   }
   if (obj.special === 'storm') { makeSpellCopies(obj.spellId, obj.n || 0, obj.sourceName); render(); if (done) done(); return; }
   if (obj.special === 'suspendCast') { suspendCastFree(obj.sourceId, done); return; }
+  if (obj.special === 'reboundCast') { suspendCastFree(obj.sourceId, done, 'Rebound'); return; }
   if ((obj.special === 'surveil' || obj.special === 'scry') && obj.n) {
     openScry(obj.n, obj.special === 'surveil', obj.text || '', () => { log(`Resolved: ${obj.name}`); if (done) done(); }); return;
   }
@@ -1669,7 +1752,7 @@ function openAbilityEffect(obj, done) {
   }
   // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.
   if (teach('autoResolve') && !obj.special) {
-    let pre = []; try { pre = effectOptions(tx, obj); } catch (e) { pre = []; }
+    let pre = []; try { pre = effectOptions(tx, obj).filter(o => !o.hidden); } catch (e) { pre = []; }
     const one = pre.length === 1 && !pre[0].special && typeof pre[0].fn === 'function' ? pre[0] : null;
     let clean = !!one && (one.full || !uncoveredClauses(tx).length);
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
@@ -1681,7 +1764,7 @@ function openAbilityEffect(obj, done) {
     }
   }
   const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 520, sticky: true, noClose: true, resolve: true });
-  let opts = effectOptions(tx, obj);
+  let opts = effectOptions(tx, obj).filter(o => !o.hidden);   // v0.96.10 backend-only entries (the ordered chain) are never listed
   // The automatic 'delayedDraw' already covers a delayed draw; drop the generic duplicate button (it caused a second draw).
   if (opts.some(x => x.special === 'delayedDraw')) opts = opts.filter(x => !(x.label && /^Create delayed trigger: Draw a card/i.test(x.label)));
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
@@ -1819,13 +1902,13 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   memNote('left', c);
   fxOnLeave(c);
   detachFrom(c);
-  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  for (const k of ['tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
   if (c.origName) { c.name = c.origName; delete c.origName; }
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
-  delete c.exileInstead;
+  delete c.exileInstead; delete c.monstrous; delete c.exerted;   // CR 701.37b: monstrous lasts until it leaves the battlefield
   if (c.token) {   // a token that leaves the battlefield ceases to exist, but it did leave (and may have died)
     log(`Token ${c.name} left the battlefield`);
     if (dest === 'graveyard') { memNote('died', c); fireTrigger('dies', { card: c }); }
@@ -1946,14 +2029,17 @@ function openTriggeredAbility(t){
   m.body.append(h('div',{class:'ptitle',text:c?c.name:'Ability'}),h('div',{class:'psub'},t.text),h('div',{class:'muted small'},teach('triggerPrompts')?'Resolve this trigger before continuing.':''));
   m.foot.append(h('button',{class:'primary',text:'Resolve ability',onclick:()=>{m.close();log(`Resolved triggered ability — ${c?c.name:'unknown source'}`);resolvePendingTrigger();render();}}));
 }
-function shockLandChoice(c) {
-  const tx=cardText(c); return SHOCKS.has(norm(c.name)) || (/pay 2 life/i.test(tx) && /enters.*battlefield/i.test(tx));
+// v0.94.5 How much life the "you may pay N life; if you don't, it enters tapped" question costs (shocklands pay 2; the modal double-faced lands such as Soporific Springs pay 3). 0 = no such question.
+function shockLife(c) {
+  if (!c || c.token) return 0; if (SHOCKS.has(norm(c.name))) return 2;
+  const m = /\byou may pay (\d+) life\.\s*if you don'?t,\s*(?:it|this land|[^.]*?) enters(?: the battlefield)? tapped/i.exec(cardText(c)); return m ? +m[1] : 0;
 }
+function shockLandChoice(c) { return shockLife(c) > 0; }
 // Everything a land does as it enters the battlefield by any route (played, fetched, put there by an effect):
 // the shockland question and "When this enters, surveil/scry N". Tapped-ness is decided by etbTapped().
 function landEntryTriggers(c, fetched) {
   if(!state||!c||!isLandName(c.name)) return;
-  if(norm(c.name)==='vesuva' && state.battlefield.some(x=>x.id!==c.id&&isLandName(x.name))) queueTrigger({kind:'vesuva',cardId:c.id});
+  if(entersAsLandCopy(c) && state.battlefield.some(x=>x.id!==c.id&&isLandName(x.name))) queueTrigger({kind:'vesuva',cardId:c.id});
   if(shockLandChoice(c)) queueTrigger({kind:'shock',cardId:c.id,fetched:!!fetched});
   const etb=landETBTrigger(c); if(etb) queueTrigger(etb);
 }
@@ -1974,18 +2060,38 @@ function countPermsOf(what) {
   if (!w || !state) return 0;
   return state.battlefield.filter(c => { const ti = permTypeInfo(c); return ti.subs.has(w) || ti.types.has(w); }).length;
 }
+// v0.95.3 One quantity reader for every "for each ..." / "equal to the number of ..." amount. It knows counters on the source ("burden counter on ~",
+// "+1/+1 counter on it", "counter on this artifact") and falls back to countForEach for everything else, so each effect only asks eachQty(phrase, obj).
+// Returns a number, or null when the wording is not understood (callers then say so instead of guessing 1).
+function counterKey(k) { k = String(k || '').toLowerCase().replace(/\u2212/g, '-'); return k === '+1/+1' ? 'plus' : k === '-1/-1' ? 'minus' : k; }
+function counterCount(c, kind) { if (!c) return 0; const cc = typeof c.counters === 'number' ? { plus: c.counters } : (c.counters || {}); if (!kind) return Object.values(cc).reduce((a, b) => a + (+b || 0), 0) + (c.loyalty || 0) * 0; return cc[counterKey(kind)] || 0; }
+function eachQty(phrase, obj) {
+  let p = String(phrase || '').trim().replace(/[.,;]+$/, '').replace(/\u2019/g, "'");
+  const src = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card : null;
+  if (src) { const nm = src.name.split(' // ')[0]; if (nm) p = p.split(nm).join('~'); }
+  const m = p.match(/^(?:(\+1\/\+1|[\u2212-]1\/[\u2212-]1|[a-z][a-z'-]*) )?counters?(?: of any kind)? on (~|it|this [a-z]+|that [a-z]+)$/i);
+  if (m) { if (!src) return 0; const kind = m[1] && !/^(?:a|an|the|each)$/i.test(m[1]) ? m[1] : ''; return counterCount(src, kind); }
+  return countForEach(p);
+}
+// "draw a card for each ..." / "you lose 1 life for each ..." -> { n: per-step amount, what, total }
+function forEachAmount(tx, verbRe, obj) {
+  const m = String(tx || '').match(new RegExp('\\b' + verbRe + '\\s+(a|an|one|two|three|four|five|\\d+)\\s+(?:cards?|life)\\s+for each ([^.,;]+)', 'i')); if (!m) return null;
+  const per = wnum(m[1]) || 1; return { per, what: m[2].trim(), now: () => { const q = eachQty(m[2], obj); return q === null ? null : per * q; } };
+}
 function countForEach(phrase) {
   if (!state) return 0;
   const t = phrase.toLowerCase();
   const bf = state.battlefield;
-  const typeOf = c => { const i = cardInfo(c.name); return i && i.t ? i.t.split(' // ')[0] : (c.token ? 'Creature' : ''); };
+  const typeOf = c => (c.token ? permTypeLine(c) : (() => { const i = cardInfo(c.name); return i && i.t ? i.t.split(' // ')[0] : ''; })());   // v0.95.0 a token counts as what it is (an artifact creature token is an artifact)
   { const mm = t.match(/\b(white|blue|black|red|green|colorless) mana (?:in your (?:mana )?pool|you have)\b/); if (mm) return (state.manaPool || {})[{ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G', colorless: 'C' }[mm[1]]] || 0; if (/\bmana in your (?:mana )?pool\b/.test(t)) return manaTotal(); }   // Omnath, Locus of Mana
   if (/basic land type/.test(t)) return domainCount();
   if (/instant and sorcery card/.test(t) || /instant or sorcery card/.test(t)) return state.graveyard.filter(c => /\b(Instant|Sorcery)\b/.test(typeOf(c))).length;
   if (/card in your graveyard/.test(t)) return state.graveyard.length;
-  if (/creature (card )?you control|creature on the battlefield/.test(t)) return bf.filter(c => /\bCreature\b/.test(typeOf(c))).length;
-  if (/artifact you control/.test(t)) return bf.filter(c => /\bArtifact\b/.test(typeOf(c))).length;
-  if (/enchantment you control/.test(t)) return bf.filter(c => /\bEnchantment\b/.test(typeOf(c))).length;
+  // v0.96.10 CR 613.1d/205.1: count permanents by their CURRENT card types (type-changing effects and token types included), not by the printed type line
+  const isType = (c, ty) => { try { return permTypeInfo(c).types.has(ty); } catch (e) { return new RegExp('\\b' + ty + '\\b', 'i').test(typeOf(c)); } };
+  if (/creature (card )?you control|creature on the battlefield/.test(t)) return bf.filter(c => isType(c, 'creature')).length;
+  if (/artifact you control/.test(t)) return bf.filter(c => isType(c, 'artifact')).length;
+  if (/enchantment you control/.test(t)) return bf.filter(c => isType(c, 'enchantment')).length;
   if (/land you control/.test(t)) return bf.filter(c => isLandName(c.name)).length;
   if (/card in your hand/.test(t)) return state.hand.length;
   { const m = t.match(/^(?:each |an? )?([a-z][a-z'-]*)(?: you control| on the battlefield)?\.?$/); if (m && m[1] !== 'card' && m[1] !== 'permanent') { const n = countPermsOf(m[1]); if (n || /locus|goblin|elf|zombie|spirit|treasure|clue|food|army|orc/.test(m[1])) return n; } }
@@ -2016,6 +2122,7 @@ function splitCostParts(t) {
 function parseCostFilter(phrase) {
   let s = String(phrase || '').toLowerCase().replace(/\b(?:you control|from your hand|from your graveyard|in your graveyard|on the battlefield)\b/g, ' ').replace(/\bcards?\b/g, ' ').trim();
   const f = { alts: [], other: false, untapped: false, text: String(phrase || '').trim() };
+  { const pw = s.match(/\bwith power (\d+) or greater\b/); if (pw) { f.minPower = +pw[1]; s = s.replace(pw[0], ' ').trim(); } }   // v0.96.2 casualty
   if (/\b(?:another|other)\b/.test(s)) { f.other = true; s = s.replace(/\b(?:another|other)\b/g, ' '); }
   if (/\buntapped\b/.test(s)) { f.untapped = true; s = s.replace(/\buntapped\b/g, ' '); }
   for (const part of s.split(/\s+or\s+|,\s*/)) {
@@ -2036,6 +2143,7 @@ function parseCostFilter(phrase) {
 function cardMatchesFilter(c, f, srcId) {
   if (f.other && c.id === srcId) return false;
   if (f.untapped && c.tapped) return false;
+  if (f.minPower && ptCalc(c).p < f.minPower) return false;
   const p = permTypeInfo(c), cols = c.token ? [] : (onBattlefield(c) ? effColors(c) : printedColors(c));
   return f.alts.some(a => (!a.types.length || a.types.some(t => p.types.has(t))) && (!a.colors.length || a.colors.some(x => cols.includes(x)))
     && (!a.subs.length || a.subs.some(sb => p.subs.has(sb))) && (!a.nonland || !p.types.has('land')));
@@ -2165,6 +2273,7 @@ function altCostsFor(c) {
   const tx = cardText(c).replace(/\([^)]*\)/g, '').replace(/’/g, "'"), out = []; let m;
   for (const raw of tx.split('\n')) {
     const line = raw.trim();
+    { const ak = altKwLine(line, c); if (ak) { out.push(ak); continue; } }   // v0.96.2 blitz, dash, spectacle, surge
     if ((m = line.match(/^Evoke\s+((?:\{[^}]+\})+)\s*$/i))) out.push({ kind: 'evoke', label: 'Evoke', mana: m[1], comps: [] });
     else if ((m = line.match(/^Warp\s+((?:\{[^}]+\})+)\s*$/i))) out.push({ kind: 'warp', label: 'Warp', mana: m[1], comps: [] });
     else if ((m = line.match(/^Warp\s*[\u2014-]\s*(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); out.push({ kind: 'warp', label: 'Warp \u2014 ' + m[1].replace(/\.$/, ''), mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana') }); }
@@ -2174,12 +2283,15 @@ function altCostsFor(c) {
       out.push({ kind: 'alt', label: m[2].charAt(0).toUpperCase() + m[2].slice(1), cond: m[1] || '', mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana') });
     }
   }
+  out.push(...altKwExtra(c));
   return out;
 }
 function additionalCosts(c) {
   const tx = cardText(c).replace(/\([^)]*\)/g, '').replace(/’/g, "'"), req = { mana: '', comps: [] }, optional = []; let m;
   for (const raw of tx.split('\n')) {
     const line = raw.trim();
+    { const co = casualtyOptional(line, c); if (co) { optional.push(co); continue; } }   // v0.96.2
+    if ((m = line.match(/^Replicate\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Replicate', mana: m[1], comps: [], replicate: true }); continue; }   // v0.96.3
     if ((m = line.match(/^As an additional cost to cast this spell, (you may )?(.+?)\.?$/i))) {
       const cs = parseCostComps(m[2], c.name), mana = manaOf(cs), rest = cs.filter(k => k.k !== 'mana');
       if (m[1]) optional.push({ label: m[2], mana, comps: rest }); else { req.mana += mana; req.comps.push(...rest); }
@@ -2195,9 +2307,11 @@ function castRoutes(c, extra) {
     const comps = ad.req.comps.concat(alt ? alt.comps : []);
     const r = { label, mana: mergeGeneric(mana + (extra || '') + ad.req.mana), comps, alt, cond: cond || '', ok: true, why: '', detail: '' };
     const cw = compsFeasible(comps.filter(k => k.k !== 'other'), c.id);
-    if (cw) { r.ok = false; r.why = 'additional'; r.detail = cw; }
-    else if (!manaFeasible(c, r.mana)) {
-      const total = manaTotal() + manaSources().length; r.ok = false;
+    const altWhy = alt && alt.test ? alt.test(c) : '';
+    if (altWhy) { r.ok = false; r.why = 'condition'; r.detail = altWhy; }
+    else if (cw) { r.ok = false; r.why = 'additional'; r.detail = cw; }
+    else if (!manaFeasible(c, alt && alt.reduceBySac ? reduceGenericBy(r.mana, bestSacMV()) : r.mana)) {
+      const total = manaTotal() + withCtx(c, manaSources).length; r.ok = false;
       r.why = total < symCmc(r.mana) ? 'amount' : 'color'; r.detail = r.why === 'amount' ? 'not enough mana' : 'not the right colours of mana';
     }
     return r;
@@ -2205,12 +2319,12 @@ function castRoutes(c, extra) {
   if (c.fromGy) { const a = { kind: 'flashback', label: c.fromGy.label, mana: c.fromGy.mana, comps: c.fromGy.comps || [] }; return [mk(a.label, taxed(a.mana, ec), a, '')]; }
   const routes = [mk(alts.length || ad.optional.length ? 'Normal cost' : 'Cast', ec.cost, null)];
   for (const a of alts) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond));
-  return routes;
+  const lim = routeLimits(c, routes); return lim.length ? lim : routes;
 }
 function manaFeasible(c, mana) {
   let cost = mana || '';
   for (const k of reducerKinds(c)) cost = reduceCost(cost, k, reducerCands(k));
-  return manaPaymentAllocation(manaCostParts(cost), (state && state.manaPool) || {}, manaSources(), null).ok;
+  return manaPaymentAllocation(manaCostParts(cost), (state && state.manaPool) || {}, withCtx(c, manaSources), null).ok;
 }
 
 // ---- Delve, Convoke, Improvise
@@ -2320,9 +2434,15 @@ function applyCostInfo(c, ci) {
     if (ci.life) { state.life -= ci.life; log(`${c.name}: paid ${ci.life} life as a cost`); }
     applyPicks(c, ci.picks || []);
     if (ci.alt === 'warp') { c.warped = true; log(`${c.name}: cast for its warp cost (exiled at the next end step)`); }
+    if (ci.alt === 'blitz') c.blitzed = true;
+    if (ci.alt === 'dash') c.dashed = true;
+    if (ci.casualty) c.casualtyPaid = true;
+    if (ci.replicate) c.replicateN = ci.replicate;
+    if (ci.alt === 'overload') c.overloaded = true;
+    if (ci.alt === 'bestow') c.bestowed = true;
     if (ci.evoked) { c.evoked = true; log(`${c.name}: cast for its evoke cost`); }
     else if (ci.alt) log(`${c.name}: cast using an alternative cost (${ci.label})`);
-    if (ci.kicked && ci.kicked.length) { c.kicked = true; log(`${c.name}: kicked`); }
+    if (ci.kicked && ci.kicked.some(l => /^(?:Kicker|Multikicker)/i.test(l))) { c.kicked = true; log(`${c.name}: kicked`); }
   } finally { snapMuted = false; costHold = false; }
 }
 function applyCostPicks(src, picks, life) {
@@ -2337,7 +2457,7 @@ function startCast(c, reopen, modes, md) {
   const routes = castRoutes(c, extra), opts = additionalCosts(c).optional;
   if (!routes.some(r => r.ok)) {
     const r0 = routes[0];
-    toast('Cannot cast this spell', r0.why === 'additional' ? `You cannot pay the additional cost: ${r0.detail}.` : r0.why === 'color' ? 'You do not have the right colours of mana.' : 'Not enough mana (floating mana plus untapped lands).');
+    toast('Cannot cast this spell', r0.why === 'condition' ? `You cannot use that way of casting it: ${r0.detail}.` : r0.why === 'additional' ? `You cannot pay the additional cost: ${r0.detail}.` : r0.why === 'color' ? 'You do not have the right colours of mana.' : 'Not enough mana (floating mana plus untapped lands).');
     return;
   }
   const go = (route, kicks) => runCast(c, reopen, modes, route, kicks);
@@ -2345,7 +2465,8 @@ function startCast(c, reopen, modes, md) {
   go(routes[0], []);
 }
 function openCostChooser(c, routes, opts, go) {
-  const m = modal(`Cast ${c.name}: how do you pay?`, { width: 640, sticky: true, onCancel: () => {} });
+  const m = modal(`Cast ${c.name}: how do you pay?`, { width: 640, sticky: true, onCancel: () => { delete c.preAlt; delete c.miracleNow; } });
+  const reps = {};
   let sel = routes.findIndex(r => r.ok); const kicks = new Set();
   const list = h('div', { class: 'prelist' }), ec = effectiveCost(c);
   const draw = () => {
@@ -2360,6 +2481,7 @@ function openCostChooser(c, routes, opts, go) {
   m.body.append(h('div', { class: 'psub', text: 'Choose how to pay for this spell.' }), list);
   if (ec.why) m.body.append(h('div', { class: 'costnote' }, 'Total cost is already adjusted: ', ec.why));
   opts.forEach((o, i) => {
+    if (o.replicate) { const num = h('input', { type: 'number', min: 0, max: 9, value: 0, style: 'width:54px' }); num.addEventListener('input', () => { reps[i] = Math.max(0, Math.min(9, parseInt(num.value, 10) || 0)); }); m.body.append(h('label', { class: 'teachopt' }, num, h('span', null, h('b', { text: 'Optional: Replicate ' }), symbols(o.mana), h('span', { class: 'muted small', text: ' pay it any number of times; copy the spell for each' })))); return; }
     const cb = h('input', { type: 'checkbox' });
     cb.addEventListener('change', () => { if (cb.checked) kicks.add(i); else kicks.delete(i); });
     m.body.append(h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Optional: ' + o.label + ' ' }), o.mana ? symbols(o.mana) : '', h('span', { class: 'muted small', text: o.comps.length ? ' ' + o.comps.map(k => k.text || '').join(', ') : '' }))));
@@ -2368,7 +2490,7 @@ function openCostChooser(c, routes, opts, go) {
     'Casting order (rule 601.2): you choose modes and targets, then HOW to pay (normal cost, an alternative cost instead of the mana cost, optional extras like kicker), then the game adds cost increases and subtracts reductions to get the total, then you pay it. Alternative costs still get taxes added (Thalia makes Force of Will cost {1} more even when you pitch a card).'));
   m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }), h('button', { class: 'primary', text: 'Continue', onclick: () => {
     if (sel < 0 || !routes[sel].ok) return;
-    m.close(); go(routes[sel], [...kicks].map(i => opts[i]));
+    m.close(); go(routes[sel], [...kicks].map(i => opts[i]).concat(...Object.entries(reps).map(([i, n]) => Array(n).fill(opts[+i]))));
   } }));
   draw();
 }
@@ -2380,8 +2502,9 @@ function runCast(c, reopen, modes, route, kicks) {
   if (!manaFeasible(c, mana)) { toast('Cannot cast this spell', 'Not enough mana for that way of paying.'); return; }
   const manual = comps.filter(k => k.k === 'other').map(k => k.text);
   gatherCosts(c, comps, picks => {
-    runReducers(c, mana, reducerKinds(c), (mana2, rpicks) => {
-      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, evoked: !!(route.alt && route.alt.kind === 'evoke') };
+    let manaE = mana; if (route.alt && route.alt.reduceBySac) { const sp = picks.find(p => p.comp.emerge); const sc = sp && findCard(sp.ids[0]); const mv = sc && !sc.card.token ? (cardInfo(sc.card.name) || {}).cmc || 0 : 0; manaE = reduceGenericBy(mana, mv); log(`${c.name}: emerge, ${sc ? sc.card.name : 'the sacrificed creature'} has mana value ${mv}, so the cost is reduced by ${mv}`); }
+    runReducers(c, manaE, reducerKinds(c), (mana2, rpicks) => {
+      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate).length, evoked: !!(route.alt && route.alt.kind === 'evoke') };
       const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }
@@ -2433,7 +2556,7 @@ function suspendUpkeep() {   // upkeep: every suspended card in exile gets its "
   for (const c of state.exile) if (c.timeCounters > 0) state.pendingTriggers.push({ kind: 'ability', cardId: c.id, cardName: c.name, special: 'suspendTick', optional: false,
     text: `Suspend — At the beginning of your upkeep, if ${c.name} is suspended, remove a time counter from it (${c.timeCounters} now).`, effect: 'Remove a time counter.', why: 'A suspended card in exile loses a time counter at the start of each of your upkeeps.' });
 }
-function suspendCastFree(id, done) {
+function suspendCastFree(id, done, label) {
   const f = findCard(id); if (!f || f.zone !== 'exile') { if (done) done(); return; }
   const c = f.card, md = spellModal(c);
   const fail = why => { log(`${c.name}: could not be cast (${why}); it stays in exile`); toast('Not cast', `${c.name} could not be cast (${why}), so it stays in exile with no time counters (rule 702.62).`); if (done) done(); };
@@ -2448,7 +2571,7 @@ function suspendCastFree(id, done) {
       const inf = cardInfo(cc.name); if (inf && /\{X\}/.test(inf.mc || '')) cc.xValue = 0;
       if (/\bCreature\b/.test(frontType(cc) || '')) cc.suspHaste = true;
       sfx('cast'); noteCast(cc); state.stack.push(cc); state.priority = { active: true, passed: false };
-      log(`Suspend: cast ${cc.name} from exile without paying its mana cost${cc.targets && cc.targets.length ? ' targeting ' + cc.targets.map(t => t.name).join(', ') : ''}`);
+      log(`${label || 'Suspend'}: cast ${cc.name} from exile without paying its mana cost${cc.targets && cc.targets.length ? ' targeting ' + cc.targets.map(t => t.name).join(', ') : ''}`);
       fireTrigger('cast', { card: cc }); render();
       if (done) done();
       if (!state.pendingTriggers.length) openStack();
@@ -2456,6 +2579,48 @@ function suspendCastFree(id, done) {
     if (specs.length) chooseTargets(c.name, specs, put, { srcId: null, onCancel: () => fail('no target was chosen') }); else put(null);
   };
   if (md) openModeChoice(c.name, md, go, '0'); else go(undefined);
+}
+// ---- v0.94.7 Ninjutsu (CR 702.49): "Ninjutsu {cost} (Return an unblocked attacker you control to hand and pay the cost: put this card onto the battlefield from your hand tapped and attacking.)"
+// Activated from your hand once blockers have been declared, while you control an unblocked attacker. The returned creature is a cost; the ability then goes on the stack.
+function ninjutsuFor(c) {
+  if (!c || c.token) return null;
+  for (const raw of cardText(c).replace(/\([^)]*\)/g, '').split('\n')) { const m = raw.trim().match(/^Ninjutsu\s+((?:\{[^}]+\})+)\s*$/i); if (m) return { cost: m[1], label: 'Ninjutsu ' + m[1] }; }
+  return null;   // Commander ninjutsu is not handled
+}
+function unblockedAttackers() {
+  const cb = state && state.combat; if (!cb || !cb.declared) return [];
+  const blocked = new Set(Object.values(cb.blockers || {}).filter(Boolean).map(Number));
+  return (cb.attackers || []).map(a => a.id ?? a).filter(id => !blocked.has(+id)).map(id => (findCard(id) || {}).card).filter(c => c && findCard(c.id).zone === 'battlefield');
+}
+function ninjutsuWhy(c) {
+  if (!state || state.phase !== 'play') return 'Start a game first.';
+  if (!['block', 'damage', 'end_combat'].includes(STEPS[state.step].id)) return 'Ninjutsu can be activated after blockers are declared (the declare blockers step, up to the end of combat).';
+  if (!unblockedAttackers().length) return 'You need an unblocked attacker you control to return to your hand.';
+  if (splitSecondOn()) return 'A spell with split second is on the stack.';
+  return '';
+}
+function activateNinjutsu(id) {
+  const f = findCard(id); if (!f || f.zone !== 'hand') return;
+  const nj = ninjutsuFor(f.card); if (!nj) return;
+  const why = ninjutsuWhy(f.card); if (why) { toast('Cannot use ninjutsu now', why); return; }
+  if (!manaPaymentAllocation(manaCostParts(nj.cost), state.manaPool || {}, manaSources(), null).ok) { toast('Cannot use ninjutsu', 'Not enough mana for ' + nj.cost + '.'); return; }
+  const cands = unblockedAttackers(), c = f.card;
+  pickCardsModal(`${c.name}: ninjutsu`, 'Choose an unblocked attacker you control to return to your hand. This is part of the cost.', cands, 1, ids => {
+    const back = findCard(ids[0]); if (!back || back.zone !== 'battlefield') return;
+    const finish = used => {
+      if (!findCard(id) || !findCard(ids[0])) return;
+      snap(); tapManaIds(used || []);
+      const rc = findCard(ids[0]).card; log(`${c.name}: ninjutsu (${nj.cost}), returned ${rc.name} to hand`);
+      state.combat.attackers = (state.combat.attackers || []).filter(a => (a.id ?? a) !== rc.id);
+      moveCard(rc.id, 'hand');
+      state.stack.push({ ability: true, special: 'ninjutsu', ninjId: c.id, id: state.nextId++, name: `${c.name} \u2014 ninjutsu`, sourceId: null, sourceName: c.name, cost: nj.label, text: `Put ${c.name} onto the battlefield from your hand tapped and attacking.` });
+      state.priority = { active: true, passed: false };
+      render(); openStack();
+    };
+    if (teach('stackGuidance')) { openManaPayment(c, finish, nj.cost, 'Pay and use ninjutsu'); return; }
+    const plan = manaPaymentAllocation(manaCostParts(nj.cost), state.manaPool || {}, manaSources(), null);
+    state.manaPool = plan.pool; finish(plan.used.map(i => manaSources()[i].card.id));
+  });
 }
 function cycleCard(id) {
   const f = findCard(id); if (!f || f.zone !== 'hand') return;
@@ -2526,16 +2691,34 @@ function manaPaymentAllocation(parts, pool, sources, chosen) {
   const p = { W: pool.W || 0, U: pool.U || 0, B: pool.B || 0, R: pool.R || 0, G: pool.G || 0, C: pool.C || 0 };
   const pips = [];
   for (const col of parts.colors) { if (p[col] > 0) p[col]--; else pips.push(col); }
-  let generic = parts.generic + parts.flexible.length;
+  let generic = parts.generic + (parts.hyb ? 0 : parts.flexible.length);
+  const avail = chosen ? [...chosen] : sources.map((_, i) => i);
+  // Hybrid / two-brid / Phyrexian symbols (CR 107.4e-f): paid with a matching colour if there is one; else the alternative (2 generic, or 2 life).
+  let life = 0; const later = [];
+  for (const hs of parts.hyb || []) {
+    const pc = hs.opts.find(o => p[o] > 0); if (pc) { p[pc]--; continue; }
+    later.push(hs);
+  }
+  const base = pips.slice(), baseGeneric = generic; let owner = null, nAlt = 0;
+  for (nAlt = 0; nAlt <= later.length && !owner; nAlt++) {
+    const pp = base.slice(); let g = baseGeneric, l = 0, ok = true;
+    later.forEach((hs, i) => {
+      const asAlt = i >= later.length - nAlt;   // convert from the end first
+      if (!asAlt) { const o = hs.opts.find(x => x === 'C' || avail.some(si => sources[si].colors.has(x))); if (o) { pp.push(o); return; } }
+      if (hs.two) g += 2; else if (hs.phy) l += 2; else ok = false;
+    });
+    if (!ok) continue;
+    if (l && l > (state ? state.life : 0)) continue;   // CR 119.4: you can pay life only if your life total is at least that much
+    const ow = matchPips(pp, avail, sources); if (ow) { owner = ow; generic = g; life = l; pips.length = 0; pp.forEach(x => pips.push(x)); }
+  }
   for (const k of Object.keys(p)) { const use = Math.min(generic, p[k]); p[k] -= use; generic -= use; }
   const poolUsed = Object.keys(pool).reduce((a, k) => a + (pool[k] || 0) - p[k], 0);
-  const avail = chosen ? [...chosen] : sources.map((_, i) => i);
-  const owner = matchPips(pips, avail, sources);
-  if (!owner) return { ok: false, pool: p, used: [], poolUsed, needLands: pips.length + generic };
+  if (life) Object.defineProperty(p, '_life', { value: life, enumerable: false, writable: true, configurable: true });   // paid by whoever spends this pool: see settlePhyrexianLife
+  if (!owner) return { ok: false, pool: p, used: [], poolUsed, needLands: pips.length + generic, life: 0 };
   const used = [...owner.keys()];
   const spare = avail.filter(i => !used.includes(i)).sort((a, b) => sources[a].colors.size - sources[b].colors.size);
   for (const i of spare) { if (generic <= 0) break; used.push(i); generic--; }
-  return { ok: generic <= 0, pool: p, used, poolUsed, needLands: pips.length + parts.generic + parts.flexible.length - (parts.generic + parts.flexible.length - Math.max(0, generic)) };
+  return { ok: generic <= 0, life, pool: p, used, poolUsed, needLands: pips.length + parts.generic + parts.flexible.length - (parts.generic + parts.flexible.length - Math.max(0, generic)) };
 }
 function openManaPayment(c, done, costOverride, verb, skipId) {
   const ec = effectiveCost(c), mc = costOverride !== undefined ? costOverride : ec.cost;
@@ -2579,7 +2762,12 @@ function openManaPayment(c, done, costOverride, verb, skipId) {
   m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }), pay);
   refresh();
 }
+function settlePhyrexianLife() {   // CR 107.4f: a Phyrexian symbol paid with life: 2 life per symbol, taken when the cost is paid
+  const pl = state && state.manaPool && state.manaPool._life; if (!pl) return;
+  state.manaPool._life = 0; state.life -= pl; log(`Phyrexian mana: paid ${pl} life instead of coloured mana → ${state.life}`);
+}
 function tapManaIds(manaIds){
+  settlePhyrexianLife();
   const used=new Map(); for(const mid of manaIds) used.set(mid,(used.get(mid)||0)+1);
   for(const [mid,n] of used){const mf=findCard(mid);if(mf&&mf.zone==='battlefield'){mf.card.tapped=true; mf.card.mt={cols:[],spent:true,life:0}; fireTrigger('tapmana',{card:mf.card});
     if(isLandName(mf.card.name)){ const lm=landMulti(mf.card); if(lm){ applyLandCost(mf.card,{dmg:lm.dmg,life:lm.life}); if(n<lm.fixed.length){ if(lm.only) log(`${mf.card.name}: ${lm.fixed.length-n} unused restricted mana is lost`); else { lm.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${lm.fixed.length-n} unused mana floats`); } } } else applyLandCost(mf.card,landTapCost(mf.card)); }
@@ -2590,15 +2778,15 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   const f=findCard(id); if(!f||f.zone!=='hand'||isLandName(f.card.name))return;
   const fromC=centerOf(`#row-hand .card[data-id="${id}"]`); noteFlightFrom(id,`#row-hand .card[data-id="${id}"]`);
   snap(); const [c]=state.hand.splice(f.idx,1); sfx('cast'); spotlight(c,'cast',fromC);
-  state.halfChosen=null; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
-  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.warpExile; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
+  state.halfChosen=null; delete c.preAlt; delete c.miracleNow; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
+  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.warpExile; delete c.plotted; delete c.foretold; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
   c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }
   if(modes){ const md=spellModal(c); if(md){ c.modes=modes; c.modeTexts=modes.map(i=>md.modes[i].text); log(`${c.name}: chosen ${md.spree?'extras':'modes'}: ${c.modeTexts.join(' | ')}`); } }
   withCtx(c,()=>tapManaIds(manaIds));
   if(ci) applyCostInfo(c,ci);
   noteCast(c); state.stack.push(c); state.priority={active:true,passed:false}; if(gyLeft) fireTrigger('gyleave',{card:c,to:'stack'});
-  log(`Cast ${c.name}${c.targets&&c.targets.length?' targeting '+c.targets.map(t=>t.name).join(', '):''} — put it on the stack`); fireTrigger('cast',{card:c}); stormOnCast(c); render();
+  log(`Cast ${c.name}${c.targets&&c.targets.length?' targeting '+c.targets.map(t=>t.name).join(', '):''} — put it on the stack`); fireTrigger('cast',{card:c}); stormOnCast(c); casualtyOnCast(c); replicateOnCast(c); render();
   if(state.pendingTriggers.length) resolvePendingTrigger(); else if(reopen)openStack();
 }
 // ---- v0.91.0 copies of spells and Storm (rules 707.10, 702.40)
@@ -2702,10 +2890,12 @@ function castSpell0(id,reopen=true,modes) {
       'This card can only be cast during your main phase, unless it has flash.');
     return;
   }
+  { const pa=preAltKinds(f.card); if(pa.length && f.card.preAlt===undefined){ openPreAlt(f.card,pa,()=>castSpell(id,reopen,modes)); return; } }
   const md=spellModal(f.card);
   if(md && modes===undefined){ openModeChoice(f.card.name, md, idxs=>castSpell(id,reopen,idxs), effectiveCost(f.card).cost); return; }
   { const ft=frontType(f.card), castText=md&&modes?modalText(md,modes):cardText(f.card);
-    const specs=(!ft||/\b(?:Instant|Sorcery)\b/.test(ft))?parseTargetSpecs(castText):[];
+    const castText2=f.card.preAlt==='overload'?overloadText(castText):castText;
+    const specs=f.card.preAlt==='bestow'?parseTargetSpecs('Bestow: attach to target creature.'):(!ft||/\b(?:Instant|Sorcery)\b/.test(ft))?parseTargetSpecs(castText2):[];
     if(specs.length){
       if(targetChosenFor!==id){
         chooseTargets(f.card.name,specs,picked=>{ const g=findCard(id); if(!g||g.zone!=='hand') return;
@@ -2734,6 +2924,7 @@ function parseTargetSpecs(text) {
     const rest = t.slice(m.index + m[0].length), sm = rest.match(STOP);
     const phrase = rest.slice(0, sm.index).trim(), after = rest.slice(sm.index);
     const sp = { min: 1, max: 1, types: [], mods: [], ctrl: 'any', pctrl: 'any', player: false, qual: '', label: '' };
+    { const a = t.lastIndexOf('. ', m.index), b = t.indexOf('.', m.index); sp.clause = t.slice(a < 0 ? 0 : a + 2, b < 0 ? t.length : b + 1).trim(); }   // v0.94.5 the sentence this target belongs to, so the window can say which mode it is for
     let cm;
     if (/\bany number of\s*$/i.test(before)) { sp.min = 0; sp.max = 99; }
     else if ((cm = before.match(/\bup to (one|two|three|four|five|x|\d+)\s*$/i))) { sp.min = 0; sp.max = wnum(cm[1]) === 'X' ? 1 : wnum(cm[1]); }
@@ -2746,7 +2937,12 @@ function parseTargetSpecs(text) {
       sp.ctrl = /opponent's/.test(after + p) ? 'opp' : /\ba graveyard|any graveyard/i.test(after + p) ? 'any' : 'you';
       sp.label = `target ${p}${/graveyard/.test(p) ? '' : ' in ' + (sp.ctrl === 'you' ? 'your' : 'a') + ' graveyard'}`;
     }
-    else if (/\bspells?\b/.test(p)) { sp.kind = 'spell'; sp.types = (p.match(/\b(?:instant|sorcery|creature|artifact|enchantment|planeswalker|land)\b/g) || []); sp.mods = (p.match(/\bnon\w+/g) || []); sp.label = 'target ' + p; }
+    else if (/\bspells?\b/.test(p)) {
+      sp.kind = 'spell'; sp.types = (p.match(/\b(?:instant|sorcery|creature|artifact|enchantment|planeswalker|land)\b/g) || []); sp.mods = (p.match(/\bnon\w+/g) || []); sp.label = 'target ' + p;
+      // v0.94.5 "target spell or nonland permanent an opponent controls" (Sink into Stupor): the target may be a spell on the stack OR a permanent
+      if (/\bspells?\b.*\bor\b.*\bpermanents?\b/.test(p)) { sp.alsoPerm = true; sp.types = []; }
+      if (/\b(?:an opponent controls|you don't control|your opponents? controls?|opponents? control)\b/.test(p)) sp.ctrl = 'opp'; else if (/\byou control\b/.test(p)) sp.ctrl = 'you';
+    }
     else if (/\b(?:abilit(?:y|ies))\b/.test(p)) { sp.kind = 'ability'; sp.label = 'target ' + p; }
     else {
       const ty = TYPE_WORDS.filter(w => new RegExp('\\b' + w + 's?\\b').test(p));
@@ -2813,7 +3009,13 @@ function legalTargets(sp, ctx) {
         if (sp.types.length && tl && !sp.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl))) continue;
         if (sp.mods.includes('noncreature') && /\bCreature\b/.test(tl)) continue;
       }
+      if (sp.kind === 'spell' && sp.ctrl === 'opp' && !x.opp) continue;
+      if (sp.kind === 'spell' && sp.ctrl === 'you' && x.opp) continue;
       out.push({ kind: sp.kind, id: x.id, name: x.opp ? `Opponent's ${x.name}` : x.name, card: x.opp ? null : x });
+    }
+    if (sp.alsoPerm) {
+      if (sp.ctrl !== 'opp') for (const c of state.battlefield) if (permMatchesSpec(c, sp, ctx)) out.push({ kind: 'perm', id: c.id, name: c.name, card: c });
+      if (sp.ctrl !== 'you') out.push({ kind: 'opp', id: 'opp-perm', name: `A ${sp.mods.includes('nonland') ? 'nonland ' : ''}permanent your opponent controls (not tracked here)` });
     }
   }
   return out;
@@ -2839,6 +3041,7 @@ function chooseTargets(title, specs, done, o) {
     specs.forEach((sp, i) => {
       const need = sp.min === 0 ? `up to ${sp.max === 99 ? 'any number' : sp.max}` : sp.max > 1 ? `choose ${sp.max}` : 'choose one';
       m.body.append(h('div', { class: 'tg-head' }, h('b', { text: sp.label[0].toUpperCase() + sp.label.slice(1) }), h('span', { class: 'muted small', text: ` — ${need}` })));
+      if (sp.clause) m.body.append(h('div', { class: 'tg-for muted small', text: `For: ${sp.clause}` }));
       if (!lists[i].length) m.body.append(h('div', { class: 'muted small', text: 'Nothing legal to target (that is fine: this target is optional).' }));
       for (const t of lists[i]) {
         const on = picks[i].some(x => x.id === t.id), info = t.card && !t.card.ability && !t.card.opp ? cardInfo(t.card.name) : null;
@@ -2888,7 +3091,10 @@ function targetedOptions(tx, obj) {
     else if (/\battach\b/i.test(s) && obj.sourceId) each((t, c) => { if (c) attachTo(obj.sourceId, c.id, src); }, t => `Attach ${src} to ${t.name}`);
     else if (/\bdestroy\b/i.test(s)) each((t, c) => { if (c) destroyPerm(c, src); }, t => `Destroy ${t.name}`);
     else if (/\bexile\b/i.test(s) && !/\bexile it\b/i.test(s)) { const until = !!obj.sourceId && /\buntil\b[^.]*\bleaves the battlefield/i.test(s); each((t, c) => { if (c) { moveCard(c.id, 'exile'); if (until) addFx({ kind: 'exileUntil', cardId: c.id, cardName: c.name, srcId: obj.sourceId, srcName: src }); } }, t => `Exile ${t.name}${until ? ' until ' + src + ' leaves the battlefield' : ''}`, until ? (t => addFx({ kind: 'note', until: 'srcLeaves', text: `${t.name} is exiled (your opponent's): it comes back when ${src} leaves the battlefield`, srcId: obj.sourceId, srcName: src })) : null); }
-    else if (/\breturn\b[^.]*\bto (?:its|their) owner's hand/i.test(s)) each((t, c) => { if (c && t.kind === 'perm') moveCard(c.id, 'hand'); }, t => `Return ${t.name} to its owner's hand`);
+    else if (/\breturn\b[^.]*\bto (?:its|their) owner's hand/i.test(s)) each((t, c) => {
+      if (c && t.kind === 'perm') moveCard(c.id, 'hand');
+      else if (t.kind === 'spell') { const i = state.stack.findIndex(x => x.id === t.id); if (i >= 0) { snap(); const [x] = state.stack.splice(i, 1); if (!state.stack.length) state.priority = { active: false, passed: false }; if (x.opp) log(`${src}: opponent's ${x.name} returned to its owner's hand`); else { delete x.target; delete x.targets; delete x.modes; delete x.modeTexts; restoreHalf(x); state.hand.push(x); log(`${src}: ${x.name} returned to your hand`); } render(); } }
+    }, t => `Return ${t.name} to its owner's hand`);
     else if (/\buntap\b/i.test(s)) each((t, c) => { if (c && c.tapped) untapByEffect(c.id); }, t => `Untap ${t.name}`);
     else if (/\btap\b/i.test(s) && /\btap target/i.test(s)) each((t, c) => { if (c && !c.tapped) toggleTap(c.id); }, t => `Tap ${t.name}`);
     else if ((mm = s.match(/put (a|an|one|two|three|four|five|\d+) \+1\/\+1 counters? on/i))) { const n = wnum(mm[1]); each((t, c) => { if (c) addCounter(c.id, n, 'plus'); }, t => `Put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${t.name}`); }
@@ -2971,7 +3177,7 @@ function finishAbilityResolving() {
 function finishResolving() {   // the spell whose effect was just applied (or skipped) now leaves the stack
   const c = state && state.resolving; if (!c) return;
   if (state.discarding || handPick) { state.resolvingWait = true; render(); return; }   // wait until the chosen cards have been discarded
-  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
+  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
 }
 function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();
@@ -2993,6 +3199,8 @@ function resolveTopOfStack() {
   else if (isPermanentCard(c)) {
     enterBattlefield(c,{from:'stack',logMsg:`Resolved ${c.name} → battlefield`,afterPlace:()=>{
     if(c.warped){ delete c.warped; c.warpExile=state.turn; addFx({kind:'delayed',when:'end',action:'exile',targetId:c.id,targetName:c.name,text:`Exile ${c.name} (warp).`,srcName:c.name}); log(`${c.name}: warped, it will be exiled at the beginning of the next end step; you may cast it from exile on a later turn`); }
+    if(c.bestowed) bestowResolved(c);
+    if(c.blitzed||c.dashed) altKwResolved(c);
     if(c.evoked){ delete c.evoked; queueTrigger({kind:'ability',cardId:c.id,cardName:c.name,text:'Evoke: when this enters, sacrifice it.',effect:'Sacrifice ~.',special:'sacSelf',optional:false,why:'You cast it for its evoke cost, so it is sacrificed when it enters. Its other enters-the-battlefield abilities still trigger; you choose the order they go on the stack.'}); }
     if(c.xValue!==undefined){
       const cm=cardText(c).match(/enters(?: the battlefield)? with (twice )?X (\+1\/\+1|[a-z\-]+) counters?/i);
@@ -3002,13 +3210,13 @@ function resolveTopOfStack() {
   } else {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
     // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
-    { const md0=c.modes?spellModal(c):null; const baseTx=md0?modalText(md0,c.modes):cardText(c); delete c.modes; delete c.modeTexts;
+    { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts;
       let stx=baseTx.replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
     if(eff && !adv0 && layoutOn('resolveFirst')){ state.resolving=c; log(`${nm0} is resolving`); }
     else if(c.copy){ log(`Resolved a copy of ${nm0}; the copy ceases to exist`); }
-    else { const where=adv0?exileOnAdventure(c):gyPush(c,'stack'); log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`); }
+    else { const where=adv0?exileOnAdventure(c):(reboundOnResolve(c)||gyPush(c,'stack')); log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`); }
   }
   if(!state.resolving) restoreHalf(c);
   render();
@@ -3398,7 +3606,7 @@ function moveCard(id, to, pos) {
   } else {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
-    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.xValue; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
     delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });
@@ -3426,6 +3634,7 @@ function drawCards(n, silent) {
     if (!state.library.length) { if (!silent) log('Library is empty!'); state.drewEmpty = true; break; }
     const reps=replacementEffectHints(); if(reps.length && !silent && i===0) log(`Rules hint: ${reps.join(', ')} may modify this draw or event.`);
     state.hand.push(state.library.shift());
+    if (!silent) noteMiracleDraw(state.hand[state.hand.length - 1]);
     drawn++; if (!silent) setTimeout(() => sfx('draw'), (drawn - 1) * 110);
     if (!silent && drawn <= 3) fireTrigger('draw');
   }
@@ -3518,7 +3727,7 @@ function serumPowder() {
   // with a new hand of the same size (normally 7), without changing the
   // mulligan count. This means it can be used again after a normal mulligan
   // if the new 7-card hand contains another Serum Powder.
-  if(!state || state.phase !== 'mull' || state.bottomPhase || !state.hand.some(isSerumPowder)) return;
+  if(!state || state.phase !== 'mull' || state.bottomPhase || !state.hand.some(mulliganHandSwap)) return;
 
   snap();
   const count = state.hand.length;
@@ -3587,6 +3796,7 @@ function enterStep(i, quiet) {
       const tx = (cardText(c) || '').replace(/\u2019/g, "'"), nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const self = new RegExp("^(?:" + nm + "|this \\w+) doesn't untap during your untap step", 'im').test(tx);
       const bb = noUntapNonbasic && /\bLand\b/.test(c.types ? c.types.join(' ') : (cardInfo(c.name) || {}).t || '') && !/\bBasic\b/.test((cardInfo(c.name) || {}).t || '');
+      if (c.exerted && c.exerted < state.turn) { delete c.exerted; if (c.tapped) { held.push(c.name + ' (exerted)'); continue; } }   // CR 701.43a: an exerted permanent does not untap during your next untap step
       if ((self || bb) && c.tapped) { held.push(c.name); continue; }
       c.tapped = false; delete c.mt;
     }
@@ -3601,6 +3811,8 @@ function enterStep(i, quiet) {
     if (state.gs && state.gs.init) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'At the beginning of your upkeep, venture into the Undercity.', effect: 'Venture into the Undercity.', special: null, optional: false, why: 'You have the initiative (rule 725.2). The app does not track the dungeon; move your marker by hand.' });
   } else if (id === 'main1') {
     for (const c of state.battlefield.slice()) if (isSaga(c)) sagaAdvance(c, false);
+  } else if (id === 'end_combat') {
+    runDelayed('endcombat');
   } else if (id === 'end') {
     runDelayed('end');
     if (state.gs && state.gs.monarch) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The monarch', text: 'At the beginning of your end step, draw a card.', effect: 'Draw a card.', special: null, optional: false, why: 'You are the monarch (rule 724.2).' });
@@ -3817,7 +4029,7 @@ function rockInfo(c) {
   if (ROCK_CACHE.has(key + '|' + tx.length)) return ROCK_CACHE.get(key + '|' + tx.length);
   let out = null;
   for (const line of tx.split('\n')) {
-    const m = line.trim().match(/^\{T\}: Add (.+)$/);
+    const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^\{T\}: Add (.+)$/);   // v0.95.2 ability words (Metalcraft \u2014, Threshold \u2014 ...) are just labels
     if (!m) continue;
     const body = m[1];
     const first = body.split(/(?<=\.)\s+/)[0], rest = body.slice(first.length).trim();
@@ -3827,6 +4039,7 @@ function rockInfo(c) {
     else if ((mm = first.match(/^(\{[WUBRGC]\}(?:,? (?:or )?\{[WUBRGC]\})+)\.?$/))) r = { choice: [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) };
     else if (/^one mana of any color among legendary creatures and planeswalkers you control\.?$/i.test(first)) r = { among: true, choice: [] };
     else if (/^one mana of any color\.?$/i.test(first)) r = { choice: ['W', 'U', 'B', 'R', 'G'] };
+    else if (/^one mana of any of the exiled card'?s colou?rs?\.?$/i.test(first)) r = { exiled: true, choice: [] };   // v0.95.2 imprint (Chrome Mox)
     if (!r) continue;
     const cm = (rest + ' ' + first).match(/Activate (?:this ability )?only ([^.]+)\./i);
     r.cond = cm ? cm[1].trim() : null;
@@ -3853,10 +4066,12 @@ const STEP_RESTRICTIONS = [
 function parseRestrictionPart(p) {
   p = p.trim().replace(/[.]$/, ''); let m;
   if (/^(?:as a sorcery|any time you could cast a sorcery)$/i.test(p)) return { kind: 'sorcery', label: 'as a sorcery (your main phase, empty stack)' };
+  if (/^if (?:this creature|~|it) attacked this turn$/i.test(p)) return { kind: 'attacked', label: 'if this creature attacked this turn' };   // CR 702.142a (boast)
   if (/^once each turn$/i.test(p)) return { kind: 'once', label: 'once each turn' };
   if (/^during your turn$/i.test(p)) return { kind: 'myturn', label: 'during your turn' };
   if (/^(?:during )?(?:an? opponent'?s turn|any other player'?s turn|the opponent'?s turn)$/i.test(p)) return { kind: 'oppturn', label: "during an opponent's turn" };
   for (const [re, steps, label] of STEP_RESTRICTIONS) if (re.test(p)) return { kind: 'steps', steps, label };
+  if ((m = p.match(/^if you control (\w+) or more (.+)$/i)) && numOf(m[1])) return { kind: 'controln', n: numOf(m[1]), what: m[2], label: `if you control ${m[1]} or more ${m[2]}` };   // v0.95.2 metalcraft-style counts
   if ((m = p.match(/^if you control (?:an?|one or more) (.+)$/i))) return { kind: 'control', what: m[1], label: `if you control ${/^[aeiou]/i.test(m[1]) ? 'an' : 'a'} ${m[1]}` };
   if (/^if you have no cards in hand$/i.test(p)) return { kind: 'hand', max: 0, label: 'if you have no cards in hand' };
   if ((m = p.match(/^if you have (\w+) or (more|fewer) cards in (?:your )?(hand|graveyard)$/i))) return { kind: 'count', n: numOf(m[1]), more: /more/i.test(m[2]), zone: m[3].toLowerCase() === 'hand' ? 'hand' : 'graveyard', label: p };
@@ -3873,11 +4088,16 @@ function checkRestrictionPart(rec, card) {
   switch (rec.kind) {
     case 'sorcery': return canPlaySorcerySpeedNow() ? { ok: true, why: '' } : { ok: false, why: 'This can only be activated at sorcery speed: your main phase with an empty stack.' };
     case 'myturn': return { ok: true, why: '' };
+    case 'attacked': return card && state.combat && state.combat.declared && (state.combat.attackers || []).some(a => (a.id ?? a) === card.id) ? { ok: true, why: '' } : { ok: false, why: 'This creature has not attacked this turn.' };
     case 'oppturn': return { ok: false, why: "This can only be activated during an opponent's turn. A goldfish game only has your turns, so it is never available here." };
     case 'once': return card && state.usedAb && state.usedAb[card.id] ? { ok: false, why: 'This ability can only be activated once each turn, and you already did.' } : { ok: true, why: '' };
     case 'steps': return rec.steps.includes(stepId) ? { ok: true, why: '' } : { ok: false, why: `This can only be activated ${rec.label}. It is currently ${STEPS[state.step] ? STEPS[state.step].label : 'not a step'}.` };
     case 'hand': return state.hand.length <= rec.max ? { ok: true, why: '' } : { ok: false, why: `You must have no cards in hand (you have ${state.hand.length}).` };
     case 'count': { const n = state[rec.zone].length; const okc = rec.more ? n >= rec.n : n <= rec.n; return okc ? { ok: true, why: '' } : { ok: false, why: `Needs ${rec.n} or ${rec.more ? 'more' : 'fewer'} cards in your ${rec.zone}; you have ${n}.` }; }
+    case 'controln': {
+      const w = rec.what.replace(/s$/i, '').toLowerCase(), n = state.battlefield.filter(c => { const t = permTypeInfo(c); return t.types.has(w) || (t.subs && t.subs.has && t.subs.has(w)); }).length;
+      return n >= rec.n ? { ok: true, why: '' } : { ok: false, why: `You control ${n} ${rec.what} (needs ${rec.n} or more).` };
+    }
     case 'control': {
       const alts = rec.what.split(/\s+or\s+(?:an?\s+)?/i).map(x => x.trim()).filter(Boolean);
       const subs = alts.map(a => parseSubject(a + ' you control', { id: -1, name: '' }));
@@ -3916,11 +4136,13 @@ function amongColors() {
 function rockColors(c) {
   const r = rockInfo(c); if (!r) return [];
   if (r.among) return amongColors();
+  if (r.exiled) return (c.imprint && c.imprint.cols) || [];
   return [...new Set(r.fixed || r.choice)];
 }
 function rockStatus(c) {   // can this rock produce mana right now? (soft)
   const r = rockInfo(c); if (!r) return { ok: false, why: '' };
   if (isSick(c)) return { ok: false, why: 'Summoning sickness: this creature came under your control this turn, so it cannot tap for mana (it has no haste).' };
+  if (r.exiled && !rockColors(c).length) return { ok: false, why: `${c.name} has no exiled card with a colour (imprint), so it adds no mana.` };
   if (r.among && !amongColors().length) return { ok: false, why: 'You control no legendary creature or planeswalker with a colour, so there is no colour of mana to add.' };
   return r.cond ? staticCheck(r.cond, c) : { ok: true, why: '' };
 }
@@ -4021,6 +4243,10 @@ function toggleTap(id) {
 
 function addCounter(id,d,type='plus',manual) {
   const f=findCard(id); if(!f)return; snap();
+  if(type==='loyalty' && isPlaneswalker(f.card)) {   // v0.95.0 a loyalty counter IS the planeswalker's loyalty (CR 306.5b), not a separate counter kind
+    f.card.loyalty=Math.max(0,(f.card.loyalty||0)+d); log(`${f.card.name}: ${d>=0?'put '+d+' loyalty counter'+(d===1?'':'s')+' on it':'removed '+(-d)+' loyalty counter'+(d===-1?'':'s')} (loyalty now ${f.card.loyalty})`);
+    if(f.card.loyalty<=0) checkLoyalty(f.card); render(); flushTriggers(); return;
+  }
   if(!manual && d>0 && state.battlefield.some(x=>x.id===id)) d=adjustCounterAdd(f.card,type,d,true);
   if(typeof f.card.counters==='number')f.card.counters={plus:f.card.counters,minus:0};
   f.card.counters=f.card.counters||{plus:0,minus:0};
@@ -4059,6 +4285,7 @@ function tokenDefsFromText(text, srcName) {
   while ((m = re.exec(t))) {
     let head = m[1].trim(), tail = m[2] || '';
     if (/\b(?:cop(?:y|ies)|that's a|named)\b/i.test(head + ' ' + tail.slice(0, 30)) || !head) continue;
+    if (/^(?:one or more|that many|twice that many|those|an additional|a number of)\b/i.test(head) || /\bof those\b/i.test(head + ' ' + tail.slice(0, 30))) continue;   // v0.95.1 replacement-effect wording (Doubling Season), not a token to make
     let named = '', lg = /\blegendary\b/i.test(head), nmM = head.match(/^([A-Z][^,]*),\s+(?:an?\s+)?(.*)$/);
     if (nmM) { named = nmM[1].trim(); head = nmM[2]; }
     let count = 1, cm = named ? null : head.match(/^(an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|x|that many|a number of)\s+/i);
@@ -4073,6 +4300,7 @@ function tokenDefsFromText(text, srcName) {
     const name = named || nameW.join(' ').trim(); if (!name) continue;
     const pre = TOKEN_PRE[name.toLowerCase()] || {};
     if (!pt && pre.pt) pt = pre.pt;
+    const off = officialToken(name, pt, col, '');
     const ty = types.length ? types : pre.types ? pre.types : pt ? ['Creature'] : ['Artifact'];
     if (pt && !ty.includes('Creature')) ty.unshift('Creature');
     const lines = [], tm = tail.match(/^\s*,?\s*(?:tapped(?: and attacking)?,?\s*)?with\s+(.*)$/i);
@@ -4082,7 +4310,14 @@ function tokenDefsFromText(text, srcName) {
       for (const k of kw.reverse()) lines.unshift(k[0].toUpperCase() + k.slice(1)); }
     let tx = lines.join('\n'); if (!tx && pre.tx) tx = pre.tx;
     const subW = named ? nameW : name.split(/\s+/);
-    mk({ name, pt, col, types: ty, subs: subW.map(x => x.toLowerCase()), tx, count, tapped, legendary: lg, type: `Token ${lg ? 'Legendary ' : ''}${ty.join(' ')} — ${subW.join(' ') || name}` });
+    const d = { name, pt, col, types: ty, subs: subW.map(x => x.toLowerCase()), tx, count, tapped, legendary: lg, type: `Token ${lg ? 'Legendary ' : ''}${ty.join(' ')} — ${subW.join(' ') || name}` };
+    if (off) {   // v0.95.0 the official token card is the truth for its type line and rules text; what the card text said is the fallback
+      d.type = off.t.replace(/^(?!Token)/, 'Token ');
+      d.official = true; if (off.tx && off.tx.replace(/\([^)]*\)/g, '').trim()) d.tx = off.tx.replace(/\([^)]*\)/g, '').replace(/\n{2,}/g, '\n').trim();
+      const tys = ['Creature', 'Artifact', 'Enchantment', 'Land'].filter(w => new RegExp('\\b' + w + '\\b').test(off.t.split('\u2014')[0])); if (tys.length) d.types = tys;
+      if (/\bLegendary\b/.test(off.t)) d.legendary = true;
+    }
+    mk(d);
   }
   let am = t.match(/\bamass ([A-Z][a-z]+)/); if (am) { const ty = singularWord(am[1]), tn = ty[0].toUpperCase() + ty.slice(1); mk({ name: `${tn} Army`, pt: '0/0', col: ['B'], types: ['Creature'], subs: [ty, 'army'], tx: '', count: 1, type: `Token Creature — ${tn} Army`, amassOnly: true }); }
   if (/\binvestigate\b/i.test(t)) mk({ name: 'Clue', pt: '', col: [], types: ['Artifact'], subs: ['clue'], tx: TOKEN_PRE.clue.tx, count: 1, type: 'Token Artifact — Clue' });
@@ -4184,7 +4419,7 @@ function makeToken(name, pt) {
 function symEl(code) {
   const up = code.toUpperCase();
   const first = (up.match(/[WUBRG]/) || [''])[0];
-  const cls = up === 'T' ? 's-T' : first ? 's-' + first : '';
+  const cls = (up === 'T' ? 's-T' : first ? 's-' + first : '') + (up.includes('/') ? ' s-hyb' : '');
   return h('span', { class: 'sym ' + cls, text: up });
 }
 function symbols(str) {
@@ -4205,10 +4440,10 @@ function symbols(str) {
 function etbTapped(c) {
   const none = { tapped: false, why: '' };
   if (!c || c.token) return none;
-  const tx = cardText(c).replace(new RegExp(c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '~');
+  const tx = cardText(c).replace(selfNameRe(c.name), '~');
   const key = norm(c.name);
   if (!tx) return /triome/i.test(c.name) ? { tapped: true, why: 'enters tapped' } : none;
-  if (SHOCKS.has(key) || /you may pay 2 life/i.test(tx)) return none;       // shocklands ask the player
+  if (shockLife(c) > 0) return none;       // shocklands ask the player
   const others = state ? state.battlefield.filter(x => isLandName(x.name)) : [];
   for (const raw of tx.split(/(?<=\.)\s+|\n/)) {
     if (!/\benters(?: the battlefield)? tapped\b/i.test(raw)) continue;
@@ -4256,13 +4491,14 @@ function openShockChoice(id, fetched) {
   const f=findCard(id); if(!f||f.zone!=='battlefield')return; const c=f.card;
   // A played land can be taken back (undo); a fetched or put-onto-the-battlefield land cannot, so closing it just means "enter tapped".
   const m=modal(`${c.name}: enter the battlefield`,{width:500,sticky:true,onCancel:()=>{ if(fetched){ snap(); c.tapped=true; log(`${c.name} entered tapped`); render(); } else { undo(); toast('Land play cancelled','Nothing was paid and the land is back in your hand.'); } }});
-  m.body.append(h('div',{class:'ptitle',text:'Would you like to pay 2 life?'},),
-    h('div',{class:'psub',text:'Pay 2 life to have this shock land enter untapped. Otherwise it enters tapped.'}));
+  const N=shockLife(c)||2;
+  m.body.append(h('div',{class:'ptitle',text:`Would you like to pay ${N} life?`},),
+    h('div',{class:'psub',text:`Pay ${N} life to have ${c.name} enter untapped. Otherwise it enters tapped.`}));
   const next=()=>{m.close(); if(state.pendingTriggers.length){const t=state.pendingTriggers.shift(); if(t.kind==='shock')openShockChoice(t.cardId,t.fetched); else openScry(t.n,t.kind==='surveil',t.text);} render();};
   m.foot.append(
     h('button',{text:'Enter tapped',onclick:()=>{snap();c.tapped=true;log(`${c.name} entered tapped`);next();}}),
     fetched?null:h('button',{text:'Cancel — take the land back',title:'Undo playing this land (same as the ✕ or Esc)',onclick:()=>{m.close();undo();toast('Land play cancelled','Nothing was paid and the land is back in your hand.');}}),
-    h('button',{class:'primary',text:'Pay 2 life — enter untapped',onclick:()=>{snap();state.life-=2;c.tapped=false;log(`${c.name} entered untapped; paid 2 life`);next();}})
+    h('button',{class:'primary',text:`Pay ${N} life — enter untapped`,onclick:()=>{snap();state.life-=N;c.tapped=false;log(`${c.name} entered untapped; paid ${N} life`);next();}})
   );
 }
 let stackDock=null, stackPanelDraw=null, stackUI=null;
@@ -4363,12 +4599,12 @@ function landManaAbilities(c) {
   const key = norm(c.name) + '|' + tx.length + '|' + tx.slice(-40);
   if (LAND_AB_CACHE.has(key)) return LAND_AB_CACHE.get(key);
   const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const t = tx.replace(/\([^)]*\)/g, ' ').replace(new RegExp(nm, 'gi'), '~');
+  const t = tx.replace(/\([^)]*\)/g, ' ').replace(selfNameRe(c.name), '~');   // v0.96.6: "this land" / "this artifact" as well as the printed name
   const out = []; let becomes = 0, bm;
   if ((bm = t.match(/Whenever ~ becomes tapped, it deals (\d+) damage to you/i))) becomes = +bm[1];
   for (const line of t.split('\n')) {
     const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^\{T\}(?:, Pay (\d+) life)?: (Add .*)$/i); if (!m) continue;
-    const sents = m[2].split(/(?<=\.)\s+/), ab = { fixed: null, choice: null, any: false, only: '', dmg: becomes, life: +m[1] || 0, alt: null };
+    const sents = m[2].split(/(?<=\.)\s+/), ab = { fixed: null, choice: null, any: false, only: '', dmg: becomes, life: +m[1] || 0, alt: null, unread: [] };
     const first = sents[0].replace(/\.$/, ''); let mm;
     if ((mm = first.match(/^Add (\{[WUBRGC]\}) for each (.+?)(?: you control| on the battlefield)?$/i))) ab.per = { col: mm[1][1], what: mm[2], ctrl: / you control$/i.test(first) };
     else if ((mm = first.match(/^Add ((?:\{[WUBRGC]\})+)$/i))) ab.fixed = [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);
@@ -4378,7 +4614,9 @@ function landManaAbilities(c) {
     for (const sn of sents.slice(1)) { let q;
       if ((q = sn.match(/^Spend this mana only (?:to|on) (.*?)\.?$/i))) ab.only = c.chosen ? q[1].replace(/the chosen type/i, 'the ' + c.chosen.toLowerCase() + ' type') : q[1];
       else if ((q = sn.match(/^~ deals (\d+) damage to you\.?$/i))) ab.dmg += +q[1];
-      else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; }
+      else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; 
+      else if ((q = sn.match(/^You lose (\d+) life\.?$/i))) ab.dmg += +q[1];
+      else if (sn.trim()) ab.unread.push(sn.trim()); }   // v0.96.6 every sentence of the ability is read; what is not understood is reported, never skipped silently
     out.push(ab);
   }
   LAND_AB_CACHE.set(key, out); return out;
@@ -4428,7 +4666,10 @@ function applyLandCost(c, k) {
 function etbCounters(c) {
   if (!c || c.token) return;
   const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const tx = cardText(c).replace(new RegExp(nm, 'gi'), '~');
+  let tx = cardText(c).replace(selfNameRe(c.name), '~');
+  { const its = kwItems(tx); const mi = its.map(x => x.match(/^modular (\d+)$/i)).find(Boolean); if (mi) tx += `\n~ enters with ${mi[1]} +1/+1 counters on it.`;
+    const vn = its.map(x => x.match(/^vanishing (\d+)$/i)).find(Boolean); if (vn) tx += `\n~ enters with ${vn[1]} time counters on it.`;   // CR 702.63a
+    const fd = its.map(x => x.match(/^fading (\d+)$/i)).find(Boolean); if (fd) tx += `\n~ enters with ${fd[1]} fade counters on it.`; }   // CR 702.32a   // v0.96.1 modular (CR 702.43a)
   const m = tx.match(/\benters(?: the battlefield)? with (an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);
   if (!m) return;
   // v0.84 "...counter on it for each <type> card exiled with it" (Murktide Regent): one per matching card exiled while casting it (delve), not a flat one.
@@ -4451,7 +4692,7 @@ function checkNoCounterTriggers() {
   if (!state) return;
   for (const c of state.battlefield) {
     if (c.token) continue; const tx = cardText(c); if (!tx || !/has no [a-z+\/-]+ counters on it/i.test(tx)) continue;
-    const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), t = tx.replace(new RegExp(nm, 'gi'), '~');
+    const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), t = tx.replace(selfNameRe(c.name), '~');
     const m = t.match(/^(When(?:ever)? ~ has no ([a-z+\/-]+) counters on it),\s*(.*)$/im); if (!m) continue;
     const key = m[2].toLowerCase() === '+1/+1' ? 'plus' : m[2].toLowerCase(), cc = typeof c.counters === 'number' ? { plus: c.counters } : (c.counters || {});
     if ((cc[key] || 0) > 0) { c._noCtr = false; continue; }
@@ -4460,17 +4701,17 @@ function checkNoCounterTriggers() {
     state.pendingTriggers.push({ kind: 'ability', cardId: c.id, cardName: c.name, text: m[0], effect: m[3], special: null, optional: /\byou may\b/i.test(m[3]), why: `${c.name} has no ${m[2]} counters on it, so this state-triggered ability triggers.` });
   }
 }
-// Vesuva: "You may have Vesuva enter the battlefield tapped as a copy of any land on the battlefield."
+// Vesuva: "You may have it enter the battlefield tapped as a copy of any land on the battlefield."
 function openVesuva(id) {
   const f = findCard(id); if (!f || f.zone !== 'battlefield') return; const c = f.card;
   const lands = []; for (const x of state.battlefield) if (x.id !== c.id && isLandName(x.name) && !lands.some(l => l.name === x.name)) lands.push(x);
-  const m = modal('Vesuva: copy a land?', { width: 520, sticky: true, noClose: true });
-  m.body.append(h('div', { class: 'psub', text: 'You may have Vesuva enter the battlefield tapped as a copy of any land on the battlefield. As a copy it has that land’s name, types and abilities. It goes back to being Vesuva if it leaves the battlefield.' }));
+  const m = modal(c.name + ': copy a land?', { width: 520, sticky: true, noClose: true });
+  m.body.append(h('div', { class: 'psub', text: 'You may have it enter the battlefield tapped as a copy of any land on the battlefield. As a copy it has that land’s name, types and abilities. It goes back to being itself if it leaves the battlefield.' }));
   const done = () => { m.close(); render(); if (state.pendingTriggers.length) resolvePendingTrigger(); };
   for (const l of lands) m.body.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: l.name }), h('button', { class: 'primary', text: 'Copy it', onclick: () => {
-    snap(); c.origName = c.name; c.name = l.name; c.tapped = true; c.counters = { plus: 0, minus: 0 }; log(`Vesuva entered tapped as a copy of ${l.name}`);
+    snap(); c.origName = c.name; c.name = l.name; c.tapped = true; c.counters = { plus: 0, minus: 0 }; log(`${c.origName} entered tapped as a copy of ${l.name}`);
     etbCounters(c); const etb = landETBTrigger(c); if (etb) queueTrigger(etb); fireTrigger('etb', { card: c }); done(); } })));
-  m.foot.append(h('button', { text: 'Enter as Vesuva (no copy)', onclick: done }));
+  m.foot.append(h('button', { text: 'Enter as itself (no copy)', onclick: done }));
 }
 function manaSources() {
   const out=[];
@@ -4495,7 +4736,7 @@ function manaSources() {
   return out;
 }
 function manaCostParts(mc){
-  const out={generic:0, colors:[], flexible:[]};
+  const out={generic:0, colors:[], flexible:[], hyb:[]};
   if(!mc) return out;
   const re=/\{([^}]+)\}/g; let m;
   while((m=re.exec(mc))){
@@ -4503,7 +4744,10 @@ function manaCostParts(mc){
     if(/^\d+$/.test(x)) out.generic+=+x;
     else if(/^[WUBRG]$/.test(x)) out.colors.push(x);
     else if(x==='C') out.colors.push('C');
-    else out.flexible.push(x);
+    else { out.flexible.push(x);
+      // v0.96.6 CR 107.4: hybrid {W/U}, two-brid {2/W} and Phyrexian {W/P} / {W/U/P} symbols. Each is paid one of its ways, never as plain generic.
+      const ps = x.split('/'), phy = ps.includes('P'), two = ps[0] === '2', opts = ps.filter(q => /^[WUBRGC]$/.test(q));
+      out.hyb.push({ sym: x, opts, phy, two }); }
   }
   return out;
 }
@@ -4550,7 +4794,7 @@ function handWhy0(c){
   }
   if(!canCastNow(c)) return state.stack.length ? 'Only instants and cards with flash can be cast while something is on the stack' : 'Sorcery speed: only in your main phase with an empty stack';
   const m=canPayMana(c);
-  if(m && !m.ok) return m.reason==='additional' ? `You cannot pay the additional cost: ${m.detail}` : m.reason==='color' ? 'You have enough mana in total, but not the right colours' : 'Not enough mana';
+  if(m && !m.ok) return m.reason==='condition' ? `You cannot use that way of casting it: ${m.detail}` : m.reason==='additional' ? `You cannot pay the additional cost: ${m.detail}` : m.reason==='color' ? 'You have enough mana in total, but not the right colours' : 'Not enough mana';
   return '';
 }
 function handTip(c){ const i=handInteraction(c); if(!i) return ''; return i==='ready' ? ' — playable now' : ' — ' + handWhy(c); }
@@ -4737,7 +4981,7 @@ function findKeywords(c) {
   if (!c || c.token || !teach('keywordTips')) return [];
   const raw = cardText(c);
   if (!raw) return [];
-  const text = raw.replace(new RegExp(c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '~');
+  const text = raw.replace(selfNameRe(c.name), '~');
   const found = [];
   for (const [name, re, tip] of KEYWORDS) { const m = re.exec(text); if (m) found.push({ name, tip, re }); }
   return found;
@@ -4859,6 +5103,7 @@ function showPreviewText(c) {
 }
 
 function permZone(c) {
+  if (c.becomes && c.becomes.types.includes('creature')) return 'creatures';
   if (c.token) return c.tk && c.tk.pt ? 'creatures' : 'noncreature';
   const info = cardInfo(c.name);
   if (isLandName(c.name)) return 'lands';
@@ -4912,7 +5157,16 @@ function deliriumSummary() {
   return { total: types.length, counts, types };
 }
 
+// v0.96.11 the floating hand may only overlap the very bottom edge of the mat: everything above that is reserved, so no battlefield card
+// (second rows especially) is ever hidden behind the hand. The zones are measured after this and their cards shrink to fit.
+function reserveHandSpace() {
+  const stage = $('#stage'), hc = $('#row-hand'); if (!stage || !hc) return;
+  const card = hc.querySelector('.card'), h = card ? card.offsetHeight : 0;
+  const cover = h ? Math.round(h * 0.82) + 8 : 0;
+  stage.style.setProperty('--handcover', cover + 'px');
+}
 function fitBattlefieldCards() {
+  try { reserveHandSpace(); } catch (e) { /* layout only */ }
   const specs = [
     { id: 'row-creatures', wrap: true },
     { id: 'row-noncreature', wrap: true },
@@ -4922,7 +5176,7 @@ function fitBattlefieldCards() {
   const baseW = (img ? 100 : 112) * (settings.bfs || 1);
   const baseH = (img ? 140 : 84) * (settings.bfs || 1);
   const gap = 8;
-  const minScale = 0.5;
+  const minScale = 0.34;   // v0.96.11 a crowded board may shrink further so every card stays visible
 
   for (const spec of specs) {
     const row = $('#' + spec.id);
@@ -4994,7 +5248,7 @@ function render() {
   runToughnessSBA();
   document.body.classList.toggle('responding', !!state && state.phase === 'play' && state.stack.length > 0);
   document.body.classList.toggle('imgmode', showImages && (IMG.size > 0 || CUSTOM.size > 0));
-  document.body.classList.toggle('castflight', castFlightOn()); document.body.classList.toggle('hand3d', animOn('hand3d')); document.body.classList.toggle('bffloat', animOn('bfFloat'));
+  document.body.classList.toggle('castflight', castFlightOn()); document.body.classList.toggle('hand3d', animOn('hand3d')); document.body.classList.toggle('bffloat', animOn('bfFloat')); document.body.classList.toggle('handfloat', animOn('handFloat'));
   document.body.classList.toggle('blocked', isBlocked());
   renderTop();
   const has = !!state;
@@ -5047,6 +5301,7 @@ function render() {
   $('#zc-creatures').textContent = counts.creatures ? `(${counts.creatures})` : '';
   $('#zc-lands').textContent = (counts.lands ? `(${counts.lands})` : '') + (has && state.phase === 'play' ? (counts.lands ? ' · ' : '') + (landDropUsed() ? 'land drop used' : 'land drop ready') : '');   // v0.90.2 moved here from the turn bar
   fitBattlefieldCards();
+  try { renderEmblems(); } catch (e) { /* display only */ }
   layoutHand(); applyFan();
   $('#phases')?.classList.toggle('hidden', !teach('phaseBar') || (layoutOn('boardStrip') && !!state && state.phase === 'play'));
   renderPhaseBar(); phaseFlash(); drawBoardStrip(); drawStackStage(); drawHandPickBar();
@@ -5126,10 +5381,11 @@ function openCombatHelper(){
     });
     // v0.94.3 Attack with all: picks every creature that can legally attack (not tapped, not summoning sick unless it has haste, no defender, no "can't attack" effect)
     const viable=creatures.filter(c=>!attackBlock(c)), skipped=creatures.filter(c=>attackBlock(c));
-    const allBtn=h('button',{class:'primary',text:`Attack with all (${viable.length})`,disabled:!viable.length,title:viable.length?'Selects every creature that can attack right now':'No creature can attack right now',onclick:()=>{viable.forEach(c=>picks.add(c.id));creatures.forEach(sync);allNote.textContent=skipped.length?`Left out: ${skipped.map(c=>`${c.name} (${c.tapped?'tapped':isSick(c)?'summoning sick':hasKw(c,'defender')?'defender':"can't attack"})`).join(', ')}.`:'Every creature you control is attacking.';}});
+    const allBtn=h('button',{text:`Attack with all (${viable.length})`,disabled:!viable.length,title:viable.length?'Selects every creature that can attack right now':'No creature can attack right now',onclick:()=>{viable.forEach(c=>picks.add(c.id));creatures.forEach(sync);allNote.textContent=skipped.length?`Left out: ${skipped.map(c=>`${c.name} (${c.tapped?'tapped':isSick(c)?'summoning sick':hasKw(c,'defender')?'defender':"can't attack"})`).join(', ')}.`:'Every creature you control is attacking.';}});
     const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();creatures.forEach(sync);allNote.textContent='';}});
     const allNote=h('div',{class:'muted small'});
-    m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),h('div',{class:'pbtns',style:'margin:6px 0'},allBtn,noneBtn),allNote,rows);
+    m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),rows);
+    rows.prepend(h('div',{class:'row',style:'gap:8px;justify-content:flex-start'},allBtn,noneBtn),allNote);
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{
       snap();state.combat.attackers=[...picks];state.combat.declared=true;
       const atk=[...picks].map(id=>findCard(id)?.card).filter(Boolean);
@@ -5158,15 +5414,16 @@ function dealCombatDamage(){
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
-  const before=state.oppLife; state.oppLife-=total;
+  const before=state.oppLife; state.oppLife-=total; if(total>0) state.oppLifeLostTurn=state.turn;
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
   if(state.oppLife<=0) log(`Goldfish kill on turn ${state.turn}`);
   if(lifeGain>0){ state.life+=lifeGain; log(`Lifelink: gained ${lifeGain} life (${lifeParts.join(', ')}) → ${state.life}`); toast(`Lifelink: +${lifeGain} life`, `You are now at ${state.life}.`); fireTrigger('lifegain',{amount:lifeGain}); }
+  noteCombatDealers(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d});
 }
-function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
+function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
 function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});
@@ -5201,8 +5458,8 @@ function renderOverlay() {
     return;
   }
   if (state.phase === 'pregame') {
-    const candidates=state.hand.filter(c=>isLeyline(c)||/opening hand/i.test(cardText(c)));
-    const serum=state.hand.find(isSerumPowder);
+    const candidates=state.hand.filter(c=>beginsOnBattlefield(c));
+    const serum=state.hand.find(mulliganHandSwap);
     const openingLine = c => {
       const ln = String(cardText(c) || '').split('\n').find(l => /opening hand/i.test(l));
       return ln ? ln.replace(new RegExp(c.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'),'this card') : 'This card has an opening-hand ability.';
@@ -5229,13 +5486,13 @@ function renderOverlay() {
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
           h('button', { text: 'Draw 7', onclick: () => pregameDraw(7) }),
           h('button', {
-            text: state.hand.some(isSerumPowder) ? `Use Serum Powder — exile hand, draw ${state.hand.length}` : 'Serum Powder unavailable',
-            disabled: !state.hand.some(isSerumPowder),
+            text: state.hand.some(mulliganHandSwap) ? `Use Serum Powder — exile hand, draw ${state.hand.length}` : 'Serum Powder unavailable',
+            disabled: !state.hand.some(mulliganHandSwap),
             onclick: serumPowder
           }),
           h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : `Mulligan to ${7 - state.mulls - 1}`, disabled: state.mulls >= 6, onclick: doMulligan })),
-        h('div', { class: 'phint', text: state.hand.some(isSerumPowder)
-          ? 'Serum Powder is checked before each mulligan decision. Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
+        h('div', { class: 'phint', text: state.hand.some(mulliganHandSwap)
+          ? 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
           : 'Your hand is shown below.' }));
     } else {
       ov.hidden = true; ov.replaceChildren(); return;   // v0.90.7 chosen in the hand bar instead
@@ -5290,16 +5547,20 @@ function activatedAbilitiesFor(c){
   const nm=cardInfo(c.name)?.name||c.name, short=nm.split(' // ')[0];
   const res=[];
   for(const raw of tx.replace(/,\n/g,', ').split('\n')){
-    const line=raw.trim();
+    let line=raw.trim(), boast=false;
+    if(/^Boast\s*[\u2014-]\s*/i.test(line)){ line=line.replace(/^Boast\s*[\u2014-]\s*/i,''); boast=true; }   // CR 702.142a: "Boast \u2014 [Cost]: [Effect]" means "[Cost]: [Effect]. Activate only if this creature attacked this turn and only once each turn."
     if(!line || /^(When|Whenever|At)\b/i.test(line) || /^[+−–-]?\d+:/.test(line) || SAGA_CH_RE.test(line)) continue;
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }
+    { const ol=line.match(/^Outlast\s+((?:\{[^}]+\})+)\s*(?:\(.*\))?$/i);   // Outlast (CR 702.107a): "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."
+      if(ol){ const pc=parseAbilityCost(ol[1]+', {T}',short);
+        res.push({cost:'Outlast '+ol[1],effect:'Put a +1/+1 counter on ~. Activate only as a sorcery.',tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length}); continue; } }
     const i=line.indexOf(':'); if(i<1) continue;
-    const cost=line.slice(0,i).trim(), effect=line.slice(i+1).trim();
+    const cost=line.slice(0,i).trim(), effect=line.slice(i+1).trim()+(boast?' Activate only if this creature attacked this turn and only once each turn.':'');
     if(!COST_WORDS.test(cost) || /^(Add\b)/i.test(effect) && /\{T\}/.test(cost) && !/Sacrifice/.test(cost)) continue;
     const pc=parseAbilityCost(cost,short);
-    res.push({cost,effect,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length});
+    res.push({cost:boast?'Boast \u2014 '+cost:cost,effect,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length});
   }
   return res;
 }
@@ -5397,7 +5658,9 @@ function showCardMenu(c, zone, x, y) {
       if (!canPlaySorcerySpeedNow()) { toast('Wrong phase', 'This card can only be played during your main phase.'); return; }
       moveCard(c.id, 'battlefield');
     }});
+    { const pl = plotFor(c); if (pl) items.push({ label: `Plot (${pl.cost})`, title: 'Pay the plot cost and exile it; cast it free on a later turn at sorcery speed', fn: () => stashCard(c.id, 'plot') }); const ft = foretellFor(c); if (ft) items.push({ label: `Foretell ({2})`, title: `Pay {2} and exile it; cast it later for ${ft.castCost}`, fn: () => stashCard(c.id, 'foretell') }); }
     { const su = suspendFor(c); if (su) items.push({ label: `Suspend ${su.n} (${su.cost})`, fn: () => suspendCard(c.id) }); }
+    { const nj = ninjutsuFor(c); if (nj) { const w = ninjutsuWhy(c); items.push({ label: `Ninjutsu (${nj.cost})` + (w ? ' \u2014 not now' : ''), title: w || 'Return an unblocked attacker and put this onto the battlefield tapped and attacking', fn: () => activateNinjutsu(c.id) }); } }
     { const cy = cyclingFor(c); if (cy) items.push({ label: `Cycle (${cy.label.replace(/^Cycling\s*(?:\u2014\s*)?/, '') || 'free'})`, fn: () => cycleCard(c.id) }); }
   }
   if (c.token) {
@@ -5565,8 +5828,10 @@ function openZone(zone) {
       if(teach('libraryPreview')) row.addEventListener('mouseenter', () => showPreview(c));
       if (zone === 'exile' && c.mayPlayTurn === state.turn) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
       if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
+      if (zone === 'exile' && stashReady(c)) row.append(h('button', { class: 'primary', text: c.plotted ? 'Cast free (plotted)' : 'Cast (foretold)', title: c.plotted ? 'You plotted this on an earlier turn: cast it without paying its mana cost, at sorcery speed' : 'You foretold this on an earlier turn: cast it for its foretell cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && c.onAdv) row.append(h('button', { class: 'primary', text: 'Cast creature', title: 'This card was exiled on an adventure: you may cast it from exile', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'graveyard' && gyLandPlayable(c)) row.append(h('button', { class: 'primary', text: 'Play land', title: 'You may play lands from your graveyard (uses a land drop)', onclick: () => { m.close(); playLandFromGy(c.id); } }));
+      if (zone === 'graveyard') for (const ga of gyAbilitiesFor(c)) row.append(h('button', { class: 'primary', text: ga.label, title: ga.kind === 'unearth' ? 'Return it to the battlefield with haste; exile it at the next end step (sorcery speed)' : `Exile it from your graveyard and create a ${ga.kind === 'embalm' ? 'white' : 'black 4/4'} Zombie token copy (sorcery speed)`, onclick: () => { m.close(); useGyAbility(c.id, ga.kind); } }));
       if (zone === 'graveyard') { const go = gyCastOptions(c); if (go.length) row.append(h('button', { class: 'primary', text: go.length > 1 ? 'Cast…' : (go[0].kind === 'aftermath' ? 'Cast ' + (cardInfo(c.name).fc[1].name) : go[0].kind === 'escape' ? 'Escape' : 'Flashback'), title: go.map(x => x.label).join('\n'), onclick: () => { m.close(); castFromGraveyard(c.id); } })); }
       if (zone !== 'hand') row.append(act('Hand', 'hand'));
       row.append(act('Play', 'battlefield'));
@@ -5806,8 +6071,29 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.94.4';
+const APP_VERSION = '0.96.13';
 const CHANGELOG = [
+  { v: '0.96.13', title: 'Release set fixed, movable Hand label', notes: ['Updater: releases now always come with a SIXTH file, update.json, which older app shells read (its absence caused "update.json has no version"). The release script bundles all six files into one zip and the update window names the missing file.','The small Hand label (count and Key) can be dragged anywhere on the table; its place is remembered and double-clicking puts it back. The Sort button is gone: drag cards sideways in the hand to order them.'] },
+  { v: '0.96.12', title: 'Tezzeret, Cruel Captain in full, emblems', notes: ['Tezzeret, Cruel Captain now follows his real Oracle text: "Whenever an artifact you control enters" adds a loyalty counter; 0: untap target artifact or creature and, if it is an artifact creature, put a +1/+1 counter on it; \u22123: search for an artifact card with mana value 1 or less, reveal it, put it into your hand, shuffle; \u22127: you get an emblem.','Emblems (CR 114) are new: "You get an emblem with \u2026" creates a permanent emblem that lives outside the battlefield, shown in a small panel on the mat, and its abilities trigger like any other (Tezzeret\'s emblem puts three +1/+1 counters on a target artifact at the beginning of combat and turns a non-creature one into a 0/0 Robot artifact creature).','Effects that make a permanent a creature (CR 613.1d, 613.4b) now change its types, subtypes and base power/toughness, so it moves to the creature row and counts as a creature everywhere.','"Put a +1/+1 counter on it" after a target no longer puts the counter on the ability\'s source. Mana value for searches is now worked out from the mana cost (CR 202.3).'] },
+  { v: '0.96.11', title: 'Battlefield never hides behind the hand', notes: ['The hand now overlaps only the very bottom edge of the playmat. The mat reserves the rest, so second rows of artifacts, enchantments and lands are no longer covered, and cards shrink further (down to about a third of full size) on crowded boards so every card stays visible.', 'The battlefield re-fits itself whenever a zone or the hand changes size (resizing, drawing, playing cards).'] },
+  { v: '0.96.10', title: 'Ordered effects, safer static abilities', notes: ['"A, then B" effects (The One Ring) now list their steps in written order (CR 608.2c) and no longer show a combined "In order" choice; the ordering stays internal.', 'Static abilities (CR 604, 613): "gets +1/+1 for each artifact you control" now counts permanents by their current types, tokens included, and a "for each" the app cannot read is treated as unknown instead of 0, so state-based actions (CR 704.5f) no longer destroy a creature such as the Urza\'s Saga Construct because of a failed count.'] },
+  { v: '0.96.9', title: 'Keyword batch 4, floating hand', notes: ['Hand: the cards now hover gently, each at its own pace, with a soft shadow that deepens as a card lifts. It pauses on hover and can be switched off in the animations list (Floating hand), and it respects the reduced-motion setting.','Decayed (702.147): when it attacks, a delayed \"sacrifice at end of combat\" is set up; end-of-combat delayed effects now exist.','Exert (701.43): \"You may exert it as it attacks\" asks on attack; an exerted permanent stays tapped through your next untap step; the linked \"when you do\" ability is put on the stack.','Monstrosity N (701.37): counters and the monstrous marker, only if it is not already monstrous; \"becomes monstrous\" triggers now work; the marker ends when it leaves the battlefield.','Populate (701.36): choose a creature token you control and create a copy of it; with none, nothing happens.','Boast (702.142): the ability is only usable if the creature attacked this turn, and once each turn. Devoid (702.114): always colorless.','Six new CR-numbered tests: 73 of 73 rules checks pass.'] },
+  { v: '0.96.8', title: 'Updater fix, floating hand', notes: ['Updater: the in-app updater downloads every file from the newest GitHub release, so a release that only carried the changed files made the update fail with a 404. Releases should carry all five files (index.html, app.js, style.css, package.json, latest.json), and the updater now also reuses any file whose checksum already matches the installed copy, so partial releases work too (this part needs the new app shell: reinstall the full package once).','Updater: no-cache requests and time-outs, clear messages when the release is missing a file, is a draft or pre-release, or has no latest.json.','Hand: no more hand box. Your cards float along the bottom of the screen over the battlefield, always fully visible. The battlefield keeps its bottom edge clear so permanents are not hidden.','The colour key (Playable / Can\'t pay / Wrong timing / Instant speed / Selected) moved behind a small Key button next to Sort, so it no longer sits permanently in the hand area.'] },
+  { v: '0.96.7', title: 'Upkeep keywords: Cumulative upkeep, Vanishing, Fading', notes: ['Cumulative upkeep (702.24): at your upkeep an age counter goes on the permanent, then you may pay the cost once for each age counter, or sacrifice it. Mana costs open the normal payment window; \"Pay N life\" is taken for you; any other cost (sacrifice, discard...) is marked as paid by hand. When the cost has choices (\"{W} or {U}\"), every combination across the age counters is offered, and a partial payment is never possible.','Vanishing N (702.63): enters with N time counters; at your upkeep, only if it has one, a time counter is removed; removing the last one puts a \"sacrifice it\" trigger on the stack.','Fading N (702.32): enters with N fade counters; at your upkeep a fade counter is removed, and if it has none the permanent is sacrificed.','Keyword lines are now read with their whole argument (a number, a mana cost, or a full cost such as \"Cumulative upkeep\u2014Pay 1 life\"), and upkeep keyword abilities respect their \"if\" condition.','Four new CR-numbered tests: 67 of 67 rules checks pass.'] },
+  { v: '0.96.6', title: 'Phyrexian & hybrid mana, Ancient Tomb, bigger battlefield', notes: ['Ancient Tomb and every land like it: the damage sentence was only recognised when it used the card\'s printed name, but current Oracle text says \"this land deals 2 damage to you\". Mana abilities now read every sentence of the line, with the card\'s name or \"this land / artifact / creature\" alike. The two mana and the 2 damage now happen together. \"You lose N life\" is read too, and any sentence the app does not understand is listed in the card report as NOT applied instead of being skipped silently.','Phyrexian mana (CR 107.4f) is now read and paid: coloured mana if you have it, otherwise 2 life per symbol (only if your life total allows it), with a log line. Hybrid ({W/U}) and two-brid ({2/W}) symbols now need one of their colours (or two generic) instead of any mana (107.4e). The symbol shows as W/P, W/U, 2/W.','The self-name reader now handles \"this land\", \"this artifact\" etc. in more places (land abilities, enters-with-counters, state triggers).','Layout: the hand box is shorter and the hand overlaps the bottom edge of the battlefield, so the battlefield is about 40 pixels taller. Hovered cards still rise over everything.','Three new CR-numbered tests (107.4f, 107.4e, 605.1a): 63 of 63 rules checks pass.'] },
+  { v: '0.96.5', title: 'Recursion keywords: Embalm, Eternalize, Unearth, Outlast, Rebound, Disturb', notes: ['Embalm (702.128) and Eternalize (702.129): open your graveyard and press the keyword button on the card. You pay the cost, the card is exiled as part of it, and you get a token copy: white for Embalm, black and 4/4 for Eternalize, a Zombie in addition to its other types, with no mana cost. Sorcery speed only.','Unearth (702.84): the card returns from the graveyard with haste, is exiled at the beginning of the next end step, and is exiled instead if it would leave the battlefield. Sorcery speed only.','Outlast (702.107) now shows as an ability: {cost}, {T}: put a +1/+1 counter on it, sorcery speed only.','Rebound (702.88): a spell cast from your hand is exiled instead of going to the graveyard as it resolves, and at your next upkeep a prompt lets you cast it from exile without paying its mana cost (a spell cast from anywhere else, or a copy, does not rebound).','Disturb (702.146): a double-faced card with disturb gets a Disturb button in the graveyard; the back face goes on the stack, enters back face up, and is exiled if it would go to a graveyard.','Also in this release: the broad name-check sweep found no remaining card-name checks. The fetch, shock and basic-land name lists are now used only when card data is not loaded.','Six new CR-numbered tests: 60 of 60 rules checks pass.'] },
+  { v: '0.96.4', title: 'Rules-text audit: no more name checks', notes: ['Serum Powder is now found by its rules text (CR 103.5b: \"any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards\"), not by its name. Any card with that wording gets the same button.','Leyline-style cards are found by CR 103.6a wording (\"if ~ is in your opening hand, you may begin the game with it on the battlefield\") instead of looking for the word Leyline. Cards that only let you reveal from your opening hand (CR 103.6b) are no longer offered a battlefield button.','Vesuva-style lands (\"enter the battlefield tapped as a copy of any land\", CR 614.12) are recognised by text. Leyline of the Guildpact, Dryad of the Ilysian Grove, Prismatic Omen, Urborg, Yavimaya, Blood Moon and Magus of the Moon are now read only from what they say (CR 305.7).','Hand-written card definitions are now one flat list matched by rules wording, never by card name, so a new card with the same text behaves the same. Two definitions that only repeated the general reader (Mana Crypt, Necrodominance) were removed, and a second Wan Shi Tong line no longer overwrites the first.','Five new CR-numbered tests (103.6a, 103.5b, 614.12, 305.7, 112.1) using invented card names with real rules text: 54 of 54 rules checks pass.'] },
+  { v: '0.96.3', title: 'Keywords batch 3: the harder casting keywords', notes: ['Overload (702.96) and Bestow (702.103) are chosen BEFORE targets, as the rules say (601.2b): a small window asks how you want to cast it. Overload turns every "target" in the spell into "each", so no targets are chosen and the effect window reads "each". Bestow asks for a creature, resolves attached to it (its "Enchanted creature gets..." bonus applies) and, if the host leaves, stays as a creature.','Escalate (702.120): each mode chosen beyond the first adds the escalate cost, shown in the total. Replicate (702.56): the cost window has a number box, pay it any number of times, and the spell is copied that many times.','Emerge (702.119): sacrifice a creature and the cost is reduced by its mana value; the route is only offered when your best sacrifice makes it payable. Prowl (702.76): needs combat damage dealt this turn by a creature sharing a creature type with the card.','Miracle (702.94): the first card you draw each turn that has miracle triggers a window to cast it for the miracle cost. Plot (702.170) and Foretell (702.143): right-click the card in hand to pay and exile it; later turns the Exile list offers Cast free (plotted) or Cast (foretold, for the foretell cost).','Cast-window fix: a spell with an optional extra cost other than kicker (casualty, replicate) is no longer logged as "kicked".','Nine more rules checks (49 now), each named after its rule number.','Not exact yet: overloaded spells whose "each" effect the app cannot do for you are applied by hand; a foretold card is not hidden face down; miracle clears when you close its window, so cast it right away; a bestowed card is drawn with the creatures while attached; Escalate with a non-mana cost (discard a card) is not read.'] },
+  { v: '0.96.2', title: 'Keywords batch 2: alternative casting costs', notes: ['Blitz (702.152): cast for the blitz cost, the creature has haste, is sacrificed at the beginning of the next end step, and draws you a card when it dies. Dash (702.109): haste, and it returns to your hand at the next end step.','Spectacle (702.137) can only be used if an opponent lost life this turn; Surge (702.117) only if you have cast another spell this turn. When the condition is not met the cost window says why instead of letting you pay.','Casualty N (702.153): an optional extra cost, sacrifice a creature with power N or greater; if you pay it the spell is copied, like storm.','Cost lists understand "a creature with power N or greater" for any card that asks for it.','Five more rules checks (40 now), each named after its rule number.','Still to do: Emerge, Bestow, Overload, Replicate, Escalate, Prowl, Miracle and Plot.'] },
+  { v: '0.96.1', title: 'Keywords batch 1: triggers and keyword actions', notes: ['Triggered keywords are now built from one table and follow their Comprehensive Rules wording: Exalted (702.83, only when a creature attacks alone), Battle cry (702.91), Annihilator N (702.86), Evolve (702.100, only when the entering creature has greater power or toughness), Renown N (702.112, once), Mentor (702.134, only a creature with lesser power), Training (702.149, only with a creature of greater power), Dethrone (702.104), Melee (702.121), Fabricate N (702.123: counters or Servo tokens), Modular N (702.43: enters with the counters, dies trigger), Bloodthirst N (702.54), Riot (702.136) and Extort (702.101).','Keyword actions inside card text: Bolster N (701.39, least toughness, you choose among ties), Adapt N (701.46, only if it has no +1/+1 counters), Connive (701.50, draw, discard, counter if the discard was a nonland card) and Discover N (701.57, cast free or put in hand, rest to the bottom).','Each keyword has a rules test named after its CR number (35 rules checks now).','Not exact yet: Bloodthirst and Riot are replacement effects ("as it enters") but are offered as an enters-the-battlefield window; Annihilator and Extort cannot touch your opponent because the goldfish opponent has no board. Extort asks you to tap the mana yourself.'] },
+  { v: '0.96.0', title: 'Legal notice, rules table, source split', notes: ['New Settings > Legal notice tab: the fan-content notice, what is and is not included (no card images, artwork or card database), where card data comes from, privacy, no-warranty and third-party software. The same text is in the README.','Scryfall requests from the desktop app now send a descriptive User-Agent and an Accept header, as Scryfall asks (needs the full package installed once).','The Comprehensive Rules (6 Nov 2026) are now a table inside the app: every keyword action and keyword ability, its rule number and how far the app has got (tested, named, never mentioned). The Scan every card tool shows the rule number and status next to each keyword the app only explains, ranked by how many cards use it.','The app code is now split into 40 source files in src/ and joined into app.js by node build-src.js. app.js is exactly the same program as before, so nothing changes for players.','Ninjutsu and flashback no longer show in the scan as "only explained".'] },
+  { v: '0.95.3', title: '"For each" understood: The One Ring', notes: ['The One Ring: the upkeep trigger now loses 1 life for each burden counter, and the tap ability puts a burden counter on it and then draws a card for each burden counter (counted after the new counter is added). Before, both were read as a flat 1.','New shared quantity reader: "for each X" and "equal to the number of X" now count counters on the source (burden, +1/+1, any kind) as well as everything the app already counted, and the amount is worked out at the moment the effect happens, not when the window opens. Used for draw, lose life and gain life.','"Do A, then do B" inside one sentence is now offered as an ordered chain, like "Do A. Then do B."','If the app cannot count a "for each" phrase it says so and asks you to do it by hand, instead of silently using 1.'] },
+  { v: '0.95.2', title: 'Jewel Shops pass: Mox Opal, Chrome Mox, Workshop', notes: ['Mox Opal now works. Its "Metalcraft \u2014 {T}: Add one mana of any color" line started with an ability word, so the app never read it as a mana ability at all. Any "Word \u2014 {T}: Add ..." mana line is now understood.','Metalcraft-style limits ("Activate only if you control three or more artifacts") are now checked: with fewer artifacts Mox Opal is not offered for payment, with three it is. Works for any "N or more <type>" limit.','Chrome Mox imprint: its enters-the-battlefield ability lets you pick a nonartifact, nonland card from your hand to exile; the Mox then taps for the colours of that card (none if you skip it or the card is colourless). Any card that says "you may exile a ... card from your hand" with Imprint is handled the same way.','Mishra\'s Workshop and other "spend this mana only to cast ..." lands: the cast check now includes the spell, so artifact spells show as castable with Workshop mana.','Not automated yet (still by hand): Grim Monolith\'s {4}: Untap, Mana Drain\'s delayed colourless mana.'] },
+  { v: '0.95.1', title: 'UI polish', notes: ['Piled-up lands no longer show a second card name peeking through the top card.','Zone labels (Artifacts · Enchantments · Planeswalkers) are cut with an ellipsis instead of running over the cards in narrow windows; the Images / Card data chips do the same.','Tokens: the Token tray no longer lists a made-up "or more" token from Doubling Season-style wording.','Sound settings: the Low-fi drums switch only shows when the Cosmic low-fi style is chosen. The Cosmic low-fi label in Look & feel no longer wraps. Token tray rows have a little room under the intro.'] },
+  { v: '0.95.0', title: 'Tokens are real cards; Urza\'s Saga; loyalty counters', notes: ['Tokens now behave like cards: their rules text is read for static abilities, triggers and activated abilities. Before, a token\'s own text was ignored, so the Construct from Urza\'s Saga ("This creature gets +1/+1 for each artifact you control") entered as 0/0 and died at once. It now counts itself and the other artifacts and lives (a lone Construct is 1/1).','New: official token data. When you load the Scryfall card file the app now also keeps its token cards (type, rules text, power/toughness, colours). When a card says it creates a token, the matching official token supplies the real type line and text. Load your card file (or use the download button) once again to fill this in; Settings → Card data shows how many tokens are loaded.','"~ gets +1/+1 for each …" works for any card, on itself or on others, not only mana-count cards. Counting "artifacts you control" now counts tokens by what they are.','Tezzeret, Cruel Captain and anything else that says "put a loyalty counter": the counter now changes the planeswalker\'s loyalty instead of creating a separate "loyalty" counter.','Urza\'s Saga was checked end to end: chapter I gives the mana ability, chapter II gives the Construct ability, chapter III searches for an artifact with mana value 0 or 1, and the Saga is sacrificed after it resolves.'] },
+  { v: '0.94.7', title: 'Ninjutsu, one update window, tidy-up pass', notes: ['Ninjutsu works: right-click a card with ninjutsu in your hand after blockers are declared (declare blockers step up to end of combat). You pick an unblocked attacker to return to hand, pay the ninjutsu cost, and the ability goes on the stack; when it resolves the card enters tapped and attacking (it was not declared, so "whenever this attacks" does not trigger). The menu says why it is not available when it is not.','One update window: the start-up notice and the Update app menu entry are now the same window. It checks GitHub when you open it, shows what changed, has the progress bar, and puts folder / web-address / go-back-to-built-in under "Other ways to update". The two check-at-start settings sit in it as two plain checkboxes.','The same suggestion is never listed twice in an effect window (a safety net on top of the Prismari Command fix).','Declare attackers: Attack with all and Clear now sit in the same column as the creature list and are not highlighted, so Declare attackers is the one main button.'] },
+  { v: '0.94.6', title: 'Sink into Stupor // Soporific Springs (modal double-faced cards)', notes: ['The land side now works as its own card: Soporific Springs asks "pay 3 life or enter tapped" when you play it from the card (it entered untapped with no question before). Any land that says "you may pay N life. If you don\'t, it enters tapped" is understood, not just 2-life shocklands.','The spell side now works too: Sink into Stupor could not be cast because "target spell or nonland permanent an opponent controls" was read as a spell only. It now accepts a spell on the stack or a permanent, and "an opponent controls" is respected.','Returning a spell to its owner\'s hand takes it off the stack (an opponent spell you added to the Stack box just leaves it).'] },
+  { v: '0.94.5', title: 'One draw option, and targets say which mode they are for', notes: ['Fixed: cards that say "target player draws…" (Prismari Command and similar) showed the draw twice, once tied to its target and once as a loose copy, so you could apply it twice. Only the targeted one is offered now.','The target window now shows a "For: …" line under each target heading with the sentence it belongs to, so on a "choose two" card you can see which chosen mode each target is for.'] },
   { v: '0.94.4', title: 'Vengevine and Cabal Therapist', notes: ['Vengevine: "if it\'s the second creature spell you cast this turn" is now checked (rule 603.4). The trigger only appears on your second creature spell of the turn (noncreature spells in between do not count), and it returns Vengevine itself, nothing else. The same check works for "first/second/third spell" and typed versions on other cards.','Fixed a crash when applying "return ~ from your graveyard" suggestions (Vengevine, Bloodghast): the button threw an error and nothing returned.','Cabal Therapist: the whole chain (target, sacrifice, resolve, choose a nonland card, discard) was re-tested from start to finish, including sacrificing Therapist itself, and works in my tests. If it still fails for you, tell me which target you chose and what you saw.'] },
   { v: '0.94.3', title: 'Attack with all, counter chips, sleeve fix', notes: ['Declare attackers has an "Attack with all" button. It selects every creature that can legally attack (not tapped, not summoning sick unless it has haste, no defender, no "can\'t attack" effect) and lists the ones it left out and why. Clear undoes it, and you can still toggle single creatures before declaring.','Counters are now chips on the card: a green "5 +1/+1" instead of "+1 5", red for −1/−1, blue for other kinds (hover for the full sentence).','Fixed: your chosen card sleeve looked reset every time the app started (only uploaded images were re-applied). Presets are applied at start-up now.','The 1-2-3 step strip is hidden when the centre shows a discard or card choice.'] },
   { v: '0.94.2', title: 'Discards and card choices in the centre', notes: ['When you must discard or choose cards from your hand, the choice now appears in the middle of the table next to the card that causes it: the spell or ability being resolved, the card whose cost you are paying, or the hand-size rule at cleanup. Previously only some ability-driven discards did.','Select the cards in your hand as before; the count, note and Discard button are in the centre. Anything waiting on the stack is mentioned.','New switch in Settings > Board: "Discard and card choices in the centre". Off brings back the thin bar above your hand. The mulligan bottom step is unchanged.'] },
@@ -6078,89 +6364,78 @@ async function installWithProgress(prog, bytesHint) {
   try { const r = await window.desktop.ghInstall(); if (r && r.ok && !r.upToDate) prog.set(100, 'Installed and verified'); return r; }
   finally { if (off) off(); }
 }
-function openUpdatePrompt(r) {
-  const m = modal(`Update available \u2014 version ${r.latest}`, { width: 560, sticky: true });
-  const prog = makeProgress(); prog.el.hidden = true;
-  const status = h('p', { class: 'small', style: 'color:var(--gold)' });
-  m.body.append(h('p', null, `You have version ${r.current}. Version `, h('b', { text: r.latest }), ' is ready on GitHub', r.bytes ? ` (${fmtMB(r.bytes)}).` : '.'), r.title ? h('div', { class: 'ptitle', text: r.title }) : null, r.notes && r.notes.length ? h('ul', { class: 'small upd-notes' }, ...r.notes.map(n => h('li', { text: n }))) : null, prog.el, status);
-  const later = h('button', { text: 'Later', onclick: () => m.close() });
-  const skip = h('button', { text: 'Skip this version', onclick: () => { settings.skipUpdate = r.latest; saveSettings(); m.close(); } });
-  const go = h('button', { class: 'primary', text: 'Update now' }); let restartNow = false;
-  if (r.needsInstaller) {
-    status.textContent = 'This release also changes the app shell, so it cannot be installed from inside the app. Download the full package from the release page and run Build-Installer.bat once.';
-    go.textContent = 'Open release page'; go.addEventListener('click', () => { window.open(RELEASES_URL, '_blank'); });
-  } else go.addEventListener('click', async () => {
-    if (restartNow) { window.desktop.restart(); return; }
-    go.disabled = later.disabled = skip.disabled = true; prog.el.hidden = false; status.textContent = '';
-    const res = await installWithProgress(prog, r.bytes);
-    if (!res || !res.ok) { prog.el.hidden = true; status.textContent = 'Update failed: ' + ((res && res.error) || 'unknown error') + ' Nothing was changed.'; go.textContent = 'Try again'; go.disabled = later.disabled = skip.disabled = false; return; }
-    status.textContent = `Version ${res.version} is installed and verified.` + (state ? ' Restarting ends the game in progress, so finish or restart whenever you like.' : '');
-    go.textContent = 'Restart now'; go.disabled = false; later.textContent = 'Restart later'; later.disabled = false; skip.hidden = true; restartNow = true;
-  });
-  m.foot.append(skip, later, go);
-}
-// ---------------------------------------------------------------- app updates (desktop version only)
-async function openUpdate() {
+// v0.94.7 ONE update window. The start-up notice and ⚙ → Update app are the same window: `openUpdate(pre)` shows a result that was already fetched
+// (start-up) or checks GitHub itself (menu). Folder / web-address updates and "back to built-in" live under "Other ways to update".
+async function openUpdate(pre) {
   if (!window.desktop) return;
-  const m = modal('Update app', { width: 560 });
+  const m = modal('Update app', { width: 560, sticky: !!pre });
   const info = await window.desktop.info();
-  const note = h('p', { class: 'small', style: 'color:var(--gold)' });
-  const restart = h('button', { class: 'primary', text: 'Restart to finish', hidden: true, onclick: () => window.desktop.restart() });
+  const body = h('div'), prog = makeProgress(), status = h('p', { class: 'small', style: 'color:var(--gold)' }), note = h('p', { class: 'small', style: 'color:var(--gold)' });
+  prog.el.hidden = true;
+  const restartBtn = h('button', { class: 'primary', text: 'Restart now', hidden: true, onclick: () => window.desktop.restart() });
+  const later = h('button', { text: 'Close', onclick: () => m.close() });
+  const skip = h('button', { text: 'Skip this version', hidden: true });
+  const go = h('button', { class: 'primary', text: 'Update now', hidden: true });
+  const again = h('button', { text: 'Check again' });
+  let cur = null, restartNow = false;
+  const afterInstall = (v) => { status.textContent = `Version ${v} is installed and verified.` + (state ? ' Restarting ends the game in progress, so restart whenever you like.' : ''); go.hidden = true; skip.hidden = true; restartBtn.hidden = false; later.textContent = 'Restart later'; restartNow = true; };
+  const show = r => {
+    body.replaceChildren(); status.textContent = ''; go.hidden = skip.hidden = true; go.disabled = later.disabled = skip.disabled = false;
+    if (!r || !r.ok) { body.append(h('p', null, 'Could not check GitHub: ' + ((r && r.error) || 'no answer') + '. You can still update from a folder below.')); return; }
+    if (r.none) { body.append(h('p', null, 'No usable release was found on GitHub. The newest release must be published (not a draft or pre-release) and must include latest.json.')); return; }
+    if (!r.newer) { body.append(h('p', null, 'You have the newest version (', h('b', { text: r.current }), ').')); return; }
+    cur = r;
+    body.append(h('p', null, `You have version ${r.current}. Version `, h('b', { text: r.latest }), ' is ready on GitHub', r.bytes ? ` (${fmtMB(r.bytes)}).` : '.'), r.title ? h('div', { class: 'ptitle', text: r.title }) : null, r.notes && r.notes.length ? h('ul', { class: 'small upd-notes' }, ...r.notes.map(n => h('li', { text: n }))) : null);
+    if (r.needsInstaller) { status.textContent = 'This release also changes the app shell, so it cannot be installed from inside the app. Download the full package from the release page and run Build-Installer.bat once.'; go.textContent = 'Open release page'; go.hidden = false; go.onclick = () => window.open(RELEASES_URL, '_blank'); return; }
+    go.textContent = 'Update now'; go.hidden = false; skip.hidden = false;
+    go.onclick = async () => {
+      go.disabled = later.disabled = skip.disabled = true; prog.el.hidden = false; status.textContent = '';
+      const res = await installWithProgress(prog, r.bytes);
+      if (!res || !res.ok) { prog.el.hidden = true; status.textContent = 'Update failed: ' + ((res && res.error) || 'unknown error') + ' Nothing was changed.'; go.textContent = 'Try again'; go.disabled = later.disabled = skip.disabled = false; return; }
+      afterInstall(res.version);
+    };
+    skip.onclick = () => { settings.skipUpdate = r.latest; saveSettings(); m.close(); };
+  };
+  const check = async () => {
+    if (!window.desktop.ghCheck) { body.replaceChildren(h('p', null, 'This app shell is older and cannot check GitHub. Install the full package once (run Build-Installer.bat), or update from a folder below.')); return; }
+    body.replaceChildren(h('p', { class: 'muted', text: 'Checking GitHub…' })); again.disabled = true;
+    try { show(await window.desktop.ghCheck()); } finally { again.disabled = false; }
+  };
+  again.addEventListener('click', check);
   const report = r => {
     if (!r || r.cancelled) return;
     if (!r.ok) { note.textContent = 'Update failed: ' + r.error; return; }
     if (r.upToDate) { note.textContent = `You already have the newest version (${r.version}).`; return; }
     note.textContent = `Version ${r.version} is ready.` + (r.olderOrSame ? ' It is not newer than the built-in version, so the built-in one will keep running.' : ' Restart the app to use it.') + (r.needsInstaller ? ' Note: this release also changes the app shell, so run Build-Installer.bat once to get that part.' : '');
-    restart.hidden = false;
+    if (!r.olderOrSame) { restartBtn.hidden = false; }
   };
   const url = h('input', { type: 'text', placeholder: 'https://example.com/mtg-playtester', value: lsGet('mtgpt.updateUrl', '') });
-  const gh = h('div'), ghNote = h('p', { class: 'small', style: 'color:var(--gold)' });
-  const auto = h('input', { type: 'checkbox' }); auto.checked = settings.autoUpdateCheck !== false;
-  auto.addEventListener('change', () => { settings.autoUpdateCheck = auto.checked; saveSettings(); });
-  const ghInstallBtn = h('button', { class: 'primary', text: 'Download & install', hidden: true });
-  const showGh = r => {
-    gh.replaceChildren(); ghInstallBtn.hidden = true;
-    if (!r.ok) { ghNote.textContent = 'Check failed: ' + r.error; return; }
-    if (r.none) { ghNote.textContent = 'No release has been published on GitHub yet.'; return; }
-    if (!r.newer) { ghNote.textContent = `You have the newest version (${r.current}).`; return; }
-    ghBytes = r.bytes || 0; ghNote.textContent = `Version ${r.latest} is available (you have ${r.current}).`;
-    if (r.title) gh.append(h('div', { class: 'ptitle', text: r.title }));
-    if (r.notes.length) gh.append(h('ul', { class: 'small' }, ...r.notes.map(n => h('li', { text: n }))));
-    if (r.needsInstaller) { gh.append(h('p', { class: 'small', style: 'color:var(--gold)', text: 'This release also changes the app shell. Download the full package from the GitHub release page and run Build-Installer.bat once.' })); return; }
-    ghInstallBtn.hidden = false;
-  };
-  const ghProg = makeProgress(); ghProg.el.hidden = true; let ghBytes = 0;
-  ghInstallBtn.addEventListener('click', async () => { ghNote.textContent = ''; ghInstallBtn.hidden = true; ghProg.el.hidden = false; const r = await installWithProgress(ghProg, ghBytes); ghProg.el.hidden = true; if (!r.ok) { ghNote.textContent = 'Update failed: ' + r.error + ' Nothing was changed.'; ghInstallBtn.hidden = false; return; } gh.replaceChildren(); ghNote.textContent = `Version ${r.version} is installed and verified. Restart the app to use it.`; restart.hidden = false; });
-  const checkGh = async () => {
-    ghNote.textContent = 'Checking GitHub…';
-    if (!window.desktop.ghCheck) { ghNote.textContent = 'This app shell is older and cannot check GitHub. Install the full package once (run Build-Installer.bat), or use the web address below.'; return; }
-    showGh(await window.desktop.ghCheck());
-  };
-  m.body.append(
-    h('p', null, 'Running version ', h('b', { text: String(info.running) }), ` (${info.source}). Built-in: ${info.bundled}${info.override ? ', downloaded update: ' + info.override : ''}.`),
-    h('div', { class: 'fhead', text: 'From GitHub (recommended)' }),
-    h('p', { class: 'small muted', text: 'Looks at the newest release on GitHub, shows what changed, then downloads the files and checks each one against its published SHA-256 fingerprint before installing. Your decks, card data and settings are kept.' }),
-    h('div', null, h('button', { text: 'Check now', onclick: checkGh }), ' ', ghInstallBtn),
-    h('label', { class: 'small', style: 'display:block;margin:6px 0' }, auto, ' Check for updates when the app starts'),
-    (() => { const c = h('input', { type: 'checkbox' }); c.checked = settings.updatePrompt !== false; c.addEventListener('change', () => { settings.updatePrompt = c.checked; saveSettings(); }); return h('label', { class: 'small', style: 'display:block;margin:6px 0' }, c, ' Show the update window (with the install button) instead of a small notice'); })(),
-    gh, ghProg.el, ghNote,
+  const opt = (label, key, dflt) => { const c = h('input', { type: 'checkbox' }); c.checked = settings[key] !== false; c.addEventListener('change', () => { settings[key] = c.checked; saveSettings(); }); return h('label', { class: 'small', style: 'display:block;margin:6px 0' }, c, ' ' + label); };
+  const other = h('details', { class: 'upd-other' }, h('summary', { text: 'Other ways to update' }),
     h('div', { class: 'fhead', text: 'From a folder' }),
     h('p', { class: 'small muted', text: 'Extract a new zip anywhere, then choose the folder that contains index.html. Your decks, card data and settings are kept.' }),
-    h('button', { class: 'primary', text: 'Update from folder…', onclick: async () => { note.textContent = 'Working…'; report(await window.desktop.fromFolder()); if (note.textContent === 'Working…') note.textContent = ''; } }),
-    h('div', { class: 'fhead', text: 'From a web address (optional, installs right away)' }),
-    h('p', { class: 'small muted', text: 'Put index.html, app.js, style.css and an update.json ({"version":"0.22.0"}) at one https address, such as a GitHub Pages site or any file host. The button below downloads and installs straight away. To only look, use Check now in the GitHub section above.' }),
-    url,
-    h('div', { style: 'margin-top:6px' }, h('button', { text: 'Download & install from this address', onclick: async () => { if (!url.value.trim()) { note.textContent = 'Type an address first.'; return; } if (!window.confirm('This downloads the files from that address and installs them now (you restart the app afterwards to use them). Continue?')) return; lsSet('mtgpt.updateUrl', url.value); note.textContent = 'Downloading…'; report(await window.desktop.fromUrl(url.value)); } })),
-    note);
-  m.foot.append(
-    h('button', { class: 'danger', text: 'Go back to built-in version', onclick: async () => { await window.desktop.reset(); note.textContent = 'Downloaded update removed.'; restart.hidden = false; } }),
-    h('button', { text: 'Close', onclick: () => m.close() }), restart);
+    h('button', { text: 'Update from folder…', onclick: async () => { note.textContent = 'Working…'; report(await window.desktop.fromFolder()); if (note.textContent === 'Working…') note.textContent = ''; } }),
+    h('div', { class: 'fhead', text: 'From a web address' }),
+    h('p', { class: 'small muted', text: 'Put index.html, app.js, style.css and an update.json ({"version":"0.22.0"}) at one https address. This downloads and installs straight away.' }),
+    url, h('div', { style: 'margin-top:6px' }, h('button', { text: 'Download & install from this address', onclick: async () => { if (!url.value.trim()) { note.textContent = 'Type an address first.'; return; } if (!window.confirm('This downloads the files from that address and installs them now (you restart the app afterwards to use them). Continue?')) return; lsSet('mtgpt.updateUrl', url.value); note.textContent = 'Downloading…'; report(await window.desktop.fromUrl(url.value)); } })),
+    h('div', { class: 'fhead', text: 'Built-in version' }),
+    h('button', { class: 'danger', text: 'Go back to built-in version', onclick: async () => { await window.desktop.reset(); note.textContent = 'Downloaded update removed. Restart to use the built-in version.'; restartBtn.hidden = false; } }));
+  m.body.append(
+    h('p', { class: 'small muted' }, 'Running version ', h('b', { text: String(info.running) }), ` (${info.source}). Built-in: ${info.bundled}${info.override ? ', downloaded update: ' + info.override : ''}.`),
+    body, prog.el, status, note,
+    opt('Check for updates when the app starts', 'autoUpdateCheck'),
+    opt('Open this window when an update is found (otherwise only a small notice)', 'updatePrompt'),
+    other);
+  m.foot.append(again, skip, later, go, restartBtn);
+  if (pre) show(pre); else check();
 }
+const openUpdatePrompt = r => openUpdate(r);   // the start-up notice is the same window
 
 function openCardData() {
   const m = modal('Card data', { width: 560 });
   m.body.append(
     h('p', { text: cardCount ? `Loaded: ${cardCount.toLocaleString()} cards. Loading a new file replaces them.` : 'No card data loaded yet.' }),
+    h('p', { class: 'small ' + (TOKENDB.size ? 'muted' : ''), style: TOKENDB.size ? '' : 'color:var(--gold)', text: TOKENDB.size ? `Token data: ${[...TOKENDB.values()].reduce((a, x) => a + x.length, 0)} official tokens (their real rules text is used when a card creates one).` : (cardCount ? 'Token data: none yet. Load the card file again once (or use the download button) so tokens get their real rules text.' : '') }),
     h('p', null, 'Two public sources work: Scryfall’s “Oracle Cards” (',
       h('b', { text: 'scryfall.com/docs/api/bulk-data' }),
       ') or the MTGJSON project’s “AtomicCards” (',
@@ -6361,7 +6636,6 @@ const LAND_TYPES_FALLBACK = {
   'savai triome': 'Swamp Mountain Plains', 'zagoth triome': 'Swamp Forest Island'
 };
 const SHOCKS = new Set(['blood crypt', 'stomping ground', 'overgrown tomb', 'temple garden', 'breeding pool', 'hallowed fountain', 'steam vents', 'watery grave', 'godless shrine', 'sacred foundry']);
-const ALL_TYPES_NAMES = new Set(['leyline of the guildpact', 'dryad of the ilysian grove', 'prismatic omen']);
 
 function fetchInfo(c) {
   if (!c || c.token) return null;
@@ -6399,15 +6673,13 @@ function landTypeEffects() {
   let bloodMoon = false;
   if (!state) return { all: false, add: [], override: false };
   for (const c of state.battlefield) {
-    const n = norm(c.name);
     const tx = cardText(c);
-    if (n === 'leyline of the guildpact' || n === 'dryad of the ilysian grove' || n === 'prismatic omen' ||
-        /(?:each land|lands) you control (?:is|are) every basic land type/i.test(tx) || /\b(?:each|all) lands? (?:is|are) every basic land type/i.test(tx)) {
+    if (/(?:each land|lands) you control (?:is|are) every basic land type/i.test(tx) || /\b(?:each|all) lands? (?:is|are) every basic land type/i.test(tx)) {
       BASIC_TYPES.forEach(t => all.add(t));
     }
-    if (n === 'urborg, tomb of yawgmoth' || /each land is a swamp/i.test(tx)) all.add('Swamp');
-    if (n === 'yavimaya, cradle of growth' || /each land is a forest/i.test(tx)) all.add('Forest');
-    if (n === 'blood moon' || n === 'magus of the moon' || /nonbasic lands are mountains/i.test(tx)) bloodMoon = true;
+    if (/each land is a swamp/i.test(tx)) all.add('Swamp');
+    if (/each land is a forest/i.test(tx)) all.add('Forest');
+    if (/nonbasic lands are mountains/i.test(tx)) bloodMoon = true;
   }
   return { all: all.size === 5, add: [...all], override: bloodMoon };
 }
@@ -6480,7 +6752,7 @@ function fetchLand(fetchId, targetId, opts) {
       const info = cardInfo(t.name);
       const tx = info ? info.tx : '';
       const k = norm(t.name);
-      const shock = SHOCKS.has(k) || /pay 2 life/i.test(tx);
+      const shock = (!info && SHOCKS.has(k)) || shockLife(t) > 0 || /pay 2 life/i.test(tx);
       let tp = shock ? false : etbTapped(t).tapped;   // the shockland question is asked as it enters
       if (fi && fi.tapped) {
         tp = true; msg += ', put onto the battlefield tapped';
@@ -7071,6 +7343,7 @@ const ANIM_DEFS = [
   ['fan', 'Hand fan', 'Cards in your hand sit in a gentle arc and lift when you hover them'],
   ['cardDrag', 'Physical card drag', 'Click and hold a card and it follows your mouse. Drop it on a zone it can go to; if it cannot be played or moved there it flies back to where it came from'],
   ['hand3d', '3D hand tilt', 'Cards in your hand tilt toward the mouse in 3D as you hover them, like the big card preview'],
+  ['handFloat', 'Floating hand', 'The cards in your hand hover up and down a small amount, each at its own pace, with a soft drop shadow'],
   ['bfFloat', 'Floating battlefield', 'Cards on the battlefield drift up and down a tiny amount, each at its own pace, with a deeper shadow so the board has depth']
 ];
 const reducedMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -7259,6 +7532,7 @@ function detachFrom(c) {
   if (!state) return;
   delete c.att;
   for (const x of state.battlefield.slice()) if (x.att === c.id) {
+    if (bestowHostLeft(x)) continue;
     if (isAuraCard(x)) { log(`${x.name} is put into the graveyard: what it enchanted (${c.name}) left the battlefield`); leaveBattlefield(x, 'graveyard'); }
     else { delete x.att; log(`${x.name} became unattached (${c.name} left the battlefield)`); }
   }
@@ -7430,6 +7704,8 @@ function askDredge(n, after) {
   m.foot.append(h('button', { class: 'primary', text: 'Draw normally', onclick: () => { snap(); const d = drawCards(1); log(`Drew ${d}`); next(); } }));
 }
 
+// v0.96.12 CR 202.3: a card's mana value is worked out from its mana cost symbols (X counts as 0 outside the stack); two-faced costs fall back to the stored value
+function mvOf(info) { if (!info) return 0; const mc = info.mc || ''; return mc && !/\/\//.test(mc) ? symCmc(mc) : mvOf(info); }
 // ---------------------------------------------------------------- generic zone effects (v0.63)
 // Tutors, "return cards from your graveyard", coin flips and similar effects that used to be done by hand.
 // Hidden-zone rule 701.19b: you may search for a card with qualities, but you are never forced to find one, so every card is shown
@@ -7441,10 +7717,10 @@ function descMatchesCard(desc, name) {
   let any = false;
   for (const [w, re] of Object.entries(words)) { const neg = new RegExp('\\bnon-?' + w + '\\b').test(d); if (neg) { any = true; if (re.test(t)) return false; } else if (new RegExp('\\b' + w + '\\b').test(d)) { any = true; if (!re.test(t)) return false; } }
   let m;
-  if (/mana cost \{0\} or \{1\}/.test(d)) { if ((info.cmc || 0) > 1) return false; any = true; }
-  if ((m = d.match(/mana value (\d+) or less/))) { if ((info.cmc || 0) > +m[1]) return false; any = true; }
-  if ((m = d.match(/mana value (\d+) or greater|mana value (\d+) or more/))) { if ((info.cmc || 0) < +(m[1] || m[2])) return false; any = true; }
-  if ((m = d.match(/mana value (\d+)(?! or)/))) { if ((info.cmc || 0) !== +m[1]) return false; any = true; }
+  if (/mana cost \{0\} or \{1\}/.test(d)) { if (mvOf(info) > 1) return false; any = true; }
+  if ((m = d.match(/mana value (\d+) or less/))) { if (mvOf(info) > +m[1]) return false; any = true; }
+  if ((m = d.match(/mana value (\d+) or greater|mana value (\d+) or more/))) { if (mvOf(info) < +(m[1] || m[2])) return false; any = true; }
+  if ((m = d.match(/mana value (\d+)(?! or)/))) { if (mvOf(info) !== +m[1]) return false; any = true; }
   if ((m = d.match(/toughness (\d+) or less/))) { const pt = (info.pt || '').split('/')[1]; if (pt === undefined || parseInt(pt, 10) > +m[1]) return false; any = true; }
   if ((m = d.match(/power (\d+) or less/))) { const pt = (info.pt || '').split('/')[0]; if (pt === undefined || parseInt(pt, 10) > +m[1]) return false; any = true; }
   { const CM = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' }, mc0 = String(info.mc || '').split(' // ')[0];
@@ -7511,7 +7787,7 @@ function graveReturnEffect(tx, src) {
   const max = all ? 99 : m[2] ? wordN(m[2]) : wordN(m[1] || 'a'), desc = (m[3] || '').trim(), to = /hand/i.test(m[4]) ? 'hand' : 'battlefield';
   const mv = T.match(/with mana value (\d+)( or (?:less|greater))?/i);
   const lifeLoss = /you lose life equal to (?:its|that card's) mana value/i.test(T);
-  const okCard = c => (!desc || descMatchesCard(desc, c.name)) && (!mv || (() => { const i = cardInfo(c.name), v = i ? i.cmc || 0 : 0, n = +mv[1]; return mv[2] ? (/less/i.test(mv[2]) ? v <= n : v >= n) : v === n; })());
+  const okCard = c => (!desc || descMatchesCard(desc, c.name)) && (!mv || (() => { const i = cardInfo(c.name), v = mvOf(i), n = +mv[1]; return mv[2] ? (/less/i.test(mv[2]) ? v <= n : v >= n) : v === n; })());
   const noun = `${desc ? desc + ' ' : ''}card${max === 1 ? '' : 's'}${mv ? ` with mana value ${mv[1]}${mv[2] || ''}` : ''}`;
   const lbl = all ? `Return all ${noun} from your graveyard to ${to === 'hand' ? 'your hand' : 'the battlefield' + (tapped ? ' tapped' : '')}` : `${rnd ? 'Return a random' : 'Return ' + (max === 1 ? 'a' : 'up to ' + max)} ${noun} from your graveyard to ${to === 'hand' ? 'your hand' : 'the battlefield' + (tapped ? ' tapped' : '')}`;
   const move = picked => {
@@ -7816,7 +8092,7 @@ function sagaSacrifice(id) {
 const SET_DEFAULT = {
   bfs: 1, hs: 1, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c', frameC: '#fff1c9',
   layout: { zoneDepth: true, stackCards: true, dimIdle: true, boardStrip: true, combatLane: true, gyFan: true }, layoutMode: 'updated', lay: {}, matMotion: 'off', matSpeed: 1, sleevePreset: '', matPreset: '', uiTheme: 'default',
-  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
+  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
   sound: { on: true, vol: 0.5, music: true, musicStyle: 'ambient', musicBeat: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
   teaching: { master: true, playability: true, phasePopups: true, phasePauses: true, stackGuidance: true,
     triggerPrompts: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
@@ -7916,8 +8192,17 @@ async function loadSleeve() {
   applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode']];
-const TAB_INFO = { gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'] };
+const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
+const TAB_INFO = { gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+// v0.96.0 The legal notice. README.md carries the same text; keep them in step.
+const LEGAL_SECTIONS = [
+  ['Fan content', ['MTG Playtester is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
+  ['What is and is not included', ['This program contains no card images, no card artwork, no Oracle card database and no Wizards logos or set symbols. Mana and tap symbols are drawn by the app itself as plain coloured text circles. The icon, playmats, sleeves and cursors are original artwork made for this project.', 'Card data and card images are downloaded by you, onto your own computer, from Scryfall (scryfall.com), or card text from MTGJSON (mtgjson.com), when you choose to. They stay on your computer and are never uploaded anywhere by this app. Card images and text remain the property of their owners. The app does not sell them or put watermarks on them.', 'Scryfall is a separate service with its own terms (scryfall.com/docs/api). Data is provided by Scryfall. This app is not affiliated with Scryfall and Scryfall does not endorse it. Please keep the delay between requests the app uses.']],
+  ['Rules', ['Game rules are implemented from the Magic: The Gathering Comprehensive Rules and official Oracle text and rulings. The app is a goldfish practice tool and is not a judge. It can be wrong or incomplete. For tournament play, the Comprehensive Rules, Oracle and the judges at your event are the authority.']],
+  ['Privacy', ['There are no accounts, no tracking and no advertising. Your decks, settings, card data and images are stored only on your own computer. The app connects to the internet only to download card data and images from Scryfall or MTGJSON and to check for and download new versions from GitHub. Downloads happen when you ask for them. The update check also runs when the app starts; you can switch that off in the update window.']],
+  ['No warranty', ['This software is provided "as is", without warranty of any kind, express or implied, including fitness for a particular purpose. The authors are not liable for any damage or loss arising from its use. Use it at your own risk.']],
+  ['Third-party software', ['The desktop version is built with Electron, which is open source (MIT licence) and includes Chromium and other open-source components under their own licences.']]
+];
 function openSettings() {
   const m = modal('Settings', { width: 860 }); m.el.classList.add('settingsModal');
   const slider = (label, key, min, max, step, fmt) => {
@@ -8051,7 +8336,7 @@ function openSettings() {
       saveSettings(); try{applySettings();}catch(e){} try{applyUiTheme();}catch(e){} try{applySleeve();}catch(e){} toast('Pixel cosmos','Theme, sleeve and playmat set.'); }});
     // the music switch is the same setting as Settings > Sound > Music style, so it keeps its state
     cb.addEventListener('change',()=>{ settings.sound.musicStyle=cb.checked?'lofi':'ambient'; if(cb.checked){settings.sound.music=true;settings.sound.on=true;} saveSettings(); try{musicSettingsChanged();}catch(e){} });
-    return h('div',{class:'setrow'},h('label',{text:'One-click set'}),go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center'},cb,'Cosmic low-fi music')); })());
+    return h('div',{class:'setrow'},h('label',{text:'One-click set'}),go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},cb,'Cosmic low-fi music')); })());
   const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox);
   { const box = h('div'), draw = () => {
@@ -8095,12 +8380,13 @@ function openSettings() {
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.vol; r.addEventListener('input',()=>{settings.sound.vol=+r.value;saveSettings();}); r.addEventListener('change',()=>sfx('draw')); return h('div',{class:'setrow'},h('label',{text:'Volume'}),r); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.music!==false; cb.addEventListener('change',()=>{settings.sound.music=cb.checked;saveSettings();musicSettingsChanged();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Background music'}),h('span',{class:'muted small',text:'A calm, never-ending ambient loop generated in the app. It starts after your first click.'}))); })(),
-    (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),h('option',{value:'lofi',text:'Cosmic low-fi (beat, electric piano, vinyl)'})); sel.value=settings.sound.musicStyle==='lofi'?'lofi':'ambient'; sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
-    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Soft kick, snare and swung hats in the Cosmic low-fi style. Turn off for just keys, bass and crackle.'}))); })(),
+    (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),h('option',{value:'lofi',text:'Cosmic low-fi (beat, electric piano, vinyl)'})); sel.value=settings.sound.musicStyle==='lofi'?'lofi':'ambient'; sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=sel.value!=='lofi';}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
+    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:settings.sound.musicStyle!=='lofi'},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Soft kick, snare and swung hats in the Cosmic low-fi style. Turn off for just keys, bass and crackle.'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.musicVol; r.addEventListener('input',()=>{settings.sound.musicVol=+r.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music volume'}),r); })(),
     ...SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })
   ); }; drawSound();
   P.snd.append(h('div',{class:'fhead',text:'Sound'}),soundBox);
+  P.legal.append(h('div',{class:'fhead',text:'Legal notice'}), ...LEGAL_SECTIONS.flatMap(([t, ps]) => [h('div',{class:'legalhead',text:t}), ...ps.map(x => h('div',{class:'psub legalp',text:x}))]));
   P.tutor.append(h('div',{class:'fhead',text:'Teaching aids'}),h('div',{class:'small muted',text:'Every aid is its own switch. Mix and match; none depends on another.'}),teachBox);
   P.gfx.append(
     h('div',{class:'fhead',text:'Card size'}),
@@ -8208,7 +8494,25 @@ function openHandSortMenu(ev) {
 
 function setupDrop() {
   document.addEventListener('dragover', e => { if (dragHand == null) return; if (e.target.closest && e.target.closest('#handWrap')) { e.preventDefault(); showHandMarker(handSlotAt(e.clientX)); } else clearHandMarker(); });
-  $('#btnHandSort').addEventListener('click', e => { e.stopPropagation(); if ($('#libMenu')) closeLibMenu(); else openHandSortMenu(e); });
+  $('#btnHandKey').addEventListener('click', e => { e.stopPropagation(); $('#handLegend').classList.toggle('open'); });
+  document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !e.target.closest('#handLegend')) l.classList.remove('open'); });
+  // v0.96.13 the small Hand label (count, Key) can be dragged anywhere over the table; its place is remembered, double-click puts it back. (Sorting is done by dragging cards in the hand.)
+  { const lab = $('#handWrap > .zlabel'); if (lab) {
+    const KEY = 'mtgpt.handBarPos', wrap = $('#handWrap');
+    const place = (x, y) => { const w = wrap.getBoundingClientRect(), r = lab.getBoundingClientRect(); x = Math.max(0, Math.min(w.width - r.width, x)); y = Math.max(-w.top, Math.min(window.innerHeight - w.top - r.height, y)); lab.style.left = x + 'px'; lab.style.top = y + 'px'; lab.style.bottom = 'auto'; return [x, y]; };
+    const reset = () => { lab.style.left = lab.style.top = lab.style.bottom = ''; try { localStorage.removeItem(KEY); } catch (e) { /* storage unavailable */ } };
+    try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); if (v && isFinite(v.fx) && isFinite(v.fy)) requestAnimationFrame(() => { const w = wrap.getBoundingClientRect(); place(v.fx * window.innerWidth - w.left, v.fy * window.innerHeight - w.top); }); } catch (e) { /* ignore */ }
+    lab.title = 'Drag to move this label. Double-click to put it back.'; lab.style.cursor = 'grab';
+    lab.addEventListener('dblclick', e => { if (!e.target.closest('button')) reset(); });
+    lab.addEventListener('pointerdown', e => {
+      if (e.target.closest('button, .handlegend') || e.button !== 0) return;
+      const w0 = wrap.getBoundingClientRect(), r0 = lab.getBoundingClientRect(), dx = e.clientX - r0.left, dy = e.clientY - r0.top; lab.setPointerCapture(e.pointerId); lab.style.cursor = 'grabbing';
+      const move = ev => place(ev.clientX - dx - w0.left, ev.clientY - dy - w0.top);
+      const up = () => { lab.removeEventListener('pointermove', move); lab.removeEventListener('pointerup', up); lab.style.cursor = 'grab';
+        try { const w = wrap.getBoundingClientRect(), r = lab.getBoundingClientRect(); localStorage.setItem(KEY, JSON.stringify({ fx: r.left / window.innerWidth, fy: r.top / window.innerHeight })); } catch (e) { /* storage unavailable */ } };
+      lab.addEventListener('pointermove', move); lab.addEventListener('pointerup', up);
+    });
+  } }
   // Anywhere over the table counts: a drop that is not on a specific zone or pile lands on the battlefield (v0.67.2).
   const target = e => e.target.closest && (e.target.closest('[data-drop]') || (e.target.closest('#stage') ? $('#mat') : null));
   document.addEventListener('dragover', e => { const t = target(e); if (t && !(dragHand != null && t.dataset.drop === 'hand')) { e.preventDefault(); t.classList.add('over'); } });
@@ -8310,7 +8614,7 @@ function pointerDragBegin(ev, e, c, zone) {
 // compileCard() walks the Oracle text line by line and says, for each line, what kind of rule it is
 // (keyword, mana ability, activated, triggered, static, loyalty, spell effect) and how much of it the app handles.
 // status: 'ok' = the app handles it, 'part' = recognised but some of it is done by hand, 'unk' = not understood, 'info' = reminder text.
-const KW_ENFORCED = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'spree', 'suspend', 'living weapon', 'dredge']);
+const KW_ENFORCED = new Set([...GRANTABLE, 'flash', 'changeling', 'cascade', 'prowess', 'overload', 'bestow', 'escalate', 'replicate', 'emerge', 'prowl', 'miracle', 'plot', 'foretell', 'blitz', 'dash', 'spectacle', 'surge', 'casualty', 'exalted', 'battle cry', 'annihilator', 'evolve', 'renown', 'mentor', 'training', 'dethrone', 'melee', 'fabricate', 'modular', 'bloodthirst', 'extort', 'riot', 'ninjutsu', 'flashback', 'spree', 'suspend', 'living weapon', 'dredge', 'embalm', 'eternalize', 'unearth', 'outlast', 'rebound', 'cumulative upkeep', 'vanishing', 'fading', 'decayed', 'exert', 'monstrosity', 'populate', 'boast', 'devoid']);
 const STATIC_PATTERNS = [
   [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
   [/^if you would draw a card, you may skip that draw instead\.?$/i, 'A "Skip draws" icon appears in the top bar while this is on the battlefield. Switch it on and every card you would draw is skipped (rule 614.1a); switch it off to draw normally.'],
@@ -8462,7 +8766,8 @@ function compileCardOne(c) {
       const r = isLand ? null : rockInfo(card);
       const extra = /^\{T\},/.test(stripped);
       const rn = restrictionNote(stripped);
-      if (isLand) push(text, 'mana', 'ok', 'Mana ability of a land: taps for the listed mana' + (/ for each | \{C\}\{C\}\./.test(stripped) ? ' (the amount is counted from the board when you tap)' : '') + '.' + rn.note);
+      if (isLand && landManaAbilities(card).some(a => a.unread && a.unread.length)) { const un = landManaAbilities(card).flatMap(a => a.unread); push(text, 'mana', 'part', 'Mana ability of a land: the mana is handled, but NOT applied by the app (do this by hand): ' + un.map(x => '"' + x + '"').join(' ')); }
+      else if (isLand) push(text, 'mana', 'ok', 'Mana ability of a land: taps for the listed mana' + (/ for each | \{C\}\{C\}\./.test(stripped) ? ' (the amount is counted from the board when you tap)' : '') + '.' + rn.note);
       else if (r && !extra) push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability: taps for ${r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')}.` + rn.note, { restriction: rn });
       else if (extra && /^\{T\},\s*Sacrifice [^,:]+:/.test(stripped) && !/,\s*(?!Sacrifice)[A-Z{]/.test(stripped.split(':')[0].replace(/^\{T\},\s*Sacrifice [^,:]+/, '')) && recognizedEffects(stripped.replace(/^[^:]+:\s*/, '').replace(nameRe, '~')).length) push(text, 'mana', 'ok', 'Mana ability with a sacrifice cost: the tap and the sacrifice are paid as you activate it, and the mana is added at once without using the stack (rule 605.3b).' + rn.note);
       else push(text, 'mana', 'part', (extra ? 'Mana ability with an extra cost. The tap is handled, the extra cost (' + stripped.split(':')[0].replace('{T},', '').trim() + ') is not enforced.' : 'Mana ability the app cannot produce automatically: float the mana by hand.') + rn.note);
@@ -8522,7 +8827,7 @@ function compileCardOne(c) {
     if (missed.length) { l.status = 'part'; l.missed = missed; l.note += ` NOT applied by the app (do this by hand): ${missed.map(x => '"' + (x.length > 90 ? x.slice(0, 88) + '…' : x) + '"').join(' ')}`; }
   }
   // v0.80 hand-written definitions override whatever the reader decided for the lines they cover.
-  if (defFor(info.name)) for (const l of lines) {
+  if (CARD_DEFS.length) for (const l of lines) {
     if (!['spell', 'triggered', 'activated', 'modal'].includes(l.kind)) continue;
     let part = String(l.text).replace(nameRe, '~').replace(/^[A-Z][A-Za-z' ]+\s\u2014\s/, ''), mm;   // v0.86: drop a "Landfall — " style word
     if (l.kind === 'triggered' && (mm = part.match(/^(?:When|Whenever|At)\b[^,]*,\s*([\s\S]*)$/i))) part = mm[1];
@@ -8681,9 +8986,12 @@ function coverageReportText(res, opts) {
   L.push('', 'MOST COMMON PHRASE STARTS');
   for (const [, e] of top(res.starts, 60)) L.push(`  ${e.n} | ${e.kind} | ${e.shape} | ${e.ex.join('; ')}`);
   L.push('', 'KEYWORDS THE APP ONLY EXPLAINS (does not enforce)');
-  for (const [k, e] of top(res.kws, 50)) L.push(`  ${e.n} | ${k} | ${e.ex.join('; ')}`);
+  for (const [k, e] of top(res.kws, 80)) L.push(`  ${e.n} | ${k}${crTag(k)} | ${e.ex.join('; ')}`);
+  { const c = { tested: 0, named: 0, none: 0 }; for (const r of RULES_TABLE) c[r[3]]++; L.push('', `CR KEYWORD TABLE (Comprehensive Rules 701 and 702): ${RULES_TABLE.length} rules. tested ${c.tested}, named in the app ${c.named}, never mentioned ${c.none}.`); }
   return L.join('\n');
 }
+// v0.96.0 "(CR 702.15, named)": where a keyword sits in the Comprehensive Rules and how far the app has got with it.
+function crTag(name) { const r = crKeyword(name); return r ? ` (CR ${r[0]}, ${r[3]})` : ' (not a CR keyword)'; }
 function openPoolScan() {
   if (!cardCount) { toast('No card data', 'Load the Scryfall Oracle file first (Tools & Settings > Card data).'); return; }
   const m = modal('Scan every card', { width: 860 });
@@ -8704,7 +9012,7 @@ function openPoolScan() {
     const src = tab === 0 ? res.shapes : tab === 1 ? res.starts : res.kws;
     const rows = [...src.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 80);
     const tbl = h('div', { class: 'cov-tbl' });
-    for (const [key, e] of rows) tbl.append(h('div', { class: 'cov-row' }, h('span', { class: 'cov-n', text: String(e.n) }), h('span', { class: 'cov-k ' + (e.status || ''), text: tab === 2 ? 'keyword' : e.kind }), h('span', { class: 'cov-s', text: tab === 2 ? key : e.shape }), h('span', { class: 'cov-x muted small', text: e.ex.join(' · ') })));
+    for (const [key, e] of rows) tbl.append(h('div', { class: 'cov-row' }, h('span', { class: 'cov-n', text: String(e.n) }), h('span', { class: 'cov-k ' + (e.status || ''), text: tab === 2 ? 'keyword' : e.kind }), h('span', { class: 'cov-s', text: tab === 2 ? key + crTag(key) : e.shape }), h('span', { class: 'cov-x muted small', text: e.ex.join(' · ') })));
     out.append(tbl);
   };
   const goBtn = h('button', { class: 'primary', text: 'Scan' });
@@ -8787,6 +9095,7 @@ function init() {
   document.addEventListener('click', () => toggleUtilityMenu(false));
 
   let fitResizeTimer = 0;
+try { const ro = new ResizeObserver(() => { clearTimeout(fitResizeTimer); fitResizeTimer = setTimeout(() => { fitBattlefieldCards(); layoutHand(); }, 30); }); for (const id of ['mat', 'zone-creatures', 'zone-noncreature', 'zone-lands', 'row-hand']) { const el = document.getElementById(id); if (el) ro.observe(el); } } catch (e) { /* no ResizeObserver */ }   // v0.96.11 re-fit whenever the zones or the hand change size
 window.addEventListener('resize', () => {
   clearTimeout(fitResizeTimer);
   fitResizeTimer = setTimeout(() => { fitBattlefieldCards(); layoutHand(); }, 60);
@@ -8812,12 +9121,726 @@ document.addEventListener('keydown', e => {
   loadSleeve();
   render();
   updateDbStatus();
+  idbGet('tokens').then(t => { if (Array.isArray(t)) installTokens(t); }).catch(() => {});
   idbGet('cards').then(list => {
     if (Array.isArray(list) && list.length) { installCards(list); render(); }
     else updateDbStatus();
   }).then(() => { prepareImages(); setTimeout(() => { if (!lsGet('mtgpt.welcomeSeen', false) && !Object.keys(loadDecks()).length && !cardCount) openWelcome(() => setTimeout(promptFirstBoot, 300)); else promptFirstBoot(); }, 600); });
 }
 
+// GENERATED by tests/rules-audit.py --table from the Comprehensive Rules (do not edit by hand).
+// [CR number, name, 'action' | 'ability', status]. status: tested (a rules test names it), named (the app mentions it; needs a test-backed review), none (the app never mentions it).
+const RULES_TABLE = [
+  ['701.2', 'Activate', 'action', 'named'],
+  ['701.3', 'Attach', 'action', 'named'],
+  ['701.4', 'Behold', 'action', 'none'],
+  ['701.5', 'Cast', 'action', 'named'],
+  ['701.6', 'Counter', 'action', 'named'],
+  ['701.7', 'Create', 'action', 'named'],
+  ['701.8', 'Destroy', 'action', 'named'],
+  ['701.9', 'Discard', 'action', 'named'],
+  ['701.10', 'Double', 'action', 'named'],
+  ['701.11', 'Triple', 'action', 'none'],
+  ['701.12', 'Exchange', 'action', 'none'],
+  ['701.13', 'Exile', 'action', 'named'],
+  ['701.14', 'Fight', 'action', 'named'],
+  ['701.15', 'Goad', 'action', 'none'],
+  ['701.16', 'Investigate', 'action', 'named'],
+  ['701.17', 'Mill', 'action', 'named'],
+  ['701.18', 'Play', 'action', 'named'],
+  ['701.19', 'Regenerate', 'action', 'none'],
+  ['701.20', 'Reveal', 'action', 'named'],
+  ['701.21', 'Sacrifice', 'action', 'named'],
+  ['701.22', 'Scry', 'action', 'named'],
+  ['701.23', 'Search', 'action', 'named'],
+  ['701.24', 'Shuffle', 'action', 'named'],
+  ['701.25', 'Surveil', 'action', 'named'],
+  ['701.26', 'Tap and Untap', 'action', 'none'],
+  ['701.27', 'Transform', 'action', 'named'],
+  ['701.28', 'Convert', 'action', 'named'],
+  ['701.29', 'Fateseal', 'action', 'none'],
+  ['701.30', 'Clash', 'action', 'none'],
+  ['701.31', 'Planeswalk', 'action', 'named'],
+  ['701.32', 'Set in Motion', 'action', 'none'],
+  ['701.33', 'Abandon', 'action', 'named'],
+  ['701.34', 'Proliferate', 'action', 'named'],
+  ['701.35', 'Detain', 'action', 'none'],
+  ['701.36', 'Populate', 'action', 'tested'],
+  ['701.37', 'Monstrosity', 'action', 'tested'],
+  ['701.38', 'Vote', 'action', 'none'],
+  ['701.39', 'Bolster', 'action', 'tested'],
+  ['701.40', 'Manifest', 'action', 'none'],
+  ['701.41', 'Support', 'action', 'named'],
+  ['701.42', 'Meld', 'action', 'none'],
+  ['701.43', 'Exert', 'action', 'tested'],
+  ['701.44', 'Explore', 'action', 'named'],
+  ['701.45', 'Assemble', 'action', 'none'],
+  ['701.46', 'Adapt', 'action', 'tested'],
+  ['701.47', 'Amass', 'action', 'named'],
+  ['701.48', 'Learn', 'action', 'named'],
+  ['701.49', 'Venture into the Dungeon', 'action', 'none'],
+  ['701.50', 'Connive', 'action', 'named'],
+  ['701.51', 'Open an Attraction', 'action', 'none'],
+  ['701.52', 'Roll to Visit Your Attractions', 'action', 'none'],
+  ['701.53', 'Incubate', 'action', 'none'],
+  ['701.54', 'The Ring Tempts You', 'action', 'none'],
+  ['701.55', 'Face a Villainous Choice', 'action', 'none'],
+  ['701.56', 'Time Travel', 'action', 'none'],
+  ['701.57', 'Discover', 'action', 'tested'],
+  ['701.58', 'Cloak', 'action', 'none'],
+  ['701.59', 'Collect Evidence', 'action', 'none'],
+  ['701.60', 'Suspect', 'action', 'none'],
+  ['701.61', 'Forage', 'action', 'none'],
+  ['701.62', 'Manifest Dread', 'action', 'none'],
+  ['701.63', 'Endure', 'action', 'none'],
+  ['701.64', 'Harness', 'action', 'none'],
+  ['701.65', 'Airbend', 'action', 'none'],
+  ['701.66', 'Earthbend', 'action', 'none'],
+  ['701.67', 'Waterbend', 'action', 'none'],
+  ['701.68', 'Blight', 'action', 'named'],
+  ['701.69', 'Heal', 'action', 'named'],
+  ['701.70', 'Recruit', 'action', 'named'],
+  ['701.71', 'Empower Jace', 'action', 'none'],
+  ['701.72', 'Assimilate', 'action', 'none'],
+  ['702.2', 'Deathtouch', 'ability', 'named'],
+  ['702.3', 'Defender', 'ability', 'named'],
+  ['702.4', 'Double Strike', 'ability', 'named'],
+  ['702.5', 'Enchant', 'ability', 'named'],
+  ['702.6', 'Equip', 'ability', 'named'],
+  ['702.7', 'First Strike', 'ability', 'named'],
+  ['702.8', 'Flash', 'ability', 'named'],
+  ['702.9', 'Flying', 'ability', 'named'],
+  ['702.10', 'Haste', 'ability', 'named'],
+  ['702.11', 'Hexproof', 'ability', 'named'],
+  ['702.12', 'Indestructible', 'ability', 'named'],
+  ['702.13', 'Intimidate', 'ability', 'none'],
+  ['702.14', 'Landwalk', 'ability', 'none'],
+  ['702.15', 'Lifelink', 'ability', 'named'],
+  ['702.16', 'Protection', 'ability', 'named'],
+  ['702.17', 'Reach', 'ability', 'named'],
+  ['702.18', 'Shroud', 'ability', 'named'],
+  ['702.19', 'Trample', 'ability', 'named'],
+  ['702.20', 'Vigilance', 'ability', 'named'],
+  ['702.21', 'Ward', 'ability', 'named'],
+  ['702.22', 'Banding', 'ability', 'none'],
+  ['702.23', 'Rampage', 'ability', 'none'],
+  ['702.24', 'Cumulative Upkeep', 'ability', 'tested'],
+  ['702.25', 'Flanking', 'ability', 'none'],
+  ['702.26', 'Phasing', 'ability', 'none'],
+  ['702.27', 'Buyback', 'ability', 'named'],
+  ['702.28', 'Shadow', 'ability', 'named'],
+  ['702.29', 'Cycling', 'ability', 'named'],
+  ['702.30', 'Echo', 'ability', 'named'],
+  ['702.31', 'Horsemanship', 'ability', 'none'],
+  ['702.32', 'Fading', 'ability', 'tested'],
+  ['702.33', 'Kicker', 'ability', 'named'],
+  ['702.34', 'Flashback', 'ability', 'named'],
+  ['702.35', 'Madness', 'ability', 'named'],
+  ['702.36', 'Fear', 'ability', 'none'],
+  ['702.37', 'Morph', 'ability', 'named'],
+  ['702.38', 'Amplify', 'ability', 'none'],
+  ['702.39', 'Provoke', 'ability', 'none'],
+  ['702.40', 'Storm', 'ability', 'tested'],
+  ['702.41', 'Affinity', 'ability', 'named'],
+  ['702.42', 'Entwine', 'ability', 'named'],
+  ['702.43', 'Modular', 'ability', 'tested'],
+  ['702.44', 'Sunburst', 'ability', 'none'],
+  ['702.45', 'Bushido', 'ability', 'none'],
+  ['702.46', 'Soulshift', 'ability', 'none'],
+  ['702.47', 'Splice', 'ability', 'named'],
+  ['702.48', 'Offering', 'ability', 'none'],
+  ['702.49', 'Ninjutsu', 'ability', 'named'],
+  ['702.50', 'Epic', 'ability', 'none'],
+  ['702.51', 'Convoke', 'ability', 'named'],
+  ['702.52', 'Dredge', 'ability', 'named'],
+  ['702.53', 'Transmute', 'ability', 'none'],
+  ['702.54', 'Bloodthirst', 'ability', 'tested'],
+  ['702.55', 'Haunt', 'ability', 'none'],
+  ['702.56', 'Replicate', 'ability', 'tested'],
+  ['702.57', 'Forecast', 'ability', 'none'],
+  ['702.58', 'Graft', 'ability', 'none'],
+  ['702.59', 'Recover', 'ability', 'none'],
+  ['702.60', 'Ripple', 'ability', 'none'],
+  ['702.61', 'Split Second', 'ability', 'tested'],
+  ['702.62', 'Suspend', 'ability', 'named'],
+  ['702.63', 'Vanishing', 'ability', 'tested'],
+  ['702.64', 'Absorb', 'ability', 'none'],
+  ['702.65', 'Aura Swap', 'ability', 'none'],
+  ['702.66', 'Delve', 'ability', 'named'],
+  ['702.67', 'Fortify', 'ability', 'none'],
+  ['702.68', 'Frenzy', 'ability', 'none'],
+  ['702.69', 'Gravestorm', 'ability', 'none'],
+  ['702.70', 'Poisonous', 'ability', 'none'],
+  ['702.71', 'Transfigure', 'ability', 'none'],
+  ['702.72', 'Champion', 'ability', 'none'],
+  ['702.73', 'Changeling', 'ability', 'named'],
+  ['702.74', 'Evoke', 'ability', 'named'],
+  ['702.75', 'Hideaway', 'ability', 'none'],
+  ['702.76', 'Prowl', 'ability', 'tested'],
+  ['702.77', 'Reinforce', 'ability', 'none'],
+  ['702.78', 'Conspire', 'ability', 'none'],
+  ['702.79', 'Persist', 'ability', 'named'],
+  ['702.80', 'Wither', 'ability', 'none'],
+  ['702.81', 'Retrace', 'ability', 'named'],
+  ['702.82', 'Devour', 'ability', 'none'],
+  ['702.83', 'Exalted', 'ability', 'tested'],
+  ['702.84', 'Unearth', 'ability', 'tested'],
+  ['702.85', 'Cascade', 'ability', 'named'],
+  ['702.86', 'Annihilator', 'ability', 'tested'],
+  ['702.87', 'Level Up', 'ability', 'named'],
+  ['702.88', 'Rebound', 'ability', 'tested'],
+  ['702.89', 'Umbra Armor', 'ability', 'none'],
+  ['702.90', 'Infect', 'ability', 'named'],
+  ['702.91', 'Battle Cry', 'ability', 'tested'],
+  ['702.92', 'Living Weapon', 'ability', 'named'],
+  ['702.93', 'Undying', 'ability', 'named'],
+  ['702.94', 'Miracle', 'ability', 'tested'],
+  ['702.95', 'Soulbond', 'ability', 'none'],
+  ['702.96', 'Overload', 'ability', 'tested'],
+  ['702.97', 'Scavenge', 'ability', 'none'],
+  ['702.98', 'Unleash', 'ability', 'none'],
+  ['702.99', 'Cipher', 'ability', 'none'],
+  ['702.100', 'Evolve', 'ability', 'tested'],
+  ['702.101', 'Extort', 'ability', 'named'],
+  ['702.102', 'Fuse', 'ability', 'named'],
+  ['702.103', 'Bestow', 'ability', 'tested'],
+  ['702.104', 'Tribute', 'ability', 'named'],
+  ['702.105', 'Dethrone', 'ability', 'named'],
+  ['702.106', 'Hidden Agenda', 'ability', 'none'],
+  ['702.107', 'Outlast', 'ability', 'tested'],
+  ['702.108', 'Prowess', 'ability', 'named'],
+  ['702.109', 'Dash', 'ability', 'tested'],
+  ['702.110', 'Exploit', 'ability', 'none'],
+  ['702.111', 'Menace', 'ability', 'named'],
+  ['702.112', 'Renown', 'ability', 'tested'],
+  ['702.113', 'Awaken', 'ability', 'none'],
+  ['702.114', 'Devoid', 'ability', 'tested'],
+  ['702.115', 'Ingest', 'ability', 'none'],
+  ['702.116', 'Myriad', 'ability', 'none'],
+  ['702.117', 'Surge', 'ability', 'tested'],
+  ['702.118', 'Skulk', 'ability', 'none'],
+  ['702.119', 'Emerge', 'ability', 'tested'],
+  ['702.120', 'Escalate', 'ability', 'tested'],
+  ['702.121', 'Melee', 'ability', 'named'],
+  ['702.122', 'Crew', 'ability', 'named'],
+  ['702.123', 'Fabricate', 'ability', 'tested'],
+  ['702.124', 'Partner', 'ability', 'none'],
+  ['702.125', 'Undaunted', 'ability', 'none'],
+  ['702.126', 'Improvise', 'ability', 'named'],
+  ['702.127', 'Aftermath', 'ability', 'named'],
+  ['702.128', 'Embalm', 'ability', 'tested'],
+  ['702.129', 'Eternalize', 'ability', 'tested'],
+  ['702.130', 'Afflict', 'ability', 'none'],
+  ['702.131', 'Ascend', 'ability', 'named'],
+  ['702.132', 'Assist', 'ability', 'none'],
+  ['702.133', 'Jump-Start', 'ability', 'named'],
+  ['702.134', 'Mentor', 'ability', 'tested'],
+  ['702.135', 'Afterlife', 'ability', 'named'],
+  ['702.136', 'Riot', 'ability', 'named'],
+  ['702.137', 'Spectacle', 'ability', 'tested'],
+  ['702.138', 'Escape', 'ability', 'named'],
+  ['702.139', 'Companion', 'ability', 'named'],
+  ['702.140', 'Mutate', 'ability', 'none'],
+  ['702.141', 'Encore', 'ability', 'none'],
+  ['702.142', 'Boast', 'ability', 'tested'],
+  ['702.143', 'Foretell', 'ability', 'tested'],
+  ['702.144', 'Demonstrate', 'ability', 'none'],
+  ['702.145', 'Daybound and Nightbound', 'ability', 'none'],
+  ['702.146', 'Disturb', 'ability', 'tested'],
+  ['702.147', 'Decayed', 'ability', 'tested'],
+  ['702.148', 'Cleave', 'ability', 'named'],
+  ['702.149', 'Training', 'ability', 'tested'],
+  ['702.150', 'Compleated', 'ability', 'none'],
+  ['702.151', 'Reconfigure', 'ability', 'none'],
+  ['702.152', 'Blitz', 'ability', 'tested'],
+  ['702.153', 'Casualty', 'ability', 'tested'],
+  ['702.154', 'Enlist', 'ability', 'none'],
+  ['702.155', 'Read Ahead', 'ability', 'none'],
+  ['702.156', 'Ravenous', 'ability', 'none'],
+  ['702.157', 'Squad', 'ability', 'none'],
+  ['702.158', 'Space Sculptor', 'ability', 'none'],
+  ['702.159', 'Visit', 'ability', 'none'],
+  ['702.160', 'Prototype', 'ability', 'named'],
+  ['702.161', 'Living Metal', 'ability', 'none'],
+  ['702.162', 'More Than Meets the Eye', 'ability', 'none'],
+  ['702.163', 'For Mirrodin!', 'ability', 'none'],
+  ['702.164', 'Toxic', 'ability', 'named'],
+  ['702.165', 'Backup', 'ability', 'named'],
+  ['702.166', 'Bargain', 'ability', 'none'],
+  ['702.167', 'Craft', 'ability', 'named'],
+  ['702.168', 'Disguise', 'ability', 'none'],
+  ['702.169', 'Solved', 'ability', 'named'],
+  ['702.170', 'Plot', 'ability', 'tested'],
+  ['702.171', 'Saddle', 'ability', 'none'],
+  ['702.172', 'Spree', 'ability', 'named'],
+  ['702.173', 'Freerunning', 'ability', 'none'],
+  ['702.174', 'Gift', 'ability', 'none'],
+  ['702.175', 'Offspring', 'ability', 'none'],
+  ['702.176', 'Impending', 'ability', 'none'],
+  ['702.177', 'Exhaust', 'ability', 'none'],
+  ['702.178', 'Max Speed', 'ability', 'none'],
+  ['702.179', 'Start Your Engines!', 'ability', 'none'],
+  ['702.180', 'Harmonize', 'ability', 'none'],
+  ['702.181', 'Mobilize', 'ability', 'none'],
+  ['702.182', 'Job Select', 'ability', 'none'],
+  ['702.183', 'Tiered', 'ability', 'none'],
+  ['702.184', 'Station', 'ability', 'none'],
+  ['702.185', 'Warp', 'ability', 'tested'],
+  ['702.186', '∞ (Infinity)', 'ability', 'none'],
+  ['702.187', 'Mayhem', 'ability', 'none'],
+  ['702.188', 'Web-slinging', 'ability', 'none'],
+  ['702.189', 'Firebending', 'ability', 'none'],
+  ['702.190', 'Sneak', 'ability', 'none'],
+  ['702.191', 'Increment', 'ability', 'none'],
+  ['702.192', 'Paradigm', 'ability', 'none'],
+  ['702.193', 'Power-up', 'ability', 'none'],
+  ['702.194', 'Teamwork', 'ability', 'none'],
+  ['702.195', 'Storied', 'ability', 'none'],
+  ['702.196', 'Beam me up', 'ability', 'none'],
+];
+const RULES_BY_NAME = new Map(RULES_TABLE.map(r => [r[1].toLowerCase().split(' (')[0], r]));
+function crKeyword(name) { return RULES_BY_NAME.get(String(name || '').toLowerCase().trim()) || null; }
+// ---------------------------------------------------------------- keyword abilities and actions from the Comprehensive Rules (v0.96.1)
+// One table drives every triggered keyword: KW_TRIGGERS says which keyword (CR number), when it triggers, an optional test (a rules condition
+// checked as it triggers), and the printed effect. KW_EFFECTS turns a resolving keyword trigger into the options in the effect window.
+// Keyword ACTIONS written inside card text ("Bolster 2", "Adapt 3", "Connive", "Discover 4") are read by kwActionOptions.
+const kwPow = c => { const r = ptCalc(c); return r.p; };
+const kwItems = tx => { const out = []; for (const line of String(tx || '').replace(/\([^)]*\)/g, ' ').split('\n')) { if (/[.:]/.test(line.replace(/\d+\.\d/g, ''))) continue; for (const it of line.split(/[,;]/)) { const s = it.trim(); if (s) out.push(s); } } return out; };
+const KW_TRIGGERS = [
+  { cr: '702.83', kw: 'exalted', ev: 'attack-any', cond: 'Exalted: whenever a creature you control attacks alone', text: 'Whenever a creature you control attacks alone, that creature gets +1/+1 until end of turn.', test: (c, atk) => atk.length === 1 },
+  { cr: '702.91', kw: 'battle cry', ev: 'attack-self', cond: 'Battle cry: whenever this creature attacks', text: 'Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn.' },
+  { cr: '702.86', kw: 'annihilator', ev: 'attack-self', cond: 'Annihilator: whenever this creature attacks', text: 'Whenever this creature attacks, defending player sacrifices N permanents.' },
+  { cr: '702.100', kw: 'evolve', ev: 'etb-other', filter: 'creature', cond: 'Evolve: whenever a creature you control enters', text: 'Whenever a creature you control enters, if that creature has greater power or toughness than this creature, put a +1/+1 counter on this creature.',
+    test: (c, e) => { if (!/\bCreature\b/.test(permTypeLine(e))) return false; const a = ptCalc(c), b = ptCalc(e); return b.p > a.p || b.t > a.t; } },
+  { cr: '702.112', kw: 'renown', ev: 'combat-damage-self', cond: 'Renown: whenever this creature deals combat damage to a player', text: 'Whenever this creature deals combat damage to a player, if it is not renowned, put N +1/+1 counters on it and it becomes renowned.', test: c => !c.renowned },
+  { cr: '702.134', kw: 'mentor', ev: 'attack-self', cond: 'Mentor: whenever this creature attacks', text: 'Whenever this creature attacks, put a +1/+1 counter on target attacking creature with lesser power.', test: (c, atk) => atk.some(x => x.id !== c.id && kwPow(x) < kwPow(c)) },
+  { cr: '702.149', kw: 'training', ev: 'attack-self', cond: 'Training: whenever this creature attacks with another creature with greater power', text: 'Whenever this creature and at least one other creature with greater power attack, put a +1/+1 counter on this creature.', test: (c, atk) => atk.some(x => x.id !== c.id && kwPow(x) > kwPow(c)) },
+  { cr: '702.104', kw: 'dethrone', ev: 'attack-self', cond: 'Dethrone: whenever this creature attacks the player with the most life', text: 'Whenever this creature attacks the player with the most life or tied for most life, put a +1/+1 counter on this creature.', test: () => (state.oppLife ?? 20) >= state.life },
+  { cr: '702.121', kw: 'melee', ev: 'attack-self', cond: 'Melee: whenever this creature attacks', text: 'Whenever this creature attacks, it gets +1/+1 until end of turn for each opponent you attacked this combat.' },
+  { cr: '702.123', kw: 'fabricate', ev: 'etb-self', cond: 'Fabricate: when this permanent enters', text: 'When this permanent enters, you may put N +1/+1 counters on it. If you don\'t, create N 1/1 colorless Servo artifact creature tokens.' },
+  { cr: '702.43', kw: 'modular', ev: 'dies-self', cond: 'Modular: when this creature dies', text: 'When this creature dies, you may put its +1/+1 counters on target artifact creature.' },
+  { cr: '702.54', kw: 'bloodthirst', ev: 'etb-self', cond: 'Bloodthirst: as this creature enters', text: 'If an opponent was dealt damage this turn, this creature enters with N +1/+1 counters on it.' },
+  { cr: '702.101', kw: 'extort', ev: 'cast', filter: '', cond: 'Extort: whenever you cast a spell', text: 'Whenever you cast a spell, you may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life.' },
+  { cr: '702.136', kw: 'riot', ev: 'etb-self', cond: 'Riot: as this creature enters', text: 'This creature enters with your choice of a +1/+1 counter or haste.' }
+];
+// The triggers a card's keyword line gives it (appended to parseTriggers' result).
+function kwTriggersFor(info) {
+  const out = []; if (!info || !info.tx) return out;
+  const items = kwItems(info.tx);
+  for (const k of KW_TRIGGERS) for (const it of items) {
+    const m = it.match(new RegExp('^' + k.kw + '(?:(?:\\s+|\\s*[\\u2014-]\\s*)(.+))?$', 'i')); if (!m) continue;   // v0.96.7 the argument can be a number, a mana cost or a whole cost ("Cumulative upkeep\u2014Pay 1 life")
+    const n = m[1] && /^\d+$/.test(m[1]) ? +m[1] : (k.kw === 'modular' || k.kw === 'fabricate' || k.kw === 'renown' || k.kw === 'bloodthirst' || k.kw === 'annihilator' ? 1 : 0);
+    const arg = m[1] || ''; out.push({ arg, ev: k.ev, cond: k.cond, effect: k.text.replace(/\bN\b/g, String(n)), line: `${it} (keyword, CR ${k.cr}): ${k.text.replace(/\bN\b/g, String(n))}`, filter: k.filter || '', optional: false, special: 'kw', kw: k.kw, n, arg, test: k.test || null });
+    break;
+  }
+  for (const raw of String(info.tx).replace(/\([^)]*\)/g, ' ').split('\n')) {   // CR 701.43d "You may exert ~ as it attacks. When you do, ..."
+    const em = raw.trim().match(/^You may exert (?:~|this \w+|[^.]*?) as it attacks\.(?:\s*When you do,\s*(.*))?$/i); if (!em && !/^You may exert .* as it attacks/i.test(raw.trim())) continue;
+    const rest = em && em[1] ? em[1] : '';
+    out.push({ ev: 'attack-self', cond: 'You may exert it as it attacks', effect: 'You may exert it as it attacks. It won\'t untap during your next untap step.' + (rest ? ' When you do, ' + rest : ''), line: raw.trim() + ' (exert, CR 701.43)', filter: '', optional: true, special: 'kw', kw: 'exert', n: 0, arg: rest, test: null });
+  }
+  return out;
+}
+const kwTarget = (obj, ids, label, fn) => ({ full: true, label, fn });
+const KW_EFFECTS = {
+  'exalted': obj => { const a = state.combat.attackers || []; const id = a[0]; const f = id && findCard(id); return [{ full: true, label: f ? `${f.card.name} gets +1/+1 until end of turn (exalted)` : 'The lone attacker gets +1/+1 until end of turn', fn: () => { if (f) addTempPT(f.card.id, 1, 1); } }]; },
+  'battle cry': obj => { const o = (state.combat.attackers || []).filter(i => i !== obj.sourceId); return [{ full: true, label: o.length ? `Each other attacking creature gets +1/+0 until end of turn (${o.length})` : 'No other attacking creature', fn: () => o.forEach(i => addTempPT(i, 1, 0)) }]; },
+  'annihilator': obj => [{ full: true, label: `Defending player sacrifices ${obj.n || 1} permanent${(obj.n || 1) === 1 ? '' : 's'} (nothing to do: the opponent's board is not tracked)`, fn: () => log(`${obj.sourceName}: annihilator ${obj.n || 1}, the defending player sacrifices that many permanents`) }],
+  'evolve': obj => [{ full: true, label: `Put a +1/+1 counter on ${obj.sourceName}`, fn: () => addCounter(obj.sourceId, 1, 'plus') }],
+  'renown': obj => [{ full: true, label: `Put ${obj.n || 1} +1/+1 counter${(obj.n || 1) === 1 ? '' : 's'} on ${obj.sourceName}; it becomes renowned`, fn: () => { const f = findCard(obj.sourceId); if (!f || f.card.renowned) return; f.card.renowned = true; addCounter(obj.sourceId, obj.n || 1, 'plus'); } }],
+  'mentor': obj => { const f = findCard(obj.sourceId), cands = f ? (state.combat.attackers || []).map(findCard).filter(x => x && x.card.id !== f.card.id && kwPow(x.card) < kwPow(f.card)) : []; return cands.map(x => ({ full: true, label: `Put a +1/+1 counter on ${x.card.name}`, fn: () => addCounter(x.card.id, 1, 'plus') })); },
+  'training': obj => [{ full: true, label: `Put a +1/+1 counter on ${obj.sourceName}`, fn: () => addCounter(obj.sourceId, 1, 'plus') }],
+  'dethrone': obj => [{ full: true, label: `Put a +1/+1 counter on ${obj.sourceName}`, fn: () => addCounter(obj.sourceId, 1, 'plus') }],
+  'melee': obj => [{ full: true, label: `${obj.sourceName} gets +1/+1 until end of turn`, fn: () => addTempPT(obj.sourceId, 1, 1) }],
+  'fabricate': obj => { const n = obj.n || 1; return [
+    { full: true, label: `Put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${obj.sourceName}`, fn: () => addCounter(obj.sourceId, n, 'plus') },
+    { full: true, label: `Create ${n} 1/1 colorless Servo artifact creature token${n === 1 ? '' : 's'}`, fn: () => { for (let i = 0; i < n; i++) makeToken('Servo', '1/1'); } }]; },
+  'modular': obj => { const f = findCard(obj.sourceId) || { card: { counters: {} } }, k = (typeof f.card.counters === 'object' && f.card.counters && f.card.counters.plus) || (obj.lastCounters || 0); return state.battlefield.filter(c => /\bArtifact\b/.test(permTypeLine(c)) && /\bCreature\b/.test(permTypeLine(c))).map(c => ({ full: true, label: `Put ${k || 'its'} +1/+1 counter${k === 1 ? '' : 's'} on ${c.name}`, fn: () => { if (k) addCounter(c.id, k, 'plus'); } })); },
+  'bloodthirst': obj => [{ full: true, label: `An opponent was dealt damage this turn: put ${obj.n || 1} +1/+1 counter${(obj.n || 1) === 1 ? '' : 's'} on ${obj.sourceName}`, fn: () => addCounter(obj.sourceId, obj.n || 1, 'plus') }],
+  'miracle': obj => { const f = findCard(obj.sourceId); return f && f.zone === 'hand' ? [{ full: true, label: `Reveal ${f.card.name} and cast it for its miracle cost`, fn: () => { f.card.miracleNow = true; castSpell(f.card.id); } }] : []; },
+  'extort': obj => [{ full: true, label: 'I paid {W/B} (tap the mana first): each opponent loses 1 life and you gain 1', fn: () => { changeOppLife(-1); changeLife(1, true); } }],
+  'riot': obj => [{ full: true, label: `Put a +1/+1 counter on ${obj.sourceName}`, fn: () => addCounter(obj.sourceId, 1, 'plus') }, { full: true, label: `${obj.sourceName} gains haste`, fn: () => addKwFx(obj.sourceId, 'haste', { until: 'permanent' }) }]
+};
+// Keyword actions inside effect text (CR 701): bolster, adapt, connive, discover.
+function kwActionOptions(tx, obj, opts) {
+  kwActionOptions2(tx, obj, opts);   // v0.96.9 monstrosity, populate
+  let m; const t = String(tx || '').replace(/\([^)]*\)/g, ' ');
+  if ((m = t.match(/\bbolster (\d+|X)\b/i)) && m[1] !== 'X') {   // CR 701.39: the creature with the least toughness among creatures you control gets the counters
+    const n = +m[1], lab = `Bolster ${n}: put ${n} +1/+1 counter${n === 1 ? '' : 's'} on your creature with the least toughness`;
+    opts.push({ full: true, label: lab, fn: () => {
+      const cr = state.battlefield.filter(c => /\bCreature\b/.test(permTypeLine(c))); if (!cr.length) { log('Bolster: you control no creatures'); return; }
+      const low = Math.min(...cr.map(c => ptCalc(c).t)), tied = cr.filter(c => ptCalc(c).t === low);
+      if (tied.length === 1) { addCounter(tied[0].id, n, 'plus'); return; }
+      openPickCards({ title: 'Bolster: choose among the tied creatures', cards: tied, max: 1, min: 1, note: `These creatures are tied for the least toughness (${low}). You choose which gets the counters.`, done: ids => { if (ids[0]) addCounter(ids[0], n, 'plus'); } });
+    } });
+  }
+  if ((m = t.match(/\badapt (\d+)\b/i)) && obj && obj.sourceId) {   // CR 701.46: only if it has no +1/+1 counters on it
+    const n = +m[1];
+    opts.push({ full: true, label: `Adapt ${n}: if ${obj.sourceName} has no +1/+1 counters, put ${n} on it`, fn: () => { const f = findCard(obj.sourceId); if (!f) return; const cc = f.card.counters; const has = typeof cc === 'number' ? cc > 0 : !!(cc && cc.plus > 0); if (has) { log(`${f.card.name}: adapt does nothing, it already has +1/+1 counters`); return; } addCounter(f.card.id, n, 'plus'); } });
+  }
+  if (/\bconnive\b/i.test(t) && obj && obj.sourceId && !/\bconnives?\s+(?:to|with)\b/i.test(t)) {   // CR 701.50: draw, then discard; a nonland discard gives a +1/+1 counter
+    opts.push({ full: true, label: `${obj.sourceName} connives (draw a card, discard a card; a nonland card discarded gives it a +1/+1 counter)`, fn: () => {
+      snap(); const d = drawCards(1); log(`${obj.sourceName}: connive, drew ${d}`); render();
+      if (!state.hand.length) return;
+      pickFromHand({ n: 1, title: obj.sourceName, verb: 'discard', choose: true, note: 'Connive: discard a card. If it is not a land card, put a +1/+1 counter on the creature that connived.', done: ids => { const c = state.hand.find(x => x.id === ids[0]); if (!c) return; const land = isLandName(c.name); moveCard(c.id, 'graveyard'); log(`${obj.sourceName}: discarded ${c.name}`); if (!land) addCounter(obj.sourceId, 1, 'plus'); render(); } });
+    } });
+  }
+  if ((m = t.match(/\bdiscover (\d+)\b/i))) {   // CR 701.57: exile until a nonland card with mana value N or less; cast it free or put it in hand; the rest go to the bottom at random
+    const n = +m[1];
+    opts.push({ full: true, label: `Discover ${n}`, fn: () => openDiscover(n, obj && obj.sourceName) });
+  }
+}
+function openDiscover(n, srcName) {
+  snap(); const seen = []; let hit = null;
+  while (state.library.length) { const c = state.library.shift(); seen.push(c); const i = cardInfo(c.name); if (i && !i.land && !isLandName(c.name) && i.cmc <= n) { hit = c; break; } }
+  const m = modal(`Discover ${n}`, { width: 560, sticky: true, noClose: true });
+  m.body.append(h('div', { class: 'psub', text: hit ? `Exiled ${seen.length} card${seen.length === 1 ? '' : 's'}. The first nonland card with mana value ${n} or less is ${hit.name}. Cast it without paying its mana cost, or put it into your hand. The other exiled cards go to the bottom of your library in a random order.` : `No nonland card with mana value ${n} or less was found. All ${seen.length} exiled cards go to the bottom of your library in a random order.` }),
+    h('div', { class: 'prelist' }, seen.map(c => h('div', { class: 'row' }, h('span', { class: 'nm', text: c.name }), c === hit ? h('span', { class: 'ok', text: 'hit' }) : h('span', { class: 'muted small', text: 'bottom' })))));
+  const finish = how => {
+    m.close(); const rest = seen.filter(c => c !== hit || !how); state.library.push(...shuffle([...rest]));
+    if (how === 'cast') { noteCast(hit); state.stack.push(hit); state.priority = { active: true, passed: false }; log(`Discover: cast ${hit.name} without paying its mana cost`); fireTrigger('cast', { card: hit }); }
+    else if (how === 'hand') { state.hand.push(hit); log(`Discover: put ${hit.name} into your hand`); }
+    else log(`Discover: nothing found, ${seen.length} cards on the bottom`);
+    render(); if (how === 'cast') { if (state.pendingTriggers.length) resolvePendingTrigger(); else openStack(); }
+  };
+  if (hit) m.foot.append(h('button', { text: 'Put into hand', onclick: () => finish('hand') }), h('button', { class: 'primary', text: `Cast ${hit.name} free`, onclick: () => finish('cast') }));
+  else m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: () => finish(null) }));
+}
+// ---------------------------------------------------------------- alternative-cost and other casting keywords (v0.96.2)
+// ALT_KW: "Keyword {cost}" / "Keyword - cost" lines that give an alternative way to cast a spell. `test(c)` returns '' when the condition
+// is met, else the reason it cannot be used (shown on the route). `cond` is the rules condition in plain words.
+const ALT_KW = [
+  { cr: '702.152', kw: 'blitz', cond: '', note: 'It gains haste. When it dies, draw a card. Sacrifice it at the beginning of the next end step.' },
+  { cr: '702.109', kw: 'dash', cond: '', note: 'It gains haste. Return it to its owner\'s hand at the beginning of the next end step.' },
+  { cr: '702.137', kw: 'spectacle', cond: 'If an opponent lost life this turn', test: () => (state.oppLifeLostTurn === state.turn ? '' : 'no opponent has lost life this turn') },
+  { cr: '702.96', kw: 'overload', cond: '', note: 'Each instead of target.' },
+  { cr: '702.103', kw: 'bestow', cond: '', note: 'Cast as an Aura with enchant creature.' },
+  { cr: '702.119', kw: 'emerge', cond: 'Sacrifice a creature; the cost is reduced by its mana value', reduceBySac: true },
+  { cr: '702.76', kw: 'prowl', cond: 'If an opponent was dealt combat damage by a creature you controlled that shares a type with this card', test: c => prowlWhy(c) },
+  { cr: '702.94', kw: 'miracle', cond: 'As you draw it, if it is the first card you drew this turn', test: c => (c.miracleNow ? '' : 'miracle only works right after you draw this card as the first card you draw this turn') },
+  { cr: '702.143', kw: 'foretell', cond: 'It was foretold on an earlier turn', test: c => (c.fromExile && c.foretold && state.turn > c.foretold ? '' : 'it has not been foretold on an earlier turn') },
+  { cr: '702.117', kw: 'surge', cond: 'If you or a teammate has cast another spell this turn', test: () => (spellsCastNow() > 0 ? '' : 'you have not cast another spell this turn') }
+];
+function altKwLine(line, c) {
+  for (const k of ALT_KW) {
+    let m = line.match(new RegExp('^' + k.kw + '\\s+((?:\\{[^}]+\\})+)\\s*$', 'i'));
+    if (m) return { kind: k.kw, cr: k.cr, label: k.kw[0].toUpperCase() + k.kw.slice(1), mana: m[1], comps: [], cond: k.cond, test: k.test || null, note: k.note || '', reduceBySac: !!k.reduceBySac, comps: k.reduceBySac ? parseCostComps('Sacrifice a creature', c.name).map(x => Object.assign(x, { emerge: true })) : [] };
+    m = line.match(new RegExp('^' + k.kw + '\\s*[\\u2014-]\\s*(.+?)\\.?$', 'i'));
+    if (m) { const cs = parseCostComps(m[1], c.name); return { kind: k.kw, cr: k.cr, label: k.kw[0].toUpperCase() + k.kw.slice(1) + ' — ' + m[1].replace(/\.$/, ''), mana: manaOf(cs), comps: cs.filter(x => x.k !== 'mana'), cond: k.cond, test: k.test || null, note: k.note || '' }; }
+  }
+  return null;
+}
+// Casualty N (CR 702.153): you may sacrifice a creature with power N or greater as you cast the spell; if you did, copy it.
+function casualtyOptional(line, c) {
+  const m = line.match(/^Casualty (\d+)\s*$/i); if (!m) return null;
+  const cs = parseCostComps(`Sacrifice a creature with power ${m[1]} or greater`, c.name);
+  return { label: `Casualty ${m[1]}`, mana: '', comps: cs, casualty: +m[1] };
+}
+function casualtyOnCast(c) {
+  if (!c.casualtyPaid || c.copy) return; delete c.casualtyPaid;
+  state.stack.push({ ability: true, trigger: true, special: 'storm', id: state.nextId++, name: `${c.name} — casualty`, sourceId: c.id, sourceName: c.name, spellId: c.id, n: 1, text: `Casualty — when you cast this spell, if a casualty cost was paid, copy it. You may choose new targets for the copy.` });
+  log(`${c.name}: casualty was paid, so a copy is created`);
+}
+// The permanent resolves after being cast with blitz or dash (CR 702.152, 702.109).
+function altKwResolved(c) {
+  const gain = () => addKwFx(c.id, 'haste', { until: 'manual' });
+  if (c.blitzed) { delete c.blitzed; c.blitzBody = true; gain(); addFx({ kind: 'delayed', when: 'end', action: 'sacrifice', targetId: c.id, targetName: c.name, text: `Sacrifice ${c.name} (blitz).`, srcName: c.name }); log(`${c.name}: blitzed. It has haste, is sacrificed at the beginning of the next end step, and draws you a card when it dies`); }
+  if (c.dashed) { delete c.dashed; gain(); addFx({ kind: 'delayed', when: 'end', action: 'returnHand', targetId: c.id, targetName: c.name, text: `Return ${c.name} to its owner's hand (dash).`, srcName: c.name }); log(`${c.name}: dashed. It has haste and returns to your hand at the beginning of the next end step`); }
+}
+// ---------------------------------------------------------------- casting keywords that change how or when a spell is cast (v0.96.3)
+// Overload, Bestow (chosen BEFORE targets: CR 601.2b), Escalate (cost per extra mode), Replicate (copies per payment), Emerge (sacrifice reduces the cost),
+// Prowl, Miracle, Plot and Foretell (cast later from exile). Lines are read by altKwLine (42) and the helpers here.
+const PRE_ALT = ['overload', 'bestow'];
+function preAltKinds(c) { return altCostsFor(c).filter(a => PRE_ALT.includes(a.kind)); }
+// Overload: every "target" in the spell's text becomes "each" (CR 702.96a).
+function overloadText(tx) { return String(tx || '').replace(/^Overload\b.*$/gim, '').replace(/\btarget\b/gi, 'each'); }
+function openPreAlt(c, alts, cb) {
+  const m = modal(`Cast ${c.name}: how?`, { width: 560, sticky: true, onCancel: () => { delete c.preAlt; } });
+  const pick = k => { c.preAlt = k; m.close(); cb(); };
+  m.body.append(h('div', { class: 'psub', text: 'Overload and bestow are alternative costs, so you choose them before you choose targets (CR 601.2b).' }),
+    h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Cast it normally' }), h('button', { class: 'primary', text: 'Normal', onclick: () => pick('') })),
+    ...alts.map(a => h('div', { class: 'row' }, h('span', { class: 'nm' }, a.label + ' ', a.mana ? symbols(a.mana) : ''), h('span', { class: 'muted small', text: a.kind === 'overload' ? 'Each instead of target' : 'Cast as an Aura with enchant creature' }), h('button', { class: 'primary', text: a.label, onclick: () => pick(a.kind) }))));
+  m.foot.append(h('button', { text: 'Cancel', onclick: () => { delete c.preAlt; m.close(); } }));
+}
+// Bestow (CR 702.103): the permanent resolves attached to its target; if the target is gone it enters as a creature. If the host leaves, it stays as a creature.
+function bestowResolved(c) {
+  const t = c.targets && c.targets[0], f = t && findCard(t.id);
+  if (f && f.zone === 'battlefield' && f.card.id !== c.id && attachTo(c.id, f.card.id, 'Bestow')) { c.bestowAura = true; log(`${c.name}: bestowed on ${f.card.name}. It is an Aura while attached; if ${f.card.name} leaves it becomes a creature`); }
+  else log(`${c.name}: its bestow target is gone, so it enters as a creature (CR 702.103e)`);
+  delete c.bestowed;
+}
+function bestowHostLeft(x) { if (!x.bestowAura) return false; delete x.att; delete x.bestowAura; log(`${x.name} stays on the battlefield and becomes a creature (its bestow host left, CR 702.103f)`); return true; }
+// Replicate (CR 702.56): an optional cost payable any number of times; copy the spell that many times.
+function replicateOnCast(c) {
+  if (!c.replicateN || c.copy) return; const n = c.replicateN; delete c.replicateN;
+  state.stack.push({ ability: true, trigger: true, special: 'storm', id: state.nextId++, name: `${c.name} — replicate`, sourceId: c.id, sourceName: c.name, spellId: c.id, n, text: `Replicate — when you cast this spell, copy it for each time its replicate cost was paid (${n}).` });
+  log(`${c.name}: replicate paid ${n} time${n === 1 ? '' : 's'}, so ${n} cop${n === 1 ? 'y is' : 'ies are'} created`);
+}
+// Emerge (CR 702.119): sacrifice a creature, then pay the emerge cost reduced by that creature's mana value.
+function reduceGenericBy(mana, n) { return reduceCost(mana, 'improvise', Array(Math.max(0, n)).fill({})); }
+function bestSacMV() { return Math.max(0, ...state.battlefield.filter(c => /\bCreature\b/.test(permTypeLine(c))).map(c => (c.token ? 0 : (cardInfo(c.name) || {}).cmc || 0))); }
+// Prowl (CR 702.76): an opponent was dealt combat damage this turn by a creature you controlled that shares a creature type with this card.
+function noteCombatDealers(dealers) {
+  const subs = new Set(); for (const d of dealers) { for (const s of permTypeInfo(d).subs) subs.add(s); if (/\bchangeling\b/i.test(cardText(d))) subs.add('*'); }
+  state.dealtTypes = { turn: state.turn, subs };
+}
+function prowlWhy(c) {
+  const d = state.dealtTypes; if (!d || d.turn !== state.turn) return 'no creature you controlled has dealt combat damage to an opponent this turn';
+  const mine = permTypeInfo(c).subs, ch = /\bchangeling\b/i.test(cardText(c));
+  return ch || d.subs.has('*') || [...mine].some(s => d.subs.has(s)) ? '' : 'none of the creatures that dealt combat damage shares a creature type with this card';
+}
+// Miracle (CR 702.94): the first card you draw each turn can be revealed and cast for its miracle cost.
+function noteMiracleDraw(card) {
+  const t = state.drawsTurn && state.drawsTurn.turn === state.turn ? state.drawsTurn : (state.drawsTurn = { turn: state.turn, n: 0 }); t.n++;
+  if (t.n !== 1) return;
+  if (!String(cardText(card)).split('\n').some(l => /^Miracle\s+\{/i.test(l.trim()))) return;
+  state.pendingTriggers.push({ kind: 'ability', cardId: card.id, cardName: card.name, text: `Miracle (keyword, CR 702.94): when you draw ${card.name} as the first card you draw this turn, you may reveal it and cast it by paying its miracle cost.`, effect: 'You may cast it for its miracle cost.', special: 'kw', kw: 'miracle', n: 0, optional: true, why: `${card.name} was the first card you drew this turn.` });
+}
+// Plot (CR 702.170) and Foretell (CR 702.143): pay now, exile it, cast it from exile on a later turn.
+function plotFor(c) { const tx = cardText(c).replace(/\([^)]*\)/g, ''); let m; for (const raw of tx.split('\n')) if ((m = raw.trim().match(/^Plot\s+((?:\{[^}]+\})+)/i))) return { cost: m[1] }; return null; }
+function foretellFor(c) { const tx = cardText(c).replace(/\([^)]*\)/g, ''); let m; for (const raw of tx.split('\n')) if ((m = raw.trim().match(/^Foretell\s+((?:\{[^}]+\})+)/i))) return { castCost: m[1], cost: '{2}' }; return null; }
+function stashCard(id, kind) {
+  const f = findCard(id); if (!f || f.zone !== 'hand') return; const c = f.card, info = kind === 'plot' ? plotFor(c) : foretellFor(c); if (!info) return;
+  if (kind === 'plot' ? !canPlaySorcerySpeedNow() : !(state.phase === 'play' && !state.stack.length && state.step !== 0 && state.step !== CLEANUP)) { toast('Cannot ' + kind + ' now', kind === 'plot' ? 'You may plot a card any time you could cast a sorcery: your main phase with an empty stack.' : 'You may foretell a card during your turn any time you have priority.'); return; }
+  if (!manaPaymentAllocation(manaCostParts(info.cost), state.manaPool || {}, manaSources(), null).ok) { toast('Cannot ' + kind, `Not enough mana for the ${kind} cost.`); return; }
+  const finish = ids => {
+    if (!findCard(id)) return; snap(); tapManaIds(ids || []); snapMuted = true; try { moveCard(id, 'exile'); } finally { snapMuted = false; }
+    const g = findCard(id); if (g) { g.card[kind === 'plot' ? 'plotted' : 'foretold'] = state.turn; }
+    log(`${c.name}: ${kind === 'plot' ? 'plotted' : 'foretold'} (paid ${info.cost}). ${kind === 'plot' ? 'You may cast it from exile without paying its mana cost on a later turn, any time you could cast a sorcery' : 'You may cast it from exile on a later turn for ' + info.castCost}`); render();
+  };
+  if (teach('stackGuidance')) { openManaPayment(c, finish, info.cost, 'Pay and ' + kind); return; }
+  const plan = manaPaymentAllocation(manaCostParts(info.cost), state.manaPool || {}, manaSources(), null); state.manaPool = plan.pool; finish(plan.used.map(i => manaSources()[i].card.id));
+}
+const stashReady = c => !!c && !!state && ((c.plotted && state.turn > c.plotted && canPlaySorcerySpeedNow()) || (c.foretold && state.turn > c.foretold));
+// Alternative routes that only exist for a card cast from exile after plot / foretell, and routes a card must NOT use.
+function altKwExtra(c) {
+  const out = [];
+  if (c.fromExile && c.plotted && state.turn > c.plotted) out.push({ kind: 'plotfree', cr: '702.170', label: 'Cast without paying its mana cost (plotted)', mana: '', comps: [], cond: '', test: null, note: '' });
+  return out;
+}
+function routeLimits(c, routes) {
+  if (c.preAlt) return routes.filter(r => r.alt && r.alt.kind === c.preAlt);
+  if (c.preAlt === '') return routes.filter(r => !(r.alt && PRE_ALT.includes(r.alt.kind)));
+  if (c.miracleNow) return routes.filter(r => r.alt && r.alt.kind === 'miracle');
+  if (c.fromExile && c.plotted) return routes.filter(r => r.alt && r.alt.kind === 'plotfree');
+  if (c.fromExile && c.foretold) return routes.filter(r => r.alt && r.alt.kind === 'foretell');
+  return routes.filter(r => !(r.alt && (r.alt.kind === 'miracle' || r.alt.kind === 'foretell') && !r.ok && false));
+}
+// ---------------------------------------------------------------- v0.96.5 recursion keywords: Embalm, Eternalize, Unearth (graveyard activated abilities), Outlast, Rebound
+// CR 702.128a Embalm: "[Cost], Exile this card from your graveyard: Create a token that's a copy of this card, except it's white, it has no mana cost, and it's a Zombie in addition to its other types. Activate only as a sorcery."
+// CR 702.129a Eternalize: the same, except the token is black and 4/4.
+// CR 702.84a  Unearth: "[Cost]: Return this card from your graveyard to the battlefield. It gains haste. Exile it at the beginning of the next end step. If it would leave the battlefield, exile it instead of putting it anywhere else. Activate only as a sorcery."
+// CR 702.107a Outlast: "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."  (read in activatedAbilitiesFor)
+// CR 702.88a  Rebound: "If this spell was cast from your hand, instead of putting it into your graveyard as it resolves, exile it and, at the beginning of your next upkeep, you may cast this card from exile without paying its mana cost."
+const GY_ABILITY_RE = /^(Embalm|Eternalize|Unearth)\s*(?:[—-]\s*)?((?:\{[^}]+\})+)\s*$/i;
+function gyAbilitiesFor(c) {
+  if (!c || c.token || !state) return [];
+  const info = cardInfo(c.name); if (!info) return []; const out = [];
+  for (const raw of String(info.tx || '').replace(/\([^)]*\)/g, '').split('\n')) {
+    const m = raw.trim().match(GY_ABILITY_RE); if (!m) continue;
+    const kind = m[1].toLowerCase(); out.push({ kind, cost: m[2], label: `${m[1]} ${m[2]}` });
+  }
+  return out;
+}
+// The copy a token is made from (CR 707.2 copiable values), with the keyword's exceptions applied.
+function copyTokenDef(info, kind) {
+  const front = String(info.t || '').split(' // ')[0], parts = front.split('—'), types = (parts[0].match(/\b(Artifact|Creature|Enchantment|Land|Planeswalker|Battle|Kindred)\b/g) || []);
+  const subs = ((parts[1] || '').trim().split(/\s+/).filter(Boolean)).map(x => x.toLowerCase()); if (!subs.includes('zombie')) subs.unshift('zombie');
+  const pt = kind === 'eternalize' ? '4/4' : (info.pt || '');
+  const col = kind === 'embalm' ? ['W'] : ['B'];
+  const subWords = subs.map(s => s[0].toUpperCase() + s.slice(1));
+  return { name: String(info.name || '').split(' // ')[0], pt, subs, col, types, type: `Token ${types.join(' ')} — ${subWords.join(' ')}`, tx: String(info.tx || '') };
+}
+function useGyAbility(id, kind) {
+  if (!state) return; const g = state.graveyard.find(x => x.id === id); if (!g) return;
+  const ab = gyAbilitiesFor(g).find(a => a.kind === kind); if (!ab) return;
+  if (!canPlaySorcerySpeedNow()) { toast('Wrong timing', `${ab.label} can be activated only as a sorcery: your main phase with an empty stack.`); return; }
+  const card = g;
+  payManaThen(card, ab.cost, ab.label, () => {
+    const f = state.graveyard.findIndex(x => x.id === id); if (f < 0) return;
+    if (kind === 'unearth') {
+      moveCard(id, 'battlefield'); const b = findCard(id); if (!b || b.zone !== 'battlefield') return;
+      b.card.exileInstead = true; addKwFx(id, 'haste', { until: 'manual' });
+      addFx({ kind: 'delayed', when: 'end', action: 'exile', targetId: id, targetName: b.card.name, text: `Exile ${b.card.name} (unearth).`, srcName: b.card.name });
+      log(`${b.card.name}: unearthed. It has haste, is exiled at the beginning of the next end step, and is exiled instead if it would leave the battlefield`);
+    } else {
+      const info = cardInfo(g.name); const [c0] = state.graveyard.splice(f, 1); state.exile.push(c0);   // exiling this card is part of the cost
+      makeTokensFromDef(copyTokenDef(info, kind), 1, `${c0.name} (${kind})`);
+      log(`${c0.name}: ${kind} paid; a ${kind === 'embalm' ? 'white' : 'black 4/4'} Zombie token copy was created`);
+    }
+    render();
+  });
+}
+// ---- Rebound (CR 702.88)
+const hasRebound = c => /^Rebound\b/im.test(String(cardText(c)).replace(/\([^)]*\)/g, ''));
+function reboundOnResolve(c) {   // returns 'exile' when it was exiled with rebound, else null (the caller then puts it in the graveyard)
+  if (!c || c.copy || c.gyExile || c.castFrom !== 'hand' || !hasRebound(c)) return null;
+  c.rebound = state.turn; state.exile.push(c);
+  log(`${c.name}: rebound. It was cast from your hand, so it is exiled instead of going to the graveyard; at the beginning of your next upkeep you may cast it from exile without paying its mana cost`);
+  return 'exile';
+}
+function reboundUpkeep() {
+  if (!state) return;
+  for (const c of state.exile) if (c.rebound && c.rebound < state.turn) {
+    delete c.rebound;
+    state.pendingTriggers.push({ kind: 'ability', cardId: c.id, cardName: c.name, special: 'reboundCast', optional: true, text: `Rebound — At the beginning of your next upkeep, you may cast ${c.name} from exile without paying its mana cost.`, effect: 'Cast it from exile without paying its mana cost.', why: 'A spell that was cast from your hand with rebound was exiled as it resolved.' });
+  }
+}
+// ---------------------------------------------------------------- v0.96.7 upkeep keywords: Cumulative upkeep, Vanishing, Fading (rules text)
+// CR 702.24a Cumulative upkeep [cost]: "At the beginning of your upkeep, if this permanent is on the battlefield, put an age counter on this permanent. Then you may pay [cost] for each age counter on it. If you don't, sacrifice it."
+//   If [cost] has choices, each choice is made separately for each age counter; either the whole set is paid or none of it (partial payments aren't allowed).
+// CR 702.63a Vanishing N: "This permanent enters with N time counters on it", "At the beginning of your upkeep, if this permanent has a time counter on it, remove a time counter from it", and "When the last time counter is removed from this permanent, sacrifice it."
+// CR 702.32a Fading N: "This permanent enters with N fade counters on it" and "At the beginning of your upkeep, remove a fade counter from this permanent. If you can't, sacrifice the permanent."
+// (The "enters with N counters" halves are read by etbCounters.)
+const kwCtr = (c, k) => counterCount(c, k);
+KW_TRIGGERS.push(
+  { cr: '702.24', kw: 'cumulative upkeep', ev: 'step:upkeep', cond: 'Cumulative upkeep: at the beginning of your upkeep', text: 'At the beginning of your upkeep, put an age counter on this permanent. Then you may pay its cumulative upkeep cost for each age counter on it. If you don\'t, sacrifice it.' },
+  { cr: '702.63', kw: 'vanishing', ev: 'step:upkeep', cond: 'Vanishing: at the beginning of your upkeep, if it has a time counter', text: 'At the beginning of your upkeep, if this permanent has a time counter on it, remove a time counter from it.', test: c => kwCtr(c, 'time') > 0 },
+  { cr: '702.32', kw: 'fading', ev: 'step:upkeep', cond: 'Fading: at the beginning of your upkeep', text: 'At the beginning of your upkeep, remove a fade counter from this permanent. If you can\'t, sacrifice the permanent.' }
+);
+// A cumulative upkeep cost split into its choices. Returns { kind: 'mana'|'life'|'other', alts: [string] } where each alt is the cost for ONE age counter.
+function cumulativeCost(arg) {
+  const a = String(arg || '').replace(/\.$/, '').trim(); let m;
+  if (/^(?:\{[^}]+\})+(?:\s+or\s+(?:\{[^}]+\})+)*$/i.test(a)) return { kind: 'mana', alts: a.split(/\s+or\s+/i) };
+  if ((m = a.match(/^Pay (\d+) life$/i))) return { kind: 'life', alts: [m[1]] };
+  return { kind: 'other', alts: [a] };
+}
+// Every way to pay N copies of the choices: multisets of size N (CR 702.24a example: {W} or {U} with two counters).
+function multisets(alts, n) { if (alts.length === 1) return [Array(n).fill(alts[0])]; const out = []; const rec = (i, left, cur) => { if (i === alts.length - 1) { out.push(cur.concat(Array(left).fill(alts[i]))); return; } for (let k = left; k >= 0; k--) rec(i + 1, left - k, cur.concat(Array(k).fill(alts[i]))); }; rec(0, n, []); return out; }
+const sacrificeIt = (obj, why) => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { log(`${obj.sourceName}: sacrificed (${why})`); moveCard(f.card.id, 'graveyard'); } else toast('Already gone', `${obj.sourceName} is no longer on the battlefield.`); };
+KW_EFFECTS['cumulative upkeep'] = obj => {
+  const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') return [];
+  const cc = cumulativeCost(obj.arg), name = obj.sourceName; let aged = false;
+  const age = () => { if (!aged) { aged = true; addCounter(obj.sourceId, 1, 'age'); } return kwCtr((findCard(obj.sourceId) || { card: null }).card, 'age'); };
+  const out = [];
+  const payOpt = (label, fn) => out.push({ full: true, label, fn: () => { const n = age(); fn(n); } });
+  const refuse = { full: true, label: `Don't pay: put an age counter on ${name}, then sacrifice it`, fn: () => { age(); sacrificeIt(obj, 'cumulative upkeep not paid'); } };
+  const n0 = kwCtr(f.card, 'age') + 1;   // the age counter is put on first, so the cost is for one more than it has now
+  if (cc.kind === 'mana') {
+    for (const combo of multisets(cc.alts, n0)) { const cost = combo.join(''); out.push({ full: true, label: `Put an age counter on ${name} (${n0}) and pay ${cost}`, fn: () => { const n = age(); payManaThen(f.card, cost, `Cumulative upkeep ${cost}`, () => log(`${name}: cumulative upkeep paid (${cost}, ${n} age counter${n === 1 ? '' : 's'})`)); } }); }
+  } else if (cc.kind === 'life') {
+    const L = +cc.alts[0] * n0; out.push({ full: true, label: `Put an age counter on ${name} (${n0}) and pay ${L} life`, fn: () => { if (state.life < L) { toast('Not enough life', `You cannot pay ${L} life.`); return; } const n = age(); changeLife(-L, true); log(`${name}: cumulative upkeep paid (${L} life, ${n} age counter${n === 1 ? '' : 's'})`); } });
+  } else out.push({ full: true, label: `Put an age counter on ${name} (${n0}) and I paid "${cc.alts[0]}" ${n0} time${n0 === 1 ? '' : 's'} by hand`, fn: () => { const n = age(); log(`${name}: cumulative upkeep paid by hand (${cc.alts[0]} × ${n}, ${n} age counter${n === 1 ? '' : 's'})`); } });
+  out.push(refuse); return out;
+};
+KW_EFFECTS['vanishing'] = obj => {
+  const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield' || kwCtr(f.card, 'time') < 1) return [];   // intervening "if" (CR 603.4): rechecked as it resolves
+  return [{ full: true, label: `Remove a time counter from ${obj.sourceName} (${kwCtr(f.card, 'time')} now)`, fn: () => {
+    addCounter(obj.sourceId, -1, 'time'); const g = findCard(obj.sourceId);
+    if (g && g.zone === 'battlefield' && kwCtr(g.card, 'time') === 0) state.pendingTriggers.push({ kind: 'ability', cardId: obj.sourceId, cardName: obj.sourceName, text: 'Vanishing (keyword, CR 702.63a): when the last time counter is removed from this permanent, sacrifice it.', effect: 'Sacrifice this permanent.', special: 'kw', kw: 'vanishing-sac', optional: false, why: 'The last time counter was removed.' });
+  } }];
+};
+KW_EFFECTS['vanishing-sac'] = obj => [{ full: true, label: `Sacrifice ${obj.sourceName}`, fn: () => sacrificeIt(obj, 'vanishing: the last time counter was removed') }];
+KW_EFFECTS['fading'] = obj => {
+  const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') return [];
+  if (kwCtr(f.card, 'fade') < 1) return [{ full: true, label: `${obj.sourceName} has no fade counter to remove: sacrifice it`, fn: () => sacrificeIt(obj, 'fading: no fade counter') }];
+  return [{ full: true, label: `Remove a fade counter from ${obj.sourceName} (${kwCtr(f.card, 'fade')} now)`, fn: () => addCounter(obj.sourceId, -1, 'fade') }];
+};
+// ---------------------------------------------------------------- v0.96.9 keyword batch 4 (rules text): Decayed, Exert, Monstrosity, Populate (Boast and Devoid are read in 19 and 02)
+// CR 702.147a Decayed: "This creature can't block" and "When this creature attacks, sacrifice it at end of combat."
+// CR 701.43a  To exert a permanent, you choose to have it not untap during your next untap step. (701.43d: "You may exert [this creature] as it attacks" is an optional cost to attack.)
+// CR 701.37a  "Monstrosity N" means "If this permanent isn't monstrous, put N +1/+1 counters on it and it becomes monstrous." (701.37b: monstrous lasts until it leaves the battlefield.)
+// CR 701.36a  To populate means to choose a creature token you control and create a token that's a copy of that creature token. (701.36b: no creature token, no token.)
+// CR 702.142a Boast — [Cost]: [Effect]  means  "[Cost]: [Effect]. Activate only if this creature attacked this turn and only once each turn."
+// CR 702.114a Devoid: "This object is colorless."
+KW_TRIGGERS.push({ cr: '702.147', kw: 'decayed', ev: 'attack-self', cond: 'Decayed: whenever this creature attacks', text: 'When this creature attacks, sacrifice it at end of combat.' });
+KW_EFFECTS['decayed'] = obj => [{ full: true, label: `Sacrifice ${obj.sourceName} at end of combat (decayed)`, fn: () => {
+  const f = findCard(obj.sourceId); if (!f) return;
+  addFx({ kind: 'delayed', when: 'endcombat', action: 'sacrifice', targetId: f.card.id, targetName: f.card.name, text: `Sacrifice ${f.card.name} (decayed).`, srcName: f.card.name }); log(`${f.card.name}: decayed, it will be sacrificed at end of combat`); render(); } }];
+KW_EFFECTS['exert'] = obj => {
+  const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') return [];
+  return [{ full: true, label: `Exert ${obj.sourceName}: it won't untap during your next untap step`, fn: () => {
+    f.card.exerted = state.turn; log(`${obj.sourceName}: exerted, it won't untap during your next untap step`);
+    if (obj.arg) state.pendingTriggers.push({ kind: 'ability', cardId: obj.sourceId, cardName: obj.sourceName, text: 'When you do, ' + obj.arg, effect: obj.arg, special: null, optional: false, why: `You exerted ${obj.sourceName} as it attacked, so its linked "when you do" ability triggers (CR 701.43d).` });
+    render(); } },
+    { full: true, label: `Don't exert ${obj.sourceName}`, fn: () => log(`${obj.sourceName}: not exerted`) }];
+};
+function kwActionOptions2(tx, obj, opts) {
+  let m; const t = String(tx || '').replace(/\([^)]*\)/g, ' ');
+  if ((m = t.match(/\bmonstrosity (\d+)\b/i)) && obj && obj.sourceId) {
+    const n = +m[1], f = findCard(obj.sourceId), name = obj.sourceName || (f && f.card.name) || 'it';
+    if (f && f.zone === 'battlefield') opts.push(f.card.monstrous
+      ? { full: true, label: `${name} is already monstrous: nothing happens`, fn: () => log(`${name}: already monstrous, monstrosity does nothing`) }
+      : { full: true, label: `Monstrosity ${n}: put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${name}; it becomes monstrous`, fn: () => { f.card.monstrous = true; addCounter(f.card.id, n, 'plus'); log(`${name}: became monstrous (${n} +1/+1 counters)`); fireTrigger('monstrous', { card: f.card }); render(); flushTriggers(); } });
+  }
+  if (/\bpopulate\b/i.test(t) && !/\bpopulated\b/i.test(t)) {
+    const toks = state.battlefield.filter(c => c.token && permTypeInfo(c).types.has('creature')), seen = new Set(), uniq = [];
+    for (const c of toks) { const k = c.name + '|' + JSON.stringify(c.tk); if (!seen.has(k)) { seen.add(k); uniq.push(c); } }
+    if (!uniq.length) opts.push({ full: true, label: 'You control no creature token: populate does nothing', fn: () => log('Populate: you control no creature token, so nothing is created') });
+    for (const c of uniq) opts.push({ full: true, label: `Populate: create a token that's a copy of ${c.name}${c.tk && c.tk.pt ? ' ' + c.tk.pt : ''}`, fn: () => {
+      snap(); const cp = newCard(c.name, { token: true, tk: JSON.parse(JSON.stringify(c.tk || {})) }); cp.id = state.nextId++;   // a copy has the copiable values only: no counters, damage or other changes
+      enterBattlefield(cp, { from: 'effect', tapped: false, logMsg: `Populate: created a copy of ${c.name}` }); render(); flushTriggers(); } });
+  }
+}
+// ---------------------------------------------------------------- v0.96.12 emblems (CR 114) and "target permanent" effects read from rules text
+// CR 114.1: an emblem is an object in the command zone; it has no characteristics other than the abilities defined by the effect that created it,
+// it cannot be removed, and its abilities work from the command zone (CR 114.4). Emblems live in state.emblems and are read like any other source of triggered abilities.
+function makeEmblem(text, src) {
+  if (!state) return null; snap();
+  state.emblems = state.emblems || [];
+  const c = newCard('Emblem', { token: true, tk: { pt: '', subs: [], col: [], tx: text, types: ['Emblem'], type: 'Emblem', emblem: true, from: src } });
+  c.id = state.nextId++; state.emblems.push(c);
+  log(`${src}: you get an emblem with "${text}"`); toast('Emblem', `${src}: you get an emblem. It stays for the rest of the game (CR 114.1).`);
+  render(); return c;
+}
+function renderEmblems() {
+  const mat = document.getElementById('mat'); if (!mat) return;
+  let bar = document.getElementById('emblemBar');
+  const list = (state && state.emblems) || [];
+  if (!list.length) { if (bar) bar.remove(); return; }
+  if (!bar) { bar = h('div', { id: 'emblemBar' }); mat.append(bar); }
+  bar.replaceChildren(...list.map(e => h('div', { class: 'emblem', title: e.tk.tx }, h('b', { text: 'Emblem' }), h('span', { text: ` · ${e.tk.from || ''}` }), h('div', { class: 'etx', text: e.tk.tx }))));
+}
+// the permanent types named by a phrase such as "artifact or creature" / "artifact you control"
+function typeWordsOf(phrase) { return String(phrase || '').toLowerCase().replace(/\byou control\b/g, '').split(/\s*(?:,|\bor\b|\band\/or\b)\s*/).map(w => singularWord(w.trim())).filter(Boolean); }
+function permHasAny(c, words) { const t = permTypeInfo(c).types; return words.some(w => t.has(w)); }
+// "If it's an artifact creature" / "If it's not a creature": every named type must (or, with "not", must not) be present on the target as it is NOW (CR 608.2c + 613 current characteristics)
+function ifItsHolds(neg, typesPhrase, c) { const t = permTypeInfo(c), words = String(typesPhrase).toLowerCase().split(/\s+/).filter(Boolean).map(singularWord); const all = words.every(w => t.types.has(w) || t.subs.has(w)); return neg ? !all : all; }
+function countsFromText(s) { const m = /put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) \+1\/\+1 counters? on (?:it|that creature|target [a-z ,]+?)(?: you control)?(?=[.,]|$)/i.exec(s); return m ? wordN(m[1]) : 0; }
+// "Untap target artifact or creature. If it's an artifact creature, put a +1/+1 counter on it."  /  "Put three +1/+1 counters on target artifact you control. If it's not a creature, it becomes a 0/0 Robot artifact creature."
+function targetPermanentEffect(tx, src, obj) {
+  const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+  const first = sents[0] || '';
+  let m, act = null, phrase = '';
+  if ((m = /^untap target ([a-z ,\/]+?)(?: you control)?\.?$/i.exec(first))) { act = 'untap'; phrase = m[1]; }
+  else if ((m = /^put (?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) \+1\/\+1 counters? on target ([a-z ,\/]+?)(?: you control)?\.?$/i.exec(first))) { act = 'counters'; phrase = m[1]; }
+  if (!act) return null;
+  const words = typeWordsOf(phrase); if (!words.length) return null;
+  const cond = [];
+  for (const s of sents.slice(1)) {
+    const cm = /^If it'?s (not )?an? ([a-z ]+?), (.+?)\.?$/i.exec(s); if (!cm) return null;   // unknown follow-up: let the general reader handle (and flag) it
+    const n = countsFromText(cm[3]); let bm;
+    if (n) cond.push({ neg: !!cm[1], types: cm[2], counters: n });
+    else if ((bm = /^it becomes an? (\d+)\/(\d+) ([A-Za-z]+) ((?:[a-z]+ )*)creature$/i.exec(cm[3]))) cond.push({ neg: !!cm[1], types: cm[2], becomes: { pt: bm[1] + '/' + bm[2], sub: bm[3], types: bm[4].trim().split(/\s+/).filter(Boolean).concat('creature') } });
+    else return null;
+  }
+  const n0 = act === 'counters' ? countsFromText(first) : 0;
+  const label = (act === 'untap' ? `Untap target ${phrase}` : `Put ${n0} +1/+1 counter${n0 === 1 ? '' : 's'} on target ${phrase}`) + (cond.length ? ' (then the "If it’s…" part)' : '');
+  const apply = c => {
+    snap();
+    if (act === 'untap') { c.tapped = false; delete c.mt; log(`${src}: untapped ${c.name}`); }
+    else { addCounter(c.id, n0, 'plus'); log(`${src}: put ${n0} +1/+1 counter${n0 === 1 ? '' : 's'} on ${c.name}`); }
+    for (const k of cond) {   // CR 608.2c: the "If it's ..." part is checked as the first step has left the permanent
+      if (!ifItsHolds(k.neg, k.types, c)) { log(`${src}: "If it\u2019s ${k.neg ? 'not ' : ''}${k.types}" was not true for ${c.name}, so that part does nothing`); continue; }
+      if (k.counters) { addCounter(c.id, k.counters, 'plus'); log(`${src}: ${c.name} was ${k.neg ? 'not ' : ''}${k.types}: put ${k.counters} +1/+1 counter${k.counters === 1 ? '' : 's'} on it`); }
+      if (k.becomes) { c.becomes = { pt: k.becomes.pt, types: k.becomes.types, subs: [k.becomes.sub.toLowerCase()] }; log(`${src}: ${c.name} becomes a ${k.becomes.pt} ${k.becomes.sub} ${k.becomes.types.join(' ')} (CR 613.1d/f; it stays that way)`); }
+    }
+    render(); flushTriggers();
+  };
+  return { full: true, label, fn: () => {
+    const tg = obj && (obj.targets || []).find(t => t.kind === 'perm' && !t.gone);   // the target was chosen when the ability went on the stack (CR 601.2c / 602.2b)
+    if (tg) { const f = findCard(tg.id); if (!f || f.zone !== 'battlefield') { log(`${src}: its target is gone, so the ability does nothing (CR 608.2b)`); return; } apply(f.card); return; }
+    const cards = state.battlefield.filter(c => permHasAny(c, words));
+    if (!cards.length) { toast('No legal target', `${src} needs a ${phrase} on the battlefield.`); return; }
+    openPickCards({ title: `${src}: choose target ${phrase}`, note: 'The target is checked as the ability resolves (CR 608.2b).', cards, min: 1, max: 1, done: ids => { const f = ids[0] !== undefined && findCard(ids[0]); if (f && f.zone === 'battlefield') apply(f.card); } });
+  } };
+}
+// "You get an emblem with "..."" (CR 114.1)
+function emblemEffect(tx, src) {
+  const m = /\byou get an emblem with ["“](.+)["”]\s*\.?\s*$/is.exec(String(tx || '').replace(/\n/g, ' ').trim()); if (!m) return null;
+  const text = m[1].trim();
+  return { full: true, label: 'Get an emblem', fn: () => makeEmblem(text, src) };
+}
 init();
 
 })();

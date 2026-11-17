@@ -1,0 +1,86 @@
+// ---------------------------------------------------------------- decks
+const SAMPLE = `4 Ancient Stirrings
+4 Wild Nacatl
+4 Dryad of the Ilysian Grove
+4 Territorial Kavu
+4 Scion of Draco
+4 Leyline Binding
+4 Leyline of the Guildpact
+4 Lightning Bolt
+3 Bonecrusher Giant
+2 Tribal Flames
+4 Wooded Foothills
+4 Flooded Strand
+3 Arid Mesa
+2 Overgrown Tomb
+3 Stomping Ground
+1 Temple Garden
+1 Breeding Pool
+1 Blood Crypt
+1 Hallowed Fountain
+1 Steam Vents
+1 Indatha Triome
+1 Raugrin Triome
+
+Sideboard
+3 Kitchen Finks
+2 Thragtusk
+2 Wurmcoil Engine
+2 Lightning Helix
+3 Scavenging Ooze
+3 Leyline of the Void`;
+
+function parseDeck(text) {
+  const main = [], side = [];
+  let cur = main, blankUsed = false;
+  const hasSideHeader = /^\s*(sideboard|side)\s*:?\s*$/im.test(text);
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.trim();
+    if (!line) {
+      if (!hasSideHeader && !blankUsed && main.length) { cur = side; blankUsed = true; }
+      continue;
+    }
+    if (/^(\/\/|#)/.test(line)) continue;
+    if (/^(deck|mainboard|main|commander|companion)\s*:?$/i.test(line)) { cur = main; continue; }
+    if (/^(sideboard|side)\s*:?$/i.test(line)) { cur = side; continue; }
+    let target = cur;
+    let m = line.match(/^SB:\s*(.*)$/i);
+    if (m) { target = side; line = m[1]; }
+    m = line.match(/^(\d+)\s*x?\s+(.+)$/i);
+    let qty = 1, name = line;
+    if (m) { qty = parseInt(m[1], 10); name = m[2]; }
+    name = name.replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[\w★-]*\s*$/, '').replace(/\s*\*[A-Za-z]+\*\s*$/, '').trim();
+    if (!name || !(qty > 0)) continue;
+    target.push({ qty, name });
+  }
+  return { main, side };
+}
+
+const sum = list => list.reduce((a, c) => a + c.qty, 0);
+function loadDecks() { return lsGet('mtgpt.decks', {}); }
+function saveDecks(d) { lsSet('mtgpt.decks', d); }
+function currentDeckName() { return lsGet('mtgpt.current', null); }
+
+function refreshDeckSelect() {
+  const sel = $('#deckSelect');
+  const decks = loadDecks();
+  const names = Object.keys(decks).sort((a, b) => a.localeCompare(b));
+  sel.replaceChildren();
+  if (!names.length) sel.append(h('option', { value: '', text: '(no decks yet)' }));
+  for (const n of names) sel.append(h('option', { value: n, text: n }));
+  const cur = currentDeckName();
+  if (cur && decks[cur]) sel.value = cur;
+  else if (names.length) { sel.value = names[0]; lsSet('mtgpt.current', names[0]); }
+  if (typeof applyUiTheme === 'function' && settings.uiTheme === 'deck') applyUiTheme();
+  const dc = $('#deckCur'); if (dc) dc.textContent = names.length ? (sel.value || names[0]) : 'No decks yet';
+}
+
+function getCurrentDeck() {
+  const decks = loadDecks();
+  const n = currentDeckName();
+  if (!n || !decks[n]) return null;
+  const sb = decks[n].sb;   // v0.90.2 sideboarded version of the list (the saved text itself is never touched)
+  if (sb && Array.isArray(sb.main) && sb.main.length) return { name: n, main: sb.main.map(x => ({ ...x })), side: (sb.side || []).map(x => ({ ...x })), sideboarded: true };
+  return { name: n, ...parseDeck(decks[n].text) };
+}
+

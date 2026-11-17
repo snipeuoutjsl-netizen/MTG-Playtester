@@ -1,0 +1,15 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.evaluate(()=>{const s=__d.state;s.stack=[];s.battlefield=[];s.pendingTriggers=[];
+ const mk=(n,z)=>{const i=s.library.findIndex(x=>x.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c};
+ mk('Vengevine','graveyard');mk('Grizzly Bears','graveyard');mk('Memnite','graveyard');
+ const sp=['Memnite','Psychic Frog'].map(n=>mk(n,'hand'));for(const c of sp){__d.noteCast(c);if(c.name==='Psychic Frog')__d.fireTrigger('cast',{card:c});__d.flushTriggers()}__d.render()});
+await p.waitForTimeout(400);
+console.log(await p.evaluate(()=>[...document.querySelectorAll('.modal')].map(m=>m.innerText).join('\n==\n')));
+await p.locator('.modal button:has-text("Put on the stack")').first().click();await p.waitForTimeout(300);
+await p.evaluate(()=>__d.resolveTopOfStack());await p.waitForTimeout(400);
+console.log('---after resolve');
+console.log(await p.evaluate(()=>[...document.querySelectorAll('.modal')].map(m=>m.innerText).join('\n==\n')));
+await p.locator('.modal button:has-text("Apply")').first().click();await p.waitForTimeout(400);
+console.log(await p.evaluate(()=>JSON.stringify({bf:__d.state.battlefield.map(c=>c.name),gy:__d.state.graveyard.map(c=>c.name)})));
+await b.close()})();

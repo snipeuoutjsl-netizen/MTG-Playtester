@@ -1465,3 +1465,75 @@ body.lay-rail .pile { justify-content: center; }
 .ctr.other .ctr-n { background: #7fb4ff; color: #04101f; }
 .ctr.chosen { padding: 0 6px; }
 .ctr-k { white-space: nowrap; }
+/* v0.94.5 which mode a target is for */
+.tg-for { margin: 0 0 6px; font-style: italic; }
+/* v0.94.7 one update window */
+.upd-other { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.upd-other > summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.upd-other .fhead { margin-top: 10px; }
+/* v0.95.1 UI polish */
+.card.stackgrp .sgl .mini * { visibility: hidden; }   /* the piled-up copies behind a stack show no name through the top card */
+.zlabel { max-width: calc(100% - 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status .chip { max-width: 170px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: inline-block; line-height: 24px; }
+.status .chip::before { display: inline-block; margin-right: 6px; vertical-align: middle; }
+.teachopt[hidden] { display: none; }
+.modal .psub + .prelist, .modal .psub + .row { margin-top: 10px; }
+
+/* v0.96.0 legal notice tab */
+.legalhead{font-weight:700;margin:14px 0 4px}
+.legalp{line-height:1.45;margin:0 0 6px;max-width:68ch}
+
+.sym.s-hyb { font-size: 8px; letter-spacing: -0.5px; }
+
+/* v0.96.6 bigger battlefield: the hand box is shorter and the hand overlaps the bottom edge of the mat (cards still rise above everything on hover) */
+
+
+
+
+/* ============================================================ v0.96.8 floating hand: no box, the whole hand sits at the bottom of the screen over the battlefield */
+#stage { position: relative; --hch: calc(94px * var(--hs, 1)); }
+body.imgmode #stage { --hch: calc(170px * var(--hs, 1)); }
+#mat { padding-bottom: calc(var(--hch) * .5 + 8px); }
+body #handWrap, body[data-frame]:not([data-frame="none"]) #handWrap {
+  position: absolute; left: 0; right: 0; bottom: 8px; height: auto; margin: 0; padding: 0 14px;
+  background: none !important; border: 0 !important; box-shadow: none !important; border-radius: 0;
+  pointer-events: none; z-index: 40;
+}
+#handWrap > .zlabel {
+  position: absolute; top: auto; left: 14px; bottom: calc(var(--ch) + 16px); height: auto; overflow: visible; min-height: 0; padding: 3px 8px; gap: 6px; z-index: 45;
+  background: rgba(10,13,12,.78); border: 1px solid var(--line); border-radius: 999px; pointer-events: auto; font-size: 11px; justify-content: flex-start;
+}
+#handWrap > .zlabel .handsort { margin-left: 4px; min-height: 22px; }
+#row-hand { pointer-events: none; justify-content: center; align-items: flex-end; min-height: 0; padding: 0; }
+#row-hand .card, #handPickBar, #handWrap > .zlabel button { pointer-events: auto; }
+#row-hand.fan { padding: 0; }
+body.dragging-card #handWrap { pointer-events: auto; }
+body.dragging-card #handWrap.over { background: rgba(227,185,92,.10) !important; border-radius: 14px; }
+#handPickBar { top: auto; bottom: calc(var(--ch) + 14px); }
+#handWrap.picking { box-shadow: none !important; }
+#handWrap.picking #row-hand .card.pickable { outline-width: 2px; }
+/* the colour key is a pop-over, opened by the Key button */
+#handLegend { display: none !important; position: absolute; left: 0; bottom: calc(100% + 8px); flex-wrap: wrap; width: max-content; max-width: min(520px, 90vw); gap: 6px; padding: 8px 10px; border-radius: 12px; background: rgba(10,13,12,.96); border: 1px solid var(--line); box-shadow: 0 8px 28px rgba(0,0,0,.5); pointer-events: auto; font-size: 11px; overflow: visible; }
+#handLegend.open { display: flex !important; }
+#handLegend.hidden { display: none !important; }
+@media (max-width: 800px) { #handLegend.open { display: flex !important; } }
+
+/* v0.96.9 floating hand: a slow hover, each card at its own pace, with a soft shadow that deepens as the card lifts */
+@keyframes handFloat { 0%, 100% { translate: 0 2px; filter: drop-shadow(0 6px 7px rgba(0,0,0,.50)); } 50% { translate: 0 -4px; filter: drop-shadow(0 12px 12px rgba(0,0,0,.38)); } }
+#row-hand .card { box-shadow: 0 8px 14px -4px rgba(0,0,0,.65), 0 2px 5px rgba(0,0,0,.5); }
+body.handfloat #row-hand .card { animation: handFloat 4.6s ease-in-out infinite; }
+body.handfloat #row-hand .card:nth-child(2n) { animation-duration: 5.4s; animation-delay: -1.6s; }
+body.handfloat #row-hand .card:nth-child(3n) { animation-duration: 4.2s; animation-delay: -2.9s; }
+body.handfloat #row-hand .card:nth-child(5n) { animation-duration: 6.1s; animation-delay: -0.7s; }
+body.handfloat #row-hand .card:hover, body.handfloat #row-hand .card.dragging, body.handfloat #row-hand .card.sel { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { body.handfloat #row-hand .card { animation: none; } }
+
+/* v0.96.11 the mat ends where the hand begins (hand overlaps only its bottom edge); zone rows may shrink so cards scale down instead of hiding */
+#mat { padding-bottom: calc(var(--handcover, calc(var(--hch) * .5 + 8px)) + 4px); grid-template-rows: minmax(0, 1fr) minmax(0, 40%); }
+
+/* v0.96.12 emblems (CR 114): a small stack of emblem chips in the corner of the mat */
+#emblemBar { position: absolute; right: 12px; top: 8px; z-index: 30; display: flex; flex-direction: column; gap: 4px; max-width: 260px; pointer-events: auto; }
+#emblemBar .emblem { padding: 4px 9px; border-radius: 10px; background: rgba(10,13,12,.86); border: 1px solid var(--gold, #e3b95c); font-size: 11px; color: var(--ink, #e8e6df); box-shadow: 0 4px 10px rgba(0,0,0,.5); }
+#emblemBar .emblem b { color: var(--gold, #e3b95c); }
+#emblemBar .emblem .etx { display: none; margin-top: 3px; color: var(--muted, #aab); font-size: 11px; line-height: 1.3; }
+#emblemBar .emblem:hover .etx { display: block; }

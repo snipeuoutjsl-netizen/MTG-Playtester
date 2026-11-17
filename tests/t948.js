@@ -1,0 +1,25 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.evaluate(()=>{const s=__d.state;s.stack=[];s.battlefield=[];
+ const mk=(n,z)=>{const i=s.library.findIndex(x=>x.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c};
+ for(const n of ['Island','Island','Island'])mk(n,'battlefield');
+ const a=mk('Memnite','battlefield');a.sick=false;a.tapped=true;window.__a=a.id;
+ const n=mk('Ninja of the Deep Hours','hand');window.__n=n.id;
+ s.step=__d.STEPS.findIndex(x=>x.id==='main1');
+ s.combat={attackers:[a.id],blockers:{},declared:true,dealt:false};__d.render()});
+const info=()=>p.evaluate(()=>JSON.stringify({nj:__d.ninjutsuFor(__d.state.hand.find(c=>c.id===window.__n)),why:__d.ninjutsuWhy(),step:__d.STEPS[__d.state.step].id}));
+console.log('main1',await info());
+await p.evaluate(()=>{__d.state.step=__d.STEPS.findIndex(x=>x.id==='block')});
+console.log('block',await info());
+await p.evaluate(()=>__d.activateNinjutsu(window.__n));await p.waitForTimeout(400);
+const dump=()=>p.evaluate(()=>JSON.stringify({m:[...document.querySelectorAll('.modal')].map(m=>m.innerText.replace(/\n+/g,' | ').slice(0,300))}));
+console.log(await dump());
+await p.locator('.modal .row:has-text("Memnite")').click();await p.locator('.modal button:has-text("Confirm")').click();await p.waitForTimeout(500);
+console.log(await dump());
+for(let i=0;i<3;i++){const x=p.locator('.modal button:has-text("Pay"), .modal button:has-text("Put on the stack")');if(await x.count()){await x.first().click();await p.waitForTimeout(400)}}
+console.log('after pay',await p.evaluate(()=>JSON.stringify({hand:__d.state.hand.map(c=>c.name).filter(n=>/Memnite|Ninja/.test(n)),stack:__d.state.stack.map(c=>c.name),att:__d.state.combat.attackers})));
+await p.evaluate(()=>__d.resolveTopOfStack());await p.waitForTimeout(500);
+console.log(await dump());
+const ap=p.locator('.modal button:has-text("Apply")');if(await ap.count())await ap.first().click();await p.waitForTimeout(400);
+console.log('final',await p.evaluate(()=>JSON.stringify({bf:__d.state.battlefield.filter(c=>!/Island/.test(c.name)).map(c=>c.name+(c.tapped?' (tapped)':'')),hand:__d.state.hand.map(c=>c.name).filter(n=>/Memnite|Ninja/.test(n)),att:__d.state.combat.attackers,own:__d.state.battlefield.find(c=>c.name==='Ninja of the Deep Hours')&&1})));
+await b.close()})();

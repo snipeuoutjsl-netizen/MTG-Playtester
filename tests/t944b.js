@@ -1,0 +1,10 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.evaluate(()=>{const s=__d.state;s.step=__d.STEPS.findIndex(x=>x.id==='main1'||x.id==='main');s.stack=[];s.battlefield=[];
+ const mk=(n,z)=>{const i=s.library.findIndex(x=>x.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c};
+ mk('Vengevine','graveyard');mk('Cabal Therapist','battlefield');mk('Grizzly Bears','battlefield');mk('Memnite','hand');mk('Psychic Frog','hand');mk('Island','battlefield');__d.render()});
+await p.evaluate(()=>{const c=__d.state.hand.find(x=>x.name==='Memnite');__d.castSpell(c.id,{free:true})});
+await p.waitForTimeout(400);
+console.log(await p.evaluate(()=>[...document.querySelectorAll('.modal')].map(m=>m.innerText).join('\n=====\n')));
+console.log(await p.evaluate(()=>JSON.stringify({turnCasts:Object.keys(__d.state).filter(k=>/cast|spell|turn/i.test(k))})));
+await b.close()})();

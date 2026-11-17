@@ -79,10 +79,26 @@ Please include:
 
 ## For developers
 
-- `DEVNOTES.md` is the session-by-session history and the "Road to 1.0" plan.
+- `DEVNOTES.md` is the developer history.
 - Run the rules tests: `cd tests && python3 inject.py && node cr-rules.js`.
-- The game is plain HTML, JS and CSS (`index.html`, `app.js`, `style.css`) with a thin Electron shell (`main.js`, `preload.js`).
+- The game is plain HTML, JS and CSS with a thin Electron shell (`main.js`, `preload.js`). The code lives in `src/` (one file per area) and is joined into `app.js` by `node build-src.js`. Edit `src/`, then build; commit both.
+- `python3 tests/rules-audit.py MagicCompRules.txt --table` regenerates the Comprehensive Rules keyword table (`src/40-rules-table.js`).
+- **Publishing a release:** run `node make-release.js`, then upload ALL SIX files it lists (index.html, app.js, style.css, package.json, latest.json, update.json) to the newest GitHub release. The in-app updater downloads them from `releases/latest/download/`, so a release that is a draft, a pre-release, or missing a file cannot be installed from inside the app.
 
 ## Legal
 
-Magic: The Gathering is a trademark of Wizards of the Coast. This is an unofficial fan project, not affiliated with or endorsed by Wizards of the Coast. Card data and images come from [Scryfall](https://scryfall.com), which you download yourself.
+**MTG Playtester is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.**
+
+Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.
+
+- **What is in this repository:** the program only. There are no card images, no card artwork, no Oracle card database and no Wizards logos or set symbols. Mana and tap symbols are drawn by the app as plain coloured text circles. The icon, playmats, sleeves and cursors are original.
+- **Card data and images** are downloaded by you, onto your own computer, from [Scryfall](https://scryfall.com) (or card text from [MTGJSON](https://mtgjson.com)) when you choose to. They stay on your computer. Data is provided by Scryfall; Scryfall does not endorse this app and has its own [terms](https://scryfall.com/docs/api). Card text and images remain the property of their owners.
+- **Rules:** implemented from the Magic: The Gathering Comprehensive Rules and official Oracle text and rulings. This is a goldfish practice tool, not a judge, and it can be wrong or incomplete. For tournament play the Comprehensive Rules, Oracle and your event's judges are the authority.
+- **Privacy:** no accounts, no tracking, no ads. Decks, settings and card data are stored only on your computer. The app connects to the internet only to download card data/images (Scryfall, MTGJSON) and to check for and download new versions (GitHub). The check on start can be switched off in the update window.
+- **No warranty:** provided "as is", without warranty of any kind. The authors are not liable for any damage or loss arising from its use.
+- **Third-party software:** the desktop version uses Electron (MIT licence), which includes Chromium and other open-source components under their own licences.
+- **Contributors:** do not commit card images, full card databases, Wizards artwork or logos, or verbatim Oracle text. Test fixtures that contain card text belong in `tests/corpus.json`, which is git-ignored.
+
+- **Licence:** all rights reserved for now (see `LICENSE`). The code is viewable but not licensed for reuse.
+
+The same notice is in the app under ⚙ → Settings → Legal notice.

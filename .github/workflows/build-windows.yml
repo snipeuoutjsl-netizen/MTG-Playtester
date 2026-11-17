@@ -1,0 +1,34 @@
+# Builds the Windows installer and portable .exe on GitHub's own Windows machine and attaches them to a release.
+# Run it from the repository's Actions tab: "Build Windows app" > Run workflow > type the release tag (for example Initial or v0.68.0).
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag of the release to attach the installer to (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install packages
+        run: npm install
+      - name: Build installer and portable app
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.inputs.tag }}" dist/MTG-Playtester-Setup-*.exe dist/MTG-Playtester-Portable-*.exe --clobber --repo "${{ github.repository }}"

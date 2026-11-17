@@ -1,0 +1,10 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.evaluate(()=>{const s=__d.state;s.battlefield=[];s.stack=[];s.step=__d.STEPS.findIndex(x=>x.id==='main1');s.life=20;
+ const mk=(n,z)=>{const i=s.library.findIndex(x=>x.name===n);const [c]=s.library.splice(i,1);s[z].push(c);return c};
+ const t=mk('Ancient Tomb','hand');window.__t=t.id;__d.render()});
+await p.evaluate(()=>__d.playLand(window.__t));await p.waitForTimeout(400);
+const st=l=>p.evaluate(()=>{const c=__d.state.battlefield.find(x=>x.id===window.__t);return JSON.stringify({tapped:c&&c.tapped,life:__d.state.life,pool:__d.state.manaPool,abil:c&&__d.landManaAbilities(c),modals:[...document.querySelectorAll('.modal')].map(m=>m.innerText.replace(/\n+/g,' | ').slice(0,200)),pend:__d.state.pendingTriggers.length,stack:__d.state.stack.map(x=>x.name)})}).then(x=>console.log(l,x));
+await st('played');
+await p.evaluate(()=>__d.tapForMana(window.__t));await p.waitForTimeout(400);await st('tapped');
+await b.close()})();

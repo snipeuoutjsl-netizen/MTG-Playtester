@@ -1,0 +1,12 @@
+const { setup } = require('./common.js');
+(async()=>{const {b,p}=await setup();
+await p.evaluate(()=>{window.desktop={info:async()=>({running:'0.94.5',source:'built-in',bundled:'0.94.5',override:null}),ghCheck:async()=>({ok:true,newer:true,current:'0.94.5',latest:'0.94.7',title:'Test release',notes:['One note','Two note'],bytes:900000}),ghInstall:async()=>{await new Promise(r=>setTimeout(r,300));return {ok:true,version:'0.94.7'}},onProgress:(f)=>{setTimeout(()=>f({phase:'download',file:'app.js',done:50,total:100}),50);return()=>{}},restart:()=>{window.__restarted=1},fromFolder:async()=>({cancelled:true}),fromUrl:async()=>({}),reset:async()=>({})}});
+await p.evaluate(()=>__d.openUpdate?__d.openUpdate():0).catch(()=>{});
+await p.waitForTimeout(600);
+const dump=()=>p.evaluate(()=>[...document.querySelectorAll('.modal')].map(m=>m.innerText.replace(/\n+/g,' | ')));
+console.log('menu open',await dump());
+await p.locator('.modal button:has-text("Update now")').click();await p.waitForTimeout(700);
+console.log('installed',await dump(), await p.evaluate(()=>window.__restarted));
+await p.locator('.modal button:has-text("Restart now")').click();console.log('restarted',await p.evaluate(()=>window.__restarted));
+await p.screenshot({path:'/tmp/upd.png'});
+await b.close()})();

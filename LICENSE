@@ -1,0 +1,17 @@
+Copyright (c) 2026 the MTG Playtester author. All rights reserved.
+
+This software and its source code are made publicly viewable but are NOT licensed
+for copying, modification, redistribution or commercial use. No permission is
+granted except as the terms of the hosting service (for example, GitHub's right
+to let you view and fork a public repository on that service) require.
+
+To ask for permission to use this work in any other way, contact the author.
+
+This notice covers only the original code and artwork of this project. It does not
+cover Magic: The Gathering card names, text, images or marks (property of Wizards
+of the Coast LLC), card data provided by Scryfall or MTGJSON, or third-party
+software such as Electron, each of which has its own terms. See the Legal notice
+in the README and in the app (Settings > Legal notice).
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+THE AUTHOR IS NOT LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM ITS USE.
