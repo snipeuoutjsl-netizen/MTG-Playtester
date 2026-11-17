@@ -297,7 +297,10 @@ function fitBattlefieldCards() {
     // v0.96.23 Fit by measuring, not only by arithmetic: lay the row out, and if any card sits outside the zone, shrink everything a little and look again (smaller cards also fit more per row).
     const place = sc => {
       row.style.setProperty('--zone-scale', String(sc));
-      if (spec.id !== 'row-creatures') { const cols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * sc + gap) + 1e-6))); row.style.maxWidth = Math.ceil(cols * baseW * sc + (cols - 1) * gap + 3) + 'px'; }
+      if (spec.id !== 'row-creatures') {   // v0.96.28 measure the REAL card widths (a tapped card is turned sideways and a stack of copies is wider), so a row only wraps when it truly cannot fit on one line
+      row.style.maxWidth = '';
+      const kids = [...row.children], wmax = Math.max(1, ...kids.map(k => k.offsetWidth)), total = kids.reduce((t, k) => t + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * gap + 3;
+      if (total > availW) { const cols = Math.max(1, Math.floor((availW + gap) / (wmax + gap))); row.style.maxWidth = Math.ceil(cols * wmax + (cols - 1) * gap + 3) + 'px'; } }
     };
     const spills = () => {   // offset* ignores the floating/tilting transforms, so a card that merely bobs does not count
       const lim = zone.clientHeight - 6, limW = zone.clientWidth - 6;

@@ -5246,7 +5246,10 @@ function fitBattlefieldCards() {
     // v0.96.23 Fit by measuring, not only by arithmetic: lay the row out, and if any card sits outside the zone, shrink everything a little and look again (smaller cards also fit more per row).
     const place = sc => {
       row.style.setProperty('--zone-scale', String(sc));
-      if (spec.id !== 'row-creatures') { const cols = Math.max(1, Math.min(count, Math.floor((availW + gap) / (baseW * sc + gap) + 1e-6))); row.style.maxWidth = Math.ceil(cols * baseW * sc + (cols - 1) * gap + 3) + 'px'; }
+      if (spec.id !== 'row-creatures') {   // v0.96.28 measure the REAL card widths (a tapped card is turned sideways and a stack of copies is wider), so a row only wraps when it truly cannot fit on one line
+      row.style.maxWidth = '';
+      const kids = [...row.children], wmax = Math.max(1, ...kids.map(k => k.offsetWidth)), total = kids.reduce((t, k) => t + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * gap + 3;
+      if (total > availW) { const cols = Math.max(1, Math.floor((availW + gap) / (wmax + gap))); row.style.maxWidth = Math.ceil(cols * wmax + (cols - 1) * gap + 3) + 'px'; } }
     };
     const spills = () => {   // offset* ignores the floating/tilting transforms, so a card that merely bobs does not count
       const lim = zone.clientHeight - 6, limW = zone.clientWidth - 6;
@@ -6125,8 +6128,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.96.27';
+const APP_VERSION = '0.96.28';
 const CHANGELOG = [
+  { v: '0.96.28', title: 'Lands stay on one row when they fit', notes: ['A row of lands (or artifacts) no longer wraps to a second row while there is room: the zone now measures the real width of its cards (a tapped land is turned sideways and a stack of copies is wider) instead of assuming every card is the same width. Cards still shrink only when they truly cannot fit.'] },
   { v: '0.96.27', title: 'Tron lands fixed', notes: ['Urza\'s Mine, Power Plant and Tower now tap for their full amounts in any order. The cause: the card is named "Urza\'s Power Plant" but the Oracle text of the Mine and Tower says "Urza\'s Power-Plant", so they never found it. Names are now compared without punctuation.'] },
   { v: '0.96.26', title: 'Opening-hand reveals, global rules from your deck report', notes: ['Devourer of Destiny and every card worded "You may reveal this card from your opening hand. If you do, at the beginning of your first upkeep, ...": the pre-game screen now has a Reveal button, and the effect goes on the stack at your first upkeep (Devourer: look at the top four, keep one on top, exile the rest).','Ensnaring Bridge: creatures with power greater than the number of cards in your hand can\'t attack (the attack list updates live as your hand changes).','Torpor Orb: creatures entering no longer cause abilities to trigger. Grafdigger\'s Cage: creature cards can\'t enter the battlefield from a graveyard or library, and spells can\'t be cast from graveyards. Omnath: unspent mana becomes colorless instead of emptying. Damping Sphere: each spell costs {1} more for each other spell cast this turn. "Lands you control enter untapped" is applied.','Vesuva and similar lands are recognised in the current Oracle wording. The card-reading report counts all of these as understood.'] },
   { v: '0.96.25', title: 'Token doubling, honest card report, Serum Powder only when usable', notes: ['The opening-hand screen only shows the Serum Powder button when a card in your hand allows it (CR 103.5b); it is no longer shown greyed out all the time.','Token-creation replacement effects (CR 614): "If an effect would create one or more tokens under your control, it creates twice that many instead" (Doubling Season, Parallel Lives, Anointed Procession) and "that many plus N" are read from the rules text and applied whenever an effect creates tokens. Doubling Season only doubled counters before.','The card-reading report (How the app reads your deck) now counts everything the engine really handles: it picks up keywords with triggers, effects, alternative costs or a rules test by itself, plus Warp/Flashback lines, "cast from your graveyard" lines, token replacement lines and Reanimate-style life loss. On the sample deck, lines the report did not understand went from 7 to 0.'] },
