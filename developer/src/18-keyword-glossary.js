@@ -337,7 +337,7 @@ function renderManaPool() {
 // (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
 let renderCache = null, layoutQueued = false;
 function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
-function render() { const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } }
+function render() { const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } }
 function layoutPass() {
   layoutQueued = false;
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
@@ -521,7 +521,7 @@ function dealCombatDamage(){
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
-  const before=state.oppLife; state.oppLife-=total; if(total>0) state.oppLifeLostTurn=state.turn;
+  const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn;
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
@@ -530,7 +530,7 @@ function dealCombatDamage(){
   noteCombatDealers(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d});
 }
-function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
+function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
 function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});

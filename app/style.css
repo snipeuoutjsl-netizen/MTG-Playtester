@@ -1638,3 +1638,22 @@ body.responding #boardstrip .bs-step { opacity: .55; }
 @media (prefers-reduced-motion: reduce) { .card.act-ready { animation: none; box-shadow: 0 0 0 1px rgba(70,220,120,.6), 0 0 12px 3px rgba(70,220,120,.4), 0 2px 8px rgba(0,0,0,.45); } }
 /* the stack / resolving prompt centres in the space above the hand, so the hand never covers its buttons */
 #stackStage { top: calc((100% - var(--handcover, 0px)) / 2); max-height: calc(100% - var(--handcover, 0px)); }
+
+/* v0.97 multiplayer: the opponent's table, docked at the top */
+#mpPanel { position: fixed; top: 112px; left: 50%; transform: translateX(-50%); width: min(1100px, 96vw); z-index: 40; background: rgba(14,16,22,.94); border: 1px solid var(--line, #3a3f4b); border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.5); padding: 6px 10px; font-size: 12px; }
+#mpPanel .mphead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#mpPanel .mplife { font-weight: 700; color: #ff8f8f; }
+#mpPanel .mpbtns { margin-left: auto; display: flex; gap: 4px; }
+#mpPanel .mpbody { display: flex; gap: 10px; margin-top: 6px; max-height: 26vh; overflow: auto; }
+#mpPanel .mpboard { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#mpPanel .mpside { flex: 0 0 230px; display: flex; flex-direction: column; gap: 4px; }
+#mpPanel .mpz { display: flex; flex-direction: column; gap: 2px; }
+#mpPanel .mpzl { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; opacity: .65; }
+#mpPanel .mpcards { display: flex; flex-wrap: wrap; gap: 4px; }
+#mpPanel .mpcard { width: 74px !important; height: 104px !important; flex: 0 0 auto; font-size: 8px; position: relative; }
+#mpPanel .mpchip { background: rgba(255,255,255,.08); border-radius: 4px; padding: 1px 5px; font-size: 10px; }
+#mpPanel .mpchat input { width: 100%; box-sizing: border-box; }
+#mpPanel .mpmsgs { max-height: 70px; overflow: auto; font-size: 11px; }
+#mpPanel .mpmsg.me { opacity: .7; }
+body.mp-open #stage { padding-top: 0; }
+.mpcol { display: flex; flex-direction: column; gap: 6px; }
