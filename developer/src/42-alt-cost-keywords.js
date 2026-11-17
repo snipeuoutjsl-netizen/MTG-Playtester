@@ -14,6 +14,8 @@ const ALT_KW = [
   { cr: '702.117', kw: 'surge', cond: 'If you or a teammate has cast another spell this turn', test: () => (spellsCastNow() > 0 ? '' : 'you have not cast another spell this turn') }
 ];
 function altKwLine(line, c) {
+  { const im = line.match(/^Impending (\d+)\s*[\u2014-]\s*(.+?)\.?$/i);   // v0.96.22 CR 702.176
+    if (im) { const cs = parseCostComps(im[2], c.name); return { kind: 'impending', cr: '702.176', label: `Impending ${im[1]}`, mana: manaOf(cs), comps: cs.filter(x => x.k !== 'mana'), cond: '', test: null, note: `It enters with ${im[1]} time counters and is not a creature until the last is removed.` }; } }
   for (const k of ALT_KW) {
     let m = line.match(new RegExp('^' + k.kw + '\\s+((?:\\{[^}]+\\})+)\\s*$', 'i'));
     if (m) return { kind: k.kw, cr: k.cr, label: k.kw[0].toUpperCase() + k.kw.slice(1), mana: m[1], comps: [], cond: k.cond, test: k.test || null, note: k.note || '', reduceBySac: !!k.reduceBySac, comps: k.reduceBySac ? parseCostComps('Sacrifice a creature', c.name).map(x => Object.assign(x, { emerge: true })) : [] };
