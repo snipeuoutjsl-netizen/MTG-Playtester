@@ -577,6 +577,12 @@ function runChain(steps, src, baseModals) {
   };
   next();
 }
+// v0.99.25 "Deal 1 damage. Then amass Orcs 1." is ONE ability: when every step is understood, the player is offered the whole ordered chain as a single button
+// (and Always Yield repeats the whole chain), instead of one button per step where the later steps are easy to skip.
+function visibleOptions(all) {
+  const ch = (all || []).find(o => o && o.chain && o.covers); if (!ch) return (all || []).filter(o => !o.hidden);
+  return all.filter(o => o === ch || (!o.hidden && !ch.covers.has(o.label)));
+}
 function effectOptions(tx, obj) {
   if (hasRawQuote(tx)) { const res = effectOptions(maskQuotes(tx), obj); return res.map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o); }   // quoted text is another object's ability
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
@@ -616,7 +622,7 @@ function effectOptionsInner(tx, obj) {
     // (the component abilities are listed in sentence order); no combined "In order" entry is shown to the player.
     const ordered = steps.map(st => st.opt), keys = new Set(ordered.map(o => o.label));
     const src = (obj && obj.sourceName) || 'Ability';
-    return [...ordered, ...base.filter(o => !keys.has(o.label)), { label: 'In order: ' + steps.map(st => st.opt.label || st.text).join(' \u2192 '), full: false, chain: true, hidden: true, fn: () => { snap(); runChain(steps, src, document.querySelectorAll('.modal').length); } }];
+    return [...ordered, ...base.filter(o => !keys.has(o.label)), { label: steps.map((st, i) => { const l = String(st.opt.label || st.text); return i ? l.replace(/^./, c => c.toLowerCase()) : l; }).join(', then '), full: false, chain: true, hidden: true, covers: keys, fn: () => { snap(); runChain(steps, src, document.querySelectorAll('.modal').length); } }];
   } catch (e) { return base; }
 }
 function effectOptionsBase(tx, obj) {
@@ -803,12 +809,12 @@ function openAbilityEffect(obj, done) {
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
     const e = ayGet(obj.sourceName, tx, obj.sourceId);
-    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
+    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = visibleOptions(effectOptions(tx, obj)); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
       if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
   }
   // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.
   if (teach('autoResolve') && !obj.special) {
-    let pre = []; try { pre = effectOptions(tx, obj).filter(o => !o.hidden); } catch (e) { pre = []; }
+    let pre = []; try { pre = visibleOptions(effectOptions(tx, obj)); } catch (e) { pre = []; }
     const one = pre.length === 1 && !pre[0].special && typeof pre[0].fn === 'function' ? pre[0] : null;
     let clean = !!one && (one.full || !uncoveredClauses(tx).length);
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
@@ -820,7 +826,7 @@ function openAbilityEffect(obj, done) {
     }
   }
   const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 520, sticky: true, noClose: true, resolve: true });
-  let opts = effectOptions(tx, obj).filter(o => !o.hidden);   // v0.96.10 backend-only entries (the ordered chain) are never listed
+  let opts = visibleOptions(effectOptions(tx, obj));   // v0.99.25 an understood multi-step ability is one ordered button
   // The automatic 'delayedDraw' already covers a delayed draw; drop the generic duplicate button (it caused a second draw).
   if (opts.some(x => x.special === 'delayedDraw')) opts = opts.filter(x => !(x.label && /^Create delayed trigger: Draw a card/i.test(x.label)));
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
