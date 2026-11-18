@@ -12,7 +12,7 @@ function compactToken(o) {
 }
 function installTokens(list) {
   TOKENDB = new Map();
-  for (const r of list || []) { const k = norm(r.n); if (!TOKENDB.has(k)) TOKENDB.set(k, []); const a = TOKENDB.get(k); if (!a.some(x => x.pt === r.pt && x.tx === r.tx && x.col.join('') === r.col.join('') && x.t === r.t)) a.push(r); }
+  for (const r of list || []) { const k = norm(r.n); if (!TOKENDB.has(k)) TOKENDB.set(k, []); const a = TOKENDB.get(k), sig = y => [y.pt, y.t, y.col.slice().sort().join(''), String(y.tx).replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()].join('|'); if (!a.some(x => sig(x) === sig(r))) a.push(r); }
 }
 // The official token that matches what a card says it creates ("a 0/0 colorless Construct artifact creature token ..."), or null.
 function officialToken(name, pt, col, tx) {
@@ -146,7 +146,7 @@ async function importCardData(file) {
     const out = []; const seen = new Set(); const toks = [];
     for (const o of raw) {
       if (!o || !o.name) continue;
-      if (o.layout === 'token' || o.layout === 'double_faced_token' || o.layout === 'emblem') { try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
+      if (o.layout === 'token' || o.layout === 'double_faced_token' || o.layout === 'emblem') { if (o.set_type === 'funny' || o.set_type === 'memorabilia') continue; try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
       if (SKIP_LAYOUTS.has(o.layout)) continue;
       const k = norm(o.name);
       if (seen.has(k)) continue;
