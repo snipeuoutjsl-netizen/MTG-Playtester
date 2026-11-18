@@ -57,7 +57,8 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.origName) { c.name = c.origName; delete c.origName; }
   const _mp = c.mutParts ? c : null;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
-  delete c.exileInstead; delete c.monstrous; delete c.exerted;   // CR 701.37b: monstrous lasts until it leaves the battlefield
+  delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
+    // CR 701.37b: monstrous lasts until it leaves the battlefield
   if (_mp) mutSpawnParts(c, dest);
   if (c.token) {   // a token that leaves the battlefield ceases to exist, but it did leave (and may have died)
     log(`Token ${c.name} left the battlefield`);

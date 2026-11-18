@@ -278,8 +278,11 @@ const AW_RE = /^(?:Addendum|Adamant|Alliance|Battalion|Bloodrush|Channel|Chroma|
 const stripAW = tx => String(tx == null ? '' : tx).replace(AW_RE, '');
 const AW_CACHE = new WeakMap();
 function awInfo(base) { if (!base || !base.tx || !AW_RE.test(base.tx)) { AW_RE.lastIndex = 0; return base; } AW_RE.lastIndex = 0; let r = AW_CACHE.get(base); if (!r || r.__src !== base.tx) { r = Object.assign({}, base, { tx: stripAW(base.tx), __src: base.tx }); AW_CACHE.set(base, r); } return r; }
-function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
-function cardText(c) { return stationText(c, stripAW(cardTextRaw(c))); }
+// v0.99.40 the rules a permanent has now: a Class (CR 716.2b) or Spacecraft (CR 721.2) only has the level/station sections it has reached,
+// so its triggers and statics are read from that text (marked ovr so the trigger cache keys on the text).
+function rulesInfo(c) { const r = rulesInfo0(c); if (!r || !r.tx || !c || c.token || !state) return r; let tx = r.tx; try { tx = classText(c, stationText(c, r.tx)); } catch (e) { return r; } return tx === r.tx ? r : Object.assign({}, r, { tx, ovr: true }); }
+function rulesInfo0(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
+function cardText(c) { return classText(c, stationText(c, stripAW(cardTextRaw(c)))); }
 function cardTextRaw(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
@@ -1161,6 +1164,7 @@ function parseTriggers(c) {
     else if ((cAny = cond.match(/^(?:when|whenever) a player casts a spell(?: with mana value (equal to the number of ([a-z+\/-]+) counters on (?:~|this \w+)|(\d+)(?: or (less|greater))?))?$/)) && /^counter that spell\.?$/i.test(cm[2].trim())) {   // v0.96.31 Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
       ev = 'cast-any'; castAny = { counters: cAny[2] || '', mv: cAny[3] !== undefined ? +cAny[3] : null, cmp: cAny[4] || 'equal' }; }
     else if (/^(?:when|whenever) (?:~|this \w+) mutates$/.test(cond)) ev = 'mutates-self';
+    else if ((q0 = cond.match(/^when (?:~|this class) becomes level (\d+)$/))) { ev = 'class-level'; filter = q0[1]; }   // CR 716.2c
     else if (/^(?:when|whenever) (?:~|this \w+) enters/.test(cond)) ev = 'etb-self';
     else if (word === 'Landfall' || /\ba land (?:you control )?enters|land enters the battlefield under your control/.test(cond)) ev = 'landfall';
     else if (/^(?:when|whenever) (?:another|a|an|one or more) .*enters/.test(cond) && !/opponent/.test(cond)) { ev = 'etb-other'; filter = cond; }
@@ -1269,6 +1273,8 @@ function fireTrigger(ev, ctx = {}) {
     for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self' && (!t.test || t.test(a, atk))) add(a, t, `${a.name} was declared as an attacker.`);
     for (const a of atk) for (const x of bf) if (x.att === a.id) for (const t of parseTriggers(x)) if (t.ev === 'host-attacks') add(x, t, `${a.name} (equipped or enchanted by ${x.name}) attacked.`);
     if (atk.length) for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'attack-any' && (!t.test || t.test(c, atk))) add(c, t, 'You declared attackers.');
+  } else if (ev === 'class-level') {   // CR 716.2c "When this Class becomes level N"
+    const cc = ctx.card; for (const t of parseTriggers(cc)) if (t.ev === 'class-level' && +t.filter === ctx.level) add(cc, t, `${cc.name} became level ${ctx.level}.`);
   } else if (ev === 'mutates') {
     const mc = ctx.card; for (const t of parseTriggers(mc)) if (t.ev === 'mutates-self') add(mc, t, `${mc.name} mutated (a creature spell merged with it).`);
   } else if (ev === 'dies') {
@@ -1726,7 +1732,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = classLevelOptions(tx, obj) || exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -2102,7 +2108,8 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.origName) { c.name = c.origName; delete c.origName; }
   const _mp = c.mutParts ? c : null;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
-  delete c.exileInstead; delete c.monstrous; delete c.exerted;   // CR 701.37b: monstrous lasts until it leaves the battlefield
+  delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
+    // CR 701.37b: monstrous lasts until it leaves the battlefield
   if (_mp) mutSpawnParts(c, dest);
   if (c.token) {   // a token that leaves the battlefield ceases to exist, but it did leave (and may have died)
     log(`Token ${c.name} left the battlefield`);
@@ -6055,6 +6062,8 @@ function activatedAbilitiesFor(c){
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }
+    { const lv=line.match(CLASS_LEVEL_RE);   // CR 716.2a "[Cost]: Level N" = "[Cost]: This Class's level becomes N. Activate only if this Class is level N-1 and only as a sorcery."
+      if(lv && isClassCard(c)){ const pc=parseAbilityCost(lv[1],short); res.push({cost:lv[1]+': Level '+lv[2],effect:`~ becomes level ${lv[2]}. Activate only as a sorcery.`,mana:pc.mana,comps:pc.comps,ix:res.length,classLevel:+lv[2]}); continue; } }
     if(/^Station\b(?!\s*\d)/i.test(line)){ res.push({cost:'Station',effect:'Tap another untapped creature you control: put charge counters equal to its power on ~. Activate only as a sorcery.',ix:res.length,station:true}); continue; }   // CR 702.184a
     { const cr=line.match(/^Crew (\d+)\b/i);   // Crew (CR 702.122a): "Tap any number of untapped creatures you control with total power N or more: this permanent becomes an artifact creature until end of turn."
       if(cr){ res.push({cost:'Crew '+cr[1],effect:'~ becomes an artifact creature until end of turn.',ix:res.length,crew:+cr[1]}); continue; } }
@@ -6074,6 +6083,7 @@ function abilityReady(c, ab) {   // can this particular ability be activated rig
   if (ab.tap && (c.tapped || isSick(c))) return 'tap';
   if (ab.crew && crewPower(c) < ab.crew) return 'cost';
   if (ab.station && !stationCands(c).length) return 'cost';
+  if (ab.classLevel && classLevelOf(c) !== ab.classLevel - 1) return 'restriction';   // CR 716.2a: only from the level just below
   if (ab.removeN) { const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {}); if ((cc[ab.removeKind] || 0) < ab.removeN) return 'counters'; }
   if (ab.life && state.life < ab.life) return 'life';
   if (ab.comps && ab.comps.length && compsFeasible(ab.comps, c.id)) return 'cost';
@@ -6592,8 +6602,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.40';
+const APP_VERSION = '0.99.41';
 const CHANGELOG = [
+  { v: '0.99.41', title: 'Class enchantments have levels', notes: ['FIXED (rules, CR 716): Class enchantments such as Stormchaser\'s Talent had all of their abilities at once, so the level-3 "whenever you cast an instant or sorcery spell, create an Otter" made tokens from the start. A Class now enters at level 1 and has only the abilities of the levels it has reached. "{cost}: Level N" is offered as an ability, at sorcery speed, only from level N-1; "When this Class becomes level N" triggers when it levels up; a Class that leaves the battlefield starts again at level 1.', 'The same "only what it has reached" reading now also decides the triggered and static abilities of Spacecraft (station levels).'] },
   { v: '0.99.40', title: 'Deck bookcase, tidier Settings, mulligan to zero, Spacecraft text', notes: ['NEW: the deck screen is a bookcase. Deck boxes stand on wooden shelves; hovering slides one forward, and a click takes it off the shelf into the middle of the window, where you can turn it with the mouse and see its colours, mana curve and key cards next to Use this deck, Edit list, Sideboard, Box art and Card art & printings. Escape or Put it back returns it; a double-click still picks a deck at once.', 'Settings reorganised: Playmat & frame has its own tab, the teaching aids are grouped (Turn flow, Casting & the stack, On the cards, Help & the log) in two columns, the rows are tighter, and search now finds a single switch inside a group. A duplicate "Replacement effect notes" switch was removed. Every option and every accessibility setting is still there; the columns drop to one when the text is large.', 'FIXED: a window opened during the opening hand (Settings, for example) was drawn underneath the large hand cards.', 'RULES (CR 103.5): a mulligan always puts the whole hand back, shuffles and draws a new seven; you may now mulligan all the way to zero cards (it used to stop at one).', 'FIXED (rules): keyword costs written "Keyword\u2014Cost." (Cumulative upkeep\u2014Pay 1 life., and similar) were not read because the line ends in a period.', 'FIXED (rules): Spacecraft now read their real Oracle text ("10+ | Flying" lines, with the power and toughness box at the threshold the reminder text names), so they are only creatures, and only get those abilities, once they have enough charge counters.', 'Tests: the invented test cards are now kept in the repository, and all 237 rules checks pass.'] },
   { v: '0.99.39', title: 'Tribal Flames and "where X is" counting fixed; Card art grid tidied', notes: ['FIXED (rules): Tribal Flames and other Domain cards dealt 0 damage. "X is the number of basic land types among lands you control" is now counted (with Leyline of the Guildpact or Prismatic Omen out, each land you control has all five types, so one land gives 5; with no lands it is 0).','FIXED: a "where X is the number of ..." that the app cannot count is never taken as 0 any more. The line is left for you to do by hand (and shown as not understood) instead of quietly doing nothing. "The number of cards in your graveyard" now counts the graveyard (it used to give 0).','Card art & printings: the buttons fit inside each card (Printing\u2026 on its own row), and every card lines up.'] },
   { v: '0.99.38', title: 'Damage targeting fix', notes: ['FIXED (rules): spells and abilities that deal damage to "target creature or planeswalker" (Strangle, Burning Hands, Broadside Barrage and about 60 others) were offered as damage to the opponent. A player is not a legal target for them (rules 115.1 and 601.2c), so that option is gone. "Any target", "target creature or player" and "target player or planeswalker" still offer it.'] },
@@ -9511,7 +9522,7 @@ const RULINGS = [
   [/^untap ~ during each other player'?s untap step/i, 'Untap (rule 502.3): you also untap this during your opponents\' untap steps. Untap it yourself when the opponent\'s turn begins.'],
   [/^(?:metalcraft|threshold|spell mastery|revolt|ferocious|hellbent|formidable|raid|morbid|fateful hour|coven|descend \d+) —/i, 'Ability word (rule 207.2c): the condition is checked continuously. Count it yourself (metalcraft = three or more artifacts, threshold = seven or more cards in your graveyard).'],
   [/^(?:i|ii|iii|iv|v)(?:, (?:i|ii|iii|iv|v))* —/i, 'Saga chapter (rule 714): put a lore counter on it as your first main phase begins, then the chapter ability triggers; sacrifice it after the final chapter has resolved.'],
-  [/^level up\b|^level \d/i, 'Class level (rule 716): pay the level cost at sorcery speed; levels are gained one at a time in order.'],
+  [/^level up\b|^level \d/i, 'Class level (rule 716): offered as an ability at sorcery speed, one level at a time; a level\'s abilities apply only once the Class reaches it.'],
   [/^(?:this spell|~) can'?t be countered/i, "Can't be countered (rule 101.2 / 701.5): the app refuses to counter it."],
   [/^when you cast this spell, take an extra turn|^take an extra turn after this one/i, 'Extra turn (rule 500.7): the extra turn is taken immediately after this one; extra turns stack, with the last created taken first. Use the "extra turn" tools to start another turn.'],
   [/^this spell costs \{\w\} less to cast for each/i, 'Cost reduction by count (rule 601.2f): the reduction is applied while paying. Enter it in the cost window.'],
@@ -9529,7 +9540,7 @@ function triggerRuling(t) {
   if (/whenever a player casts/.test(x)) return "Triggers on every player's spells, including yours (rule 603.2). The app only watches your own casts; apply it by hand when the opponent casts.";
   if (/deals combat damage to a creature|dealt damage by|deals damage to a creature/.test(x)) return 'Combat-damage trigger on a creature (rule 510.2): triggers after combat damage is dealt. The goldfish has no opposing creatures; apply when it happens against a real opponent.';
   if (/whenever you tap .* for mana|whenever .* is tapped for mana/.test(x)) return 'Mana-tap trigger (rule 605.5): it triggers when the mana ability resolves and goes on the stack after it. Apply by hand when you tap it.';
-  if (/becomes level|becomes the target/.test(x)) return 'Class/level trigger (rule 716.2c): triggers when it reaches that level. Apply by hand when you level it up.';
+  if (/becomes the target/.test(x)) return 'Targeting trigger (rule 603.2): triggers when it becomes the target of a spell or ability. Apply by hand when that happens.';
   if (/you may pay \{.*\}\. when you do|reflexive/.test(x)) return 'Reflexive trigger (rule 603.12): you pay as the first ability resolves; only if you did, the second ability triggers and goes on the stack.';
   if (/when ~ is turned face up|transforms|return him to the battlefield transformed|transformed under/.test(x)) return 'Transform (rule 701.28 / 712): turn the card to its other face; it stays the same object. Right-click it on the battlefield and choose Transform (a trigger that says transform offers it too).';
   return null;
@@ -12967,6 +12978,28 @@ function stationPick(sp, cb) {
   const cands = stationCands(sp); if (!cands.length) { toast('Cannot station', 'You need another untapped creature you control to tap.'); return; }
   openPickCards({ title: `${sp.name}: Station`, note: 'Tap another untapped creature you control. The Spacecraft gets charge counters equal to its power. Summoning-sick creatures can do this.', cards: cands, min: 1, max: 1,
     done: picked => { const x = picked[0], n = Math.max(0, powerOf(x).n); snap(); x.tapped = true; log(`${sp.name}: stationed by tapping ${x.name} (power ${n})`); cb(n); } });
+}
+// ---- Class enchantments (CR 716)
+// 716.2a "[Cost]: Level N" means "[Cost]: This Class's level becomes N. Activate only if this Class is level N-1 and only as a sorcery."
+// 716.2b The abilities printed after a level line are that level's abilities: the Class has them only while its level is N or greater.
+// 716.2c "When this Class becomes level N" triggers when the level ability resolves. 716.3 A Class enters at level 1.
+const CLASS_LEVEL_RE = /^((?:\{[^}]+\})+):\s*Level (\d+)$/i;
+function isClassCard(c) { const t = c && !c.token ? ((cardInfo(c.name) || {}).t || '') : ''; return /\bClass\b/.test(t) && /\bEnchantment\b/.test(t); }
+const classLevelOf = c => Math.max(1, (c && c.classLevel) || 1);
+function classText(c, txt) {   // only the level sections the Class has reached are its text; the level lines themselves always are
+  if (!txt || !isClassCard(c) || !/:\s*Level \d+\s*$/im.test(txt)) return txt;
+  const lv = classLevelOf(c), out = []; let cur = 1;
+  for (const line of String(txt).split('\n')) { const m = CLASS_LEVEL_RE.exec(line.trim()); if (m) { cur = +m[2]; out.push(line); continue; } if (cur <= lv) out.push(line); }
+  return out.join('\n');
+}
+function classLevelOptions(tx, obj) {
+  const m = String(tx || '').trim().match(/^(?:~|this Class)(?:'s level)? becomes level (\d+)\.(?:\s*Activate only as a sorcery\.)?$/i); if (!m || !obj) return null;
+  const n = +m[1], name = obj.sourceName || 'Class';
+  return [{ full: true, label: `${name} becomes level ${n}`, fn: () => {
+    const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { toast('Already gone', `${name} is no longer on the battlefield.`); return; }
+    if (classLevelOf(f.card) !== n - 1) { log(`${name}: already level ${classLevelOf(f.card)}, so level ${n} does nothing`); return; }
+    snap(); f.card.classLevel = n; log(`${name} is now level ${n} (CR 716)`); fireTrigger('class-level', { card: f.card, level: n }); render(); flushTriggers();
+  } }];
 }
 // ---- "Can't be countered" (CR 101.2, 701.6a, 614): one engine-level check used by every counter effect and by the stack buttons.
 // Sources: (1) the spell's own text, "This spell can't be countered" (and "... can't be countered by spells or abilities");

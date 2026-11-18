@@ -43,6 +43,8 @@ function activatedAbilitiesFor(c){
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }
+    { const lv=line.match(CLASS_LEVEL_RE);   // CR 716.2a "[Cost]: Level N" = "[Cost]: This Class's level becomes N. Activate only if this Class is level N-1 and only as a sorcery."
+      if(lv && isClassCard(c)){ const pc=parseAbilityCost(lv[1],short); res.push({cost:lv[1]+': Level '+lv[2],effect:`~ becomes level ${lv[2]}. Activate only as a sorcery.`,mana:pc.mana,comps:pc.comps,ix:res.length,classLevel:+lv[2]}); continue; } }
     if(/^Station\b(?!\s*\d)/i.test(line)){ res.push({cost:'Station',effect:'Tap another untapped creature you control: put charge counters equal to its power on ~. Activate only as a sorcery.',ix:res.length,station:true}); continue; }   // CR 702.184a
     { const cr=line.match(/^Crew (\d+)\b/i);   // Crew (CR 702.122a): "Tap any number of untapped creatures you control with total power N or more: this permanent becomes an artifact creature until end of turn."
       if(cr){ res.push({cost:'Crew '+cr[1],effect:'~ becomes an artifact creature until end of turn.',ix:res.length,crew:+cr[1]}); continue; } }
@@ -62,6 +64,7 @@ function abilityReady(c, ab) {   // can this particular ability be activated rig
   if (ab.tap && (c.tapped || isSick(c))) return 'tap';
   if (ab.crew && crewPower(c) < ab.crew) return 'cost';
   if (ab.station && !stationCands(c).length) return 'cost';
+  if (ab.classLevel && classLevelOf(c) !== ab.classLevel - 1) return 'restriction';   // CR 716.2a: only from the level just below
   if (ab.removeN) { const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {}); if ((cc[ab.removeKind] || 0) < ab.removeN) return 'counters'; }
   if (ab.life && state.life < ab.life) return 'life';
   if (ab.comps && ab.comps.length && compsFeasible(ab.comps, c.id)) return 'cost';
