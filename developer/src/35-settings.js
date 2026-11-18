@@ -122,8 +122,8 @@ async function loadSleeve() {
   applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
-const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board layout'], ['mat', 'Playmat & frame'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged: lanes, zone rail, piles and board effects'], mat: ['🖼', 'Playmat picture, colour and motion, and the frame around the board'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['MTG Playtester is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -236,7 +236,6 @@ function openSettings() {
     ['gapBadges','Warning badge on cards with rules the app cannot apply','A small \u26a0 on a permanent when part of its rules text is only a reminder (hover it to see which lines)'],
     ['gapNotes','Log rules the app cannot apply','When a card enters, logs any of its rules the app only reminds you of'],
     ['dredgePrompts','Dredge prompt','When you would draw and have a dredge card in your graveyard, asks whether to dredge instead (the dredge rule itself is always correct)'],
-    ['replaceNotes','Replacement effect notes','Logs how a replacement effect changed an event, for example Hardened Scales adding a counter'],
     ['libraryPreview','Library card previews','Large card preview while hovering library lists'],
     ['combatHelper','Combat teaching helper','Attack and block guidance during combat, and the reminder when you skip attacking'],
     ['summoningSick','Summoning sickness indicator','Faint red glow and tooltip on creatures that cannot attack or use {T} abilities yet (the rule itself is always enforced)'],
@@ -244,18 +243,24 @@ function openSettings() {
     ['rulesHints','Rules hints','Explanations when an action is blocked'],
     ['keywordTips','Keyword explanations','Underlined keywords and keyword chips with hover explanations']
   ];
+  // v0.99.40 the aids are grouped by when you meet them, two columns wide
+  const TEACH_GROUPS=[['Turn flow',['phaseBar','phasePopups','phasePauses','autoStart','preGame','vaultPrompt','combatHelper']],
+    ['Casting & the stack',['stackGuidance','costGuidance','autoResolve','triggerPrompts','dredgePrompts','replaceNotes']],
+    ['On the cards',['playability','summoningSick','keywordIcons','keywordTips','stateIcons','durationHints','gapBadges']],
+    ['Help & the log',['rulesHints','gapNotes','libraryPreview','libraryMenu']]];
+  { const seen=new Set(TEACH_GROUPS.flatMap(g=>g[1])); const rest=teachDefs.map(d=>d[0]).filter(k=>!seen.has(k)); if(rest.length) TEACH_GROUPS.push(['More',rest]); }
   const drawTeaching=()=>{teachBox.replaceChildren(
     h('div',{class:'setrow'},h('button',{text:'Turn all on',onclick:()=>{for(const [k] of teachDefs)settings.teaching[k]=true;saveSettings();render();drawTeaching();}}),h('button',{text:'Turn all off',onclick:()=>{for(const [k] of teachDefs)settings.teaching[k]=false;saveSettings();render();drawTeaching();}})),
-    ...teachDefs.map(([k,label,desc])=>{
+    ...TEACH_GROUPS.flatMap(([g,keys])=>[h('div',{class:'subhead',text:g}),h('div',{class:'setgrid'},keys.map(k=>teachDefs.find(d=>d[0]===k)).filter(Boolean).map(([k,label,desc])=>{
     const cb=h('input',{type:'checkbox'});cb.checked=settings.teaching[k]!==false;
     cb.addEventListener('change',()=>{settings.teaching[k]=cb.checked;saveSettings();render();});
     return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc})));
-  }))};
+  }))]))};
   drawTeaching();
   const animBox=h('div');
   const drawAnim=()=>{ animBox.replaceChildren(
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.anim.on!==false; cb.addEventListener('change',()=>{settings.anim.on=cb.checked;saveSettings();render();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Animations & effects'}),h('span',{class:'muted small',text:'Master switch. They only decorate: nothing here changes the game itself. Also off if your system asks for reduced motion.'}))); })(),
-    ...ANIM_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.anim[k]!==false; cb.addEventListener('change',()=>{settings.anim[k]=cb.checked;saveSettings();render();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); }),
+    h('div',{class:'setgrid'},ANIM_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.anim[k]!==false; cb.addEventListener('change',()=>{settings.anim[k]=cb.checked;saveSettings();render();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })),
     (()=>{ const mk=(label,key,min,max,step,fmt,desc)=>{ const val=h('span',{class:'val',text:fmt(settings.anim[key])}); const r=h('input',{type:'range',min,max,step,value:settings.anim[key]}); r.addEventListener('input',()=>{settings.anim[key]=parseFloat(r.value);val.textContent=fmt(settings.anim[key]);saveSettings();if(key==='fanAmt')applyFan();}); return h('div',{class:'setrow'},h('label',{text:label}),r,val,h('span',{class:'muted small',text:desc})); };
       return h('div',{class:'animsl'},h('div',{class:'fhead',text:'Fine tuning'}),
         mk('Animation speed','speed',0.4,2.5,0.1,v=>v+'×','Higher = faster. Applies to every animation'),
@@ -281,17 +286,16 @@ function openSettings() {
         mk('original', 'Original', 'the arrangement from before v0.74. Switch back any time; the table changes immediately'),
         h('div', { class: 'fhead', text: 'Parts of the updated layout' }),
         h('div', { class: 'small muted', style: 'margin:-2px 0 6px', text: layMode() ? 'Each part has its own switch.' : 'These apply only when Updated is selected.' }),
-        ...LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
+        h('div', { class: 'setgrid' }, LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
           cb.addEventListener('change', () => { settings.lay = { ...(settings.lay || {}), [k]: cb.checked }; saveSettings(); applyLayout(); render(); });
-          return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); }),
-        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes, the playmat and the optional board effects (zone depth, combat lane, stacking identical tokens…) are under Graphics and Playmat & frame.' }));
+          return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })),
+        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat picture and the frame have their own tab.' }));
     }; draw(); P.layout.append(box); }
   const foilBox=h('div');
   const drawFoil=()=>{ const sel=h('select'); for(const [v,l] of [['off','Off'],['some','Some cards (about 1 in 5)'],['all','Every card']]) sel.append(h('option',{value:v,text:l})); sel.value=settings.foil||'off';
     sel.addEventListener('change',()=>{settings.foil=sel.value;saveSettings();render();});
     const r=h('input',{type:'range',min:0.2,max:1,step:0.05}); r.value=settings.foilStr===undefined?0.6:settings.foilStr; r.addEventListener('input',()=>{settings.foilStr=+r.value;saveSettings();});
     foilBox.replaceChildren(h('div',{class:'setrow'},h('label',{text:'Foil effect'}),sel,h('span',{class:'muted small',text:'A rainbow holographic sheen that slowly sweeps over the card and follows your mouse'})),h('div',{class:'setrow'},h('label',{text:'Foil strength'}),r)); }; drawFoil();
-  P.gfx.append(h('div',{class:'fhead',text:'Interface theme'}),themeBox,h('div',{class:'fhead',text:'Foil cards'}),foilBox);
   const curBox=h('div');
   const drawCursor=()=>{
     const sel=h('select'); for(const [v,l] of CURSOR_STYLES) sel.append(h('option',{value:v,text:l})); sel.value=settings.cursor||'default';
@@ -307,7 +311,6 @@ function openSettings() {
     curBox.replaceChildren(h('div',{class:'setrow'},h('label',{text:'Cursor'}),sel,sz),
       settings.cursor==='custom'?h('div',{class:'setrow'},h('label',{text:'My image'}),h('button',{text:settings.cursorImg?'Change image':'Choose image',onclick:()=>file.click()}),file,h('label',{text:'Click point'}),hot,h('span',{class:'muted small',text:'Any picture; it is shrunk to a cursor. Transparent PNGs look best.'})):null);
   }; drawCursor();
-  P.gfx.append(h('div',{class:'fhead',text:'Mouse cursor'}),curBox);
   const soundBox=h('div');
   const drawSound=()=>{ soundBox.replaceChildren(
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
@@ -316,20 +319,25 @@ function openSettings() {
     (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),...Object.entries(LOFI_SONGS).map(([k,v])=>h('option',{value:k,text:v.label}))); sel.value=musicStyleId(); sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=!LOFI_SONGS[sel.value];}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:!LOFI_SONGS[settings.sound.musicStyle]},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Kick, snare and hats in the low-fi and hip-hop songs. Turn off for just keys, bass and crackle.'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.musicVol; r.addEventListener('input',()=>{settings.sound.musicVol=+r.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music volume'}),r); })(),
-    ...SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })
+    h('div',{class:'setgrid'},SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); }))
   ); }; drawSound();
   P.snd.append(h('div',{class:'fhead',text:'Sound'}),soundBox);
   P.legal.append(h('div',{class:'fhead',text:'Legal notice'}), ...LEGAL_SECTIONS.flatMap(([t, ps]) => [h('div',{class:'legalhead',text:t}), ...ps.map(x => h('div',{class:'psub legalp',text:x}))]));
   P.tutor.append(h('div',{class:'fhead',text:'Teaching aids'}),h('div',{class:'small muted',text:'Every aid is its own switch. Mix and match; none depends on another.'}),teachBox);
   P.gfx.append(
+    h('div',{class:'fhead',text:'Interface theme'}),themeBox,
     h('div',{class:'fhead',text:'Card size'}),
     slider('Battlefield cards', 'bfs', 0.6, 1.6, 0.05, pct),
     slider('Hand cards', 'hs', 0.6, 1.6, 0.05, pct),
     slider('Turn-flow bar opacity', 'stripOpacity', 0.15, 1, 0.05, pct),
-    h('div',{class:'fhead',text:'Card sleeves'}), sleeveBox);
+    h('div',{class:'fhead',text:'Foil cards'}),foilBox,
+    h('div',{class:'fhead',text:'Card sleeves'}), sleeveBox,
+    h('div',{class:'fhead',text:'Mouse cursor'}),curBox);
   P.board.append(
     P.layout,
-    ...LAYOUT_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = layoutOn(k); cb.addEventListener('change', () => { settings.layout[k] = cb.checked; saveSettings(); render(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); }),
+    h('div', { class: 'fhead', text: 'Board effects' }),
+    h('div', { class: 'setgrid' }, LAYOUT_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = layoutOn(k); cb.addEventListener('change', () => { settings.layout[k] = cb.checked; saveSettings(); render(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })));
+  P.mat.append(
     h('div', { class: 'fhead', text: 'Playmat' }),
     matBox,
     slider('Zone panel opacity', 'zonea', 0, 0.7, 0.02, pct),
@@ -339,13 +347,19 @@ function openSettings() {
   // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
   const tabbar = h('div', { class: 'setnav' }), stage = h('div', { class: 'setmain' });
   const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings' });
+  // v0.99.40 search looks inside every group: each setting row is matched on its own, and a heading or group stays only while something under it matches
+  const LEAF = '.setrow, .teachopt, .legalp, .artgal';
   const applyFilter = q => {
     q = q.trim().toLowerCase();
     for (const k of Object.keys(P)) { if (k === 'layout') continue;
-      const kids = [...P[k].children]; for (const el of kids) el.hidden = false;
+      for (const el of P[k].querySelectorAll('[data-fhid]')) { el.hidden = false; delete el.dataset.fhid; }
       if (!q) continue;
-      for (const el of kids) if (!el.classList.contains('fhead')) el.hidden = !el.textContent.toLowerCase().includes(q);
-      kids.forEach((el, i) => { if (!el.classList.contains('fhead')) return; let any = false; for (let n = i + 1; n < kids.length && !kids[n].classList.contains('fhead'); n++) if (!kids[n].hidden) any = true; el.hidden = !any; });
+      const hide = el => { if (!el.hidden) { el.hidden = true; el.dataset.fhid = '1'; } };
+      const leaves = [...P[k].querySelectorAll(LEAF)].filter(el => !el.parentElement.closest(LEAF));
+      for (const el of leaves) if (!el.textContent.toLowerCase().includes(q)) hide(el);
+      const shown = el => [...el.querySelectorAll(LEAF)].some(x => !x.hidden && !x.closest('[hidden]'));
+      for (const el of [...P[k].querySelectorAll('div, label')].reverse()) { if (el.matches(LEAF) || el.closest(LEAF) || el.matches('.fhead, .subhead')) continue; if (!shown(el)) hide(el); }
+      for (const hd of P[k].querySelectorAll('.fhead, .subhead')) { let any = false; for (let n = hd.nextElementSibling; n && !n.matches(hd.matches('.fhead') ? '.fhead' : '.fhead, .subhead'); n = n.nextElementSibling) if (!n.hidden && (n.matches(LEAF) || shown(n))) { any = true; break; } if (!any) hide(hd); }
     }
   };
   const showTab = k => {
@@ -359,7 +373,7 @@ function openSettings() {
     if (!q.trim()) { showTab(settingsTab); search.focus(); return; }
     applyFilter(q);
     const out = [];
-    for (const [k, label] of SET_TABS) { if (![...P[k].children].some(el => !el.hidden && !el.classList.contains('fhead'))) continue; out.push(h('div', { class: 'settitle' }, h('h3', { text: label })), P[k]); }
+    for (const [k, label] of SET_TABS) { if (![...P[k].querySelectorAll(LEAF)].some(el => !el.hidden && !el.closest('[hidden]'))) continue; out.push(h('div', { class: 'settitle' }, h('h3', { text: label })), P[k]); }
     stage.replaceChildren(...(out.length ? out : [h('div', { class: 'muted', style: 'padding:18px 4px', text: 'No setting matches \u201c' + q + '\u201d.' })])); stage.scrollTop = 0;
   });
   tabbar.append(search);

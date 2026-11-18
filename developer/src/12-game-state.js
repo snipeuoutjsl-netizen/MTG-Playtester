@@ -162,8 +162,9 @@ function startGame() {
 }
 
 function doMulligan() {
+  // CR 103.5: a player may keep taking mulligans; after the seventh there is nothing left to keep, so that is the last one offered
+  if (!state || state.phase !== 'mull' || state.mulls >= 7) return;
   dealingStart();
-  if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
   state.library.push(...state.hand.splice(0));   // CR 103.5: the whole hand goes back into the library ...
   shuffleLib({ delay: 450 });   // ... which is shuffled (on screen, once the old hand has landed on it) ...

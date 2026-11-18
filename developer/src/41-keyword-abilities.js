@@ -3,7 +3,9 @@
 // checked as it triggers), and the printed effect. KW_EFFECTS turns a resolving keyword trigger into the options in the effect window.
 // Keyword ACTIONS written inside card text ("Bolster 2", "Adapt 3", "Connive", "Discover 4") are read by kwActionOptions.
 const kwPow = c => { const r = ptCalc(c); return r.p; };
-const kwItems = tx => { const out = []; for (const line of String(tx || '').replace(/\([^)]*\)/g, ' ').split('\n')) { if (/[.:]/.test(line.replace(/\d+\.\d/g, ''))) continue; for (const it of line.split(/[,;]/)) { const s = it.trim(); if (s) out.push(s); } } return out; };
+// CR 702.1 + Oracle style: a keyword whose cost is not mana is written "Keyword\u2014Cost." with no spaces round the dash (Cumulative upkeep\u2014Pay 1 life., Echo\u2014Discard a card.),
+// so that line is one keyword item even though it ends in a period. An ability word (CR 207.2c) is written with spaces ("Landfall \u2014 Whenever ...") and is not a keyword.
+const kwItems = tx => { const out = []; for (const line of String(tx || '').replace(/\([^)]*\)/g, ' ').split('\n')) { const dash = line.trim().match(/^([A-Z][a-z]+(?: [a-z]+){0,2})\u2014(\S.*?)\.?$/); if (dash) { out.push(dash[1] + '\u2014' + dash[2]); continue; } if (/[.:]/.test(line.replace(/\d+\.\d/g, ''))) continue; for (const it of line.split(/[,;]/)) { const s = it.trim(); if (s) out.push(s); } } return out; };
 const KW_TRIGGERS = [
   { cr: '702.83', kw: 'exalted', ev: 'attack-any', cond: 'Exalted: whenever a creature you control attacks alone', text: 'Whenever a creature you control attacks alone, that creature gets +1/+1 until end of turn.', test: (c, atk) => atk.length === 1 },
   { cr: '702.91', kw: 'battle cry', ev: 'attack-self', cond: 'Battle cry: whenever this creature attacks', text: 'Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn.' },
