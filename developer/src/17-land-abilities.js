@@ -235,7 +235,7 @@ function isFoil(c) {
 }
 const foilEl = () => h('i', { class: 'foilfx' });
 document.addEventListener('mousemove', e => {
-  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, #row-hand .card, #preview .pwrap' : '.foil, #preview .pwrap'); if (!t) return;
+  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, .cardrow .card, #preview .pwrap' : '.foil, #preview .pwrap'); if (!t) return;
   const r = t.getBoundingClientRect(); if (!r.width) return;
   t.style.setProperty('--fx', Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100)).toFixed(0) + '%');
   t.style.setProperty('--fy', Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100)).toFixed(0) + '%');

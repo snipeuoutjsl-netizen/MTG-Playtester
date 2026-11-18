@@ -85,6 +85,7 @@ function mpRenderPanel() {
 // ---- the connect window
 function mpUi() { const d = $('#mpDlg'); if (d && d._refresh) d._refresh(); }
 function openMultiplayer() {
+  if (!FEATURES.multiplayer) return;   // switched off for now
   const m = modal('Multiplayer (LAN)', { width: 640 });
   m.body.append(h('div', { class: 'psub', text: 'Play against a friend on the same network. No account or server: one of you makes an invite code, the other pastes it and sends back a reply code (text them, or paste into any chat). You each play your own deck as usual and see each other\'s public board live. Your hand and library never leave your computer.' }));
   const nm = h('input', { type: 'text', value: MP.name || '', placeholder: 'Your name', maxlength: 24, style: 'width:180px' }); nm.addEventListener('input', () => { MP.name = nm.value.trim(); });

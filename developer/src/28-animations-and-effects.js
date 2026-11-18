@@ -18,7 +18,7 @@ const ANIM_DEFS = [
   ['fan', 'Hand fan', 'Cards in your hand sit in a gentle arc and lift when you hover them'],
   ['shuffle', 'Shuffle animation', 'A quick riffle shuffle over your library whenever it is shuffled (search effects, fetch lands, the Shuffle button)'],
   ['cardDrag', 'Physical card drag', 'Click and hold a card and it follows your mouse. Drop it on a zone it can go to; if it cannot be played or moved there it flies back to where it came from'],
-  ['hand3d', '3D hand tilt', 'Cards in your hand tilt toward the mouse in 3D as you hover them, like the big card preview'],
+  ['hand3d', '3D card tilt', 'Cards in your hand and on the battlefield tilt toward the mouse in 3D as you hover them, like the big card preview'],
   ['handFloat', 'Floating hand', 'The cards in your hand hover up and down a small amount, each at its own pace, with a soft drop shadow'],
   ['dice', 'Dice & coin tumble', 'Coin flips and die rolls spin and land on the real random result (off = the result just appears)'],
   ['bfFloat', 'Floating battlefield', 'Cards on the battlefield drift up and down a tiny amount, each at its own pace, with a deeper shadow so the board has depth']

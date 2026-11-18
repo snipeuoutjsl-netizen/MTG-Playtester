@@ -35,7 +35,7 @@ function init() {
   $('#btnLogToggle').addEventListener('click', () => { lsSet('mtgpt.logopen', lsGet('mtgpt.logopen', '0') === '1' ? '0' : '1'); render(); });
   $('#btnStats').addEventListener('click', () => { toggleUtilityMenu(false); openStats(); });
   $('#btnYield').addEventListener('click', () => { toggleUtilityMenu(false); openAlwaysYield(); });
-  $('#btnMulti').addEventListener('click', () => { toggleUtilityMenu(false); openMultiplayer(); });
+  { const mb = $('#btnMulti'); if (mb) { mb.hidden = !FEATURES.multiplayer; mb.addEventListener('click', () => { toggleUtilityMenu(false); if (FEATURES.multiplayer) openMultiplayer(); }); } }   // multiplayer is built but switched off for now (FEATURES in 01-helpers.js)
   $('#btnDiceCoin').addEventListener('click', () => { toggleUtilityMenu(false); openDiceCoin(); });
   $('#btnReading').addEventListener('click', () => { toggleUtilityMenu(false); openCoverage(); });
   $('#btnWelcome').addEventListener('click', () => { toggleUtilityMenu(false); openWelcome(); });

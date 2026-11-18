@@ -1,3 +1,5 @@
+// Features that are built but switched off until the owner says to turn them on (set to true to expose them again).
+const FEATURES = { multiplayer: false, commander: false };
 // ---------------------------------------------------------------- helpers
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));

@@ -3,6 +3,8 @@
    Card data comes from a Scryfall bulk file the user loads once; everything stays in the browser. */
 (function () {
 
+// Features that are built but switched off until the owner says to turn them on (set to true to expose them again).
+const FEATURES = { multiplayer: false, commander: false };
 // ---------------------------------------------------------------- helpers
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -5093,7 +5095,7 @@ function isFoil(c) {
 }
 const foilEl = () => h('i', { class: 'foilfx' });
 document.addEventListener('mousemove', e => {
-  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, #row-hand .card, #preview .pwrap' : '.foil, #preview .pwrap'); if (!t) return;
+  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, .cardrow .card, #preview .pwrap' : '.foil, #preview .pwrap'); if (!t) return;
   const r = t.getBoundingClientRect(); if (!r.width) return;
   t.style.setProperty('--fx', Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100)).toFixed(0) + '%');
   t.style.setProperty('--fy', Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100)).toFixed(0) + '%');
@@ -6372,9 +6374,9 @@ function openWelcome(onDone) {
       P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.'),
       P('Tired of the same trigger asking every time? The first time an ability goes on the stack you are asked about ', B('Always yield'), ': say yes and it goes on the stack, picks the same targets and applies the same effect by itself for the rest of that game. Review or remove them under ', B('\u2630 \u2192 Always yield'), '.'),
       P('Tokens never have official art here, so the app draws generic art for every token. Open ', B('\u2630 \u2192 Token glossary & art'), ' to browse every token and add your own picture to any of them.'),
-      P('To play a friend on the same network open ', B('☰ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.'),
+      ...(FEATURES.multiplayer ? [P('To play a friend on the same network open ', B('☰ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.')] : []),
       P('For coin flips and die rolls open ', B('☰ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
-    ['5. Settings', [P('The ', B('⚙ gear'), ' holds settings and updates (Settings, Update app, Import / edit deck, Card data, Images, help). The ', B('☰ Game tools'), ' button beside it holds the in-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin, Multiplayer).'), P('Open ', B('⚙ → Settings'), '. The tabs are:'),
+    ['5. Settings', [P('The ', B('⚙ gear'), ' holds settings and updates (Settings, Update app, Import / edit deck, Card data, Images, help). The ', B('☰ Game tools'), ' button beside it holds the in-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin).'), P('Open ', B('⚙ → Settings'), '. The tabs are:'),
       h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, foil, cursor, card sizes, turn-flow bar opacity and card sleeves.'), h('li', null, B('Board'), ' – board layout, playmat and the frame around it.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
     ['6. Themes, playmats and sleeves', [P('Under ', B('Settings → Look & feel'), ' the ', B('One-click set'), ' picker changes everything at once: interface theme, card sleeve, playmat, board frame and (if ticked) a matching song. Or choose each part yourself.'),
       P('Pick a built-in playmat under ', B('Settings → Board'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
@@ -6419,8 +6421,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.20';
+const APP_VERSION = '0.99.21';
 const CHANGELOG = [
+  { v: '0.99.21', title: '3D tilt on every card; multiplayer switched off', notes: ['CHANGED: cards on the battlefield now lean toward the pointer in 3D just like the cards in your hand and the big preview (a tapped card keeps its turn). It follows Settings > Animations > 3D card tilt.', 'CHANGED: Multiplayer (LAN) is switched off for now and its menu entry is hidden until it is in a better place. The code is kept and can be switched back on.']},
   { v: '0.99.20', title: 'Big card preview follows the pointer again', notes: ['FIXED: the enlarged card preview in the right column now leans toward the pointer in a soft 3D tilt with a light spot, and settles back when the pointer leaves it. It had only moved for foil cards. It stays still if your system asks for reduced motion.']},
   { v: '0.99.19', title: 'Artifact piles and a calmer turn bar', notes: ['NEW: non-creature artifacts pile the way lands do. Mana artifacts (Sol Ring, Mox Opal...) pile by the colours they make, identical artifacts pile together, an artifact with an activated ability (Equipment and the like) only piles with exact copies, and all tapped artifacts share one sideways Tapped pile. Artifact creatures and tokens are not piled this way (tokens still bundle in fives). The same Settings > Layout switch controls it.', 'CHANGED: the progress fill in the turn bar is now a flat tint with a slim accent line along the bottom, the same look as the other bars, instead of animated stripes with a glow.']},
   { v: '0.99.18', title: 'Automatic targets and smarter Always yield', notes: ['NEW: a triggered ability with exactly one legal choice picks it by itself (CR 603.3d), so a trigger whose only possible target is your one creature goes on the stack with no window. The log says what it chose.', 'NEW: Always yield remembers what the ability could target when you set it. If a new possible target has appeared (or one has gone) since, the app asks you to choose again and then remembers the new choice. Turn Always yield off any time in the gear menu under Always yield; the log line for an automatic trigger now says so.']},
@@ -7789,7 +7792,7 @@ const ANIM_DEFS = [
   ['fan', 'Hand fan', 'Cards in your hand sit in a gentle arc and lift when you hover them'],
   ['shuffle', 'Shuffle animation', 'A quick riffle shuffle over your library whenever it is shuffled (search effects, fetch lands, the Shuffle button)'],
   ['cardDrag', 'Physical card drag', 'Click and hold a card and it follows your mouse. Drop it on a zone it can go to; if it cannot be played or moved there it flies back to where it came from'],
-  ['hand3d', '3D hand tilt', 'Cards in your hand tilt toward the mouse in 3D as you hover them, like the big card preview'],
+  ['hand3d', '3D card tilt', 'Cards in your hand and on the battlefield tilt toward the mouse in 3D as you hover them, like the big card preview'],
   ['handFloat', 'Floating hand', 'The cards in your hand hover up and down a small amount, each at its own pace, with a soft drop shadow'],
   ['dice', 'Dice & coin tumble', 'Coin flips and die rolls spin and land on the real random result (off = the result just appears)'],
   ['bfFloat', 'Floating battlefield', 'Cards on the battlefield drift up and down a tiny amount, each at its own pace, with a deeper shadow so the board has depth']
@@ -9649,7 +9652,7 @@ function init() {
   $('#btnLogToggle').addEventListener('click', () => { lsSet('mtgpt.logopen', lsGet('mtgpt.logopen', '0') === '1' ? '0' : '1'); render(); });
   $('#btnStats').addEventListener('click', () => { toggleUtilityMenu(false); openStats(); });
   $('#btnYield').addEventListener('click', () => { toggleUtilityMenu(false); openAlwaysYield(); });
-  $('#btnMulti').addEventListener('click', () => { toggleUtilityMenu(false); openMultiplayer(); });
+  { const mb = $('#btnMulti'); if (mb) { mb.hidden = !FEATURES.multiplayer; mb.addEventListener('click', () => { toggleUtilityMenu(false); if (FEATURES.multiplayer) openMultiplayer(); }); } }   // multiplayer is built but switched off for now (FEATURES in 01-helpers.js)
   $('#btnDiceCoin').addEventListener('click', () => { toggleUtilityMenu(false); openDiceCoin(); });
   $('#btnReading').addEventListener('click', () => { toggleUtilityMenu(false); openCoverage(); });
   $('#btnWelcome').addEventListener('click', () => { toggleUtilityMenu(false); openWelcome(); });
@@ -10929,6 +10932,7 @@ function mpRenderPanel() {
 // ---- the connect window
 function mpUi() { const d = $('#mpDlg'); if (d && d._refresh) d._refresh(); }
 function openMultiplayer() {
+  if (!FEATURES.multiplayer) return;   // switched off for now
   const m = modal('Multiplayer (LAN)', { width: 640 });
   m.body.append(h('div', { class: 'psub', text: 'Play against a friend on the same network. No account or server: one of you makes an invite code, the other pastes it and sends back a reply code (text them, or paste into any chat). You each play your own deck as usual and see each other\'s public board live. Your hand and library never leave your computer.' }));
   const nm = h('input', { type: 'text', value: MP.name || '', placeholder: 'Your name', maxlength: 24, style: 'width:180px' }); nm.addEventListener('input', () => { MP.name = nm.value.trim(); });
