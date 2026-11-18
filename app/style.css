@@ -1751,3 +1751,12 @@ body.mullpick #handWrap { gap: 40px; }
 body.mullpick #handWrap > .zlabel { position: static; order: 3; }
 body.mullpick #row-hand.fan { padding-top: 22px; }
 body.mullpick #handWrap { left: calc((100vw - 340px) / 2 + 8px); width: min(1100px, calc(100vw - 400px)); }
+
+/* ---- v0.99.27 opening hand (Keep / Mulligan): the hand is shown large and centred under the prompt so every card can be read */
+body.mullhand:not(.mullpick) #handWrap { position: fixed; left: calc((100vw - 340px) / 2 + 8px); top: auto; bottom: 14px; transform: translateX(-50%); width: min(1100px, calc(100vw - 400px)); height: auto; z-index: 60; --cw: 176px; --ch: 138px; padding: 0 0 6px; }
+body.imgmode.mullhand:not(.mullpick) #handWrap { --cw: 176px; --ch: 246px; }
+body.mullhand:not(.mullpick) #handWrap #row-hand { justify-content: center; flex-wrap: nowrap; max-width: 100%; }
+body.mullpick #handWrap { --cw: 176px; --ch: 138px; }
+body.imgmode.mullpick #handWrap { --cw: 176px; --ch: 246px; }
+body.mullhand:not(.mullpick) #handWrap { bottom: 36px; }
+body.mullhand #handWrap > .zlabel { display: none; }
