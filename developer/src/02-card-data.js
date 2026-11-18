@@ -298,7 +298,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
   const m = modal(`Look at the top ${n === 1 ? 'card' : n + ' cards'}`, { width: 680, sticky: true, noClose: true });
   const need = () => { let left = n; return slots.map(sl => { if (typeof sl.count !== 'number') return null; const k = Math.min(sl.count, left); left -= k; return k; }); };
   const valid = () => {
-    const nd = need(); for (let k = 0; k < slots.length; k++) { if (nd[k] !== null && asg.filter(a => a === k).length !== nd[k]) return false; }
+    const nd = need(); for (let k = 0; k < slots.length; k++) { if (nd[k] !== null && asg.filter(a => a === k).length !== nd[k]) return false; if (slots[k].max && asg.filter(a => a === k).length > slots[k].max) return false; }
     const anyOpen = slots.some(sl => sl.count === 'rest' || sl.count === 'any'); return anyOpen || asg.every(a => a !== null);
   };
   const confirm = h('button', { class: 'primary', text: 'Confirm' });
@@ -310,7 +310,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
     top.forEach((c, i) => {
       const info = cardInfo(c.name);
       const row = h('div', { class: 'row' }, h('span', { class: 'nm' }, c.name, ' ', info && info.mc ? symbols(info.mc) : ''), h('span', { class: 'muted small', text: info ? info.t.split(' // ')[0] : '' }),
-        ...slots.map((sl, k) => h('button', { class: asg[i] === k ? 'tgl on' : 'tgl', text: sl.short || sl.label, title: sl.label, onclick: () => { asg[i] = asg[i] === k ? null : k; draw(); } })));
+        ...slots.map((sl, k) => h('button', { class: asg[i] === k ? 'tgl on' : 'tgl', disabled: !!(sl.filt && !sl.filt(c)), text: sl.short || sl.label, title: sl.label, onclick: () => { asg[i] = asg[i] === k ? null : k; draw(); } })));
       row.addEventListener('mouseenter', () => showPreview(c)); m.body.append(row);
     });
     const nd = need(); const lines = slots.map((sl, k) => { const have = asg.filter(a => a === k).length; return typeof sl.count === 'number' ? `${sl.short || sl.label}: ${have}/${nd[k]}` : null; }).filter(Boolean);
@@ -324,7 +324,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
     const parts = [];
     top.forEach((c, i) => {
       const sl = slots[dest[i]]; if (!sl) { state.library.unshift(c); return; }
-      if (sl.dest === 'hand') state.hand.push(c); else if (sl.dest === 'bottom') state.library.push(c); else if (sl.dest === 'graveyard') gyPush(c, 'library');
+      if (sl.dest === 'battlefield') { enterBattlefield(c, { from: 'library', logMsg: `${srcText || 'Effect'}: ${c.name} put onto the battlefield` }); } else if (sl.dest === 'hand') state.hand.push(c); else if (sl.dest === 'bottom') state.library.push(c); else if (sl.dest === 'graveyard') gyPush(c, 'library');
       else if (sl.dest === 'exile') { if (sl.play) c.mayPlayTurn = state.turn; state.exile.push(c); } else if (sl.dest === 'top') state.library.unshift(c);
       parts.push(`${c.name} → ${sl.dest}${sl.dest === 'exile' && sl.play ? ' (you may play it this turn)' : ''}`);
     });
@@ -337,7 +337,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
 // Reads "Look at the top N cards of your library. Put one into your hand, put one on the bottom, and exile one. You may play the exiled card this turn."
 function parseLookDistribute(tx) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = t.split(/(?<=[.!?])\s+/);
-  const m0 = /^look at the top (a|one|two|three|four|five|six|seven|\d+) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
+  const m0 = /^(?:look at|reveal) the top (a|one|two|three|four|five|six|seven|\d+|x) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
   const n = numOf(m0[1]); let play = false; const slots = []; let ok = true; let alt = null;
   for (const sent of sents.slice(1)) {
     // CR 608.2c: "If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand and the rest on the bottom." (Flow State): an alternative way to sort, chosen by a condition when it resolves
@@ -348,11 +348,22 @@ function parseLookDistribute(tx) {
       const c = cl.trim().toLowerCase(); if (!c) continue;
       const cm = /\b(the rest|all the rest|the remaining cards?|any number|up to (?:a|one|two|three|\d+)|one|two|three|a|an|\d+)\b/.exec(c);
       let count = cm ? (/rest|remaining/.test(cm[1]) ? 'rest' : /any number|up to/.test(cm[1]) ? 'any' : numOf(cm[1])) : null;
-      let dest = /\binto your hand\b|\bto your hand\b/.test(c) ? 'hand' : /\bon the bottom\b/.test(c) ? 'bottom' : /\bgraveyard\b/.test(c) ? 'graveyard' : /\bexile\b/.test(c) ? 'exile' : /\bon top of your library\b/.test(c) ? 'top' : null;
+      let dest = /\bonto the battlefield\b/.test(c) ? 'battlefield' : /\binto your hand\b|\bto your hand\b/.test(c) ? 'hand' : /\bon the bottom\b/.test(c) ? 'bottom' : /\bgraveyard\b/.test(c) ? 'graveyard' : /\bexile\b/.test(c) ? 'exile' : /\bon top of your library\b/.test(c) ? 'top' : null;
       if (count === null && /^exile\b/.test(c)) count = 1;
       if (!dest || count === null) { ok = false; continue; }
-      const nm = { hand: 'Hand', bottom: 'Bottom', graveyard: 'Graveyard', exile: 'Exile', top: 'Top' }[dest];
-      slots.push({ dest, count, label: `${count === 'rest' ? 'the rest' : count === 'any' ? 'any number' : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : 'exiled'}`, short: nm });
+      const nm = { hand: 'Hand', bottom: 'Bottom', graveyard: 'Graveyard', exile: 'Exile', top: 'Top', battlefield: 'Battlefield' }[dest];
+      // "put up to two creature cards with mana value 3 or less from among them onto the battlefield": a cap and a card filter (CR 608.2c)
+      let max = null, filt = null, fdesc = '';
+      if (dest === 'battlefield') {
+        const um = /\bup to (a|one|two|three|four|five|\d+)\b/.exec(c); if (um) max = numOf(um[1]);
+        const fm = /\b(?:put|puts) (?:up to (?:a|one|two|three|four|five|\d+) |any number of |an? |one |two |three |\d+ )?([a-z ]+?) cards?\b(?: with mana value (x|\d+) or (less|greater))?/.exec(c);
+        if (fm) { const words = fm[1].trim().split(/\s+/).filter(w => w !== 'or' && w !== 'and'), mvn = fm[2] ? (fm[2] === 'x' ? numOf(m0[1]) : +fm[2]) : null, op = fm[3];
+          const okWord = w => /^(?:creature|land|artifact|enchantment|planeswalker|permanent|nonland|noncreature|instant|sorcery)$/.test(w);
+          if (words.every(okWord)) { filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || ''; if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
+            return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
+          else { ok = false; } }
+      }
+      slots.push({ dest, count, max, filt, fdesc: fdesc.trim(), label: `${count === 'rest' ? 'the rest' : count === 'any' ? 'any number' : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : dest === 'battlefield' ? `${fdesc ? '(' + fdesc.trim() + ') ' : ''}onto the battlefield${max ? ' (up to ' + max + ')' : ''}` : 'exiled'}`, short: nm });
     }
   }
   if (!slots.length) return null;

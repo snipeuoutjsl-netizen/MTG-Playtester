@@ -59,7 +59,7 @@ function searchEffect(tx, src, obj) {
   const max = m[2] ? wordN(m[2]) : wordN(m[1]);
   const desc = m[3].replace(/^cards?\s*/i, '').trim() || m[3];
   const full = (sentence.match(/for [^,.]*?cards?\b[^,.]*/i) || [m[3]])[0];
-  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}${/shuffle/i.test(tx) ? ', then shuffle' : ''}`, fn: () => {
+  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}${/discard (?:a|one|two|\d+) cards? at random/i.test(tx) ? ', discard at random' : ''}${/shuffle/i.test(tx) ? ', then shuffle' : ''}`, fn: () => {
     if (!state.library.length) { toast('Library is empty', 'There is nothing to search.'); return; }
     openPickCards({ title: `${src}: search your library`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'}: ${full.replace(/^for /i, '')}. Highlighted cards match the description; you may also choose nothing (you can't be forced to find a card). ${/shuffle/i.test(sentence) || /shuffle/i.test(tx) ? 'Your library is shuffled afterwards.' : ''}`,
       cards: state.library.slice(), max, isOk: c => descMatchesCard(full.replace(/^for (?:up to \w+ |an? |one |two |three |any number of )?/i, ''), c.name), nothing: 'Find nothing',
@@ -70,6 +70,7 @@ function searchEffect(tx, src, obj) {
           else if (dest === 'exile') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); if (freeCast) x.freeCastTurn = state.turn; state.exile.push(x); } }   // CR 701.23 search, 406 exile; "until end of turn, you may cast … without paying" (CR 118.9)
           else if (dest === 'top') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); state.library.unshift(x); } }
           else { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); enterBattlefield(x, { from: 'library', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped }); if (tapped) x.tapped = true; } } }
+        { const dm = /\bdiscard (a|one|two|\d+) cards? at random\b/i.exec(tx); if (dm && dest === 'hand') discardRandom(MASS_NUM(dm[1]), src); }   // Gamble: the discard happens before the shuffle
         if (/shuffle/i.test(tx)) shuffleLib();
         if (dest === 'top' && picked.length) { const [x] = picked; const i = state.library.findIndex(y => y.id === x.id); if (i > 0) { const [y] = state.library.splice(i, 1); state.library.unshift(y); } }
         log(`${src}: searched the library${names.length ? ' and found ' + names.join(', ') + (dest === 'hand' ? ' (to hand)' : ' (' + dest + ')') : ' and found nothing'}${/shuffle/i.test(tx) ? '; shuffled' : ''}`); render(); flushTriggers(); } });
