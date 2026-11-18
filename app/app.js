@@ -93,7 +93,7 @@ function compactToken(o) {
 }
 function installTokens(list) {
   TOKENDB = new Map();
-  for (const r of list || []) { const k = norm(r.n); if (!TOKENDB.has(k)) TOKENDB.set(k, []); const a = TOKENDB.get(k); if (!a.some(x => x.pt === r.pt && x.tx === r.tx && x.col.join('') === r.col.join('') && x.t === r.t)) a.push(r); }
+  for (const r of list || []) { const k = norm(r.n); if (!TOKENDB.has(k)) TOKENDB.set(k, []); const a = TOKENDB.get(k), sig = y => [y.pt, y.t, y.col.slice().sort().join(''), String(y.tx).replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()].join('|'); if (!a.some(x => sig(x) === sig(r))) a.push(r); }
 }
 // The official token that matches what a card says it creates ("a 0/0 colorless Construct artifact creature token ..."), or null.
 function officialToken(name, pt, col, tx) {
@@ -227,7 +227,7 @@ async function importCardData(file) {
     const out = []; const seen = new Set(); const toks = [];
     for (const o of raw) {
       if (!o || !o.name) continue;
-      if (o.layout === 'token' || o.layout === 'double_faced_token' || o.layout === 'emblem') { try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
+      if (o.layout === 'token' || o.layout === 'double_faced_token' || o.layout === 'emblem') { if (o.set_type === 'funny' || o.set_type === 'memorabilia') continue; try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
       if (SKIP_LAYOUTS.has(o.layout)) continue;
       const k = norm(o.name);
       if (seen.has(k)) continue;
@@ -6385,8 +6385,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.10';
+const APP_VERSION = '0.99.11';
 const CHANGELOG = [
+  { v: '0.99.11', title: 'Only usable tokens', notes: ['CHANGED: the offline token set now holds only tokens that can appear in a paper game. Joke / Un-set and memorabilia tokens are left out, and entries that differ only by artwork, colour order or reminder text collapse into one. Older saved token lists are replaced by a fresh filtered download on next start.']},
   { v: '0.99.10', title: 'Always yield is per card', notes: ['FIXED: "Always yield" was remembered by card name, so a second copy of the same card (Kappa Cannonier, for example) reused the first copy\'s targets. It is now tracked per individual card: cast a second copy, pick its targets, and choose Always yield again if you want it (CR 603.5, 601.2c).']},
   { v: '0.99.9', title: 'Attack requirements, quoted token abilities, and every token offline', notes: ['NEW: "Attacks each combat if able" (Dragon\'s Rage Channeler when delirious, Goblin Rabblemaster\'s Goblins, and the same wording on any card or Aura) is now enforced (CR 508.1d). The attack helper pre-selects the creatures that must attack, shows why, and will not let you untick them; skipping attacking still sends them in.', 'FIXED: a quoted ability on a token a card creates ("create a token with \'Whenever this creature attacks, ...\'") was read as the card\'s own ability, so Weapons Manufacturing skipped its token (CR 111.4, 113.3). Quoted text now belongs to the thing it is given to; the card is read without it. Emblems and granted abilities keep their quotes.', 'NEW: every official token and emblem is downloaded from Scryfall on first start and with each card-data load, then saved offline like the cards (refreshed monthly). The status chip shows the token count, so the engine knows every token a deck might create.']},
   { v: '0.99.8', title: 'Vehicles, repeatable modes, and stricter always-yield', notes: ['NEW: Crew (CR 702.122). Right-click a Vehicle, choose Activate, and pick untapped creatures with total power at least the crew number (summoning-sick ones may crew); they tap and the Vehicle becomes an artifact creature with its printed power and toughness until end of turn.','NEW: "Choose three. You may choose the same mode more than once" (Mystic Confluence): each mode has a + / − counter; repeated draws add up and a repeated targeted mode gets its own target (CR 700.2d).','NEW: "Reveal the top card of your library. If it\'s a land card, put it onto the battlefield. Otherwise, put it into your hand." (Coiling Oracle) and the Ad Nauseam loop (reveal, put into hand, lose life equal to its mana value, repeat as often as you like) are applied by the app.','FIXED: "Always yield" now only applies to plain abilities. A "you may" ability or one with an "if"/"unless" condition always asks you on resolution (CR 603.5, 603.4), and an ability with a line the app cannot apply is never auto-resolved.','FIXED: Aura "Enchant …" lines show as understood (the app already makes you choose a legal host and puts the Aura into the graveyard if there is none).'] },
@@ -12144,7 +12145,9 @@ function declareMandatoryAttackers() {   // the player leaves the declare-attack
 }
 // v0.99.9 Token sync (CR 111): the Oracle file does not carry every token, so the first start (and every card-data load) also pulls ALL official
 // token and emblem objects from Scryfall's search API and keeps them offline beside the cards. The engine then knows every token a deck might make.
-const TOKEN_SYNC_QUERY = '(layout:token OR layout:double_faced_token OR layout:emblem)';
+// Only tokens that can appear in a real game: paper, no joke/Un-set (funny) and no memorabilia. Duplicates (same name, types, text, colours, P/T, only the art differs) collapse into one.
+const TOKEN_SYNC_QUERY = '(layout:token OR layout:double_faced_token OR layout:emblem) game:paper -st:funny -st:memorabilia';
+const TOKEN_SYNC_VER = 2;   // bump to force a fresh download when the filter changes
 const TOKEN_SYNC_DAYS = 30;
 let tokenCount = 0, tokenSyncing = false;
 function tokenTotal() { let n = 0; TOKENDB.forEach(a => { n += a.length; }); return n; }
@@ -12169,16 +12172,16 @@ async function downloadAllTokens(onProgress) {
 async function syncTokens(force, onProgress) {
   if (tokenSyncing) return false;
   const at = lsGet('mtgpt.tokensAt', 0);
-  if (!force && tokenTotal() > 300 && Date.now() - at < TOKEN_SYNC_DAYS * 864e5) return false;
+  if (!force && lsGet('mtgpt.tokensV', 0) >= TOKEN_SYNC_VER && tokenTotal() > 300 && Date.now() - at < TOKEN_SYNC_DAYS * 864e5) return false;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   tokenSyncing = true;
   try {
     updateDbStatus(onProgress ? undefined : 'Downloading tokens…');
     const list = await downloadAllTokens(m => { updateDbStatus(m); if (onProgress) onProgress(m); });
     if (!list.length) return false;
-    mergeTokens(list);
+    installTokens(list); tokenCount = tokenTotal();   // replace: the filtered list is the whole set (drops joke and duplicate entries saved by older versions)
     const all = []; TOKENDB.forEach(a => a.forEach(r => all.push(r)));
-    try { await idbSet('tokens', all); lsSet('mtgpt.tokensAt', Date.now()); } catch (e) { /* kept for this session */ }
+    try { await idbSet('tokens', all); lsSet('mtgpt.tokensAt', Date.now()); lsSet('mtgpt.tokensV', TOKEN_SYNC_VER); } catch (e) { /* kept for this session */ }
     return true;
   } catch (e) { console.warn('Token download failed', e); return false; }
   finally { tokenSyncing = false; updateDbStatus(); }

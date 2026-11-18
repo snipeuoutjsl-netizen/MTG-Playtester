@@ -950,6 +950,12 @@ const { setup } = require('./common.js');
       return { a: !!d.ayGet('Mock Twin','Draw a card.',11), b: !!d.ayGet('Mock Twin','Draw a card.',12) }; });
     return { ok: r.a && !r.b, why: JSON.stringify(r) };
   });
+  await T('111.1', 'token list keeps one entry per usable token: same name, types, colours, P/T and text collapse regardless of art or reminder text', async()=>{
+    const r = await ev(()=>{ const d=window.__d; const a={n:'Zzdup Knight',t:'Token Creature — Knight',tx:'Vigilance (Attacking doesn\'t cause this creature to tap.)',pt:'2/2',col:['W','U']};
+      const b={...a,tx:'Vigilance',col:['U','W']}; const c={...a,pt:'3/3'}; d.mergeTokens([a,b,c]); const k=d.tokenTotal(); d.mergeTokens([a]);
+      return {k, again:d.tokenTotal()}; });
+    return { ok: r.k===r.again && r.k>=2, why: JSON.stringify(r) };
+  });
   await T('603.4 + 701.3', 'Cori-Steel Cutter: the flurry trigger fires only on the SECOND spell each turn; the Monk token enters unequipped (an unattached Equipment gives nothing); you may then attach the Equipment to it and only then does it get +1/+1, trample and haste', async () => { await reset(); await toMain();
     const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const cut = mk('Cori-Steel Cutter'); s.battlefield.push(cut);
       const trigs = () => __d.parseTriggers(cut).filter(x => x.ev === 'cast' && !x.unsupported);

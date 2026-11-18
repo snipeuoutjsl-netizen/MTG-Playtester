@@ -1,6 +1,8 @@
 // v0.99.9 Token sync (CR 111): the Oracle file does not carry every token, so the first start (and every card-data load) also pulls ALL official
 // token and emblem objects from Scryfall's search API and keeps them offline beside the cards. The engine then knows every token a deck might make.
-const TOKEN_SYNC_QUERY = '(layout:token OR layout:double_faced_token OR layout:emblem)';
+// Only tokens that can appear in a real game: paper, no joke/Un-set (funny) and no memorabilia. Duplicates (same name, types, text, colours, P/T, only the art differs) collapse into one.
+const TOKEN_SYNC_QUERY = '(layout:token OR layout:double_faced_token OR layout:emblem) game:paper -st:funny -st:memorabilia';
+const TOKEN_SYNC_VER = 2;   // bump to force a fresh download when the filter changes
 const TOKEN_SYNC_DAYS = 30;
 let tokenCount = 0, tokenSyncing = false;
 function tokenTotal() { let n = 0; TOKENDB.forEach(a => { n += a.length; }); return n; }
@@ -25,16 +27,16 @@ async function downloadAllTokens(onProgress) {
 async function syncTokens(force, onProgress) {
   if (tokenSyncing) return false;
   const at = lsGet('mtgpt.tokensAt', 0);
-  if (!force && tokenTotal() > 300 && Date.now() - at < TOKEN_SYNC_DAYS * 864e5) return false;
+  if (!force && lsGet('mtgpt.tokensV', 0) >= TOKEN_SYNC_VER && tokenTotal() > 300 && Date.now() - at < TOKEN_SYNC_DAYS * 864e5) return false;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   tokenSyncing = true;
   try {
     updateDbStatus(onProgress ? undefined : 'Downloading tokens…');
     const list = await downloadAllTokens(m => { updateDbStatus(m); if (onProgress) onProgress(m); });
     if (!list.length) return false;
-    mergeTokens(list);
+    installTokens(list); tokenCount = tokenTotal();   // replace: the filtered list is the whole set (drops joke and duplicate entries saved by older versions)
     const all = []; TOKENDB.forEach(a => a.forEach(r => all.push(r)));
-    try { await idbSet('tokens', all); lsSet('mtgpt.tokensAt', Date.now()); } catch (e) { /* kept for this session */ }
+    try { await idbSet('tokens', all); lsSet('mtgpt.tokensAt', Date.now()); lsSet('mtgpt.tokensV', TOKEN_SYNC_VER); } catch (e) { /* kept for this session */ }
     return true;
   } catch (e) { console.warn('Token download failed', e); return false; }
   finally { tokenSyncing = false; updateDbStatus(); }
