@@ -144,6 +144,9 @@ function chooseTargets(title, specs, done, o) {
   const lists = specs.map(sp => legalTargets(sp, o));
   const bad = specs.findIndex((sp, i) => sp.min > 0 && !lists[i].length);
   if (bad >= 0) { toast('No legal target', `${title} needs a ${specs[bad].label}, and there is nothing it can legally target. A spell or ability cannot be put on the stack without a legal target.`); if (o.onCancel) o.onCancel(); return; }
+  if (o.auto && specs.every((sp, i) => sp.min === sp.max && lists[i].length === sp.min && lists[i].every(t => t.kind !== 'opp' && t.kind !== 'opp-perm'))) {   // CR 603.3d: with exactly one way to choose, the choice is made for you
+    log(`${title}: only one legal target (${lists.flat().map(t => t.name).join(', ')}), chosen automatically`); done(lists.flatMap((l, i) => l.map(t => ({ kind: t.kind, id: t.id, name: t.name, spec: i })))); return;
+  }
   const picks = specs.map(() => []);
   const m = modal(`${title}: choose ${specs.length > 1 ? 'targets' : 'a target'}`, { width: 600, sticky: true, onCancel: () => { if (o.onCancel) o.onCancel(); } });
   const confirm = h('button', { class: 'primary', text: 'Confirm targets' });
