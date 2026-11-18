@@ -1150,6 +1150,20 @@ const { setup } = require('./common.js');
     for (let k = 0; k < 3; k++) await runOpt(im, 'impending', 3, 0);
     const after = await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); return { t: __d.frontType(c), cre: __d.permTypeInfo(c).types.has('creature'), time: c.counters.time }; }, im);
     return { ok: alt.includes('impending:{1}{R}') && during.time === 3 && !during.cre && !/Creature/.test(during.t) && after.time === 0 && after.cre, why: JSON.stringify({ alt, during, after }) }; });
+  await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
+    const r = await ev(async () => {
+      const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();
+      const decks = JSON.parse(localStorage.getItem('mtgpt.decks') || '{}'); decks.CmdTest = { text: 'Commander\n1 Mock Commander\n\nDeck\n99 Forest' }; localStorage.setItem('mtgpt.decks', JSON.stringify(decks)); localStorage.setItem('mtgpt.current', JSON.stringify('CmdTest'));
+      const old = window.confirm; window.confirm = () => true; document.getElementById('chkCmd').checked = true; __d.startGame(); await new Promise(r => setTimeout(r, 400)); const s = __d.state;
+      const start = { cmd: s.cmdMode, life: s.life, command: s.command.map(c => c.name).join(), lib: s.library.length, hand: s.hand.length, flagged };
+      __d.doMulligan(); const free = { mulls: s.mulls, hand: s.hand.length, used: s.freeMullUsed };
+      const c = s.command[0]; c.cmdCasts = 2; c.fromCmd = true; const cost = __d.effectiveCost(c).cost; delete c.fromCmd;
+      s.phase = 'play'; s.step = 3; s.bottomPhase = false; __d.moveCard(c.id, 'battlefield'); const f = __d.findCard(c.id); if (f) s.command.length; __d.moveCard(c.id, 'graveyard'); __d.render(); await new Promise(r => setTimeout(r, 300));
+      const btn = [...document.querySelectorAll('.modal button')].find(b => /command zone/i.test(b.textContent) && /Put it/.test(b.textContent)); const asked = !!btn; if (btn) btn.click(); await new Promise(r => setTimeout(r, 200));
+      const back = s.command.some(x => x.id === c.id) && !s.graveyard.some(x => x.id === c.id);
+      c.isCommander = true; s.cmdDealt = {}; s.battlefield.push(c); c.counters = { plus: 0, minus: 0 }; c.tapped = false; __d.commanderDamage([c]); const dealt = s.cmdDealt[c.name];
+      window.confirm = old; return { start, free, cost, asked, back, dealt }; });
+    return { ok: r.start.cmd && r.start.life === 40 && r.start.command === 'Mock Commander' && r.start.lib + r.start.hand === 99 && r.start.flagged === 'Mock Commander' && r.free.mulls === 0 && r.free.used && r.cost === '{5}{G}' && r.asked && r.back && r.dealt === 2, why: JSON.stringify(r) }; });
   console.log('\nRULES CHECK (Comprehensive Rules, 19 June 2026)\n');
   for (const t of out) console.log((t.ok ? 'PASS' : 'FAIL') + '  CR ' + t.rule.padEnd(14) + t.name + (t.ok ? '' : '\n        -> ' + t.why));
   console.log(`\n${out.filter(t => t.ok).length}/${out.length} pass`);

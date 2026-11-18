@@ -198,8 +198,8 @@ function permZone(c) {
 }
 
 function renderPileTop(zone) {
-  const el = $('#top-' + zone);
-  const arr = state ? state[zone] : [];
+  const el = $('#top-' + zone); if (!el) return;
+  const arr = state ? (state[zone] || []) : [];
   el.className = 'stacktop' + (arr.length ? '' : ' empty');
   el.replaceChildren();
   if (!arr.length) return;
@@ -375,12 +375,13 @@ function renderInner() {
   $('#oppBox').title = has && state.dmgHistory && state.dmgHistory.length ? 'Combat damage dealt so far: ' + state.dmgHistory.map(d => `turn ${d.turn}: ${d.dmg}`).join(', ') : 'Goldfish opponent life. Combat damage from your attackers is subtracted automatically.';
   const cbt = $('#btnCombat'); if (cbt) cbt.hidden = !(has && state.phase === 'play' && STEPS[state.step].id === 'attack' && !state.phasePause && !state.combat.declared);
   renderManaPool(); drawStateIcons();
-  for (const z of ['library', 'graveyard', 'exile']) { const n = has ? state[z].length : 0; const pc = $('#pcnt-' + z); pc.textContent = n; pc.classList.toggle('zero', !n); }
+  for (const z of ['library', 'graveyard', 'exile', 'command']) { const n = has ? (state[z] || []).length : 0; const pc = $('#pcnt-' + z); if (!pc) continue; pc.textContent = n; pc.classList.toggle('zero', !n); }
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
   { const n = has ? state.library.length : 0; const ls = $('#libstack'); ls.dataset.thick = n > 40 ? 3 : n > 15 ? 2 : n > 0 ? 1 : 0; ls.title = teach('libraryMenu') ? 'Click for draw, look, scry, surveil, mill, search' : ''; }
   $('#cnt-hand').textContent = has ? `(${state.hand.length})` : '';
   $('#handLegend')?.classList.toggle('hidden', !teach('playability'));
-  for (const z of ['graveyard', 'exile']) renderPileTop(z);
+  for (const z of ['graveyard', 'exile', 'command']) renderPileTop(z);
+  try { commanderRender(); } catch (e) { /* commander UI only */ }
   $('#libstack').classList.toggle('empty', !has || !state.library.length);
   if (has) renderTopReveal(); else { const lt = $('#libTop'); if (lt) lt.remove(); }
 
@@ -557,7 +558,7 @@ function dealCombatDamage(){
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
   if(state.oppLife<=0) log(`Goldfish kill on turn ${state.turn}`);
   if(lifeGain>0){ state.life+=lifeGain; log(`Lifelink: gained ${lifeGain} life (${lifeParts.join(', ')}) → ${state.life}`); toast(`Lifelink: +${lifeGain} life`, `You are now at ${state.life}.`); fireTrigger('lifegain',{amount:lifeGain}); }
-  noteCombatDealers(dealers);
+  noteCombatDealers(dealers); commanderDamage(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d, amount:powerOf(d).n});
 }
 function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
@@ -626,7 +627,7 @@ function renderOverlay() {
           h('button', { class: 'primary', text: 'Keep', onclick: keepHand }),
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
           state.hand.some(mulliganHandSwap) ? h('button', { text: `Use Serum Powder — exile hand, draw ${state.hand.length}`, onclick: serumPowder }) : null,   // v0.96.25 only offered when a card in the hand allows it (CR 103.5b)
-          h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : `Mulligan to ${7 - state.mulls - 1}`, disabled: state.mulls >= 6, onclick: doMulligan })),
+          h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : (state.cmdMode && !state.freeMullUsed ? 'Free mulligan (draw 7)' : `Mulligan to ${7 - state.mulls - 1}`), disabled: state.mulls >= 6, onclick: doMulligan })),
         h('div', { class: 'phint', text: state.hand.some(mulliganHandSwap)
           ? 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
           : 'Your hand is shown below.' }));

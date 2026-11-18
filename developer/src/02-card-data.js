@@ -242,6 +242,7 @@ function healHalves() {
     if (state.halfChosen === c.id) continue;
     if (c.half) restoreHalf(c);
     if (c.fromExile) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromExile; state.exile.push(c); } }
+    if (c.fromCmd) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromCmd; state.command.push(c); } }   // a cancelled cast from the command zone goes back there
     if (c.fromGy) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); if (c.fromGy.kind === 'disturb' && c.face) setFace(c, 0); delete c.fromGy; state.graveyard.push(c); } }
   }
 }

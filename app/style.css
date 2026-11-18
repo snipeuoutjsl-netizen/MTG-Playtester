@@ -1762,3 +1762,8 @@ body.a11y-targets button, body.a11y-targets select, body.a11y-targets input[type
 body.a11y-targets .teachopt, body.a11y-targets .row { min-height: 44px; }
 body.a11y-targets input[type=checkbox], body.a11y-targets input[type=radio] { width: 22px; height: 22px; }
 body.a11y-focus :focus-visible { outline: 3px solid #ffd84d !important; outline-offset: 2px !important; }
+
+/* ---- v0.99.29 Commander mode */
+.pile[hidden], #cmdWrap[hidden] { display: none !important; }
+#pile-command .pilelabel { color: var(--gold, #e3b95c); }
+#pile-command { margin-bottom: 16px; }

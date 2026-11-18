@@ -1,4 +1,6 @@
 
+**v0.99.29** Commander mode, `src/75-commander.js` (CR 903). `parseDeck` flags `cmd:true` for cards under a Commander header or marked *CMDR* (they stay in `main`, so Commander-off behaves as before). `commanderModeOn(deck)` (FEATURES.commander + `#chkCmd`), `state.command` zone (in `ZONES`), `state.cmdMode`, `startCommanderState` (40 life, deck check), `castFromCommand` (lifts to hand with `c.fromCmd`; tax from `costAdjustments`; `c.cmdCasts` incremented when the cast commits in `castSpell0`; a cancelled cast returns it), `commanderSBA` (903.9 prompt when a commander sits in graveyard/exile/hand/library), `commanderDamage` (21), free first mulligan (`state.freeMullUsed`). Not done yet: partner/background UI beyond the deck check, commander damage received, multiplayer.
+
 ## Lessons: things we broke once, do not repeat
 
 - **Never position a core UI zone with `position: fixed` + `100vw` maths + `translate(-50%)` (v0.99.25-27 mulligan hand).** It worked in the headless test window and put the hand off the left edge of a real window (different size, DPI scale, side-column width, transformed ancestors make `fixed` relative to that ancestor). Keep the hand in the normal layout flow; only change sizes, z-index and add a dim layer (`body.mullpick` / `body.mullhand`, v0.99.28).
