@@ -40,6 +40,11 @@ function evalCond(text, g) {
   if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
   if ((m = t.match(/^there are (\w+) or more (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }
   if ((m = t.match(/^there are (\w+) or fewer (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n <= k; }
+  if ((m = t.match(/^(?:there (?:is|are)|you have) (.+?) in your graveyard$/)) && /\b(?:an?|one) [a-z]+ cards?\b/.test(m[1])) {   // "there is an instant card and a sorcery card in your graveyard": each listed kind must be there
+    const kinds = m[1].split(/\s*(?:,|\band\b)\s*/).map(x => x.trim()).filter(Boolean); let all = true;
+    for (const k of kinds) { const q = k.match(/^(?:an?|one|at least one) ([a-z]+(?: [a-z]+)?) cards?$/); if (!q) return null; const n = csCountZone(state.graveyard, q[1]); if (n === null) return null; if (n < 1) all = false; }
+    return all;
+  }
   if ((m = t.match(/^there are no (.+?) in your graveyard$/))) { const n = csCountZone(state.graveyard, m[1]); return n === null ? null : n === 0; }
   if ((m = t.match(/^you have (\w+) or more cards in (?:your )?hand$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.hand.length >= k; }
   if ((m = t.match(/^you have (\w+) or fewer cards in (?:your )?hand$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.hand.length <= k; }

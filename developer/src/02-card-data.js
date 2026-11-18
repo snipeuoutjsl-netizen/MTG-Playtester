@@ -338,8 +338,10 @@ function openLookDistribute(want, slots, srcText, onDone) {
 function parseLookDistribute(tx) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = t.split(/(?<=[.!?])\s+/);
   const m0 = /^look at the top (a|one|two|three|four|five|six|seven|\d+) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
-  const n = numOf(m0[1]); let play = false; const slots = []; let ok = true;
+  const n = numOf(m0[1]); let play = false; const slots = []; let ok = true; let alt = null;
   for (const sent of sents.slice(1)) {
+    // CR 608.2c: "If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand and the rest on the bottom." (Flow State): an alternative way to sort, chosen by a condition when it resolves
+    { const im = /^if (.+?), instead (put .+|exile .+)$/i.exec(sent.replace(/\.$/, '')); if (im) { const a2 = parseLookDistribute(`Look at the top ${m0[1]} cards of your library. ${im[2]}.`); if (a2 && a2.slots.length) { alt = { cond: im[1], slots: a2.slots }; continue; } ok = false; continue; } }
     if (/^you may play (?:it|the exiled card|that card|those cards|them) this turn\.?$/i.test(sent)) { play = true; continue; }
     if (!/^(?:put|exile|then|you may put)\b/i.test(sent)) { ok = false; continue; }
     for (const cl of sent.replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+(?=(?:the rest|put|exile|one|two|a)\b)/i)) {
@@ -356,7 +358,7 @@ function parseLookDistribute(tx) {
   if (!slots.length) return null;
   for (const sl of slots) if (sl.dest === 'exile') sl.play = play;
   if (slots.some(sl => sl.dest === 'exile') && play) slots.find(sl => sl.dest === 'exile').short = 'Exile (may play)';
-  return { n, slots, full: ok };
+  return { n, slots, full: ok, alt };
 }
 function openHalfChooser(c, opts, pick) {
   const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which half?`, { width: 560, sticky: true, onCancel: () => {} });

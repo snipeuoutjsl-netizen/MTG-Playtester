@@ -419,8 +419,10 @@ function openLookDistribute(want, slots, srcText, onDone) {
 function parseLookDistribute(tx) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = t.split(/(?<=[.!?])\s+/);
   const m0 = /^look at the top (a|one|two|three|four|five|six|seven|\d+) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
-  const n = numOf(m0[1]); let play = false; const slots = []; let ok = true;
+  const n = numOf(m0[1]); let play = false; const slots = []; let ok = true; let alt = null;
   for (const sent of sents.slice(1)) {
+    // CR 608.2c: "If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand and the rest on the bottom." (Flow State): an alternative way to sort, chosen by a condition when it resolves
+    { const im = /^if (.+?), instead (put .+|exile .+)$/i.exec(sent.replace(/\.$/, '')); if (im) { const a2 = parseLookDistribute(`Look at the top ${m0[1]} cards of your library. ${im[2]}.`); if (a2 && a2.slots.length) { alt = { cond: im[1], slots: a2.slots }; continue; } ok = false; continue; } }
     if (/^you may play (?:it|the exiled card|that card|those cards|them) this turn\.?$/i.test(sent)) { play = true; continue; }
     if (!/^(?:put|exile|then|you may put)\b/i.test(sent)) { ok = false; continue; }
     for (const cl of sent.replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+(?=(?:the rest|put|exile|one|two|a)\b)/i)) {
@@ -437,7 +439,7 @@ function parseLookDistribute(tx) {
   if (!slots.length) return null;
   for (const sl of slots) if (sl.dest === 'exile') sl.play = play;
   if (slots.some(sl => sl.dest === 'exile') && play) slots.find(sl => sl.dest === 'exile').short = 'Exile (may play)';
-  return { n, slots, full: ok };
+  return { n, slots, full: ok, alt };
 }
 function openHalfChooser(c, opts, pick) {
   const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which half?`, { width: 560, sticky: true, onCancel: () => {} });
@@ -1717,7 +1719,7 @@ function effectOptionsBase(tx, obj) {
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   if (/look at the top card of target player'?s library/i.test(tx)) opts.push({ special: 'lookTop', summary: 'look at the top card' });
   // v0.82 look at the top N cards and distribute them
-  { const ld = parseLookDistribute(txs.replace(/\n/g, ' ')); if (ld && state) opts.push({ full: ld.full, label: `Look at the top ${ld.n === 1 ? 'card' : ld.n + ' cards'} of your library and sort them: ${ld.slots.map(x => x.label).join(', ')}${ld.slots.some(x => x.play) ? ' (you may play the exiled card this turn)' : ''}`, fn: () => openLookDistribute(ld.n, ld.slots, obj.sourceName || '') }); }
+  { const ld = parseLookDistribute(txs.replace(/\n/g, ' ')); if (ld && state) opts.push({ full: ld.full, label: `Look at the top ${ld.n === 1 ? 'card' : ld.n + ' cards'} of your library and sort them: ${ld.slots.map(x => x.label).join(', ')}${ld.slots.some(x => x.play) ? ' (you may play the exiled card this turn)' : ''}`, fn: () => { let sl = ld.slots; if (ld.alt) { let v = null; try { v = evalCond(ld.alt.cond, { id: -1, name: 'x', tapped: false, counters: { plus: 0, minus: 0 } }); } catch (e) {} if (v === true) { sl = ld.alt.slots; log(`${obj.sourceName || 'Ability'}: the condition "${ld.alt.cond}" is true, so the alternative applies`); } else if (v === null) toast('Check the condition', `The app cannot check "${ld.alt.cond}". If it is true, sort the cards as the "instead" line says.`); } openLookDistribute(ld.n, sl, obj.sourceName || ''); } }); }
   // v0.79 flashback granted until end of turn (Snapcaster Mage): "Target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost."
   { const fg = /target (instant or sorcery|instant|sorcery) card in your graveyard gains flashback until end of turn/i.exec(txs);
     if (fg) {
@@ -6306,8 +6308,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.1';
+const APP_VERSION = '0.99.2';
 const CHANGELOG = [
+  { v: '0.99.2', title: 'Fix: Flow State and "if ..., instead" sorting', notes: ['FIXED: Flow State ignored its graveyard check. "Look at the top N cards ... put one into your hand and the rest on the bottom. If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand ..." is now read as a base sort plus a conditional "instead" sort (CR 608.2c): when it resolves the app checks the condition and uses the right one (and tells you if it cannot check a wording).', 'NEW condition wording: "there is an instant card and a sorcery card in your graveyard" / "you have a land card and a creature card in your graveyard" (each listed kind must be there), usable by any condition-reading effect.'] },
   { v: '0.99.1', title: 'No more silently skipped lines; Ponder; shuffle animation; themed pointers', notes: ['FIXED (engine): a card line the app only half understood could be dropped without a word. Ponder is the example: only "Draw a card" was read, so the look-and-reorder was skipped and the draw was applied automatically. Now (1) every sentence is checked action by action (look, shuffle, scry, mill, draw, discard, exile, destroy, sacrifice, create, search, put on top/bottom...) and any action the reader did not produce is flagged; (2) an effect with a flagged line is never auto-applied or Always-yielded; (3) the resolve window lists every line the app does NOT apply, with tick boxes, so nothing is skipped silently.', 'NEW: "Look at the top N cards of your library, then put them back in any order. You may shuffle." (Ponder and anything worded like it): you get an ordering window with up/down arrows and a shuffle tick box, then the rest of the effect (draw a card) happens.', 'NEW: "Shuffle it into its owner\'s library" (Blightsteel-style) and "Shuffle your hand and graveyard into your library" (Timetwister-style).', 'NEW: a riffle-shuffle animation over your library every time it is shuffled (search effects, fetch lands, the Shuffle button, Ponder). Turn it off under Settings > Motion & effects > Shuffle animation. Every shuffle now goes through one place, so none can be missed.', 'FIXED: a token whose name is also a creature type (Rat, Pest...) read its own name as "this creature" in rules text such as "for each other Rat you control", so Rat tokens never grew. "Gets +N/+N for each ..." is now read for any countable thing. Aura tokens that set base power and toughness (Cursed Role) now apply.', 'Every one-click set now switches the mouse pointer too: ink quill (Parchment), little galaxy (Pixel cosmos), crescent moon (Midnight), water drop (Abyss), leaf (Forest), neon arrow (Neon), gilded arrow (Obsidian). The pointers are also in Settings > Look & feel > Mouse cursor.'] },
   { v: '0.99.0', title: 'Mana-spent conditions on cast triggers; Dark Matter Manipulator verified', notes: ['NEW: "Whenever you cast a spell, if no mana was spent to cast it, ..." and "if mana was spent to cast that spell" (CR 601.2h, 603.4). The app now records whether any mana was spent when you cast a spell (lands, rocks or floating mana); spells cast for free (cascade, discover, free-cast effects, alternative costs paid without mana) count as no mana spent. The condition is checked as the spell is cast, as the rules require.', 'Checked against its real text: Dark Matter Manipulator (mill three on entering; +2/+0 for every seven cards in your graveyard, counted live in steps of seven). It was already handled by the conditional-static reader and is now covered by a rules test.'] },
   { v: '0.98.9', title: 'Matching mouse pointers for the pixel sets', notes: ['The Pixel mushroom, cats, frog and music sets now switch your mouse pointer too, to a small pixel sprite of the same theme (mushroom, cat, frog, music note) with a white-outlined hover picture.', 'Eight new pointers under Settings > Look & feel > Mouse cursor: the four sprites, plus a pixel arrow in each set colour (mushroom red, cat orange, frog green, music pink).'] },
@@ -11374,6 +11377,11 @@ function evalCond(text, g) {
   if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
   if ((m = t.match(/^there are (\w+) or more (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }
   if ((m = t.match(/^there are (\w+) or fewer (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n <= k; }
+  if ((m = t.match(/^(?:there (?:is|are)|you have) (.+?) in your graveyard$/)) && /\b(?:an?|one) [a-z]+ cards?\b/.test(m[1])) {   // "there is an instant card and a sorcery card in your graveyard": each listed kind must be there
+    const kinds = m[1].split(/\s*(?:,|\band\b)\s*/).map(x => x.trim()).filter(Boolean); let all = true;
+    for (const k of kinds) { const q = k.match(/^(?:an?|one|at least one) ([a-z]+(?: [a-z]+)?) cards?$/); if (!q) return null; const n = csCountZone(state.graveyard, q[1]); if (n === null) return null; if (n < 1) all = false; }
+    return all;
+  }
   if ((m = t.match(/^there are no (.+?) in your graveyard$/))) { const n = csCountZone(state.graveyard, m[1]); return n === null ? null : n === 0; }
   if ((m = t.match(/^you have (\w+) or more cards in (?:your )?hand$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.hand.length >= k; }
   if ((m = t.match(/^you have (\w+) or fewer cards in (?:your )?hand$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.hand.length <= k; }
