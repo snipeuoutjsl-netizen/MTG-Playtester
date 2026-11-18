@@ -5093,7 +5093,7 @@ function isFoil(c) {
 }
 const foilEl = () => h('i', { class: 'foilfx' });
 document.addEventListener('mousemove', e => {
-  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, #row-hand .card' : '.foil'); if (!t) return;
+  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, #row-hand .card, #preview .pwrap' : '.foil, #preview .pwrap'); if (!t) return;
   const r = t.getBoundingClientRect(); if (!r.width) return;
   t.style.setProperty('--fx', Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100)).toFixed(0) + '%');
   t.style.setProperty('--fy', Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100)).toFixed(0) + '%');
@@ -5201,6 +5201,12 @@ function onCardDbl(c, zone) {
   }
 }
 
+
+// v0.99.20 the big card preview leans toward the pointer again (a soft 3D tilt with a light spot) and settles back when the pointer leaves it.
+document.addEventListener('mouseout', e => {
+  const t = e.target && e.target.closest && e.target.closest('#preview .pwrap'); if (!t || t.contains(e.relatedTarget)) return;
+  t.style.setProperty('--rx', '0'); t.style.setProperty('--ry', '0'); t.style.setProperty('--fx', '50%'); t.style.setProperty('--fy', '50%');
+});
 // ---------------------------------------------------------------- keyword glossary (hover to learn)
 const AMB = '(?<=^|\\n|, |has |have |gains? |with |and |or )';   // words that are only keywords in a keyword position
 const KEYWORDS = [
@@ -6413,8 +6419,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.19';
+const APP_VERSION = '0.99.20';
 const CHANGELOG = [
+  { v: '0.99.20', title: 'Big card preview follows the pointer again', notes: ['FIXED: the enlarged card preview in the right column now leans toward the pointer in a soft 3D tilt with a light spot, and settles back when the pointer leaves it. It had only moved for foil cards. It stays still if your system asks for reduced motion.']},
   { v: '0.99.19', title: 'Artifact piles and a calmer turn bar', notes: ['NEW: non-creature artifacts pile the way lands do. Mana artifacts (Sol Ring, Mox Opal...) pile by the colours they make, identical artifacts pile together, an artifact with an activated ability (Equipment and the like) only piles with exact copies, and all tapped artifacts share one sideways Tapped pile. Artifact creatures and tokens are not piled this way (tokens still bundle in fives). The same Settings > Layout switch controls it.', 'CHANGED: the progress fill in the turn bar is now a flat tint with a slim accent line along the bottom, the same look as the other bars, instead of animated stripes with a glow.']},
   { v: '0.99.18', title: 'Automatic targets and smarter Always yield', notes: ['NEW: a triggered ability with exactly one legal choice picks it by itself (CR 603.3d), so a trigger whose only possible target is your one creature goes on the stack with no window. The log says what it chose.', 'NEW: Always yield remembers what the ability could target when you set it. If a new possible target has appeared (or one has gone) since, the app asks you to choose again and then remembers the new choice. Turn Always yield off any time in the gear menu under Always yield; the log line for an automatic trigger now says so.']},
   { v: '0.99.17', title: 'Metalcraft cards now work, ability words are just labels, protection', notes: ['FIXED: Metalcraft cards were shown as "count it yourself". An ability word (Metalcraft, Threshold, Delirium, Revolt, Morbid, Landfall and the rest) is only a label with no rules meaning (CR 207.2c), so the app now reads each line without it and the condition inside the sentence does the work: "Metalcraft \u2014 ~ gets +2/+2 as long as you control three or more artifacts" is a live +2/+2, and "Metalcraft \u2014 deals 4 damage instead if you control three or more artifacts" replaces the plain damage while Metalcraft is on.', 'CHANGED: the top-bar game-state checks (Metalcraft, Threshold, Delirium, Revolt, Morbid) are now the one source of truth for those conditions, so a card and its icon can never disagree.', 'NEW: protection (CR 702.16b). A permanent with protection from a colour (printed, or granted such as Etched Champion\'s "protection from all colors as long as you control three or more artifacts") cannot be chosen as a target by your own spells and abilities of that colour.', 'FIXED: a conditional "instead" sentence with nothing before it could stop a card from being read at all.']},

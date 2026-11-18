@@ -1700,3 +1700,8 @@ body[data-uitheme="pixmusic"] { --bar-a: #33205f; --bar-b: #211443; --hand-a: #2
 .landpile.tappile { width: calc(var(--card-h) + (var(--n) - 1) * var(--off) * var(--f, 1)); height: var(--card-w); }
 .landpile.tappile > .card.tapped { left: calc(var(--i) * var(--off) * var(--f, 1) + (var(--card-h) - var(--card-w)) / 2); top: calc((var(--card-w) - var(--card-h)) / 2); transform: rotate(90deg) !important; z-index: calc(var(--n) - var(--i)) !important; opacity: 1; filter: none; }
 .landpile.tappile > .card.tapped:hover { z-index: 60 !important; }
+/* v0.99.20 the big card preview tilts toward the pointer */
+#preview .pwrap { transform: perspective(700px) rotateX(calc(var(--ry, 0) * -7deg)) rotateY(calc(var(--rx, 0) * 8deg)); transition: transform .15s ease-out; will-change: transform; }
+#preview .pwrap::after { content: ''; position: absolute; inset: 0; border-radius: 12px; pointer-events: none; opacity: calc(var(--hv, 0)); background: radial-gradient(circle at var(--fx, 50%) var(--fy, 50%), rgba(255,255,255,.18), transparent 55%); transition: opacity .15s ease-out; }
+#preview .pwrap:hover { --hv: 1; }
+@media (prefers-reduced-motion: reduce) { #preview .pwrap { transform: none; } #preview .pwrap::after { display: none; } }

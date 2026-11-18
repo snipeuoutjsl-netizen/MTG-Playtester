@@ -235,7 +235,7 @@ function isFoil(c) {
 }
 const foilEl = () => h('i', { class: 'foilfx' });
 document.addEventListener('mousemove', e => {
-  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, #row-hand .card' : '.foil'); if (!t) return;
+  const t = e.target && e.target.closest && e.target.closest(document.body.classList.contains('hand3d') ? '.foil, #row-hand .card, #preview .pwrap' : '.foil, #preview .pwrap'); if (!t) return;
   const r = t.getBoundingClientRect(); if (!r.width) return;
   t.style.setProperty('--fx', Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100)).toFixed(0) + '%');
   t.style.setProperty('--fy', Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100)).toFixed(0) + '%');
@@ -343,3 +343,9 @@ function onCardDbl(c, zone) {
   }
 }
 
+
+// v0.99.20 the big card preview leans toward the pointer again (a soft 3D tilt with a light spot) and settles back when the pointer leaves it.
+document.addEventListener('mouseout', e => {
+  const t = e.target && e.target.closest && e.target.closest('#preview .pwrap'); if (!t || t.contains(e.relatedTarget)) return;
+  t.style.setProperty('--rx', '0'); t.style.setProperty('--ry', '0'); t.style.setProperty('--fx', '50%'); t.style.setProperty('--fy', '50%');
+});
