@@ -381,9 +381,11 @@ function openWelcome(onDone) {
   }
   draw();
 }
+let firstBootPrompt = null;
 function promptFirstBoot() {
   if (cardCount || !navigator.onLine || lsGet('mtgpt.bulkPrompt', '') === 'off') return;
   const m = modal('Download card data?', { width: 520, sticky: true });
+  firstBootPrompt = m;   // v0.99.34 closed by updateDbStatus once card data arrives some other way (a file loaded from Card data...)
   const msg = h('p', { text: 'The app needs card data (names, costs, types, text) to know which cards are lands, creatures and so on. It can download it now (from Scryfall, or from the MTGJSON project if Scryfall is unreachable): about 150 MB, once. After that it works fully offline.' });
   const go = h('button', { class: 'primary', text: 'Download now' });
   go.addEventListener('click', async () => {

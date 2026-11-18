@@ -1814,3 +1814,7 @@ body.mullhand #overlay .pcard .psub { color: var(--text); opacity: .85; }
 .outline-key .sw.timing { box-shadow: 0 0 0 2px rgba(235,178,70,.9); }
 .outline-key .sw.inst { box-shadow: 0 0 0 2px rgba(70,160,220,.9); color: #f3d36b; }
 .outline-key .sw.sel { box-shadow: 0 0 0 2px #fff; }
+/* v0.99.34 wide windows show the action labels (v0.40.1 design); the square-icon rule above must not squeeze them into 34px, where they overlapped and covered the next button */
+@media (min-width: 1701px) { #topbar .tb-actions button:has(.lbl) { width: auto; min-width: var(--ctl-h); padding: 0 12px; gap: 6px; } }
+/* v0.99.34 during the opening-hand / mulligan steps pop-ups sit above the hand; a tall one (Deck view) must shrink into that space and scroll, not run off the top of the window */
+body.mullhand #modalRoot .backdrop:not(.dock):not(.resolve) > .modal, body.mullpick #modalRoot .backdrop:not(.dock):not(.resolve) > .modal { max-height: 100% !important; }
