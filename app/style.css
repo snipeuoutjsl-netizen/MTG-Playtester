@@ -1835,3 +1835,11 @@ body.dragging-card #stackStage:not([hidden]) { box-shadow: 0 0 0 200vmax rgba(4,
 #handWrap.picking .card.bsel::after { content: var(--pickstamp, 'DISCARD'); }
 #handWrap.picking[data-pick="bottom"] .card.bsel::after { background: rgba(50,110,200,.92); }
 #handWrap.picking[data-pick="exile"] .card.bsel::after { background: rgba(120,80,190,.92); }
+/* v0.99.37 printing picker */
+.print-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 12px; max-height: 62vh; overflow: auto; padding: 4px; }
+.print-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.03); cursor: pointer; height: auto; }
+.print-cell:hover { border-color: var(--accent, #6aa0ff); background: rgba(106,160,255,.08); }
+.print-cell.on { border-color: var(--gold, #e3b95c); box-shadow: 0 0 0 2px rgba(227,185,92,.5); }
+.print-cell img { width: 100%; aspect-ratio: 5 / 7; object-fit: cover; border-radius: 6px; background: #111; }
+.print-set { font-weight: 700; font-size: 12px; }
+.cart-print { text-align: center; margin-top: -2px; }

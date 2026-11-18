@@ -1186,6 +1186,27 @@ const { setup } = require('./common.js');
     const r = await ev(() => { const fake = { name: 'Test Fling', id: -77 }; const s0 = __d.cardText; window.__ct = s0; return null; });
     const r2 = await ev(() => { const txt = 'As an additional cost to cast this spell, sacrifice an artifact or creature.'; const sides = txt.replace(/^As an additional cost to cast this spell, /, '').replace(/\.$/, '').split(/\s+or\s+/i).map(t => __d.parseCostComps(t, 'X').every(k => k.k !== 'other')); return sides; });
     return { ok: r2.length === 2 && r2.includes(false), why: JSON.stringify(r2) }; });
+  // v0.99.37 printings and Buy this deck (Scryfall answered by a stand-in: this test machine has no internet)
+  await T('UI printings', 'choosing a printing saves its picture as this deck\'s art and remembers set, number and TCGplayer product; Buy this deck opens TCGplayer Mass Entry with "qty-productId" for it and "qty name" for the rest; resetting forgets the printing', async () => { await reset();
+    const r = await ev(async () => { const out = {}; const realFetch = window.fetch, realOpen = window.open; let opened = '';
+      const png = await (await realFetch('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=')).blob();
+      window.fetch = async (u) => { u = String(u); if (/api\.scryfall\.com\/cards\/search/.test(u)) return new Response(JSON.stringify({ has_more: false, data: [
+        { id: 'p-new', set: 'sld', set_name: 'Secret Lair Drop', collector_number: '84', tcgplayer_id: 222222, released_at: '2024-01-01', lang: 'en', image_uris: { small: 'https://img.example/s1.jpg', normal: 'https://img.example/n1.jpg' } },
+        { id: 'p-old', set: 'm10', set_name: 'Magic 2010', collector_number: '146', tcgplayer_id: 111111, released_at: '2009-07-17', lang: 'en', image_uris: { small: 'https://img.example/s2.jpg', normal: 'https://img.example/n2.jpg' } }] }), { status: 200 });
+        if (/img\.example/.test(u)) return new Response(png, { status: 200 }); return realFetch(u); };
+      window.open = (u) => { opened = String(u); return null; };
+      try {
+        const deck = __d.getCurrentDeck(); const name = 'Lightning Bolt'; if (!deck.main.some(x => x.name === name)) deck.main.push({ qty: 4, name });
+        __d.openPrintPicker(deck.name, name); for (let k = 0; k < 30 && !document.querySelector('.print-cell'); k++) await new Promise(r => setTimeout(r, 100));
+        out.cells = document.querySelectorAll('.print-cell').length; [...document.querySelectorAll('.print-cell')].find(c => /M10 #146/.test(c.textContent)).click();
+        for (let k = 0; k < 30 && !__d.printFor(deck.name, name); k++) await new Promise(r => setTimeout(r, 100));
+        const p = __d.printFor(deck.name, name); out.print = p && `${p.set}#${p.cn}:${p.tcg}`; out.art = !!__d.imgFor(name, deck.name) && !!__d.imgFor(name, deck.name).custom;
+        __d.openBuyDeck(deck); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('#modalRoot .modal footer button')].find(b => /Open on TCGplayer/.test(b.textContent)).click();
+        const c = decodeURIComponent((opened.split('&c=')[1] || '')); out.base = opened.startsWith('https://www.tcgplayer.com/massentry?productline=Magic&c='); out.exact = c.split('||').some(l => /^\d+-111111$/.test(l)); out.plain = c.split('||').some(l => /^\d+ [A-Z]/.test(l)); out.noBolt = !c.split('||').some(l => / Lightning Bolt$/.test(l));
+        await __d.resetCustomArt(deck.name, name); out.cleared = !__d.printFor(deck.name, name);
+      } finally { window.fetch = realFetch; window.open = realOpen; document.querySelectorAll('.backdrop').forEach(b => b.remove()); }
+      return out; });
+    return { ok: r.cells === 2 && r.print === 'm10#146:111111' && r.art && r.base && r.exact && r.plain && r.noBolt && r.cleared, why: JSON.stringify(r) }; });
   await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card lies inside the table and below the Opening hand prompt, the prompt is on top of the dim layer, and the prompt box lies fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await p.mouse.move(2, 2);   // a card lifted under a resting pointer is hover, not layout
  await reset();
     const out = [];
