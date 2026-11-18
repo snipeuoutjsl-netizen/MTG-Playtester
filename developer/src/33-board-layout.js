@@ -15,7 +15,7 @@ const LAY_DEFS = [
   ['lanes', 'Two lanes', 'Creatures get one wide lane across the top and are centred in it; lands and other permanents share one band below, lands on the left.'],
   ['rail', 'Slim zone rail', 'Library, graveyard and exile become three card-sized slots on a slim rail at the edge. Click one to open it; hover for a list.'],
   ['side', 'Slimmer right column', 'The enlarged card preview, the stack and the log share a narrower right column (286px instead of 330px), so the board is wider.'],
-  ['mix', 'Land piles by mana colour', 'Untapped lands that make the same colours share a pile, all tapped lands share one pile, and a land with an activated ability only piles with exact copies. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
+  ['mix', 'Land and artifact piles', 'Untapped lands (and mana artifacts) that make the same colours share a pile, all tapped ones share one pile, and a land or artifact with an activated ability only piles with exact copies. Other non-creature artifacts pile when they are identical. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
 ];
 const layMode = () => settings.layoutMode !== 'original';
 const layV = k => layMode() && !(settings.lay && settings.lay[k] === false);
@@ -32,7 +32,12 @@ function groupKeyMix(c) { return groupKey({ ...c, tapped: false }); }
 function stackableCard(c) {
   if (!c || c.att || c.target || c.targets || c.dmg || c.loyalty !== undefined || c.evoked || c.kicked || c.origName) return false;
   if (state.battlefield.some(x => x.att === c.id)) return false;
-  return (c.token || permZone(c) === 'lands');
+  return (c.token || permZone(c) === 'lands' || isPlainArtifact(c));
+}
+// v0.99.19 a non-creature artifact that is a real card (Sol Ring, Mox Opal, Skullclamp...) piles like a land does.
+function isPlainArtifact(c) {
+  if (!c || c.token || !layV('mix') || permZone(c) !== 'noncreature') return false;
+  try { const t = permTypeInfo(c).types; return t.has('artifact') && !t.has('creature') && !t.has('land'); } catch (e) { return false; }
 }
 // v0.99.12 Land piles and token bundles.
 // Lands: untapped lands pile by the mana colours they make (every Forest and Llanowar Wastes-type land that makes only {G} share a pile), all tapped lands share one pile,
@@ -40,6 +45,15 @@ function stackableCard(c) {
 // Tokens: identical tokens bundle in fives; two fives make a ten, five tens a fifty, two fifties a hundred, and so on, so a huge number of tokens is one obvious stack with a count.
 const TOKEN_LADDER = [1000, 500, 100, 50, 10, 5];
 function tokenBundles(n) { const out = []; let left = n; for (const sz of TOKEN_LADDER) while (left >= sz) { out.push(sz); left -= sz; } return { bundles: out, loose: left }; }
+function artPileKey(c) {
+  const extra = [JSON.stringify(c.counters || {}), c.chosen || '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
+  if (c.tapped) return { key: 'art#tapped~' + extra, cap: 'Tapped' };
+  if (landHasActivated(c)) return { key: 'art#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };   // equipment, Clue-like cards with an ability: only exact copies pile
+  let cols = []; try { cols = rockColors(c).slice(); } catch (e) { cols = []; }
+  const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
+  if (cols.length) return { key: 'art#cols:' + cols.join('') + '~' + extra, cap: cols.join(' ') };   // mana artifacts pile by the colours they make
+  return { key: 'art#name~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+}
 function landHasActivated(c) { try { return activatedAbilitiesFor(c).length > 0; } catch (e) { return false; } }
 function landPileKey(c) {
   const extra = [JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
@@ -57,8 +71,9 @@ function battlefieldRows(cards) {
     const z = permZone(c);
     if (on && stackableCard(c)) {
       let k, cap = '';
-      if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else k = z + '#' + groupKey(c);
-      let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: z === 'lands' && layV('mix'), cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
+      const plain = isPlainArtifact(c);
+      if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else if (plain) { const ap = artPileKey(c); k = ap.key; cap = ap.cap; } else k = z + '#' + groupKey(c);
+      let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: (z === 'lands' && layV('mix')) || plain, cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
     } else out[z].push({ key: null, zone: z, cards: [c] });
   }
   for (const z of ['creatures', 'noncreature']) {   // token bundles (fives, tens, fifties...)
@@ -70,7 +85,7 @@ function battlefieldRows(cards) {
       for (; at < g.cards.length; at++) out[z].push({ key: null, zone: z, cards: [g.cards[at]] });
     }
   }
-  for (const g of out.lands) if (g.pile && g.cards.length > 1) g.cards.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  for (const g of [...out.lands, ...out.noncreature]) if (g.pile && g.cards.length > 1) g.cards.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   return out;
 }
 // The stack floats in the middle of the table (v0.70.2) so you can see exactly what is on it. While you drag a card or permanent, it becomes a drop

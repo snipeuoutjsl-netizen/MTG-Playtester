@@ -1572,12 +1572,10 @@ body.strip-on.lay-lanes #mat { grid-template-rows: minmax(0, 1fr) auto minmax(ca
 #boardstrip .bs-step.now, #boardstrip .bs-step { font-weight: 600; }
 #boardstrip .bs-info { position: relative; flex: 0 0 0; width: 0; padding: 0; margin: 0; gap: 0; overflow: visible; }
 #boardstrip .bs-stack { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); white-space: nowrap; padding: 1px 8px; border-radius: 999px; background: rgba(255,157,110,.16); border: 1px solid rgba(255,157,110,.5); font-size: 10px; }
-#boardstrip::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 0; width: var(--fill, 0px); border-radius: inherit; pointer-events: none;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #e3b95c) 10%, transparent), color-mix(in srgb, var(--accent, #e3b95c) 34%, transparent)); box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent, #e3b95c) 85%, transparent), 4px 0 14px -4px color-mix(in srgb, var(--accent, #e3b95c) 55%, transparent); transition: width .7s cubic-bezier(.22,.8,.2,1); }
-#boardstrip::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 0; width: var(--fill, 0px); border-radius: inherit; pointer-events: none; transition: width .7s cubic-bezier(.22,.8,.2,1);
-  background: repeating-linear-gradient(115deg, rgba(255,255,255,.07) 0 8px, transparent 8px 16px); background-size: 32px 100%; animation: bsStripes 1.6s linear infinite; }
-@keyframes bsStripes { to { background-position: 32px 0; } }
-@media (prefers-reduced-motion: reduce) { #boardstrip::after { animation: none; } #boardstrip::before { transition: none; } }
+/* v0.99.19 the progress fill matches the other bars: a flat tint of the accent colour and a slim accent line along the bottom edge, no stripes, no glow, no animation */
+#boardstrip::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 0; width: var(--fill, 0px); border-radius: inherit; pointer-events: none; background: color-mix(in srgb, var(--accent, #e3b95c) 13%, transparent); transition: width .5s ease; }
+#boardstrip::after { content: ''; position: absolute; left: 0; bottom: 0; z-index: 0; height: 2px; width: var(--fill, 0px); border-radius: 0 2px 2px 0; pointer-events: none; background: var(--accent, #e3b95c); opacity: .85; transition: width .5s ease; }
+@media (prefers-reduced-motion: reduce) { #boardstrip::after, #boardstrip::before { transition: none; } }
 body.responding #boardstrip .bs-step { opacity: .55; }
 
 /* v0.96.20 battlefield zones never show a scrollbar: its appearing and disappearing changed the zone width, which changed how many cards fit per row, which toggled the scrollbar again (the flicker with 5+ permanents). They still scroll with the wheel. */

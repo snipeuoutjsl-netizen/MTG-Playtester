@@ -6413,8 +6413,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.18';
+const APP_VERSION = '0.99.19';
 const CHANGELOG = [
+  { v: '0.99.19', title: 'Artifact piles and a calmer turn bar', notes: ['NEW: non-creature artifacts pile the way lands do. Mana artifacts (Sol Ring, Mox Opal...) pile by the colours they make, identical artifacts pile together, an artifact with an activated ability (Equipment and the like) only piles with exact copies, and all tapped artifacts share one sideways Tapped pile. Artifact creatures and tokens are not piled this way (tokens still bundle in fives). The same Settings > Layout switch controls it.', 'CHANGED: the progress fill in the turn bar is now a flat tint with a slim accent line along the bottom, the same look as the other bars, instead of animated stripes with a glow.']},
   { v: '0.99.18', title: 'Automatic targets and smarter Always yield', notes: ['NEW: a triggered ability with exactly one legal choice picks it by itself (CR 603.3d), so a trigger whose only possible target is your one creature goes on the stack with no window. The log says what it chose.', 'NEW: Always yield remembers what the ability could target when you set it. If a new possible target has appeared (or one has gone) since, the app asks you to choose again and then remembers the new choice. Turn Always yield off any time in the gear menu under Always yield; the log line for an automatic trigger now says so.']},
   { v: '0.99.17', title: 'Metalcraft cards now work, ability words are just labels, protection', notes: ['FIXED: Metalcraft cards were shown as "count it yourself". An ability word (Metalcraft, Threshold, Delirium, Revolt, Morbid, Landfall and the rest) is only a label with no rules meaning (CR 207.2c), so the app now reads each line without it and the condition inside the sentence does the work: "Metalcraft \u2014 ~ gets +2/+2 as long as you control three or more artifacts" is a live +2/+2, and "Metalcraft \u2014 deals 4 damage instead if you control three or more artifacts" replaces the plain damage while Metalcraft is on.', 'CHANGED: the top-bar game-state checks (Metalcraft, Threshold, Delirium, Revolt, Morbid) are now the one source of truth for those conditions, so a card and its icon can never disagree.', 'NEW: protection (CR 702.16b). A permanent with protection from a colour (printed, or granted such as Etched Champion\'s "protection from all colors as long as you control three or more artifacts") cannot be chosen as a target by your own spells and abilities of that colour.', 'FIXED: a conditional "instead" sentence with nothing before it could stop a card from being read at all.']},
   { v: '0.99.16', title: 'Metalcraft and other conditional "instead" lines', notes: ['FIXED: a line such as "Metalcraft \u2014 Galvanic Blast deals 4 damage instead if you control three or more artifacts" was not understood. The app now reads any "X instead if [condition]" or "If [condition], X instead" sentence (CR 614.1a), for Metalcraft, Threshold, Delirium and the other ability words (CR 207.2c): when the condition is true it replaces the sentence before it, keeping that sentence\'s targets, and when false it is left out. A condition the app cannot check is still reported as not understood.', 'NEW: "seven or more cards are in your graveyard" (the printed Threshold wording) is understood as a condition.']},
@@ -8367,7 +8368,7 @@ const LAY_DEFS = [
   ['lanes', 'Two lanes', 'Creatures get one wide lane across the top and are centred in it; lands and other permanents share one band below, lands on the left.'],
   ['rail', 'Slim zone rail', 'Library, graveyard and exile become three card-sized slots on a slim rail at the edge. Click one to open it; hover for a list.'],
   ['side', 'Slimmer right column', 'The enlarged card preview, the stack and the log share a narrower right column (286px instead of 330px), so the board is wider.'],
-  ['mix', 'Land piles by mana colour', 'Untapped lands that make the same colours share a pile, all tapped lands share one pile, and a land with an activated ability only piles with exact copies. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
+  ['mix', 'Land and artifact piles', 'Untapped lands (and mana artifacts) that make the same colours share a pile, all tapped ones share one pile, and a land or artifact with an activated ability only piles with exact copies. Other non-creature artifacts pile when they are identical. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
 ];
 const layMode = () => settings.layoutMode !== 'original';
 const layV = k => layMode() && !(settings.lay && settings.lay[k] === false);
@@ -8384,7 +8385,12 @@ function groupKeyMix(c) { return groupKey({ ...c, tapped: false }); }
 function stackableCard(c) {
   if (!c || c.att || c.target || c.targets || c.dmg || c.loyalty !== undefined || c.evoked || c.kicked || c.origName) return false;
   if (state.battlefield.some(x => x.att === c.id)) return false;
-  return (c.token || permZone(c) === 'lands');
+  return (c.token || permZone(c) === 'lands' || isPlainArtifact(c));
+}
+// v0.99.19 a non-creature artifact that is a real card (Sol Ring, Mox Opal, Skullclamp...) piles like a land does.
+function isPlainArtifact(c) {
+  if (!c || c.token || !layV('mix') || permZone(c) !== 'noncreature') return false;
+  try { const t = permTypeInfo(c).types; return t.has('artifact') && !t.has('creature') && !t.has('land'); } catch (e) { return false; }
 }
 // v0.99.12 Land piles and token bundles.
 // Lands: untapped lands pile by the mana colours they make (every Forest and Llanowar Wastes-type land that makes only {G} share a pile), all tapped lands share one pile,
@@ -8392,6 +8398,15 @@ function stackableCard(c) {
 // Tokens: identical tokens bundle in fives; two fives make a ten, five tens a fifty, two fifties a hundred, and so on, so a huge number of tokens is one obvious stack with a count.
 const TOKEN_LADDER = [1000, 500, 100, 50, 10, 5];
 function tokenBundles(n) { const out = []; let left = n; for (const sz of TOKEN_LADDER) while (left >= sz) { out.push(sz); left -= sz; } return { bundles: out, loose: left }; }
+function artPileKey(c) {
+  const extra = [JSON.stringify(c.counters || {}), c.chosen || '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
+  if (c.tapped) return { key: 'art#tapped~' + extra, cap: 'Tapped' };
+  if (landHasActivated(c)) return { key: 'art#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };   // equipment, Clue-like cards with an ability: only exact copies pile
+  let cols = []; try { cols = rockColors(c).slice(); } catch (e) { cols = []; }
+  const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
+  if (cols.length) return { key: 'art#cols:' + cols.join('') + '~' + extra, cap: cols.join(' ') };   // mana artifacts pile by the colours they make
+  return { key: 'art#name~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+}
 function landHasActivated(c) { try { return activatedAbilitiesFor(c).length > 0; } catch (e) { return false; } }
 function landPileKey(c) {
   const extra = [JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
@@ -8409,8 +8424,9 @@ function battlefieldRows(cards) {
     const z = permZone(c);
     if (on && stackableCard(c)) {
       let k, cap = '';
-      if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else k = z + '#' + groupKey(c);
-      let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: z === 'lands' && layV('mix'), cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
+      const plain = isPlainArtifact(c);
+      if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else if (plain) { const ap = artPileKey(c); k = ap.key; cap = ap.cap; } else k = z + '#' + groupKey(c);
+      let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: (z === 'lands' && layV('mix')) || plain, cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
     } else out[z].push({ key: null, zone: z, cards: [c] });
   }
   for (const z of ['creatures', 'noncreature']) {   // token bundles (fives, tens, fifties...)
@@ -8422,7 +8438,7 @@ function battlefieldRows(cards) {
       for (; at < g.cards.length; at++) out[z].push({ key: null, zone: z, cards: [g.cards[at]] });
     }
   }
-  for (const g of out.lands) if (g.pile && g.cards.length > 1) g.cards.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  for (const g of [...out.lands, ...out.noncreature]) if (g.pile && g.cards.length > 1) g.cards.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   return out;
 }
 // The stack floats in the middle of the table (v0.70.2) so you can see exactly what is on it. While you drag a card or permanent, it becomes a drop
