@@ -1798,7 +1798,7 @@ body.a11y-focus :focus-visible { outline: 3px solid #ffd84d !important; outline-
    Lift the table above the dim while the opening-hand step is shown (the battlefield is empty then and #overlay covers it); the hand (z 60) and modals (z 50) stay above. */
 body.mullhand #mat { z-index: 40; }
 body.mullhand #overlay { background: rgba(5, 10, 18, .62); backdrop-filter: none; }
-body.mullhand #overlay .pcard { border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(227,185,92,.35), 0 0 34px rgba(227,185,92,.28), 0 18px 60px rgba(0,0,0,.7); animation: mullPromptIn .28s ease-out; }
+body.mullhand #overlay .pcard { border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(227,185,92,.35), 0 0 34px rgba(227,185,92,.28), 0 18px 60px rgba(0,0,0,.7); }
 body.mullhand #overlay .pcard .ptitle { color: var(--text); }
 body.mullhand #overlay .pcard .psub { color: var(--text); opacity: .85; }
 @keyframes mullPromptIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
@@ -1818,3 +1818,24 @@ body.mullhand #overlay .pcard .psub { color: var(--text); opacity: .85; }
 @media (min-width: 1701px) { #topbar .tb-actions button:has(.lbl) { width: auto; min-width: var(--ctl-h); padding: 0 12px; gap: 6px; } }
 /* v0.99.34 during the opening-hand / mulligan steps pop-ups sit above the hand; a tall one (Deck view) must shrink into that space and scroll, not run off the top of the window */
 body.mullhand #modalRoot .backdrop:not(.dock):not(.resolve) > .modal, body.mullpick #modalRoot .backdrop:not(.dock):not(.resolve) > .modal { max-height: 100% !important; }
+
+/* v0.99.35 the opening is one sequence (deal, mulligans, put-on-the-bottom, pre-game actions): same dim layer, same large hand, same prominent prompt throughout */
+body.opening::after { content: ''; position: fixed; inset: 0; background: rgba(5,10,18,.55); z-index: 39; pointer-events: none; }
+body.opening #handWrap { z-index: 60; height: auto; min-height: calc(var(--ch) + 56px); display: flex; flex-direction: column; align-items: center; gap: 16px; padding-bottom: 14px; }
+body.opening #handWrap #row-hand { justify-content: center; flex-wrap: nowrap; max-width: 100%; width: 100%; }
+body.opening #mat { z-index: 40; }
+body.opening #overlay { background: rgba(5, 10, 18, .62); backdrop-filter: none; }
+body.opening #overlay .pcard { border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(227,185,92,.35), 0 0 34px rgba(227,185,92,.28), 0 18px 60px rgba(0,0,0,.7); transition: opacity .3s ease-out, transform .3s ease-out; }
+body.opening #overlay .pcard .ptitle, body.opening #overlay .pcard .psub { color: var(--text); }
+/* while the hand is being dealt the prompt waits, then fades in once the last card has landed */
+body.dealing #overlay .pcard { opacity: 0; transform: scale(.96); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { body.opening #overlay .pcard { transition: none; } }
+body.opening #modalRoot .backdrop:not(.dock):not(.resolve) { padding-bottom: calc(var(--handcover-root, 0px) + 20px); }
+body.opening #modalRoot .backdrop:not(.dock):not(.resolve) > .modal { max-height: 100% !important; }
+/* v0.99.35 during the opening the prompt is centred in the space above the (large) hand, so a taller box (Pre-game actions) does not make the hand shrink */
+body.opening #overlay { padding-bottom: calc(var(--openhand, 0px) + 16px); }
+/* v0.99.35 the stack stage is the thing to look at while something is on the stack: it sits above every zone and card on the table (zones, hovered or tapped piles reach z-index 60),
+   the table behind it is dimmed by the stage's own shadow (clipped to the table, so clicks still reach your permanents to respond), and it is scaled to fit above the hand */
+#stackStage { z-index: 90; background: rgba(12,16,26,.94); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 0 0 200vmax rgba(4,8,14,.5), 0 18px 50px rgba(0,0,0,.6); transform: translate(-50%, -50%) scale(var(--ss, 1)); }
+#stackStage.over { box-shadow: 0 0 0 200vmax rgba(4,8,14,.5), 0 0 0 3px rgba(70,220,120,.9), 0 0 40px rgba(70,220,120,.45); }
+body.dragging-card #stackStage:not([hidden]) { box-shadow: 0 0 0 200vmax rgba(4,8,14,.3), 0 0 0 2px rgba(70,220,120,.6); }
