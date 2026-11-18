@@ -35,7 +35,7 @@ function parseTriggers(c) {
     const cm = body.match(/^((?:When|Whenever|At)\b[^,]*),\s*(.*)$/s);
     if (!cm) continue;
     const cond = cm[1].toLowerCase(), word = lm[1] || '';
-    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false, castAny = null, cAny = null;
+    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false, castAny = null, cAny = null, selfToo = false, q0 = null;
     if (/^at\b/.test(cond)) {
       if (!/opponent|\bnext\b/.test(cond)) {
         if (/end of combat/.test(cond)) ev = 'step:end_combat';
@@ -53,7 +53,11 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) (?:~|this \w+) attacks/.test(cond)) ev = 'attack-self';
     else if (/creatures? you control attacks?/.test(cond)) ev = 'attack-any';
     else if (/^(?:when|whenever) (?:~|this \w+) (?:dies|is put into a graveyard from the battlefield)/.test(cond)) ev = 'dies-self';
+    else if ((q0 = cond.match(/^(?:when|whenever) (?:~|this \w+) or another (.+?) dies$/)) && !/opponent/.test(cond)) { ev = 'dies-other'; filter = 'another ' + q0[1] + ' dies'; selfToo = true; }   // CR 603.10a "Blood Artist"
     else if (/^(?:when|whenever) (?:another|a) .*dies/.test(cond) && !/opponent/.test(cond)) { ev = 'dies-other'; filter = cond; }
+    else if (/^(?:when|whenever) (?:equipped|enchanted) creature dies$/.test(cond)) ev = 'host-dies';
+    else if (/^(?:when|whenever) (?:equipped|enchanted) creature attacks$/.test(cond)) ev = 'host-attacks';
+    else if (/^(?:when|whenever) (?:equipped|enchanted) creature deals combat damage(?: to (?:a player|an opponent|the opponent|you))?$/.test(cond)) ev = 'host-combat-damage';
     else if (/^whenever you draw/.test(cond)) ev = 'draw';
     else if (/^whenever an opponent draws a card/.test(cond)) ev = 'opp-draw';
     else if (/^whenever an opponent searches their library/.test(cond)) ev = 'opp-search';
@@ -81,7 +85,7 @@ function parseTriggers(c) {
     let manaCond = null; if (ev === 'cast') { const mm = /^if (no mana|mana) was spent to cast (?:it|that spell|the spell|this spell),?\s*/i.exec(cm[2]); if (mm) { manaCond = /^no/i.test(mm[1]) ? 'none' : 'some'; cm[2] = cm[2].slice(mm[0].length); } }
     if (/^if (?:~|this \w+) is in your graveyard\b/i.test(cm[2]) || (ev === 'gy-self')) zone = 'graveyard';
     if (ev !== 'gy-self' && /\breturn (?:~|this \w+|it) from your graveyard to the battlefield/i.test(cm[2])) zone = 'graveyard';   // v0.94.1 Bloodghast: Landfall \u2014 you may return ~ from your graveyard to the battlefield
-    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, manaCond, castAny, unsupported: ev === 'cast' && !nth && /\b(?:first|second|third|fourth|fifth|sixth)\b[^,]*\bspell\b/i.test(cm[1]) });
+    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, manaCond, selfToo, castAny, unsupported: ev === 'cast' && !nth && /\b(?:first|second|third|fourth|fifth|sixth)\b[^,]*\bspell\b/i.test(cm[1]) });
     if (ev === 'etb-self' && /enters(?: the battlefield)? or attacks/.test(cond)) out.push({ ev: 'attack-self', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ko) out.push({ ev: 'etb-other', cond: cm[1], effect: cm[2], line: body, filter: 'another ' + ko[1], optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
@@ -120,7 +124,7 @@ function fireTrigger(ev, ctx = {}) {
   if (!state || !teach('triggerPrompts')) return;
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
+  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -141,6 +145,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
     for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self' && (!t.test || t.test(a, atk))) add(a, t, `${a.name} was declared as an attacker.`);
+    for (const a of atk) for (const x of bf) if (x.att === a.id) for (const t of parseTriggers(x)) if (t.ev === 'host-attacks') add(x, t, `${a.name} (equipped or enchanted by ${x.name}) attacked.`);
     if (atk.length) for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'attack-any' && (!t.test || t.test(c, atk))) add(c, t, 'You declared attackers.');
   } else if (ev === 'mutates') {
     const mc = ctx.card; for (const t of parseTriggers(mc)) if (t.ev === 'mutates-self') add(mc, t, `${mc.name} mutated (a creature spell merged with it).`);
@@ -148,7 +153,10 @@ function fireTrigger(ev, ctx = {}) {
     const d = ctx.card;
     if (d.blitzBody) { delete d.blitzBody; state.pendingTriggers.push({ kind: 'ability', cardId: d.id, cardName: d.name, text: 'Blitz (keyword, CR 702.152): when this creature dies, draw a card.', effect: 'Draw a card.', special: null, optional: false, why: `${d.name} was cast for its blitz cost and died.` }); }
     for (const t of parseTriggers(d)) if (t.ev === 'dies-self') add(d, t, `${d.name} was put into a graveyard from the battlefield (it died).`);
+    for (const t of parseTriggers(d)) if (t.ev === 'dies-other' && t.selfToo) add(d, t, `${d.name} died (it triggers on its own death as well as on another creature's).`);
     for (const c of bf) if (c.id !== d.id) for (const t of parseTriggers(c)) if (t.ev === 'dies-other' && filterMatches(t.filter, d)) add(c, t, `${d.name} died and matches this ability's condition.`);
+    for (const id of (d._hostOf || [])) { const a = findCard(id); if (a) for (const t of parseTriggers(a.card)) if (t.ev === 'host-dies') add(a.card, t, `${d.name} (the creature ${a.card.name} was attached to) died.`); }   // Skullclamp: "Whenever equipped creature dies"
+    delete d._hostOf;
   } else if (ev === 'draw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'draw') add(c, t, 'You drew a card.');
   } else if (ev === 'oppsearch') {
@@ -182,6 +190,7 @@ function fireTrigger(ev, ctx = {}) {
     const a = ctx.card;
     for (const t of parseTriggers(a)) if (t.ev === 'combat-damage-self' && (!t.test || t.test(a))) add(a, t, `${a.name} dealt combat damage to the opponent.`);
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'combat-damage-any') add(c, t, `${a.name} (a creature you control) dealt combat damage to the opponent.`);
+    for (const x of bf) if (x.att === a.id) for (const t of parseTriggers(x)) if (t.ev === 'host-combat-damage') add(x, t, `${a.name} (equipped or enchanted by ${x.name}) dealt combat damage to the opponent.`);
   }
 }
 function flushTriggers() { if (state && state.pendingTriggers.length && !state.phasePause && !state.discarding && !costHold) resolvePendingTrigger(); }
