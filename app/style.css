@@ -1843,3 +1843,12 @@ body.dragging-card #stackStage:not([hidden]) { box-shadow: 0 0 0 200vmax rgba(4,
 .print-cell img { width: 100%; aspect-ratio: 5 / 7; object-fit: cover; border-radius: 6px; background: #111; }
 .print-set { font-weight: 700; font-size: 12px; }
 .cart-print { text-align: center; margin-top: -2px; }
+/* v0.99.39 Card art & printings: buttons fit the card width (Printing… on its own row, Change / Reset below) and every cell lines up */
+.cart-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px 14px; }
+.cart-cell { min-width: 0; }
+.cart-name, .modal .cart-print { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; margin: 0; line-height: 1.35; }
+.modal .cart-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.modal .cart-btns button { min-width: 0; height: auto; min-height: 26px; padding: 4px 6px; font-size: 12px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal .cart-btns button:first-child { grid-column: 1 / -1; }
+.modal .cart-btns button:only-child { grid-column: 1 / -1; }
+.modal .cart-btns button:nth-child(2):last-child { grid-column: 1 / -1; }

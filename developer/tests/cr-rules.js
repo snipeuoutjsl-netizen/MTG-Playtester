@@ -1211,6 +1211,18 @@ const { setup } = require('./common.js');
     const r = await ev(() => { const has = tx => __d.effectOptions(tx, { sourceName: 'Test', sourceId: -1 }).some(o => /damage to the opponent/i.test(o.label));
       return { cp: has('Strangle deals 3 damage to target creature or planeswalker.'), c: has('Lightning Axe deals 5 damage to target creature.'), any: has('Lightning Bolt deals 3 damage to any target.'), cpl: has('Shock deals 2 damage to target creature or player.'), ppw: has('Lava Spike deals 3 damage to target player or planeswalker.') }; });
     return { ok: !r.cp && !r.c && r.any && r.cpl && r.ppw, why: JSON.stringify(r) }; });
+  // v0.99.39 Domain and "where X is the number of ..." counting
+  await T('305.6 + 702 Domain', 'Tribal Flames ("X is the number of basic land types among lands you control") with Leyline of the Guildpact: one land of any kind gives 5; no lands gives 0; a lone Mountain without Leyline gives 1', async () => { await reset();
+    const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const tx = __d.cardInfo('Tribal Flames').tx; const dmg = () => { const o = __d.effectOptions(tx, { sourceName: 'Tribal Flames', sourceId: -1 }).find(x => /damage/.test(x.label)); return o ? +(o.label.match(/Deal (\d+)/) || [0, -1])[1] : null; };
+      s.battlefield = []; const ley = mk('Leyline of the Guildpact'); s.battlefield.push(ley); __d.render(); const none = dmg(); const m = mk('Mountain'); s.battlefield.push(m); __d.render(); const ley1 = dmg(); s.battlefield = [m]; __d.render(); const mtn = dmg(); return { none, ley1, mtn }; });
+    return { ok: r.none === 0 && r.ley1 === 5 && r.mtn === 1, why: JSON.stringify(r) }; });
+  await T('107.3 + 608.2c', 'a "where X is the number of ..." the app cannot count is never taken as 0: the line stays as written (left for you) instead of dealing 0 damage', async () => {
+    const r = await ev(() => __d.effectOptions('Test deals X damage to any target, where X is the number of glorbs among frobs you control.', { sourceName: 'Test', sourceId: -1 }).map(o => o.label));
+    return { ok: !r.some(l => /Deal 0 damage/.test(l)), why: JSON.stringify(r) }; });
+  await T('107.3 + 404', '"where X is the number of cards in your graveyard" counts the graveyard (it used to be read as "... you control" and gave 0); "creatures you control" and "Bears you control" count the battlefield', async () => { await reset();
+    const r = await ev(() => { const s = __d.state; s.battlefield = []; for (const n of ['Grizzly Bears', 'Grizzly Bears', 'Island']) s.battlefield.push(Object.assign(__d.newCard(n), { id: s.nextId++ })); s.graveyard = ['Island', 'Ponder', 'Island'].map(n => Object.assign(__d.newCard(n), { id: s.nextId++ }));
+      const x = ph => (__d.applyWhereX('Test deals X damage to any target, where X is ' + ph + '.', {}).match(/deals (\d+) damage/) || [0, null])[1]; return { gy: x('the number of cards in your graveyard'), cr: x('the number of creatures you control'), be: x('the number of Bears you control') }; });
+    return { ok: r.gy === '3' && r.cr === '2' && r.be === '2', why: JSON.stringify(r) }; });
   await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card lies inside the table and below the Opening hand prompt, the prompt is on top of the dim layer, and the prompt box lies fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await p.mouse.move(2, 2);   // a card lifted under a resting pointer is hover, not layout
  await reset();
     const out = [];

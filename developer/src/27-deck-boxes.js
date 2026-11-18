@@ -169,7 +169,7 @@ function openCustomArt(deckName, after) {
       const has = CUSTOM.has(customMapKey(deckName, n)), im = imgFor(n, deckName);
       const thumb = h('div', { class: 'cart-thumb' + (im ? '' : ' none') + (has ? ' mine' : ''), style: im ? `background-image:url("${im.front}")` : '' }, im ? null : h('span', { text: n }), has ? h('i', { class: 'cart-mine', text: 'custom' }) : null);
       const pr = printFor(deckName, n);
-      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }), pr ? h('div', { class: 'cart-print small muted', text: printLabel(pr) }) : null,
+      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }), h('div', { class: 'cart-print small muted', text: pr ? printLabel(pr) : '\u00a0', title: pr ? printLabel(pr) : '' }),   // always one line, so every card's buttons line up
         h('div', { class: 'cart-btns' },
           h('button', { text: 'Printing…', title: 'Choose one of the card\u2019s real printings (alternate art) from Scryfall', onclick: () => openPrintPicker(deckName, n, () => { draw(); render(); }) }),
           h('button', { text: has ? 'Change…' : 'Choose image…', onclick: () => pick('image/*', false, async fs => { try { note.textContent = 'Saving…'; await setCustomArt(deckName, n, fs[0]); note.textContent = `Saved art for ${n}.`; } catch (e) { note.textContent = 'Could not use that file: ' + e.message; } draw(); render(); }) }),

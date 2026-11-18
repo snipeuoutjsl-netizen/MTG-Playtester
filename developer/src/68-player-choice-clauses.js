@@ -61,10 +61,26 @@ function devotionTo(cols) {   // CR 700.5: the number of mana symbols of those c
     for (const m of mc.matchAll(/\{([^}]+)\}/g)) { const parts = m[1].split('/'); if (parts.some(p => cols.includes(p))) n++; } }
   return n;
 }
+// v0.99.39 Is "the number of <phrase>" something the counter can read? Every word must be a card type / supertype / subtype that appears on some card's
+// type line, or one of the counter's structural words. The generic counter answers 0 for words it does not know ("glorbs"), which is indistinguishable
+// from really having none, so an unknown word must stop it.
+let _typeWords = null;
+const COUNT_GLUE = new Set(['other', 'another', 'nonland', 'noncreature', 'nonartifact', 'nontoken', 'token', 'tokens', 'tapped', 'untapped', 'card', 'cards', 'permanent', 'permanents', 'and', 'or', 'in', 'your', 'graveyard', 'hand', 'library', 'you', 'control', 'the', 'a', 'an', 'of', 'with', 'basic', 'legendary', 'snow', 'nonbasic', 'opponents', 'opponent']);
+function countPhraseKnown(phrase) {
+  if (!_typeWords) { _typeWords = new Set(); for (const v of CARDS.values()) for (const w of String((v && v.t) || '').toLowerCase().replace(/[\u2014\u2013/-]/g, ' ').split(/\s+/)) if (w) _typeWords.add(w); }
+  const forms = w => [w, w.replace(/s$/, ''), w.replace(/es$/, ''), w.replace(/ies$/, 'y'), w.replace(/ves$/, 'f'), w.replace(/ves$/, 'fe')];   // Zombies, Elves, Wolves, Fairies, Foxes
+  const known = w => forms(w).some(f => _typeWords.has(f));
+  return String(phrase).toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/).filter(Boolean).every(w => COUNT_GLUE.has(w) || known(w) || (/^non/.test(w) && known(w.slice(3))));
+}
 function applyWhereX(tx, obj) {
   let T = String(tx || ''), m, n = null;
   if ((m = /,? where X is your devotion to (white|blue|black|red|green)(?: and (white|blue|black|red|green))?/i.exec(T))) { n = devotionTo([DEV_COLORS[m[1].toLowerCase()], m[2] && DEV_COLORS[m[2].toLowerCase()]].filter(Boolean)); T = T.replace(m[0], ''); }
-  else if ((m = /,? where X is the number of ([a-z' -]+?)(?: you control)?(?=[.,]|$)/i.exec(T))) { const src = obj && obj.sourceId > 0 && findCard(obj.sourceId); n = csCount(m[1].trim() + ' you control', src ? src.card : { id: -1 }) || 0; T = T.replace(m[0], ''); }
+  // v0.99.39 Domain (CR 305.6 lands; the Domain ability word): "the number of basic land types among lands you control" (Tribal Flames). It used to fall through
+  // to the generic counter below, which could not count it and gave 0, so the spell dealt 0 damage even with Leyline of the Guildpact out.
+  else if ((m = /,? where X is the number of basic land types among lands you control/i.exec(T))) { n = domainCount(); T = T.replace(m[0], ''); }
+  else if ((m = /,? where X is the number of ([a-z' -]+?)(?: you control)?(?=[.,]|$)/i.exec(T))) { const src = obj && obj.sourceId > 0 && findCard(obj.sourceId); const ph = m[1].trim(), v = csCount(/\bin (?:your|a|any) (?:graveyard|hand|library)$|\bin all graveyards$/i.test(ph) ? ph : ph + ' you control', src ? src.card : { id: -1 });   // v0.99.39 "cards in your graveyard" is not "... you control"
+    if (v === null || v === undefined || Number.isNaN(+v) || (typeof CARDS !== 'undefined' && CARDS.size && !countPhraseKnown(m[1]))) return T;   // v0.99.39 a count the app cannot work out is NOT taken as 0: the line stays as written and is left to you (shown as not understood)
+    n = +v; T = T.replace(m[0], ''); }
   if (n === null) return T;
   T = T.replace(/(?<![{\w])X(?![\w}])/g, String(n));
   T = T.replace(/(?:^|(?<=\. ))If (\d+) is greater than or equal to the number of cards in your library, you win the game\.?/i, (all, v) => (state ? +v >= state.library.length : true) ? 'You win the game.' : '');   // Thassa's Oracle

@@ -77,9 +77,10 @@ function landTypesOf(name) {
   return effectiveLandTypes({name});
 }
 
+// v0.99.39 Domain counts the basic land types among lands you CONTROL (CR 305.6): "every basic land type" effects (Leyline of the Guildpact, Prismatic Omen)
+// give each of your lands all five, so one land is enough for 5, but with no lands the count is 0 (it used to say 5). landTypesOf() already includes those effects.
 function domainTypeList() {
   if (!state) return [];
-  if (domainAllTypes()) return [...BASIC_TYPES];
   const types = new Set();
   for (const c of state.battlefield) {
     if (!isLandName(c.name)) continue;
@@ -90,7 +91,6 @@ function domainTypeList() {
 }
 function domainCount() {
   if (!state) return 0;
-  if (domainAllTypes()) return 5;
   const types = new Set();
   for (const c of state.battlefield) {
     if (!isLandName(c.name)) continue;

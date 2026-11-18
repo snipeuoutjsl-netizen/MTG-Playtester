@@ -456,7 +456,6 @@ defCard('Sink into Stupor', { lines: [{
 // ---- v0.86 definitions written from the user's own deck scan (Modern Domain, Dragons, Grixis, Jewel Shops, Landfall, Leyline of the Goyf)
 const srcCard = obj => { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null; return f && f.zone === 'battlefield' ? f.card : null; };
 const genericFor = (obj, tx) => effectOptions(tx, { ...obj, sourceName: '~' });   // the general reader, skipping this card's definition
-function domainCount() { if (!state) return 0; const set = new Set(); for (const c of state.battlefield) { const p = permTypeInfo(c); if (!p.types.has('land')) continue; for (const b of ['plains', 'island', 'swamp', 'mountain', 'forest']) if (p.subs.has(b)) set.add(b); } return set.size; }
 function payManaThen(card, cost, label, cb) {   // pay a mana cost for an effect ("you may pay {4}") with the normal payment window, then run cb
   if (!state) return false;
   if (!manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null).ok) { toast('Cannot pay', `You cannot pay ${cost} right now. Choose not to, or make more mana first.`); return false; }
