@@ -55,6 +55,7 @@ function parseTargetSpecs(text) {
 function permTypeLine(c) { return c.token ? (c.tk && c.tk.type ? c.tk.type : c.tk && c.tk.pt ? 'Token Creature' : 'Token Artifact') : (frontType(c) || (isLandName(c.name) ? 'Land' : '')); }
 // CR 105.2: an object's colors come from its mana cost (colorless when it has none); tokens use their listed colors.
 function cardColorSet(c) {
+  { const ov = ovrOf(c); if (ov && ov.colors) return new Set(ov.colors); }
   if (c.token) return new Set(((c.tk && (c.tk.colors || c.tk.color)) || '').toString().toUpperCase().replace(/[^WUBRG]/g, '').split(''));
   const inf = cardInfo(c.name); return new Set(((String((inf && (inf.mc || '')) || '').split(' // ')[0].match(/\{[^}]*\}/g) || []).join('')).replace(/[^WUBRG]/g, '').split('').filter(Boolean));
 }

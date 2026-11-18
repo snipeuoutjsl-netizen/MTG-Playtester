@@ -14,7 +14,7 @@ function parseTriggers(c) {
   if (!c) return [];
   const info = rulesInfo(c);
   if (!info || !info.tx) return [];
-  const key = c.token ? 'tok:' + norm(c.name) + '|' + info.tx : norm(c.name);
+  const key = c.token ? 'tok:' + norm(c.name) + '|' + info.tx : info.ovr ? 'ovr:' + norm(c.name) + '|' + info.tx : norm(c.name);
   if (TRIG_CACHE.has(key)) return TRIG_CACHE.get(key);
   const out = [];
   const nameRe = selfNameRe(info.name);
@@ -88,6 +88,7 @@ function frontType(c) {
     const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
+  if (c && t && (c.ovr || (state && state.battlefield.length))) t = ovrTypeLine(c, t);
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
@@ -107,7 +108,7 @@ function fireTrigger(ev, ctx = {}) {
   if (!state || !teach('triggerPrompts')) return;
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if ((t.zone === 'graveyard') !== inGy(src)) return; state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
+  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -571,7 +572,7 @@ function effectOptionsInner(tx, obj) {
 function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
   if (obj.kw && KW_EFFECTS[obj.kw]) return KW_EFFECTS[obj.kw](obj);   // v0.96.1 a keyword trigger resolving (exalted, evolve ...)
-  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || animateGeneralEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
+  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || animateGeneralEffect(tx, srcN, obj) || charChangeEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
   { const L = defLine(obj.sourceName, tx);
     if (L) {
       const o = L.options(obj, L._line || tx);
