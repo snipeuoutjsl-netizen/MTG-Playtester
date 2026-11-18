@@ -100,17 +100,17 @@
 
       <div id="piles">
         <div class="pile" id="pile-library" data-drop="library">
-          <div class="pilelabel">Library</div>
+          <div class="pilelabel">Deck</div>
           <div class="stack lib" id="libstack" tabindex="0" role="button" aria-haspopup="menu" title="Click for draw, scry, search..."><div class="stacktop cardback"></div><span class="pcount" id="pcnt-library">0</span></div>
         </div>
         <div class="pile-zone-row">
-          <div class="pile" id="pile-graveyard" data-drop="graveyard">
-            <div class="pilelabel">Graveyard</div>
-            <div class="stack" data-open="graveyard" title="Click to view"><div class="stacktop" id="top-graveyard"></div><span class="pcount" id="pcnt-graveyard">0</span></div>
-          </div>
           <div class="pile" id="pile-command" data-drop="command" hidden>
             <div class="pilelabel">Command</div>
             <div class="stack" data-open="command" title="Click to view"><div class="stacktop" id="top-command"></div><span class="pcount" id="pcnt-command">0</span></div>
+          </div>
+          <div class="pile" id="pile-graveyard" data-drop="graveyard">
+            <div class="pilelabel">Graveyard</div>
+            <div class="stack" data-open="graveyard" title="Click to view"><div class="stacktop" id="top-graveyard"></div><span class="pcount" id="pcnt-graveyard">0</span></div>
           </div>
           <div class="pile" id="pile-exile" data-drop="exile">
             <div class="pilelabel">Exile</div>
@@ -135,7 +135,7 @@
     </div>
 
     <section id="handWrap" data-drop="hand">
-      <div class="zlabel">Hand <span id="cnt-hand"></span><button id="btnHandKey" class="handsort" title="What the outline colours on your hand cards mean">Key</button><span id="handLegend" class="handlegend"><span class="legend ready" title="Green: you can play or cast this right now.">Playable</span><span class="legend mana" title="Red: the timing is fine, but you cannot pay for it: not enough mana, or not the right colours. Hover the card to see which.">Can't pay</span><span class="legend timing" title="Gold: wrong timing. Wrong phase, the stack is busy, or you already played a land. Hover the card to see why.">Wrong timing</span><span class="legend instant" title="The lightning badge: instant speed or flash. It can be cast whenever you have priority.">⚡ Instant speed</span><span class="legend sel" title="White: the card you have selected.">Selected</span></span></div>
+      <div class="zlabel">Hand <span id="cnt-hand"></span><span class="zgrow"></span><button id="btnHandKey" class="handsort handkeybtn" aria-haspopup="dialog" aria-expanded="false" title="What the outline colours on your cards mean">Key</button><div id="handLegend" class="handlegend" role="dialog" aria-label="Card outline key"><h4>Card outline key</h4><div class="kr"><span class="sw ready"></span><div><b>Green</b>: you can play or cast this right now. On a permanent on the battlefield it means an ability you can activate now. It pulses while you can respond to something on the stack.</div></div><div class="kr"><span class="sw mana"></span><div><b>Red</b>: the timing is fine but you cannot pay for it: not enough mana, or not the right colours. Hover the card to see which.</div></div><div class="kr"><span class="sw timing"></span><div><b>Gold</b>: wrong timing. Wrong phase, the stack is busy, or you already played a land. Hover the card to see why. Gold pulsing cards in the opening hand or a discard are the ones you can pick.</div></div><div class="kr"><span class="sw inst">⚡</span><div><b>Lightning badge</b>: instant speed or flash. It can be cast whenever you have priority. The badge takes the colour of the outline.</div></div><div class="kr"><span class="sw sel"></span><div><b>White</b>: the card you have selected.</div></div></div></div>
       <div id="handPickBar" hidden></div>
       <div class="cardrow" id="row-hand"></div>
     </section>

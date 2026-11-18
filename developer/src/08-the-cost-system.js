@@ -693,6 +693,7 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }
   if(modes){ const md=spellModal(c); if(md){ c.modes=modes; c.modeTexts=modes.map(i=>md.modes[i].text); log(`${c.name}: chosen ${md.spree?'extras':'modes'}: ${c.modeTexts.join(' | ')}`); } }
+  noteUncounterableMana(c, manaIds);
   { const pool0 = Object.values(state.manaPool || {}).reduce((s, v) => s + (v || 0), 0); withCtx(c,()=>tapManaIds(manaIds)); const pool1 = Object.values(state.manaPool || {}).reduce((s, v) => s + (v || 0), 0); c.manaSpent = manaIds.length > 0 || pool1 < pool0; }   // CR 601.2h: was any mana spent on it?
   if(ci) applyCostInfo(c,ci);
   noteCast(c); state.stack.push(c); state.priority={active:true,passed:false}; if(gyLeft) fireTrigger('gyleave',{card:c,to:'stack'});

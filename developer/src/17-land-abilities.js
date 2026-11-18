@@ -23,7 +23,8 @@ function landManaAbilities(c) {
     else if (/^Add one mana of any color$/i.test(first)) ab.any = true;
     else continue;
     for (const sn of sents.slice(1)) { let q;
-      if ((q = sn.match(/^Spend this mana only (?:to|on) (.*?)\.?$/i))) ab.only = c.chosen ? q[1].replace(/the chosen type/i, 'the ' + c.chosen.toLowerCase() + ' type') : q[1];
+      if ((q = sn.match(/^Spend this mana only (?:to|on) (.*?)\.?$/i))) { let lim = q[1]; if (/,? and that spell can'?t be countered$/i.test(lim)) { ab.noCounter = true; lim = lim.replace(/,? and that spell can'?t be countered$/i, ''); }   // Cavern of Souls
+        ab.only = c.chosen ? lim.replace(/the chosen type/i, 'the ' + c.chosen.toLowerCase() + ' type') : lim; }
       else if ((q = sn.match(/^~ deals (\d+) damage to you\.?$/i))) ab.dmg += +q[1];
       else if ((q = sn.match(/^If a card is exiled with ~, add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.altExiled = [...q[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);   // imprint-style: "If a card is exiled with this land, add {C}{C} instead"
       else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; 

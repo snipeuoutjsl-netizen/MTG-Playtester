@@ -149,7 +149,7 @@ function drawStackStage() {
   el.replaceChildren(stepsEl(0), h('div', { class: 'ss-row' }, shown.map(face)), orderEl, ssOn, items.length > shown.length ? h('div', { class: 'ss-more', text: `+${items.length - shown.length} more below` }) : null, h('div', { class: 'ss-btns' },
       h('button', { text: 'Pass priority', title: 'Do not respond: the top object will resolve', onclick: () => passPriority() }),
       (!items[0].ability && !items[0].opp && !isPermanentCard(items[0])) ? h('button', { text: 'Copy', title: 'A copy of this spell goes on the stack (Twincast, Fork, Reverberate…). It is not cast, so it does not count for Storm.', onclick: () => { snap(); makeSpellCopies(items[0].id, 1, 'Copy effect'); render(); } }) : null,
-      h('button', { class: 'danger', text: 'Countered', title: 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }),
+      (() => { const cw = cantBeCounteredWhy(items[0]); return h('button', { class: 'danger', text: cw ? "Can't be countered" : 'Countered', disabled: !!cw, title: cw ? items[0].name + " can't be countered: " + cw : 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }); })(),
       h('button', { class: 'primary', text: items[0].opp ? 'Resolve (opponent)' : 'Resolve top', title: 'Resolve ' + (items[0].ability ? (items[0].sourceName || items[0].name) : items[0].name), onclick: () => resolveTopOfStack() })),
     h('div', { class: 'ss-hint', text: 'Drag a card or permanent onto the stack to respond' }));
 }

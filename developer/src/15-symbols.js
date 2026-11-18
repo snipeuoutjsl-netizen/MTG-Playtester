@@ -112,7 +112,7 @@ function buildStack(m, panel){
     ].filter(Boolean));
     m.foot.replaceChildren(...(state.stack.length?[
       h('button',{text:'Pass priority',onclick:()=>{m.close();passPriority();}}),
-      h('button',{class:'danger',text:'Countered',title:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}}),
+      (()=>{const cw=cantBeCounteredWhy(top);return h('button',{class:'danger',text:cw?"Can't be countered":'Countered',disabled:!!cw,title:cw?`${top.name} can't be countered: ${cw}`:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}});})(),
       h('button',{class:'primary',text:'Resolve top',title:`Resolve ${top.opp?"opponent's ":''}${top.name}`,onclick:()=>{resolveTopOfStack();draw();}})
     ]:(panel?[]:[h('button',{text:'Close',onclick:()=>m.close()})])));
   };

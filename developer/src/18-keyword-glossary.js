@@ -204,6 +204,7 @@ function renderPileTop(zone) {
   el.replaceChildren();
   if (!arr.length) return;
   const c = arr[arr.length - 1];
+  el.onmouseenter = () => { const a = state && state[zone]; if (a && a.length) showPreview(a[a.length - 1]); };   // hover a pile: its top card (the commander, for the command zone) in the large card display
   if (layoutOn('gyFan')) {   // v0.78: graveyard AND exile, spread only while hovered
     arr.slice(-3, -1).forEach((b, i, a) => { const k = a.length - i;   // k = 2 (deepest) or 1
       const bi = cardArt(b);
@@ -321,10 +322,17 @@ function fitBattlefieldCards() {
 }
 
 function layoutHand() {
-  const row = $('#row-hand'), cards = [...row.children];
+  const row = $('#row-hand'), cards = [...row.children], hw = $('#handWrap');
   for (const c of cards) c.style.marginLeft = '';
+  // Opening hand / mulligan: size the cards so the WHOLE hand fits on screen (width and height), whatever the window size
+  if (document.body.classList.contains('mullpick') || document.body.classList.contains('mullhand')) {
+    const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 1);
+    const aw = Math.max(hw.parentElement ? hw.parentElement.clientWidth : innerWidth, 300) - 70;
+    const cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
+    hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
+  } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); }
   if (cards.length < 2) return;
-  const avail = $('#handWrap').clientWidth - 30, cw = cards[0].offsetWidth;
+  const avail = $('#handWrap').clientWidth - 70, cw = cards[0].offsetWidth;
   if (!cw) return;
   const need = cards.length * cw + (cards.length - 1) * 8;
   if (need <= avail) return;
@@ -379,7 +387,7 @@ function renderInner() {
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
   { const n = has ? state.library.length : 0; const ls = $('#libstack'); ls.dataset.thick = n > 40 ? 3 : n > 15 ? 2 : n > 0 ? 1 : 0; ls.title = teach('libraryMenu') ? 'Click for draw, look, scry, surveil, mill, search' : ''; }
   $('#cnt-hand').textContent = has ? `(${state.hand.length})` : '';
-  $('#handLegend')?.classList.toggle('hidden', !teach('playability'));
+  $('#btnHandKey')?.classList.toggle('hidden', !teach('playability'));
   for (const z of ['graveyard', 'exile', 'command']) renderPileTop(z);
   try { commanderRender(); } catch (e) { /* commander UI only */ }
   $('#libstack').classList.toggle('empty', !has || !state.library.length);

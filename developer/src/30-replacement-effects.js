@@ -86,13 +86,27 @@ function openChoose(cardId, kind) {
   const f = findCard(cardId); if (!f || f.zone !== 'battlefield') return; const c = f.card;
   const m = modal(`${c.name}: choose a ${kind}`, { width: 560, sticky: true, noClose: true });
   m.body.append(h('div', { class: 'psub', text: `As ${c.name} enters the battlefield you choose a ${kind}. The choice is remembered on the card.` }));
-  const pool = choicePool(kind), fixed = pool.length <= 8;
+  const pool = choicePool(kind), fixed = pool.length <= 8, isType = /creature type/.test(kind);
   const done = v => { m.close(); snap(); c.chosen = v; log(`${c.name}: chose ${v}`); render(); if (state.pendingTriggers.length) resolvePendingTrigger(); };
+  const inPlay = [], inDeck = [], seen = new Set();   // creature types: first the ones on the battlefield, then the ones in your deck, then anything typed
+  const subsOf = t => (String(t || '').split(' // ')[0].split('\u2014')[1] || '').trim().split(/\s+/).filter(Boolean);
+  if (isType) {
+    const poolLc = new Map(pool.map(x => [x.toLowerCase(), x]));
+    for (const p of state.battlefield) for (const w of permTypeInfo(p).subs) { const nm = poolLc.get(w) || (w === '*' ? null : w[0].toUpperCase() + w.slice(1)); if (nm && poolLc.has(nm.toLowerCase()) && !seen.has(nm)) { seen.add(nm); inPlay.push(nm); } }
+    for (const z of ['library', 'hand', 'graveyard', 'exile']) for (const p of state[z]) { const info = cardInfo(p.name); if (!info || !/\bCreature\b|\bKindred\b|\bTribal\b/.test((info.t || '').split(' // ')[0])) continue; for (const w of subsOf(info.t)) if (poolLc.has(w.toLowerCase()) && !seen.has(poolLc.get(w.toLowerCase()))) { const nm = poolLc.get(w.toLowerCase()); seen.add(nm); inDeck.push(nm); } }
+    inPlay.sort(); inDeck.sort();
+  }
   if (fixed) { const row = h('div', { class: 'mana-choice' }); for (const v of pool) row.append(h('button', { class: 'mana-choice-btn', text: v, onclick: () => done(v) })); m.body.append(row); }
   else {
-    const inp = h('input', { type: 'text', placeholder: `Type a ${kind}…`, style: 'width:100%;margin:6px 0' }), list = h('div', { class: 'fetchgrid' });
-    const draw = () => { list.replaceChildren(); const q = inp.value.trim().toLowerCase(); const hits = pool.filter(n => !q || n.toLowerCase().includes(q)).slice(0, 14); for (const n of hits) list.append(h('div', { class: 'frow on', onclick: () => done(n) }, h('span', { class: 'nm', text: n }))); if (!hits.length) list.append(h('div', { class: 'muted', text: 'No match. Press Enter to use exactly what you typed.' })); };
-    inp.addEventListener('input', draw); inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim()) done(inp.value.trim()); }); draw(); m.body.append(inp, list); setTimeout(() => inp.focus(), 50);
+    const inp = h('input', { type: 'text', placeholder: `Type a ${kind}…`, style: 'width:100%;margin:6px 0', 'aria-label': `Type a ${kind}` }), list = h('div', { class: 'fetchgrid' }), msg = h('div', { class: 'muted small', text: '' });
+    const grp = (title, arr) => { if (!arr.length) return; m.body.append(h('div', { class: 'psub', style: 'margin-top:8px', text: title })); const row = h('div', { class: 'mana-choice' }); for (const v of arr.slice(0, 24)) row.append(h('button', { class: 'mana-choice-btn', text: v, onclick: () => done(v) })); m.body.append(row); };
+    if (isType) { grp('On the battlefield', inPlay); grp('In your deck', inDeck.filter(x => !inPlay.includes(x))); }
+    const draw = () => { list.replaceChildren(); const q = inp.value.trim().toLowerCase(); if (isType && !q) { list.append(h('div', { class: 'muted', text: 'Not listed above? Type any creature type.' })); return; } const hits = pool.filter(n => !q || n.toLowerCase().includes(q)).sort((x, y) => (x.toLowerCase().startsWith(q) ? 0 : 1) - (y.toLowerCase().startsWith(q) ? 0 : 1)).slice(0, 14); for (const n of hits) list.append(h('div', { class: 'frow on', onclick: () => done(n) }, h('span', { class: 'nm', text: n }))); if (!hits.length) list.append(h('div', { class: 'muted', text: isType ? 'No creature type like that. Check the spelling.' : 'No match. Press Enter to use exactly what you typed.' })); };
+    inp.addEventListener('input', draw);
+    inp.addEventListener('keydown', e => { if (e.key !== 'Enter' || !inp.value.trim()) return; const q = inp.value.trim().toLowerCase(); if (!isType) { done(inp.value.trim()); return; }
+      const ex = pool.find(n => n.toLowerCase() === q) || pool.find(n => singularWord(n) === singularWord(q)) || pool.filter(n => n.toLowerCase().startsWith(q))[0];   // CR 205.3m: only real creature types are legal choices
+      if (ex) done(ex); else msg.textContent = `"${inp.value.trim()}" is not a creature type.`; });
+    draw(); m.body.append(inp, msg, list); setTimeout(() => inp.focus(), 50);
   }
 }
 // Phyrexian Revoker / Pithing Needle: activated abilities of sources with the chosen name can't be activated (Needle: unless they are mana abilities).

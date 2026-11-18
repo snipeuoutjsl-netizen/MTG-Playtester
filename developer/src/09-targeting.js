@@ -278,7 +278,7 @@ function applyGraveReturn(c, stx) {
 // "Countered": the top object of the stack is removed without resolving (you are playtesting against a real opponent).
 function counterStackObject(id, by, dest) {   // dest: where a countered spell goes instead of its graveyard (CR 701.6 + Remand / Memory Lapse / Dissipate text)
   if(!state) return; const i=state.stack.findIndex(x=>x.id===id); if(i<0) return;
-  { const sc=state.stack[i]; if(!sc.ability && !sc.opp && /(?:this spell|this card) can'?t be countered/i.test((cardText(sc)||'').replace(/\u2019/g,"'"))) { log(`${by?by+': ':''}${sc.name} can't be countered, so it stays on the stack`); toast("Can't be countered", `${sc.name} says it can't be countered, so the counterspell does nothing to it (rule 101.2).`); return; } }
+  { const sc=state.stack[i], why=cantBeCounteredWhy(sc); if(why) { log(`${by?by+': ':''}${sc.name} can't be countered (${why}), so it stays on the stack`); toast("Can't be countered", `${sc.name} can't be countered: ${why}. The counter effect does nothing to it (rule 101.2).`); return; } }
   snap();
   const [c]=state.stack.splice(i,1); delete c.splicedTx; if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
   if(c.opp){ log(`${by?by+': ':''}Opponent's ${c.name} was countered`); toast(`Opponent's ${c.name} countered`,'It leaves the stack without resolving.'); }
