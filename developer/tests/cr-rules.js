@@ -1060,6 +1060,31 @@ const { setup } = require('./common.js');
   await T('608.2c + 701.20', 'Ancient Stirrings: "You may reveal a colorless card from among them and put it into your hand. Put the rest on the bottom" is read in full: at most one card, only colorless ones (lands count), the rest to the bottom', async () => { await reset();
     const r = await ev(() => { const pl = __d.parseLookDistribute('Look at the top five cards of your library. You may reveal a colorless card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'); const f = pl && pl.slots[0].filt; return { full: pl && pl.full, dest: pl && pl.slots.map(x => x.dest).join(), max: pl && pl.slots[0].max, land: f({ name: 'Island' }), spell: f({ name: 'Grizzly Bears' }) }; });
     return { ok: r.full && r.dest === 'hand,bottom' && r.max === 1 && r.land === true && r.spell === false, why: JSON.stringify(r) }; });
+  await T('UI a11y', 'Accessibility tab on the gear wheel: its switches set body classes and interface size, and the log is announced to screen readers when enabled', async () => { await reset();
+    const r = await ev(() => { const S = __d.settings; S.a11y = { scale: 125, contrast: true, calm: true, targets: true, focus: true, announce: true }; __d.applyA11y(); const b = document.body; const on = ['a11y-contrast', 'a11y-calm', 'a11y-targets', 'a11y-focus'].every(c => b.classList.contains(c)), z = document.documentElement.style.zoom, live = !!document.getElementById('srLive');
+      __d.openSettings(); const tab = !!document.querySelector('.settabbtn[data-k=a11y]'); document.querySelector('.settabbtn[data-k=a11y]').click(); const heading = (document.querySelector('.settitle h3') || {}).textContent;
+      document.querySelector('.modal footer button.primary').click(); S.a11y = { scale: 100 }; __d.applyA11y(); return { on, z, live, tab, heading, off: !b.classList.contains('a11y-calm') && document.documentElement.style.zoom === '' }; });
+    return { ok: r.on && r.z === '1.25' && r.live && r.tab && r.heading === 'Accessibility' && r.off, why: JSON.stringify(r) }; });
+  await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card and the prompt box lie fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await reset();
+    const out = [];
+    for (const [w, h] of [[1280, 720], [1673, 990], [2509, 1484]]) for (const img of [false, true]) { await p.setViewportSize({ width: w, height: h });
+      const r = await ev(async (img) => { document.body.classList.toggle('imgmode', img); const s = __d.state; s.hand.length = 0; for (let i = 0; i < 7; i++) s.hand.push(Object.assign(__d.newCard(['Grizzly Bears', 'Island', 'Mock Flyer'][i % 3]), { id: 900 + i })); const res = [];
+        for (const bottom of [false, true]) { s.phase = 'mull'; s.bottomPhase = bottom; s.mulls = 1; __d.render(); await new Promise(r => setTimeout(r, 450));
+          const boxes = [...document.querySelectorAll('#row-hand .card')].map(c => c.getBoundingClientRect()), bar = document.querySelector('#handPickBar'), bb = bar && !bar.hidden ? bar.getBoundingClientRect() : null, hw = document.querySelector('#handWrap');
+          const inside = b => b.left >= -14 && b.right <= innerWidth + 14 && b.top >= -1 && b.bottom <= innerHeight + 14;
+          res.push({ bottom, cards: boxes.length, allIn: boxes.every(inside), barIn: bb ? inside(bb) : true, fixed: getComputedStyle(hw).position === 'fixed' }); }
+        s.phase = 'play'; s.bottomPhase = false; document.body.classList.remove('imgmode'); __d.render(); return res; }, img);
+      await new Promise(r => setTimeout(r, 200)); out.push({ w, img, r }); }
+    await p.setViewportSize({ width: 1280, height: 800 });
+    const bad = out.filter(o => o.r.some(x => !x.allIn || !x.barIn || x.fixed || x.cards !== 7));
+    return { ok: bad.length === 0, why: JSON.stringify(bad.slice(0, 2)) }; });
+  await T('122.1 + 608.2c', 'The One Ring (and any "for each <kind> counter on it" text): the amount follows EVERY counter, not just the first: activating three times draws 1, 2, 3 cards; the upkeep trigger loses life equal to all burden counters; Always Yield still matches the action as the live count changes', async () => { await reset(); await toMain();
+    const r = await ev(async () => { const s = __d.state, rg = Object.assign(__d.newCard('The One Ring'), { id: s.nextId++ }); s.battlefield.push(rg);
+      const tx = 'Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring.', draws = [], labels = [];
+      for (let i = 0; i < 3; i++) { const vis = __d.visibleOptions(__d.effectOptions(tx, { sourceName: 'The One Ring', sourceId: rg.id })); labels.push(vis[0].label); const h0 = s.hand.length; vis[0].fn(); await new Promise(r => setTimeout(r, 500)); draws.push(s.hand.length - h0); }
+      const lo = __d.effectOptions('You lose 1 life for each burden counter on The One Ring.', { sourceName: 'The One Ring', sourceId: rg.id }); const l0 = s.life; lo[0].fn(); await new Promise(r => setTimeout(r, 200));
+      return { draws, burden: rg.counters.burden, lost: l0 - s.life, same: __d.lblStable(labels[0]) === __d.lblStable(labels[2]) }; });
+    return { ok: r.draws.join() === '1,2,3' && r.burden === 3 && r.lost === 3 && r.same, why: JSON.stringify(r) }; });
   await T('603.4 + 701.3', 'Cori-Steel Cutter: the flurry trigger fires only on the SECOND spell each turn; the Monk token enters unequipped (an unattached Equipment gives nothing); you may then attach the Equipment to it and only then does it get +1/+1, trample and haste', async () => { await reset(); await toMain();
     const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const cut = mk('Cori-Steel Cutter'); s.battlefield.push(cut);
       const trigs = () => __d.parseTriggers(cut).filter(x => x.ev === 'cast' && !x.unsupported);
