@@ -12,6 +12,7 @@ function parseMassSet(phrase, obj) {
   let p = String(phrase || '').toLowerCase().trim().replace(/[.]$/, ''), none = false, qual = null;
   if (/\b(?:you don't control|an opponent controls|your opponents control|opponents control|each opponent controls)\b/.test(p)) { none = true; p = p.replace(/\b(?:you don't control|an opponent controls|your opponents control|opponents control|each opponent controls)\b/, '').trim(); }
   p = p.replace(/\byou control\b/, '').trim();
+  let colorful = false; { const cm = / that(?:'s| is| are) one or more colors$/.exec(p); if (cm) { colorful = true; p = p.slice(0, cm.index).trim(); } }   // "...with mana value X or less that's one or more colors" (Ugin, the Spirit Dragon)
   const qm = p.match(/\s+(with|without) (.+)$/); if (qm) { qual = { without: qm[1] === 'without', text: qm[2].trim() }; p = p.slice(0, qm.index).trim(); }
   const toks = p.split(/\s*,\s*(?:and |or )?|\s+(?:and|or)\s+/).map(x => x.trim()).filter(Boolean); if (!toks.length) return null;
   const types = [], mods = []; let other = false, colors = [];
@@ -32,12 +33,13 @@ function parseMassSet(phrase, obj) {
     if (q.kind === 'mv' && (q.n === null || isNaN(q.n))) { if (obj && obj.sourceId === -1) q.n = 0; else return null; }   // while the app only reads the card (no X chosen yet) the wording is understood
     q.without = qual.without;
   }
-  return { none, types, mods, other, colors, q };
+  return { none, types, mods, other, colors, q, colorful };
 }
 function massMatch(c, S, srcId) {
   const tl = permTypeLine(c);
   if (!(S.types.includes('permanent') || S.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl)))) return false;
   if (S.other && c.id === srcId) return false;
+  if (S.colorful && !effColors(c).length) return false;
   if (S.colors.length && !S.colors.some(k => cardColorSet(c).includes(k))) return false;
   for (const md of S.mods) {
     if (md === 'nonland' && /\bLand\b/.test(tl)) return false; if (md === 'noncreature' && /\bCreature\b/.test(tl)) return false; if (md === 'nonartifact' && /\bArtifact\b/.test(tl)) return false; if (md === 'nonenchantment' && /\bEnchantment\b/.test(tl)) return false;

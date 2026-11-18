@@ -573,6 +573,7 @@ function parseSubject(raw, g) {
     if (w === 'untapped') { conds.push(c => !c.tapped); continue; }
     if (w === 'attacking') { conds.push(c => !!(state && state.combat && state.combat.attackers && state.combat.attackers.some(a => (a.id ?? a) === c.id))); continue; }
     const sg = singularWord(w);
+    if (sg === 'token') { conds.push(c => !!c.token); continue; }   // "Creature tokens you control"
     if (SUBJECT_TYPES.includes(sg)) { if (noun) conds.push(c => permTypeInfo(c).types.has(noun)); noun = sg; continue; }
     if (sub) return null;
     sub = sg;
@@ -590,7 +591,8 @@ function parseStaticCard(g) {
     const info = rulesInfo(g); if (!info || !info.tx) return list;   // v0.95.0 tokens are read like cards (their rules text is on the token itself)
     const nm = g.name.split(' // ')[0];
     const tx = info.tx.replace(/,\n/g, ', ').replace(/’/g, "'").replace(selfNameRe(g.token ? '\u0000' : nm.replace(/’/g, "'")), '~').replace(/\([^)]*\)/g, '');
-    for (const raw of tx.split('\n')) {
+    const txLines = tx.split('\n').flatMap(l => { const m = l.trim().match(/^((?:other |each |all )?[A-Za-z' ]+?(?: you control)?) (gets? [+-]\d+\/[+-]\d+) and (has|have) (.+)$/i); return m && !/^(~|equipped|enchanted)\b/i.test(m[1]) && !/\bif\b|\bas long as\b|"/i.test(l) ? [m[1] + ' ' + m[2], m[1] + ' ' + m[3] + ' ' + m[4]] : [l]; });   // "Other Merfolk get +1/+1 and have islandwalk" is two static effects (CR 611.3)
+    for (const raw of txLines) {
       { const l0 = raw.trim().replace(/\.$/, ''), hadD = /^delirium\s*[\u2014-]/i.test(l0), l1 = l0.replace(/^delirium\s*[\u2014-]\s*/i, ''), dm = l1.match(/^(?:as long as there are (\w+) or more card types among cards in your graveyard,\s*)?~\s+(.+)$/i);
         if (dm && !dm[1] && !hadD) { /* not a delirium line */ } else
         if (dm) {
@@ -709,7 +711,7 @@ function hasKw(c, kw) {
   if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
-const GRANTABLE = ['prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
+const GRANTABLE = ['islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
 // Keywords a creature has only because of other permanents' static abilities (shown in the preview).
 function grantedKeywords(c) {
   const out = [];
@@ -1660,7 +1662,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -6336,8 +6338,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.5';
+const APP_VERSION = '0.99.6';
 const CHANGELOG = [
+  { v: '0.99.6', title: 'Lords, player-choice clauses, and a consistency pass on the look', notes: ['NEW: "Other Merfolk get +1/+1 and have islandwalk", "Other Goblin creatures you control get +1/+1 and have haste" and "Creature tokens you control get +1/+1 and have vigilance" now work: a line that gives both a bonus and an ability is read as two static effects (CR 611.3). Landwalk keywords can be granted.','NEW: "Each player discards a card", "Each player sacrifices a creature" and "Target player sacrifices a creature" (Liliana of the Veil) let you choose yours; the opponent\'s half is stated in the log. "Untap up to three lands" (Frantic Search) lets you pick which lands. "Look at the top card of your library. You may put it into your graveyard" works.','NEW: "Exile each permanent with mana value X or less that\'s one or more colors" (Ugin, the Spirit Dragon) leaves colourless permanents alone.','LOOK: one shared corner radius for buttons, fields and toolbar controls; stray half-pixel font sizes and odd radii were moved onto the shared scale; the four pixel-art playmats are dimmed so they sit back like the other mats and the zone labels stay readable.'] },
   { v: '0.99.5', title: 'Scaling mana: Elvish Archdruid, Gilded Lotus', notes: ['NEW: "{T}: Add {G} for each Elf you control" (and any "for each <thing> you control") is counted when you tap, so the right amount floats (CR 106.1, 605.1a).','NEW: "{T}: Add three mana of any one color" (Gilded Lotus) gives three mana of the colour you choose.'] },
   { v: '0.99.4', title: 'Rules dive 2: more death and equipment triggers', notes: ['NEW: "Whenever ~ or another creature dies" (Blood Artist style) now also triggers on its own death (CR 603.10a).','NEW: "Whenever equipped/enchanted creature dies, attacks, or deals combat damage" triggers on the Equipment or Aura (Skullclamp, Sword-style cards); the creature\'s death is remembered even though the attachment falls off (CR 603.10a, 301.5).'] },
   { v: '0.99.3', title: 'Rules dive 1: mass effects, hand effects, kicker, and more cards fully read', notes: ['A broad check of 93 well-known cards against the rules-text reader found 41 with lines the app only partly read; this release brings that to 11, and the rest are honest limits (the opponent\'s hand, board and library are not tracked in a goldfish game; divided damage; Balance-style choices).', 'NEW mass effects, read from the rules text: "Destroy all creatures / lands / each artifact, creature, and enchantment with mana value X or less", "Exile all ...", "Return all ... to their owners\' hands", "Tap / Untap all ..." with other / nonland / non-colour / tapped / power / mana value / keyword qualifiers (Wrath of God, Armageddon, Pernicious Deed...). Indestructible permanents survive; "can\'t be regenerated" is accepted.', 'NEW hands: "Each player discards their hand, then draws seven cards" (Wheel of Fortune, Windfall asks how many your opponent discarded), "Each player shuffles their hand and graveyard into their library, then draws seven" (Timetwister), "Draw three cards, then put two cards from your hand on top of your library in any order" (Brainstorm, with an ordering window), "You may put a land card from your hand onto the battlefield" (Growth Spiral).', 'NEW kicker: "If this spell was kicked, it deals 4 damage instead" (Burst Lightning) and "If this spell was kicked, ..." riders are applied when it resolves.', 'NEW look-at-the-top sorting can put cards onto the battlefield with a cap and a filter ("put up to two creature cards with mana value 3 or less ... onto the battlefield", Collected Company; buttons are disabled for cards that do not qualify).', 'NEW target-player compounds: "Target player draws two cards and loses 2 life" (Sign in Blood), "mills two cards", "discards two cards (at random)"; opponent halves that are not tracked are logged, not skipped.', 'NEW: Swords to Plowshares-style "Its controller gains life equal to its power" and Path to Exile-style "may search for a basic land", "Destroy target creature if it has mana value 2 or less" (Fatal Push), Oblivion Ring\'s paired enter / leave effects, "Return ~ to its owner\'s hand" (Rancor) and "put this artifact on top of its owner\'s library" (Sensei\'s Top), Gamble\'s random discard, Duress-style opponent hand reveals (acknowledged, not tracked), and the Suspend line.'] },
@@ -11515,7 +11518,7 @@ function pxScene(th, W, H, cell, seed, sleeve, sprites, extra) {
     const st = specks.get(x + ',' + y); if (st) return st;
     return pixBand(x, y, H, T.bands);
   };
-  return '<g shape-rendering="crispEdges">' + pixSvg(W, H, cell, px) + '</g>';
+  return '<g shape-rendering="crispEdges">' + pixSvg(W, H, cell, px) + '</g>' + (sleeve ? '' : `<rect width="${W * cell}" height="${H * cell}" fill="#000" opacity=".42"/>`);   // playmats sit back so zone labels and cards read, like the other mats
 }
 const pxPlace = (name, ox, oy, s, map) => pal => pxSpr(name, pal, map, ox, oy, s);
 // sleeves (42 x 58 grid, 3px cells)
@@ -11663,6 +11666,7 @@ function parseMassSet(phrase, obj) {
   let p = String(phrase || '').toLowerCase().trim().replace(/[.]$/, ''), none = false, qual = null;
   if (/\b(?:you don't control|an opponent controls|your opponents control|opponents control|each opponent controls)\b/.test(p)) { none = true; p = p.replace(/\b(?:you don't control|an opponent controls|your opponents control|opponents control|each opponent controls)\b/, '').trim(); }
   p = p.replace(/\byou control\b/, '').trim();
+  let colorful = false; { const cm = / that(?:'s| is| are) one or more colors$/.exec(p); if (cm) { colorful = true; p = p.slice(0, cm.index).trim(); } }   // "...with mana value X or less that's one or more colors" (Ugin, the Spirit Dragon)
   const qm = p.match(/\s+(with|without) (.+)$/); if (qm) { qual = { without: qm[1] === 'without', text: qm[2].trim() }; p = p.slice(0, qm.index).trim(); }
   const toks = p.split(/\s*,\s*(?:and |or )?|\s+(?:and|or)\s+/).map(x => x.trim()).filter(Boolean); if (!toks.length) return null;
   const types = [], mods = []; let other = false, colors = [];
@@ -11683,12 +11687,13 @@ function parseMassSet(phrase, obj) {
     if (q.kind === 'mv' && (q.n === null || isNaN(q.n))) { if (obj && obj.sourceId === -1) q.n = 0; else return null; }   // while the app only reads the card (no X chosen yet) the wording is understood
     q.without = qual.without;
   }
-  return { none, types, mods, other, colors, q };
+  return { none, types, mods, other, colors, q, colorful };
 }
 function massMatch(c, S, srcId) {
   const tl = permTypeLine(c);
   if (!(S.types.includes('permanent') || S.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl)))) return false;
   if (S.other && c.id === srcId) return false;
+  if (S.colorful && !effColors(c).length) return false;
   if (S.colors.length && !S.colors.some(k => cardColorSet(c).includes(k))) return false;
   for (const md of S.mods) {
     if (md === 'nonland' && /\bLand\b/.test(tl)) return false; if (md === 'noncreature' && /\bCreature\b/.test(tl)) return false; if (md === 'nonartifact' && /\bArtifact\b/.test(tl)) return false; if (md === 'nonenchantment' && /\bEnchantment\b/.test(tl)) return false;
@@ -11824,6 +11829,60 @@ function applyKickedInstead(tx, kicked) {
 function exiledReturnOptions(tx, obj) {
   if (!/^return the exiled cards? to the battlefield under (?:its|their) owner'?s? control\.?$/i.test(String(tx || '').replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim())) return null; const src = (obj && obj.sourceName) || 'Ability';
   return [{ full: true, label: `The exiled card returns to the battlefield (the app already did this when ${src} left)`, fn: () => log(`${src}: the card it exiled returns to the battlefield under its owner's control (done automatically)`) }];
+}
+// ---- Player-choice clauses read from rules text (v0.99.6)
+// "Each player discards a card." "Each player sacrifices a creature." "Target player sacrifices a creature." (CR 701.21, 701.8)
+// "Untap up to three lands." (CR 701.26)   "Look at the top card of your library. You may put it into your graveyard / on the bottom." (CR 701.18)
+// Only the player's own side is tracked in a goldfish game; the opponent's half is stated in the log, never silently dropped.
+const PC_TYPES = { creature: 'creature', artifact: 'artifact', enchantment: 'enchantment', land: 'land', planeswalker: 'planeswalker', permanent: null, 'nonland permanent': 'nonland' };
+function pcNum(w) { return MASS_NUM(String(w).toLowerCase()); }
+function pcPermIs(c, kind) { if (kind === null) return true; if (kind === 'nonland') return !isLandName(c.name); try { return permTypeInfo(c).types.has(kind); } catch (e) { return false; } }
+function pcSingle(s, src, obj) {
+  let m;
+  if ((m = /^(each player|each opponent|target player|target opponent) sacrifices (a|an|one|two|three|\d+) (creature|artifact|enchantment|land|planeswalker|permanent|nonland permanent)s?$/i.exec(s))) {
+    const who = m[1].toLowerCase(), n = pcNum(m[2]), kind = PC_TYPES[m[3].toLowerCase()], word = m[3].toLowerCase();
+    const mine = who === 'each player', oppOnly = /opponent/.test(who);
+    const doYou = () => { const cands = state.battlefield.filter(c => pcPermIs(c, kind)); const k = Math.min(n, cands.length);
+      if (!k) { log(`${src}: you have no ${word} to sacrifice`); render(); return; }
+      openPickCards({ title: `${src}: sacrifice ${k} ${word}${k === 1 ? '' : 's'}`, note: `Choose ${k} ${word}${k === 1 ? '' : 's'} you control to sacrifice.`, cards: cands, max: k, min: k, done: picked => { snap(); for (const c of picked) { log(`${src}: you sacrificed ${c.name}`); leaveBattlefield(c, 'graveyard'); } render(); } }); };
+    const oppNote = () => log(`${src}: your opponent sacrifices ${n === 1 ? 'a' : n} ${word}${n === 1 ? '' : 's'} (their board is not tracked in a goldfish game)`);
+    const full = true;
+    if (mine) return [{ full, label: `Each player sacrifices ${n === 1 ? 'a' : n} ${word} — you choose and sacrifice yours; the opponent's is noted in the log`, fn: () => { oppNote(); doYou(); } }];
+    if (oppOnly) return [{ full, label: `Your opponent sacrifices ${n === 1 ? 'a' : n} ${word} (their board is not tracked — noted in the log)`, fn: () => { oppNote(); render(); } }];
+    return [{ full, label: `Target player sacrifices ${n === 1 ? 'a' : n} ${word} — your opponent (noted in the log)`, fn: () => { oppNote(); render(); } }, { full, label: `Target player sacrifices ${n === 1 ? 'a' : n} ${word} — you`, fn: doYou }];
+  }
+  if ((m = /^each player discards (a|one|two|three|\d+) cards?$/i.exec(s))) {
+    const n = pcNum(m[1]);
+    return [{ full: true, label: `Each player discards ${n === 1 ? 'a card' : n + ' cards'} — you choose and discard yours; the opponent's is noted in the log`, fn: () => { log(`${src}: your opponent discards ${n} card${n === 1 ? '' : 's'} (their hand is not tracked in a goldfish game)`);
+      const k = Math.min(n, state.hand.length); if (!k) { render(); return; }
+      openPickCards({ title: `${src}: discard ${k} card${k === 1 ? '' : 's'}`, note: `Choose ${k} card${k === 1 ? '' : 's'} from your hand to discard.`, cards: state.hand.slice(), max: k, min: k, done: picked => { snap(); for (const c of picked) { moveCard(c.id, 'graveyard'); log(`${src}: you discarded ${c.name}`); } render(); } }); } }];
+  }
+  if ((m = /^untap up to (a|an|one|two|three|four|five|six|seven|\d+) (lands?|artifacts?|creatures?|permanents?)$/i.exec(s))) {
+    const n = pcNum(m[1]), word = m[2].toLowerCase().replace(/s$/, ''), kind = PC_TYPES[word] === undefined ? null : PC_TYPES[word];
+    return [{ full: true, label: `Untap up to ${n} ${word}${n === 1 ? '' : 's'} you control`, fn: () => { const cands = state.battlefield.filter(c => c.tapped && pcPermIs(c, kind)); if (!cands.length) { log(`${src}: no tapped ${word}s to untap`); render(); return; }
+      openPickCards({ title: `${src}: untap up to ${n} ${word}${n === 1 ? '' : 's'}`, note: `Choose up to ${n} tapped ${word}${n === 1 ? '' : 's'} to untap.`, cards: cands, max: Math.min(n, cands.length), nothing: 'Untap none', done: picked => { snap(); for (const c of picked) { c.tapped = false; delete c.mt; log(`${src}: untapped ${c.name}`); } render(); } }); } }];
+  }
+  return null;
+}
+function pcLookOne(sents, src) {
+  if (sents.length !== 2 || !/^look at the top card of your library$/i.test(sents[0].replace(/\.$/, ''))) return null;
+  const m = /^you may put (?:it|that card) (into your graveyard|on the bottom of your library)$/i.exec(sents[1].replace(/\.$/, '')); if (!m) return null;
+  const toGy = /graveyard/i.test(m[1]);
+  return [{ full: true, label: `Look at the top card of your library; you may put it ${toGy ? 'into your graveyard' : 'on the bottom of your library'}`, fn: () => { const top = state.library[0]; if (!top) { log(`${src}: library is empty`); render(); return; }
+    openPickCards({ title: `${src}: the top card is ${top.name}`, note: `Put it ${toGy ? 'into your graveyard' : 'on the bottom of your library'}, or leave it on top.`, cards: [top], max: 1, nothing: 'Leave it on top', done: picked => { if (!picked.length) { log(`${src}: left the top card where it was`); render(); return; } snap(); moveCard(top.id, toGy ? 'graveyard' : 'library', toGy ? undefined : 'bottom'); log(`${src}: put ${top.name} ${toGy ? 'into the graveyard' : 'on the bottom of the library'}`); render(); } }); } }];
+}
+function playerChoiceOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx); if (!sents.length) return null; const src = (obj && obj.sourceName) || 'Ability';
+  const one = pcLookOne(sents, src); if (one) return one;
+  const last = sents[sents.length - 1].replace(/\.$/, '');
+  const mine = pcSingle(sents[0].replace(/\.$/, ''), src, obj);
+  if (mine) return [...mine, ...massRest(sents, 1, obj)].map((o, i, a) => i === 0 ? Object.assign({}, o, { full: sents.length === 1 }) : o);
+  if (sents.length > 1) {   // trailing clause: "Draw two cards, then discard two cards. Untap up to three lands."
+    const tail = pcSingle(last, src, obj); if (!tail) return null;
+    const head = effectOptionsBase(sents.slice(0, -1).join(' '), obj).filter(o => typeof o.fn === 'function' && !o.hidden); if (!head.length) return null;
+    return head.map(o => ({ full: !!o.full, label: o.label + ', then ' + tail[0].label.charAt(0).toLowerCase() + tail[0].label.slice(1), fn: () => { o.fn(); setTimeout(() => tail[0].fn(), 0); } }));
+  }
+  return null;
 }
 init();
 

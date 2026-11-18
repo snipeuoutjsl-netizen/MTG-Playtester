@@ -27,7 +27,7 @@ function pxScene(th, W, H, cell, seed, sleeve, sprites, extra) {
     const st = specks.get(x + ',' + y); if (st) return st;
     return pixBand(x, y, H, T.bands);
   };
-  return '<g shape-rendering="crispEdges">' + pixSvg(W, H, cell, px) + '</g>';
+  return '<g shape-rendering="crispEdges">' + pixSvg(W, H, cell, px) + '</g>' + (sleeve ? '' : `<rect width="${W * cell}" height="${H * cell}" fill="#000" opacity=".42"/>`);   // playmats sit back so zone labels and cards read, like the other mats
 }
 const pxPlace = (name, ox, oy, s, map) => pal => pxSpr(name, pal, map, ox, oy, s);
 // sleeves (42 x 58 grid, 3px cells)

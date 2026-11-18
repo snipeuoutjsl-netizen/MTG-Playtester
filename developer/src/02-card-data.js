@@ -492,6 +492,7 @@ function parseSubject(raw, g) {
     if (w === 'untapped') { conds.push(c => !c.tapped); continue; }
     if (w === 'attacking') { conds.push(c => !!(state && state.combat && state.combat.attackers && state.combat.attackers.some(a => (a.id ?? a) === c.id))); continue; }
     const sg = singularWord(w);
+    if (sg === 'token') { conds.push(c => !!c.token); continue; }   // "Creature tokens you control"
     if (SUBJECT_TYPES.includes(sg)) { if (noun) conds.push(c => permTypeInfo(c).types.has(noun)); noun = sg; continue; }
     if (sub) return null;
     sub = sg;
@@ -509,7 +510,8 @@ function parseStaticCard(g) {
     const info = rulesInfo(g); if (!info || !info.tx) return list;   // v0.95.0 tokens are read like cards (their rules text is on the token itself)
     const nm = g.name.split(' // ')[0];
     const tx = info.tx.replace(/,\n/g, ', ').replace(/’/g, "'").replace(selfNameRe(g.token ? '\u0000' : nm.replace(/’/g, "'")), '~').replace(/\([^)]*\)/g, '');
-    for (const raw of tx.split('\n')) {
+    const txLines = tx.split('\n').flatMap(l => { const m = l.trim().match(/^((?:other |each |all )?[A-Za-z' ]+?(?: you control)?) (gets? [+-]\d+\/[+-]\d+) and (has|have) (.+)$/i); return m && !/^(~|equipped|enchanted)\b/i.test(m[1]) && !/\bif\b|\bas long as\b|"/i.test(l) ? [m[1] + ' ' + m[2], m[1] + ' ' + m[3] + ' ' + m[4]] : [l]; });   // "Other Merfolk get +1/+1 and have islandwalk" is two static effects (CR 611.3)
+    for (const raw of txLines) {
       { const l0 = raw.trim().replace(/\.$/, ''), hadD = /^delirium\s*[\u2014-]/i.test(l0), l1 = l0.replace(/^delirium\s*[\u2014-]\s*/i, ''), dm = l1.match(/^(?:as long as there are (\w+) or more card types among cards in your graveyard,\s*)?~\s+(.+)$/i);
         if (dm && !dm[1] && !hadD) { /* not a delirium line */ } else
         if (dm) {
@@ -628,7 +630,7 @@ function hasKw(c, kw) {
   if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
-const GRANTABLE = ['prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
+const GRANTABLE = ['islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
 // Keywords a creature has only because of other permanents' static abilities (shown in the preview).
 function grantedKeywords(c) {
   const out = [];
