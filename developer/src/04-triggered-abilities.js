@@ -242,6 +242,10 @@ function parseModal(tx) {
     const modes = spreeLines.map(l => { const mm = l.match(/^\+\s*((?:\{[^}]+\})+)\s*—\s*(.+)$/); return { text: mm[2].trim(), cost: mm[1] }; });
     return { spree: true, min: 1, max: modes.length, label: 'one or more additional costs (Spree)', modes, kind: 'spell' };
   }
+  let repeat = false;
+  { const rm = tx.match(/\bchoose (one|two|three|four|five)\.\s*You may choose the same mode more than once\.\s*(?=•)/i);   // Mystic Confluence (CR 700.2d): the same mode may be chosen more than once
+    if (rm) { const N0 = { one: 1, two: 2, three: 3, four: 4, five: 5 }; const modes0 = ('• ' + tx.slice(rm.index + rm[0].length)).split(/\s*•\s*/).slice(1).map(x => ({ text: x.trim() })).filter(x => x.text);
+      if (modes0.length >= 2) return { spree: false, repeat: true, min: N0[rm[1].toLowerCase()], max: N0[rm[1].toLowerCase()], label: rm[1].toLowerCase() + ' (repeats allowed)', modes: modes0, kind: /^\s*(?:when|whenever|at the beginning)/i.test(tx.slice(0, rm.index)) ? 'trigger' : 'spell', escalate: '' }; } }
   m = tx.match(/\bchoose (one or both|one or more|up to (?:one|two|three|four)|one|two|three|four)\b[^•—]*—\s*/i);
   if (!m || !/•/.test(tx)) return null;
   const word = m[1].toLowerCase(), after = tx.slice(m.index + m[0].length);
@@ -268,7 +272,14 @@ function spellModal(c) {
   return /\b(?:Instant|Sorcery)\b/.test(frontType(c)) || !frontType(c) ? md : null;
 }
 // Text of the chosen modes (in printed order), used as the text of the spell/ability as it resolves.
-function modalText(md, idxs) { return [...idxs].sort((a, b) => a - b).map(i => md.modes[i].text).join(' '); }
+function modalText(md, idxs) {
+  const sorted = [...idxs].sort((a, b) => a - b); if (!md.repeat) return sorted.map(i => md.modes[i].text).join(' ');
+  const seen = {}, draws = sorted.filter(i => /^Draw a card\.?$/i.test(md.modes[i].text)).length, out = []; let drew = false;
+  for (const i of sorted) { const t = md.modes[i].text; seen[i] = (seen[i] || 0) + 1;
+    if (/^Draw a card\.?$/i.test(t)) { if (!drew) { out.push(draws === 1 ? 'Draw a card.' : `Draw ${draws} cards.`); drew = true; } continue; }
+    out.push(seen[i] === 1 ? t : t.replace(/\btarget\b/i, 'another target')); }   // a repeated mode needs its own target (CR 700.2d)
+  return out.join(' ');
+}
 function mergeGeneric(cost) { let n = 0; const rest = []; for (const m of String(cost || '').match(/\{[^}]+\}/g) || []) { if (/^\{\d+\}$/.test(m)) n += +m.slice(1, -1); else rest.push(m); } return (n ? `{${n}}` : '') + rest.join(''); }
 function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : md.escalate ? md.escalate.repeat(Math.max(0, idxs.length - 1)) : ''; }
 function openModeChoice(name, md, cb, baseCost) {
@@ -278,23 +289,27 @@ function openModeChoice(name, md, cb, baseCost) {
   const total = h('div', { class: 'muted small' });
   const ok = h('button', { class: 'primary', text: md.spree ? 'Choose and continue' : 'Choose', disabled: true });
   const rows = [];
+  const counts = {};   // repeat modes: how many times each is chosen
   const refresh = () => {
-    const n = chosen.size;
+    const n = md.repeat ? Object.values(counts).reduce((a, b) => a + b, 0) : chosen.size;
     info.textContent = md.spree ? `Pick one or more extras. Each one adds its cost to the spell. (${n} chosen)` : md.min === md.max ? `Choose ${md.max}. (${n} of ${md.max} chosen)` : `Choose ${md.min === 0 ? 'up to ' + md.max : md.label.replace(/^./, c => c.toLowerCase())}. (${n} chosen)`;
-    for (const r of rows) r.box.disabled = !chosen.has(r.i) && n >= md.max;
+    if (md.repeat) for (const r of rows) { r.plus.disabled = n >= md.max; r.minus.disabled = !(counts[r.i] > 0); r.num.textContent = String(counts[r.i] || 0); }
+    else for (const r of rows) r.box.disabled = !chosen.has(r.i) && n >= md.max;
     ok.disabled = n < md.min || n > md.max;
     if (md.spree || md.escalate) total.textContent = `Total cost: ${mergeGeneric((baseCost || '') + modalCost(md, [...chosen])).replace(/[{}]/g, '') || '0'}`;
   };
   md.modes.forEach((mo, i) => {
-    const box = h('input', { type: 'checkbox' });
-    box.addEventListener('change', () => { if (box.checked) chosen.add(i); else chosen.delete(i); refresh(); });
+    const box = md.repeat ? h('span', { class: 'mode-count' }) : h('input', { type: 'checkbox' });
     const eff = recognizedEffects(mo.text);
-    rows.push({ i, box });
+    if (md.repeat) { const minus = h('button', { text: '−', title: 'One fewer' }), plus = h('button', { text: '+', title: 'Choose this mode again' }), num = h('b', { text: '0' });
+      minus.addEventListener('click', e => { e.preventDefault(); if (counts[i] > 0) counts[i]--; refresh(); }); plus.addEventListener('click', e => { e.preventDefault(); counts[i] = (counts[i] || 0) + 1; refresh(); });
+      box.append(minus, num, plus); rows.push({ i, box, minus, plus, num }); }
+    else { box.addEventListener('change', () => { if (box.checked) chosen.add(i); else chosen.delete(i); refresh(); }); rows.push({ i, box }); }
     m.body.append(h('label', { class: 'mode-row' }, box, h('span', { class: 'mode-txt' }, h('b', { text: md.spree ? `+${mo.cost.replace(/[{}]/g, '')}  ` : `Mode ${i + 1}  ` }), mo.text, h('span', { class: 'muted small', text: eff.length ? `  — the app can apply: ${eff.join('; ')}` : '  — you apply this one by hand' }))));
   });
   m.body.prepend(info);
   m.body.append(total, teach('rulesHints') ? h('div', { class: 'muted small', text: 'Modes are chosen as you cast the spell, before you pay. You cannot pick the same mode twice, and the chosen modes happen in the order they are printed.' }) : null);
-  ok.addEventListener('click', () => { m.close(); cb([...chosen].sort((a, b) => a - b)); });
+  ok.addEventListener('click', () => { m.close(); cb(md.repeat ? Object.entries(counts).flatMap(([i, k]) => Array(k).fill(+i)).sort((a, b) => a - b) : [...chosen].sort((a, b) => a - b)); });
   m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }), ok);
   refresh();
 }
@@ -302,10 +317,13 @@ function openModeChoice(name, md, cb, baseCost) {
 // ---- "Always yield" (like Magic Online): remember, for the rest of THIS game, that a given triggered ability should go on the stack by itself
 // with the same targets and apply the same effect, so it stops asking every time. The first time each ability appears you are asked once.
 const ayKey = (name, text) => String(name || '') + '|' + String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+// CR 603.5 + 603.4: a "may" ability is decided on resolution, and an ability with a condition (intervening "if", "unless") is checked again on resolution.
+// So only plain, unconditional abilities can be remembered as "always yield"; the rest ask every time.
+const ayEligibleText = tx => !/\b(?:may|if|unless|as long as|choose|instead|up to|any number)\b/i.test(String(tx || ''));
 function ayGet(name, text) { return state && state.ay ? state.ay[ayKey(name, text)] || null : null; }
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect)); if (!t) { next(); return; }
+  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect), tg = t._picked && t._picked.length ? t._picked : null;
   state.ay[key] = { auto: false, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
@@ -317,7 +335,7 @@ function askAlwaysYield(list, next) {
 function ayResolveAuto() {   // resolve always-yield abilities from the top of the stack while their effect is already known
   for (let i = 0; i < 12; i++) {
     const top = state.stack[state.stack.length - 1]; if (!top || !top.ability || !top.trigger) break;
-    const e = ayGet(top.sourceName, top.text); if (!e || !e.auto || !e.label || document.querySelector('#modalRoot .backdrop')) break;
+    const e = ayGet(top.sourceName, top.text); if (!e || !e.auto || !e.label || !ayEligibleText(top.text) || document.querySelector('#modalRoot .backdrop')) break;
     resolveTopOfStack();
   }
   if (state.stack.length && !document.querySelector('#modalRoot .backdrop')) openStack();
@@ -377,7 +395,7 @@ function openTriggerBatch(batch) {
     ].filter(Boolean));
   };
   for (const t of [...remaining]) {   // always-yield abilities go on the stack by themselves
-    const e = ayGet(t.cardName, t.effect); if (!e || !e.auto || !remaining.includes(t) || parseModal(t.effect)) continue;
+    const e = ayGet(t.cardName, t.effect); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
     const specs = t.special ? [] : parseTargetSpecs(t.effect);
     if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
     else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
@@ -571,7 +589,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || manaCountOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -832,7 +850,7 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && o.label) e.label = o.label; } o.fn(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
   }
