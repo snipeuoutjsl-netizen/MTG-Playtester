@@ -64,16 +64,23 @@ function loadDecks() { return lsGet('mtgpt.decks', {}); }
 function saveDecks(d) { lsSet('mtgpt.decks', d); }
 function currentDeckName() { return lsGet('mtgpt.current', null); }
 
+// v0.99.29 game modes: Commander decks (a Commander section in the list) live in their own tab and are only listed in Commander mode; the mode is chosen on the deck selection screen.
+function deckIsCommander(d) { try { return !!d && parseDeck(d.text).main.some(x => x.cmd); } catch (e) { return false; } }
+function gameMode() { return FEATURES.commander && lsGet('mtgpt.mode', 'standard') === 'commander' ? 'commander' : 'standard'; }
+function setGameMode(m) { lsSet('mtgpt.mode', m === 'commander' ? 'commander' : 'standard'); }
+function decksInMode(decks, mode) { return Object.keys(decks).filter(n => (FEATURES.commander && deckIsCommander(decks[n]) ? 'commander' : 'standard') === mode); }
 function refreshDeckSelect() {
   const sel = $('#deckSelect');
   const decks = loadDecks();
-  const names = Object.keys(decks).sort((a, b) => a.localeCompare(b));
+  { const cn = currentDeckName(); if (FEATURES.commander && cn && decks[cn]) { const k = deckIsCommander(decks[cn]) ? 'commander' : 'standard'; if (k !== gameMode() && lsGet('mtgpt.modeKeep', false) !== true) setGameMode(k); } }   // saving or importing a deck of the other kind switches to that mode so it is visible
+  const names = decksInMode(decks, gameMode()).sort((a, b) => a.localeCompare(b));
   sel.replaceChildren();
   if (!names.length) sel.append(h('option', { value: '', text: '(no decks yet)' }));
   for (const n of names) sel.append(h('option', { value: n, text: n }));
   const cur = currentDeckName();
-  if (cur && decks[cur]) sel.value = cur;
+  if (cur && names.includes(cur)) sel.value = cur;
   else if (names.length) { sel.value = names[0]; lsSet('mtgpt.current', names[0]); }
+  else if (cur && decks[cur]) lsSet('mtgpt.current', '');   // the chosen deck belongs to the other mode
   if (typeof applyUiTheme === 'function' && settings.uiTheme === 'deck') applyUiTheme();
   const dc = $('#deckCur'); if (dc) dc.textContent = names.length ? (sel.value || names[0]) : 'No decks yet';
 }

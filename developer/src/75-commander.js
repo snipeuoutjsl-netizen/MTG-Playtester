@@ -3,8 +3,7 @@
 //  903.9        if it would go to graveyard, exile, hand or library you may put it in the command zone instead   903.10a  21 commander combat damage is lethal
 //  103.5c       the first mulligan is free        903.5  deck: 100 cards, singleton, colour identity of the commander
 function commanderModeOn(deck) {
-  if (!FEATURES.commander || !deck) return false; const box = document.getElementById('chkCmd');
-  return !!deck.main.some(x => x.cmd) && !!(box ? box.checked : true);
+  return !!FEATURES.commander && !!deck && gameMode() === 'commander' && deck.main.some(x => x.cmd);   // the mode is chosen on the deck selection screen
 }
 function startCommanderState() {
   state.cmdMode = true; state.life = 40; state.oppLife = 40; state.cmdDealt = {}; state.freeMullUsed = false;
@@ -69,6 +68,6 @@ function commanderDamage(dealers) {
 }
 function commanderRender() {
   const pile = document.getElementById('pile-command'); if (pile) pile.hidden = !(state && state.cmdMode);
-  const cb = document.getElementById('cmdWrap'); if (cb) { const d = (typeof getCurrentDeck === 'function') ? getCurrentDeck() : null; cb.hidden = !(FEATURES.commander && d && d.main.some(x => x.cmd)); }
+  const cb = document.getElementById('cmdWrap'); if (cb) cb.hidden = !(FEATURES.commander && gameMode() === 'commander');
   if (state && state.cmdMode) { const el = document.getElementById('pile-command'); if (el) { const tax = state.command.length ? (state.command[0].cmdCasts || 0) * 2 : 0; el.title = state.command.length ? `Command zone: click to cast your commander${tax ? ` (+{${tax}} commander tax)` : ''}` : 'Your commander is not in the command zone'; } setTimeout(commanderSBA, 0); }
 }
