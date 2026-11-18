@@ -192,6 +192,7 @@ function installCards(list) {
 }
 
 function updateDbStatus(msg) {
+  try { if (cardCount && typeof firstBootPrompt !== 'undefined' && firstBootPrompt) { firstBootPrompt.close(); firstBootPrompt = null; } } catch (e) { /* prompt already gone */ }
   const el = $('#dbStatus');
   el.dataset.state = (cardCount || META.size) ? 'ok' : 'warn';
   if (msg) { el.textContent = msg; return; }
@@ -5929,6 +5930,8 @@ function renderOverlay() {
   }
   if (state.phase === 'pregame') {
     const candidates=state.hand.filter(c=>beginsOnBattlefield(c));
+    // v0.99.34 nothing in the opening hand acts before the game: do not stop on a screen that only says so (it still opens for Leylines, Gemstone Caverns, opening-hand reveals...)
+    if(!candidates.length && !state.hand.some(c=>openingReveal(c))){ ov.hidden=true; ov.replaceChildren(); if(!state.preAuto){ state.preAuto=true; setTimeout(()=>{ if(state && !state.pregameDone) finishPregame(); },0); } return; }
     const serum=state.hand.find(mulliganHandSwap);
     const openingLine = c => {
       const ln = String(cardText(c) || '').split('\n').find(l => /opening hand/i.test(l));
@@ -5960,9 +5963,7 @@ function renderOverlay() {
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
           state.hand.some(mulliganHandSwap) ? h('button', { text: `Use Serum Powder — exile hand, draw ${state.hand.length}`, onclick: serumPowder }) : null,   // v0.96.25 only offered when a card in the hand allows it (CR 103.5b)
           h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : (state.cmdMode && !state.freeMullUsed ? 'Free mulligan (draw 7)' : `Mulligan to ${7 - state.mulls - 1}`), disabled: state.mulls >= 6, onclick: doMulligan })),
-        h('div', { class: 'phint', text: state.hand.some(mulliganHandSwap)
-          ? 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
-          : 'Your hand is shown below.' }));
+        state.hand.some(mulliganHandSwap) ? h('div', { class: 'phint', text: 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.' }) : null);   // v0.99.34 no "Your hand is shown below" line
     } else {
       ov.hidden = true; ov.replaceChildren(); return;   // v0.90.7 chosen in the hand bar instead
       const serum = state.serumPending;
@@ -6539,9 +6540,11 @@ function openWelcome(onDone) {
   }
   draw();
 }
+let firstBootPrompt = null;
 function promptFirstBoot() {
   if (cardCount || !navigator.onLine || lsGet('mtgpt.bulkPrompt', '') === 'off') return;
   const m = modal('Download card data?', { width: 520, sticky: true });
+  firstBootPrompt = m;   // v0.99.34 closed by updateDbStatus once card data arrives some other way (a file loaded from Card data...)
   const msg = h('p', { text: 'The app needs card data (names, costs, types, text) to know which cards are lands, creatures and so on. It can download it now (from Scryfall, or from the MTGJSON project if Scryfall is unreachable): about 150 MB, once. After that it works fully offline.' });
   const go = h('button', { class: 'primary', text: 'Download now' });
   go.addEventListener('click', async () => {
@@ -6557,8 +6560,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.33';
+const APP_VERSION = '0.99.34';
 const CHANGELOG = [
+  { v: '0.99.34', title: 'UI check: top bar on wide screens, tidier start of game', notes: ['FIXED: on wide windows (over 1700 pixels) the top bar labels (Undo, Shuffle, Draw, Untap all, Token, Stack) were squeezed into small square buttons, overlapped each other and covered the next button, so a click could hit the wrong one. They now get their full width.','The Pre-game actions screen only appears when a card in your opening hand can actually do something before the game (Leylines, opening-hand reveals...). It no longer stops every game just to say there is nothing to do.','The Opening hand box no longer says "Your hand is shown below."','Pop-ups opened during the opening hand (for example Deck view) now fit above your hand and scroll, instead of running off the top of the window.','The "Download card data?" prompt closes by itself once card data has been loaded from a file.'] },
   { v: '0.99.33', title: 'X counters fixed, animated artifacts show their P/T, no floating Hand bar', notes: ['FIXED (rules): "enters with X +1/+1 counters" was applied twice. Walking Ballista cast with X = 3 (paying 6 mana for {X}{X}) now enters with 3 counters, not 6; Hangarback Walker and every other X creature likewise. X counters still go through Hardened Scales and similar effects once, and a permanent that enters without being cast has X = 0 (rule 107.3m). "Twice X" is read too.','FIXED: when an effect sets a creature\u2019s power and toughness (Karn, the Great Creator making an artifact a creature, a land that becomes a creature, "base power and toughness N/N"), the P/T box now shows on card pictures. The new value was treated as the printed one, so with images on nothing was shown (rule 613.4b). Hover the box to see which effect set it.','The floating Hand bar over your hand is gone. The Card outline key (what the green, red and gold outlines mean) is now in the \u2630 Game tools menu and opens in a normal window.','FIXED: How the app reads cards no longer fails on 837 cards (Magma Sliver, Flashback and others) when no game is running.'] },
   { v: '0.99.32', title: 'Sacrifice-for-mana sources pay like lands; clearer opening hand', notes: ['FIXED (rules): mana abilities whose cost is a sacrifice (Eldrazi Spawn and Scion, Treasure, Gold, Lotus Petal and any card worded the same way) now count as mana sources (rule 605.1a). Your hand shows spells as playable when those sources can pay, and paying a cost uses them automatically: lands and other mana sources first, then the sacrifice sources, which are sacrificed as you pay (no stack, rule 605.3b). "Dies" and "leaves" abilities trigger as usual.','A sacrifice-only mana ability (no {T}) works while the creature is summoning sick or tapped (rule 302.6). A double-click or the tap toggle never sacrifices it by accident: use the ability menu, or simply cast the spell.','FIXED (rules): a {C} symbol in a cost is paid only with colourless mana (rule 107.4c). Before, any land could pay it.','The payment window marks sources that will be sacrificed, and How the app reads cards explains sacrifice mana abilities.','Opening hand: the hand is sized to fit inside the table (and below the Opening hand box) at every window size, measured with the cards fanned out. The Opening hand box is no longer dimmed: it sits above the dark layer with a gold outline so it is clearly the thing to click.'] },
   { v: '0.99.31', title: 'Echo, persist, undying, Spacecraft, creature-type choices, uncounterable spells', notes: ['NEW (rules): Echo (702.30) asks for the echo cost at your next upkeep or sacrifices the permanent; Persist (702.79) and Undying (702.93) return the creature with a -1/-1 or +1/+1 counter only if it had none of that kind when it died (last known information); "Sacrifice it unless you ..." (Glint Hawk style) is a choice between doing the cost and losing the permanent.', 'NEW: Spacecraft and Station (702.184, 721): Station taps another creature and adds charge counters equal to its power; at each STATION N+ threshold the card gains the lines under it, and at the highest one with a power/toughness it is an artifact creature (Borg Cube: 6/6 at 12). Assimilate (701.72) is read from the Borg Cube text.', 'FIXED (engine): "As this creature enters, choose a creature type" (Roaming Throne) was not recognised because it does not say "the battlefield". The picker now lists creature types on the battlefield first, then in your deck, and a typed answer must be a real creature type. Roaming Throne is the chosen type too and makes triggers of other creatures of that type trigger an additional time.', 'NEW (engine): "Can\'t be countered" is one check for every counter effect: the spell\'s own text, statics such as "Green spells you control can\'t be countered", and mana such as Cavern of Souls ("and that spell can\'t be countered"). The Countered button then reads "Can\'t be countered".', 'Opening hand now always fits the window. Hand Key sits at the far right of the hand bar and opens an opaque window. Commander mode piles run Deck, Commander, Graveyard, Exile; hovering any pile shows its top card (your commander for the command zone).'] },

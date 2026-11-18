@@ -626,6 +626,8 @@ function renderOverlay() {
   }
   if (state.phase === 'pregame') {
     const candidates=state.hand.filter(c=>beginsOnBattlefield(c));
+    // v0.99.34 nothing in the opening hand acts before the game: do not stop on a screen that only says so (it still opens for Leylines, Gemstone Caverns, opening-hand reveals...)
+    if(!candidates.length && !state.hand.some(c=>openingReveal(c))){ ov.hidden=true; ov.replaceChildren(); if(!state.preAuto){ state.preAuto=true; setTimeout(()=>{ if(state && !state.pregameDone) finishPregame(); },0); } return; }
     const serum=state.hand.find(mulliganHandSwap);
     const openingLine = c => {
       const ln = String(cardText(c) || '').split('\n').find(l => /opening hand/i.test(l));
@@ -657,9 +659,7 @@ function renderOverlay() {
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
           state.hand.some(mulliganHandSwap) ? h('button', { text: `Use Serum Powder — exile hand, draw ${state.hand.length}`, onclick: serumPowder }) : null,   // v0.96.25 only offered when a card in the hand allows it (CR 103.5b)
           h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : (state.cmdMode && !state.freeMullUsed ? 'Free mulligan (draw 7)' : `Mulligan to ${7 - state.mulls - 1}`), disabled: state.mulls >= 6, onclick: doMulligan })),
-        h('div', { class: 'phint', text: state.hand.some(mulliganHandSwap)
-          ? 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
-          : 'Your hand is shown below.' }));
+        state.hand.some(mulliganHandSwap) ? h('div', { class: 'phint', text: 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.' }) : null);   // v0.99.34 no "Your hand is shown below" line
     } else {
       ov.hidden = true; ov.replaceChildren(); return;   // v0.90.7 chosen in the hand bar instead
       const serum = state.serumPending;

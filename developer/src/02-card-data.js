@@ -109,6 +109,7 @@ function installCards(list) {
 }
 
 function updateDbStatus(msg) {
+  try { if (cardCount && typeof firstBootPrompt !== 'undefined' && firstBootPrompt) { firstBootPrompt.close(); firstBootPrompt = null; } } catch (e) { /* prompt already gone */ }
   const el = $('#dbStatus');
   el.dataset.state = (cardCount || META.size) ? 'ok' : 'warn';
   if (msg) { el.textContent = msg; return; }
