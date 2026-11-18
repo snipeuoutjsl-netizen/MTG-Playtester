@@ -1570,7 +1570,6 @@ defCard('Sink into Stupor', { lines: [{
 // ---- v0.86 definitions written from the user's own deck scan (Modern Domain, Dragons, Grixis, Jewel Shops, Landfall, Leyline of the Goyf)
 const srcCard = obj => { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null; return f && f.zone === 'battlefield' ? f.card : null; };
 const genericFor = (obj, tx) => effectOptions(tx, { ...obj, sourceName: '~' });   // the general reader, skipping this card's definition
-function domainCount() { if (!state) return 0; const set = new Set(); for (const c of state.battlefield) { const p = permTypeInfo(c); if (!p.types.has('land')) continue; for (const b of ['plains', 'island', 'swamp', 'mountain', 'forest']) if (p.subs.has(b)) set.add(b); } return set.size; }
 function payManaThen(card, cost, label, cb) {   // pay a mana cost for an effect ("you may pay {4}") with the normal payment window, then run cb
   if (!state) return false;
   if (!manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null).ok) { toast('Cannot pay', `You cannot pay ${cost} right now. Choose not to, or make more mana first.`); return false; }
@@ -6592,8 +6591,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.38';
+const APP_VERSION = '0.99.39';
 const CHANGELOG = [
+  { v: '0.99.39', title: 'Tribal Flames and "where X is" counting fixed; Card art grid tidied', notes: ['FIXED (rules): Tribal Flames and other Domain cards dealt 0 damage. "X is the number of basic land types among lands you control" is now counted (with Leyline of the Guildpact or Prismatic Omen out, each land you control has all five types, so one land gives 5; with no lands it is 0).','FIXED: a "where X is the number of ..." that the app cannot count is never taken as 0 any more. The line is left for you to do by hand (and shown as not understood) instead of quietly doing nothing. "The number of cards in your graveyard" now counts the graveyard (it used to give 0).','Card art & printings: the buttons fit inside each card (Printing\u2026 on its own row), and every card lines up.'] },
   { v: '0.99.38', title: 'Damage targeting fix', notes: ['FIXED (rules): spells and abilities that deal damage to "target creature or planeswalker" (Strangle, Burning Hands, Broadside Barrage and about 60 others) were offered as damage to the opponent. A player is not a legal target for them (rules 115.1 and 601.2c), so that option is gone. "Any target", "target creature or player" and "target player or planeswalker" still offer it.'] },
   { v: '0.99.37', title: 'Choose printings (alternate art) and buy the deck', notes: ['Card art & printings (Deck view, or Deck boxes \u2192 art): every card has a Printing\u2026 button that lists all of the card\u2019s real printings from Scryfall with their pictures. Pick one and that art is used for the card in this deck, on the table, in your hand and in the preview. Use the default art goes back. Your own pictures still work as before.','Buy this deck (Deck view): opens TCGplayer Mass Entry in your browser with the deck filled in, using the exact printing you chose for each card (other cards are left to TCGplayer). Nothing is bought until you check out there. Copy list with set codes puts the list on the clipboard for any other store (Card Kingdom, Mana Pool, a local store).'] },
   { v: '0.99.36', title: 'Opening hand, attack requirements, triggers on the stack, choice costs', notes: ['Opening hand: the large, centred hand is only for deciding whether to keep or mulligan, so you can read every card. From Keep on (putting cards on the bottom, Pre-game actions, your first turn) it is the normal hand. The prompt and the hand sit together in the middle of the table.','Mulligan and new game: you see the whole hand go back into the library, the library shuffle, and the new seven dealt one at a time (rules 103.2 and 103.5). Shuffles were already correct (an unbiased Fisher-Yates shuffle with cryptographic randomness); this is now checked by statistical tests.','The card you choose for a mulligan is stamped BOTTOM, not DISCARD (the stamp now says what happens to the card).','FIXED (rules): a creature that "attacks each combat if able" (Dragon\u2019s Rage Channeler with delirium, Goblin Rabblemaster\u2019s Goblins...) no longer attacks by itself. The Declare attackers window opens with it already chosen and locked, and you may add other attackers (rule 508.1d). Clicking a later step or Next turn also stops at declare attackers instead of skipping the requirement.','Triggered abilities go on the stack by themselves (rule 603.3): there is no "Put on the stack" button for a single ability. You are asked only for its targets or modes; if several abilities trigger at once, a window asks for their order (rule 603.3b). A "you may" choice is made when the ability resolves (rule 603.5).','FIXED (rules): an additional cost with a choice, such as Lightning Axe\u2019s "discard a card or pay {5}", is read as two ways to cast the spell (rule 601.2b); each is offered when you can pay it.'] },
@@ -7297,9 +7297,10 @@ function landTypesOf(name) {
   return effectiveLandTypes({name});
 }
 
+// v0.99.39 Domain counts the basic land types among lands you CONTROL (CR 305.6): "every basic land type" effects (Leyline of the Guildpact, Prismatic Omen)
+// give each of your lands all five, so one land is enough for 5, but with no lands the count is 0 (it used to say 5). landTypesOf() already includes those effects.
 function domainTypeList() {
   if (!state) return [];
-  if (domainAllTypes()) return [...BASIC_TYPES];
   const types = new Set();
   for (const c of state.battlefield) {
     if (!isLandName(c.name)) continue;
@@ -7310,7 +7311,6 @@ function domainTypeList() {
 }
 function domainCount() {
   if (!state) return 0;
-  if (domainAllTypes()) return 5;
   const types = new Set();
   for (const c of state.battlefield) {
     if (!isLandName(c.name)) continue;
@@ -7929,7 +7929,7 @@ function openCustomArt(deckName, after) {
       const has = CUSTOM.has(customMapKey(deckName, n)), im = imgFor(n, deckName);
       const thumb = h('div', { class: 'cart-thumb' + (im ? '' : ' none') + (has ? ' mine' : ''), style: im ? `background-image:url("${im.front}")` : '' }, im ? null : h('span', { text: n }), has ? h('i', { class: 'cart-mine', text: 'custom' }) : null);
       const pr = printFor(deckName, n);
-      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }), pr ? h('div', { class: 'cart-print small muted', text: printLabel(pr) }) : null,
+      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }), h('div', { class: 'cart-print small muted', text: pr ? printLabel(pr) : '\u00a0', title: pr ? printLabel(pr) : '' }),   // always one line, so every card's buttons line up
         h('div', { class: 'cart-btns' },
           h('button', { text: 'Printing…', title: 'Choose one of the card\u2019s real printings (alternate art) from Scryfall', onclick: () => openPrintPicker(deckName, n, () => { draw(); render(); }) }),
           h('button', { text: has ? 'Change…' : 'Choose image…', onclick: () => pick('image/*', false, async fs => { try { note.textContent = 'Saving…'; await setCustomArt(deckName, n, fs[0]); note.textContent = `Saved art for ${n}.`; } catch (e) { note.textContent = 'Could not use that file: ' + e.message; } draw(); render(); }) }),
@@ -12338,10 +12338,26 @@ function devotionTo(cols) {   // CR 700.5: the number of mana symbols of those c
     for (const m of mc.matchAll(/\{([^}]+)\}/g)) { const parts = m[1].split('/'); if (parts.some(p => cols.includes(p))) n++; } }
   return n;
 }
+// v0.99.39 Is "the number of <phrase>" something the counter can read? Every word must be a card type / supertype / subtype that appears on some card's
+// type line, or one of the counter's structural words. The generic counter answers 0 for words it does not know ("glorbs"), which is indistinguishable
+// from really having none, so an unknown word must stop it.
+let _typeWords = null;
+const COUNT_GLUE = new Set(['other', 'another', 'nonland', 'noncreature', 'nonartifact', 'nontoken', 'token', 'tokens', 'tapped', 'untapped', 'card', 'cards', 'permanent', 'permanents', 'and', 'or', 'in', 'your', 'graveyard', 'hand', 'library', 'you', 'control', 'the', 'a', 'an', 'of', 'with', 'basic', 'legendary', 'snow', 'nonbasic', 'opponents', 'opponent']);
+function countPhraseKnown(phrase) {
+  if (!_typeWords) { _typeWords = new Set(); for (const v of CARDS.values()) for (const w of String((v && v.t) || '').toLowerCase().replace(/[\u2014\u2013/-]/g, ' ').split(/\s+/)) if (w) _typeWords.add(w); }
+  const forms = w => [w, w.replace(/s$/, ''), w.replace(/es$/, ''), w.replace(/ies$/, 'y'), w.replace(/ves$/, 'f'), w.replace(/ves$/, 'fe')];   // Zombies, Elves, Wolves, Fairies, Foxes
+  const known = w => forms(w).some(f => _typeWords.has(f));
+  return String(phrase).toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/).filter(Boolean).every(w => COUNT_GLUE.has(w) || known(w) || (/^non/.test(w) && known(w.slice(3))));
+}
 function applyWhereX(tx, obj) {
   let T = String(tx || ''), m, n = null;
   if ((m = /,? where X is your devotion to (white|blue|black|red|green)(?: and (white|blue|black|red|green))?/i.exec(T))) { n = devotionTo([DEV_COLORS[m[1].toLowerCase()], m[2] && DEV_COLORS[m[2].toLowerCase()]].filter(Boolean)); T = T.replace(m[0], ''); }
-  else if ((m = /,? where X is the number of ([a-z' -]+?)(?: you control)?(?=[.,]|$)/i.exec(T))) { const src = obj && obj.sourceId > 0 && findCard(obj.sourceId); n = csCount(m[1].trim() + ' you control', src ? src.card : { id: -1 }) || 0; T = T.replace(m[0], ''); }
+  // v0.99.39 Domain (CR 305.6 lands; the Domain ability word): "the number of basic land types among lands you control" (Tribal Flames). It used to fall through
+  // to the generic counter below, which could not count it and gave 0, so the spell dealt 0 damage even with Leyline of the Guildpact out.
+  else if ((m = /,? where X is the number of basic land types among lands you control/i.exec(T))) { n = domainCount(); T = T.replace(m[0], ''); }
+  else if ((m = /,? where X is the number of ([a-z' -]+?)(?: you control)?(?=[.,]|$)/i.exec(T))) { const src = obj && obj.sourceId > 0 && findCard(obj.sourceId); const ph = m[1].trim(), v = csCount(/\bin (?:your|a|any) (?:graveyard|hand|library)$|\bin all graveyards$/i.test(ph) ? ph : ph + ' you control', src ? src.card : { id: -1 });   // v0.99.39 "cards in your graveyard" is not "... you control"
+    if (v === null || v === undefined || Number.isNaN(+v) || (typeof CARDS !== 'undefined' && CARDS.size && !countPhraseKnown(m[1]))) return T;   // v0.99.39 a count the app cannot work out is NOT taken as 0: the line stays as written and is left to you (shown as not understood)
+    n = +v; T = T.replace(m[0], ''); }
   if (n === null) return T;
   T = T.replace(/(?<![{\w])X(?![\w}])/g, String(n));
   T = T.replace(/(?:^|(?<=\. ))If (\d+) is greater than or equal to the number of cards in your library, you win the game\.?/i, (all, v) => (state ? +v >= state.library.length : true) ? 'You win the game.' : '');   // Thassa's Oracle
