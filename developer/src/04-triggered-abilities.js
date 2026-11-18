@@ -579,6 +579,8 @@ function runChain(steps, src, baseModals) {
 }
 // v0.99.25 "Deal 1 damage. Then amass Orcs 1." is ONE ability: when every step is understood, the player is offered the whole ordered chain as a single button
 // (and Always Yield repeats the whole chain), instead of one button per step where the later steps are easy to skip.
+// An option label can carry a live number ("... (counts when it happens; now 2)"). That number changes every time, so Always Yield compares labels without it.
+function lblStable(l) { return String(l || '').replace(/\s*\(counts when it happens; now \d+\)/g, ''); }
 function visibleOptions(all) {
   const ch = (all || []).find(o => o && o.chain && o.covers); if (!ch) return (all || []).filter(o => !o.hidden);
   return all.filter(o => o === ch || (!o.hidden && !ch.covers.has(o.label)));
@@ -809,7 +811,7 @@ function openAbilityEffect(obj, done) {
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
     const e = ayGet(obj.sourceName, tx, obj.sourceId);
-    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = visibleOptions(effectOptions(tx, obj)); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
+    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = visibleOptions(effectOptions(tx, obj)); } catch (er) { os = []; } const o = os.find(x => lblStable(x.label) === lblStable(e.label) && typeof x.fn === 'function');
       if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
   }
   // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.

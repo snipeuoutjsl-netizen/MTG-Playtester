@@ -1687,6 +1687,8 @@ function runChain(steps, src, baseModals) {
 }
 // v0.99.25 "Deal 1 damage. Then amass Orcs 1." is ONE ability: when every step is understood, the player is offered the whole ordered chain as a single button
 // (and Always Yield repeats the whole chain), instead of one button per step where the later steps are easy to skip.
+// An option label can carry a live number ("... (counts when it happens; now 2)"). That number changes every time, so Always Yield compares labels without it.
+function lblStable(l) { return String(l || '').replace(/\s*\(counts when it happens; now \d+\)/g, ''); }
 function visibleOptions(all) {
   const ch = (all || []).find(o => o && o.chain && o.covers); if (!ch) return (all || []).filter(o => !o.hidden);
   return all.filter(o => o === ch || (!o.hidden && !ch.covers.has(o.label)));
@@ -1917,7 +1919,7 @@ function openAbilityEffect(obj, done) {
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
     const e = ayGet(obj.sourceName, tx, obj.sourceId);
-    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = visibleOptions(effectOptions(tx, obj)); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
+    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = visibleOptions(effectOptions(tx, obj)); } catch (er) { os = []; } const o = os.find(x => lblStable(x.label) === lblStable(e.label) && typeof x.fn === 'function');
       if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
   }
   // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.
@@ -3816,6 +3818,7 @@ function log(msg) {
   if (state.resolving || state.resolvingAb) { state.resLines = state.resLines || []; if (!/^Resolved\b|is resolving$/.test(msg)) state.resLines.push(msg); if (state.resLines.length > 6) state.resLines.shift(); }   // v0.91.1 shown under the card while it resolves
   state.log.push((state.turn ? `T${state.turn}: ` : '') + msg);
   if (state.log.length > 400) state.log.shift();
+  if (typeof a11yAnnounce === 'function') a11yAnnounce();
 }
 
 function findCard(id) {
@@ -6432,7 +6435,7 @@ function openWelcome(onDone) {
       ...(FEATURES.multiplayer ? [P('To play a friend on the same network open ', B('☰ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.')] : []),
       P('For coin flips and die rolls open ', B('☰ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
     ['5. Settings', [P('The ', B('⚙ gear'), ' holds settings and updates (Settings, Update app, Import / edit deck, Card data, Images, help). The ', B('☰ Game tools'), ' button beside it holds the in-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin).'), P('Open ', B('⚙ → Settings'), '. The tabs are:'),
-      h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, foil, cursor, card sizes, turn-flow bar opacity and card sleeves.'), h('li', null, B('Board'), ' – board layout, playmat and the frame around it.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
+      h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, foil, cursor, card sizes, turn-flow bar opacity and card sleeves.'), h('li', null, B('Accessibility'), ' – interface size, high contrast, calm motion, larger click targets, strong keyboard focus and screen-reader log announcements.'), h('li', null, B('Board'), ' – board layout, playmat and the frame around it.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
     ['6. Themes, playmats and sleeves', [P('Under ', B('Settings → Look & feel'), ' the ', B('One-click set'), ' picker changes everything at once: interface theme, card sleeve, playmat, board frame and (if ticked) a matching song. Or choose each part yourself.'),
       P('Pick a built-in playmat under ', B('Settings → Board'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
     ['7. What the icons and colours mean', [P('Cards in your hand glow to tell you what you can do: ', B('Playable'), ' (green), ', B('Can\'t pay'), ' (not enough or wrong mana), ', B('Wrong timing'), ' (sorcery-speed card outside your main phase), ', B('Instant speed'), ' (can be cast in response), and ', B('Selected'), '.'),
@@ -6476,8 +6479,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.27';
+const APP_VERSION = '0.99.28';
 const CHANGELOG = [
+  { v: '0.99.28', title: 'Accessibility tab, mulligan fix, centred pop-ups', notes: ['Mulligan hand fixed: it stays inside the table layout (the fixed-position version could land off-screen on some windows). A test now checks it at several window sizes.','Pop-ups now all open at the same place, the centre of the window; only the stack and resolving panels keep their own spots, and the mulligan steps sit above the hand.','The One Ring and other "for each counter" text: Always Yield now still recognises the action while the live count changes.','⚙ → Settings → Accessibility: interface size (100–175%), high contrast, calm motion (no animation, tilt, fan or scrolling text), larger click targets, strong keyboard focus, and screen-reader announcements of the game log. More options are planned (colour-blind markers, full keyboard play, a text view of each zone).'] },
   { v: '0.99.27', title: 'Bigger opening hand; Ancient Stirrings read in full', notes: ['The opening-hand screen (Keep / Draw / Mulligan) now shows your hand large and centred so every card can be read.','"Look at the top N cards. You may reveal a [type or colorless] card from among them and put it into your hand. Put the rest on the bottom" is now read in full (Ancient Stirrings and similar): at most one card, only cards of that kind.'] },
   { v: '0.99.26', title: 'Multi-step abilities apply every step (Orcish Bowmasters)', notes: ['An ability like "deals 1 damage to any target. Then amass Orcs 1." is now one button that applies every step in written order, instead of one button per step where the later steps were easy to miss. Always Yield repeats the whole chain too, not just the first step.'] },
   { v: '0.99.25', title: 'Opponent search asks what they searched for; bigger mulligan hand', notes: ['The opponent-search button now asks what your opponent searched for (basic land, other land, creature, other card, or nothing). "Whenever an opponent searches their library for a land card" abilities only trigger for a land search.','Opposition Agent: you name the card they found, it is exiled, and you may play it for as long as it stays there, spending mana as though it were any colour. "Your opponents can\'t search libraries\" (Stranglehold) now stops the search.','Mulligan: the hand rises, enlarges and centres on the table under a "Select X cards and put them at the bottom to continue" box.'] },
@@ -8774,8 +8778,8 @@ async function loadSleeve() {
   applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
-const TAB_INFO = { gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['MTG Playtester is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -8923,7 +8927,7 @@ function openSettings() {
     const note=h('span',{class:'muted small',text:(UI_SETS.find(x=>x.id===sel.value)||{}).note||''});
     return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
   const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
-  P.anim.append(animBox);
+  P.anim.append(animBox); P.a11y.append(buildA11yTab());
   { const box = h('div'), draw = () => {
       const mk = (v, label, desc) => { const r = h('input', { type: 'radio', name: 'laymode' }); r.checked = (settings.layoutMode || 'updated') === v; r.addEventListener('change', () => { settings.layoutMode = v; saveSettings(); applyLayout(); render(); draw(); });
         return h('label', { class: 'teachopt' }, r, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); };
@@ -9020,7 +9024,7 @@ function openSettings() {
   body.append(shell); showTab(P[settingsTab] ? settingsTab : 'gfx');
   m.foot.append(
     h('button', { text: 'Welcome tour', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
-    h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); saveSettings(); m.close(); openSettings(); } }),
+    h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); delete settings.a11y; saveSettings(); applyA11y(); m.close(); openSettings(); } }),
     h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
 }
 
@@ -12498,6 +12502,46 @@ function millAmongOptions(tx, obj) {
     const m = modal(`${src}: mill ${n}?`, { width: 440, sticky: true, noClose: true }); m.body.append(h('div', { class: 'psub', text: `You may mill ${n} card${n === 1 ? '' : 's'}${thatMany ? ' (that many: the amount from the trigger)' : ''}. If you do, you may take a ${kindTxt || ''} card from among them.` }));
     m.foot.append(h('button', { text: "Don't mill", onclick: () => { m.close(); log(`${src}: you chose not to mill, so "if you do" does nothing (CR 608.2c)`); } }), h('button', { class: 'primary', text: `Mill ${n}`, onclick: () => { m.close(); run(); } })); } }];
 }
+// ---- Accessibility (v0.99.28): its own tab on the gear wheel. Every option has its own switch and is stored in settings.a11y.
+//  scale     whole interface size (100-175 %)          contrast  high-contrast colours and thicker borders
+//  calm      no animation, tilt, fan or scrolling      targets   larger buttons and click areas
+//  focus     a strong focus outline for keyboard use   announce  the game log is also read out by screen readers (aria-live)
+const A11Y_DEFAULT = { scale: 100, contrast: false, calm: false, targets: false, focus: false, announce: false };
+const a11y = () => Object.assign({}, A11Y_DEFAULT, settings.a11y || {});
+function applyA11y() {
+  const a = a11y(), b = document.body; if (!b) return;
+  b.classList.toggle('a11y-contrast', !!a.contrast); b.classList.toggle('a11y-calm', !!a.calm); b.classList.toggle('a11y-targets', !!a.targets); b.classList.toggle('a11y-focus', !!a.focus);
+  const z = Math.max(100, Math.min(175, +a.scale || 100)) / 100; document.documentElement.style.zoom = z === 1 ? '' : String(z);
+  let live = document.getElementById('srLive');
+  if (a.announce && !live) { live = document.createElement('div'); live.id = 'srLive'; live.className = 'sr-only'; live.setAttribute('aria-live', 'polite'); live.setAttribute('role', 'log'); b.append(live); }
+  if (live) live.hidden = !a.announce;
+  A11Y_ANNOUNCE = !!a.announce;
+}
+let A11Y_ANNOUNCE = false, A11Y_LASTN = 0;
+function a11yAnnounce() {   // read out the new log lines (called from render)
+  if (!A11Y_ANNOUNCE || !state) return; const live = document.getElementById('srLive'); if (!live) return;
+  const n = state.log.length; if (n < A11Y_LASTN) A11Y_LASTN = 0; const fresh = state.log.slice(A11Y_LASTN, n).slice(-6); A11Y_LASTN = n;
+  if (fresh.length) live.textContent = fresh.join('. ');
+}
+function buildA11yTab() {
+  const box = h('div'), save = () => { settings.a11y = a11y(); saveSettings(); applyA11y(); };
+  const sw = (k, label, desc) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !!a11y()[k]; cb.addEventListener('change', () => { settings.a11y = Object.assign(a11y(), { [k]: cb.checked }); save(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: label }), ' — ' + desc)); };
+  const out = h('b', { text: a11y().scale + '%' }), rng = h('input', { type: 'range', min: '100', max: '175', step: '5', value: String(a11y().scale), 'aria-label': 'Interface size' });
+  rng.addEventListener('input', () => { out.textContent = rng.value + '%'; }); rng.addEventListener('change', () => { settings.a11y = Object.assign(a11y(), { scale: +rng.value }); save(); });
+  box.append(
+    h('div', { class: 'fhead', text: 'Seeing the table' }),
+    h('div', { class: 'teachopt' }, h('span', null, h('b', { text: 'Interface size ' }), out, ' — makes the whole game larger; 100% is the normal size'), rng),
+    sw('contrast', 'High contrast', 'brighter text, stronger borders and darker panels'),
+    h('div', { class: 'fhead', text: 'Moving and clicking' }),
+    sw('calm', 'Calm motion', 'turns off animations, card tilt, the fanned hand and scrolling status text (it only decorates, the game plays the same)'),
+    sw('targets', 'Larger click targets', 'bigger buttons, lists and controls'),
+    sw('focus', 'Strong keyboard focus', 'a thick outline around whatever has keyboard focus (use Tab and Enter)'),
+    h('div', { class: 'fhead', text: 'Screen readers' }),
+    sw('announce', 'Read out the game log', 'new log lines are announced by a screen reader as they happen'),
+    h('div', { class: 'small muted', style: 'margin-top:10px', text: 'More options are planned: colour-blind markers, full keyboard play and a text view of every zone. Tell us what would help you.' }));
+  return box;
+}
+applyA11y();
 init();
 
 })();

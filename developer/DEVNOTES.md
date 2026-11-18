@@ -1,3 +1,11 @@
+
+## Lessons: things we broke once, do not repeat
+
+- **Never position a core UI zone with `position: fixed` + `100vw` maths + `translate(-50%)` (v0.99.25-27 mulligan hand).** It worked in the headless test window and put the hand off the left edge of a real window (different size, DPI scale, side-column width, transformed ancestors make `fixed` relative to that ancestor). Keep the hand in the normal layout flow; only change sizes, z-index and add a dim layer (`body.mullpick` / `body.mullhand`, v0.99.28).
+- **Any layout change to the hand, the mulligan or a modal must be checked at several window sizes** (the `mulligan hand stays on screen` test in `cr-rules.js` runs 1280, 1673 and 2509 wide, with and without images mode) and the check is that every hand card and the prompt box are fully inside the window. A screenshot at one size is not enough.
+- **Pop-ups all open at the true centre of the window** (v0.99.28). Only `dock` (stack) and `resolve` windows have their own places; the mulligan steps move pop-ups above the hand. Do not add per-modal offsets or padding.
+- The sidebar width is not constant (it grows with the window), so never hard-code `340px` or similar to find the table centre.
+
 # MTG Playtester: developer notes
 
 The public README is in README.md. This file is the developer history, newest first. It was rebuilt in v0.95.2 from the in-app changelog (the earlier long-form notes were lost), so older entries are shorter than they used to be.

@@ -68,6 +68,7 @@ function log(msg) {
   if (state.resolving || state.resolvingAb) { state.resLines = state.resLines || []; if (!/^Resolved\b|is resolving$/.test(msg)) state.resLines.push(msg); if (state.resLines.length > 6) state.resLines.shift(); }   // v0.91.1 shown under the card while it resolves
   state.log.push((state.turn ? `T${state.turn}: ` : '') + msg);
   if (state.log.length > 400) state.log.shift();
+  if (typeof a11yAnnounce === 'function') a11yAnnounce();
 }
 
 function findCard(id) {

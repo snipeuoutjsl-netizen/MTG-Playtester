@@ -122,8 +122,8 @@ async function loadSleeve() {
   applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
-const TAB_INFO = { gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['MTG Playtester is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -271,7 +271,7 @@ function openSettings() {
     const note=h('span',{class:'muted small',text:(UI_SETS.find(x=>x.id===sel.value)||{}).note||''});
     return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
   const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
-  P.anim.append(animBox);
+  P.anim.append(animBox); P.a11y.append(buildA11yTab());
   { const box = h('div'), draw = () => {
       const mk = (v, label, desc) => { const r = h('input', { type: 'radio', name: 'laymode' }); r.checked = (settings.layoutMode || 'updated') === v; r.addEventListener('change', () => { settings.layoutMode = v; saveSettings(); applyLayout(); render(); draw(); });
         return h('label', { class: 'teachopt' }, r, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); };
@@ -368,7 +368,7 @@ function openSettings() {
   body.append(shell); showTab(P[settingsTab] ? settingsTab : 'gfx');
   m.foot.append(
     h('button', { text: 'Welcome tour', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
-    h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); saveSettings(); m.close(); openSettings(); } }),
+    h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); delete settings.a11y; saveSettings(); applyA11y(); m.close(); openSettings(); } }),
     h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
 }
 
