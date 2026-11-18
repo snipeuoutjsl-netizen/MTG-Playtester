@@ -1125,7 +1125,7 @@ function parseTriggers(c) {
     const cm = body.match(/^((?:When|Whenever|At)\b[^,]*),\s*(.*)$/s);
     if (!cm) continue;
     const cond = cm[1].toLowerCase(), word = lm[1] || '';
-    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false, castAny = null, cAny = null;
+    let ev = null, filter = '', zone = null, from = null, cyc = false, dis = false, another = false, castAny = null, cAny = null, selfToo = false, q0 = null;
     if (/^at\b/.test(cond)) {
       if (!/opponent|\bnext\b/.test(cond)) {
         if (/end of combat/.test(cond)) ev = 'step:end_combat';
@@ -1143,7 +1143,11 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) (?:~|this \w+) attacks/.test(cond)) ev = 'attack-self';
     else if (/creatures? you control attacks?/.test(cond)) ev = 'attack-any';
     else if (/^(?:when|whenever) (?:~|this \w+) (?:dies|is put into a graveyard from the battlefield)/.test(cond)) ev = 'dies-self';
+    else if ((q0 = cond.match(/^(?:when|whenever) (?:~|this \w+) or another (.+?) dies$/)) && !/opponent/.test(cond)) { ev = 'dies-other'; filter = 'another ' + q0[1] + ' dies'; selfToo = true; }   // CR 603.10a "Blood Artist"
     else if (/^(?:when|whenever) (?:another|a) .*dies/.test(cond) && !/opponent/.test(cond)) { ev = 'dies-other'; filter = cond; }
+    else if (/^(?:when|whenever) (?:equipped|enchanted) creature dies$/.test(cond)) ev = 'host-dies';
+    else if (/^(?:when|whenever) (?:equipped|enchanted) creature attacks$/.test(cond)) ev = 'host-attacks';
+    else if (/^(?:when|whenever) (?:equipped|enchanted) creature deals combat damage(?: to (?:a player|an opponent|the opponent|you))?$/.test(cond)) ev = 'host-combat-damage';
     else if (/^whenever you draw/.test(cond)) ev = 'draw';
     else if (/^whenever an opponent draws a card/.test(cond)) ev = 'opp-draw';
     else if (/^whenever an opponent searches their library/.test(cond)) ev = 'opp-search';
@@ -1171,7 +1175,7 @@ function parseTriggers(c) {
     let manaCond = null; if (ev === 'cast') { const mm = /^if (no mana|mana) was spent to cast (?:it|that spell|the spell|this spell),?\s*/i.exec(cm[2]); if (mm) { manaCond = /^no/i.test(mm[1]) ? 'none' : 'some'; cm[2] = cm[2].slice(mm[0].length); } }
     if (/^if (?:~|this \w+) is in your graveyard\b/i.test(cm[2]) || (ev === 'gy-self')) zone = 'graveyard';
     if (ev !== 'gy-self' && /\breturn (?:~|this \w+|it) from your graveyard to the battlefield/i.test(cm[2])) zone = 'graveyard';   // v0.94.1 Bloodghast: Landfall \u2014 you may return ~ from your graveyard to the battlefield
-    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, manaCond, castAny, unsupported: ev === 'cast' && !nth && /\b(?:first|second|third|fourth|fifth|sixth)\b[^,]*\bspell\b/i.test(cm[1]) });
+    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, manaCond, selfToo, castAny, unsupported: ev === 'cast' && !nth && /\b(?:first|second|third|fourth|fifth|sixth)\b[^,]*\bspell\b/i.test(cm[1]) });
     if (ev === 'etb-self' && /enters(?: the battlefield)? or attacks/.test(cond)) out.push({ ev: 'attack-self', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ko) out.push({ ev: 'etb-other', cond: cm[1], effect: cm[2], line: body, filter: 'another ' + ko[1], optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
@@ -1210,7 +1214,7 @@ function fireTrigger(ev, ctx = {}) {
   if (!state || !teach('triggerPrompts')) return;
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
+  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -1231,6 +1235,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
     for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self' && (!t.test || t.test(a, atk))) add(a, t, `${a.name} was declared as an attacker.`);
+    for (const a of atk) for (const x of bf) if (x.att === a.id) for (const t of parseTriggers(x)) if (t.ev === 'host-attacks') add(x, t, `${a.name} (equipped or enchanted by ${x.name}) attacked.`);
     if (atk.length) for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'attack-any' && (!t.test || t.test(c, atk))) add(c, t, 'You declared attackers.');
   } else if (ev === 'mutates') {
     const mc = ctx.card; for (const t of parseTriggers(mc)) if (t.ev === 'mutates-self') add(mc, t, `${mc.name} mutated (a creature spell merged with it).`);
@@ -1238,7 +1243,10 @@ function fireTrigger(ev, ctx = {}) {
     const d = ctx.card;
     if (d.blitzBody) { delete d.blitzBody; state.pendingTriggers.push({ kind: 'ability', cardId: d.id, cardName: d.name, text: 'Blitz (keyword, CR 702.152): when this creature dies, draw a card.', effect: 'Draw a card.', special: null, optional: false, why: `${d.name} was cast for its blitz cost and died.` }); }
     for (const t of parseTriggers(d)) if (t.ev === 'dies-self') add(d, t, `${d.name} was put into a graveyard from the battlefield (it died).`);
+    for (const t of parseTriggers(d)) if (t.ev === 'dies-other' && t.selfToo) add(d, t, `${d.name} died (it triggers on its own death as well as on another creature's).`);
     for (const c of bf) if (c.id !== d.id) for (const t of parseTriggers(c)) if (t.ev === 'dies-other' && filterMatches(t.filter, d)) add(c, t, `${d.name} died and matches this ability's condition.`);
+    for (const id of (d._hostOf || [])) { const a = findCard(id); if (a) for (const t of parseTriggers(a.card)) if (t.ev === 'host-dies') add(a.card, t, `${d.name} (the creature ${a.card.name} was attached to) died.`); }   // Skullclamp: "Whenever equipped creature dies"
+    delete d._hostOf;
   } else if (ev === 'draw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'draw') add(c, t, 'You drew a card.');
   } else if (ev === 'oppsearch') {
@@ -1272,6 +1280,7 @@ function fireTrigger(ev, ctx = {}) {
     const a = ctx.card;
     for (const t of parseTriggers(a)) if (t.ev === 'combat-damage-self' && (!t.test || t.test(a))) add(a, t, `${a.name} dealt combat damage to the opponent.`);
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'combat-damage-any') add(c, t, `${a.name} (a creature you control) dealt combat damage to the opponent.`);
+    for (const x of bf) if (x.att === a.id) for (const t of parseTriggers(x)) if (t.ev === 'host-combat-damage') add(x, t, `${a.name} (equipped or enchanted by ${x.name}) dealt combat damage to the opponent.`);
   }
 }
 function flushTriggers() { if (state && state.pendingTriggers.length && !state.phasePause && !state.discarding && !costHold) resolvePendingTrigger(); }
@@ -2015,6 +2024,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   memNote('left', c);
   if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
+  c._hostOf = state.battlefield.filter(x => x.att === c.id).map(x => x.id);   // what was attached to it, for "whenever equipped creature dies"
   detachFrom(c);
   for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'mutating', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
@@ -6323,8 +6333,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.3';
+const APP_VERSION = '0.99.4';
 const CHANGELOG = [
+  { v: '0.99.4', title: 'Rules dive 2: more death and equipment triggers', notes: ['NEW: "Whenever ~ or another creature dies" (Blood Artist style) now also triggers on its own death (CR 603.10a).','NEW: "Whenever equipped/enchanted creature dies, attacks, or deals combat damage" triggers on the Equipment or Aura (Skullclamp, Sword-style cards); the creature\'s death is remembered even though the attachment falls off (CR 603.10a, 301.5).'] },
   { v: '0.99.3', title: 'Rules dive 1: mass effects, hand effects, kicker, and more cards fully read', notes: ['A broad check of 93 well-known cards against the rules-text reader found 41 with lines the app only partly read; this release brings that to 11, and the rest are honest limits (the opponent\'s hand, board and library are not tracked in a goldfish game; divided damage; Balance-style choices).', 'NEW mass effects, read from the rules text: "Destroy all creatures / lands / each artifact, creature, and enchantment with mana value X or less", "Exile all ...", "Return all ... to their owners\' hands", "Tap / Untap all ..." with other / nonland / non-colour / tapped / power / mana value / keyword qualifiers (Wrath of God, Armageddon, Pernicious Deed...). Indestructible permanents survive; "can\'t be regenerated" is accepted.', 'NEW hands: "Each player discards their hand, then draws seven cards" (Wheel of Fortune, Windfall asks how many your opponent discarded), "Each player shuffles their hand and graveyard into their library, then draws seven" (Timetwister), "Draw three cards, then put two cards from your hand on top of your library in any order" (Brainstorm, with an ordering window), "You may put a land card from your hand onto the battlefield" (Growth Spiral).', 'NEW kicker: "If this spell was kicked, it deals 4 damage instead" (Burst Lightning) and "If this spell was kicked, ..." riders are applied when it resolves.', 'NEW look-at-the-top sorting can put cards onto the battlefield with a cap and a filter ("put up to two creature cards with mana value 3 or less ... onto the battlefield", Collected Company; buttons are disabled for cards that do not qualify).', 'NEW target-player compounds: "Target player draws two cards and loses 2 life" (Sign in Blood), "mills two cards", "discards two cards (at random)"; opponent halves that are not tracked are logged, not skipped.', 'NEW: Swords to Plowshares-style "Its controller gains life equal to its power" and Path to Exile-style "may search for a basic land", "Destroy target creature if it has mana value 2 or less" (Fatal Push), Oblivion Ring\'s paired enter / leave effects, "Return ~ to its owner\'s hand" (Rancor) and "put this artifact on top of its owner\'s library" (Sensei\'s Top), Gamble\'s random discard, Duress-style opponent hand reveals (acknowledged, not tracked), and the Suspend line.'] },
   { v: '0.99.2', title: 'Fix: Flow State and "if ..., instead" sorting', notes: ['FIXED: Flow State ignored its graveyard check. "Look at the top N cards ... put one into your hand and the rest on the bottom. If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand ..." is now read as a base sort plus a conditional "instead" sort (CR 608.2c): when it resolves the app checks the condition and uses the right one (and tells you if it cannot check a wording).', 'NEW condition wording: "there is an instant card and a sorcery card in your graveyard" / "you have a land card and a creature card in your graveyard" (each listed kind must be there), usable by any condition-reading effect.'] },
   { v: '0.99.1', title: 'No more silently skipped lines; Ponder; shuffle animation; themed pointers', notes: ['FIXED (engine): a card line the app only half understood could be dropped without a word. Ponder is the example: only "Draw a card" was read, so the look-and-reorder was skipped and the draw was applied automatically. Now (1) every sentence is checked action by action (look, shuffle, scry, mill, draw, discard, exile, destroy, sacrifice, create, search, put on top/bottom...) and any action the reader did not produce is flagged; (2) an effect with a flagged line is never auto-applied or Always-yielded; (3) the resolve window lists every line the app does NOT apply, with tick boxes, so nothing is skipped silently.', 'NEW: "Look at the top N cards of your library, then put them back in any order. You may shuffle." (Ponder and anything worded like it): you get an ordering window with up/down arrows and a shuffle tick box, then the rest of the effect (draw a card) happens.', 'NEW: "Shuffle it into its owner\'s library" (Blightsteel-style) and "Shuffle your hand and graveyard into your library" (Timetwister-style).', 'NEW: a riffle-shuffle animation over your library every time it is shuffled (search effects, fetch lands, the Shuffle button, Ponder). Turn it off under Settings > Motion & effects > Shuffle animation. Every shuffle now goes through one place, so none can be missed.', 'FIXED: a token whose name is also a creature type (Rat, Pest...) read its own name as "this creature" in rules text such as "for each other Rat you control", so Rat tokens never grew. "Gets +N/+N for each ..." is now read for any countable thing. Aura tokens that set base power and toughness (Cursed Role) now apply.', 'Every one-click set now switches the mouse pointer too: ink quill (Parchment), little galaxy (Pixel cosmos), crescent moon (Midnight), water drop (Abyss), leaf (Forest), neon arrow (Neon), gilded arrow (Obsidian). The pointers are also in Settings > Look & feel > Mouse cursor.'] },

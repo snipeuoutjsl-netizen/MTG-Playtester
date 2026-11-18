@@ -45,6 +45,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   memNote('left', c);
   if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
+  c._hostOf = state.battlefield.filter(x => x.att === c.id).map(x => x.id);   // what was attached to it, for "whenever equipped creature dies"
   detachFrom(c);
   for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'mutating', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
