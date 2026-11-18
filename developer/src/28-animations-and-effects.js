@@ -64,8 +64,8 @@ function animApply() {
   const now = [...document.querySelectorAll(CARD_SEL)], seen = new Set(), lib = centerOf('#libstack'), jobs = [];
   let newHand = 0;
   // v0.99.35 the opening hand is dealt one card at a time; after a mulligan the old hand goes back to the library first
-  const opening = document.body.classList.contains('opening'), nowIds = new Set(now.map(e => e.dataset.id)), returning = [...prev.cards.keys()].some(id => !nowIds.has(id) && (findCard(+id) || {}).zone === 'library');
-  const dealBase = opening && returning ? 420 : 0, dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
+  const opening = document.body.classList.contains('mullhand'), nowIds = new Set(now.map(e => e.dataset.id)), returning = [...prev.cards.keys()].some(id => !nowIds.has(id) && (findCard(+id) || {}).zone === 'library');
+  const dealBase = opening ? (state && state.dealDelay ? state.dealDelay * aspd() : returning ? 420 : 0) : 0,   /* animation units: wa() divides by the speed setting, and dealDelay is real time */ dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
   for (const el of now) {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
     let p = prev.cards.get(id); const ff = flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
@@ -78,7 +78,7 @@ function animApply() {
     } else if (el.closest('#row-hand') && lib) {
       const dx = lib.x - cx, dy = lib.y - cy, k = newHand++, delay = dealBase + Math.min(k, 8) * dealStep;
       jobs.push(() => { const an = wa(el, [{ translate: `${dx}px ${dy}px`, scale: '.4', rotate: '-10deg', opacity: opening ? 0 : 0.2 }, ...(opening ? [{ opacity: 1, offset: 0.12 }] : []), { translate: '0px 0px', scale: '1', rotate: '0deg', opacity: 1 }], { duration: dealDur, delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
-        if (opening && an) setTimeout(() => { try { sfx('draw'); } catch (e) { /* sound only */ } }, delay); });
+        if (opening && an) setTimeout(() => { try { sfx('draw'); } catch (e) { /* sound only */ } }, delay / aspd()); });
     } else {
       jobs.push(() => { wa(el, [{ transform: `${t === 'none' ? '' : t} scale(.55) translateY(-26px)`, opacity: 0, filter: 'brightness(2.2)' }, { transform: `${t === 'none' ? '' : t} scale(1.06)`, opacity: 1, filter: 'brightness(1.5)', offset: 0.6 }, { transform: t === 'none' ? 'none' : t, opacity: 1, filter: 'brightness(1)' }], { duration: 380, easing: 'ease-out' });
         const col = (SPOT_COL[spotKey(el)] || SPOT_COL['']); sparks(cx, cy, col[0], 7, 46, 520); });
@@ -88,7 +88,8 @@ function animApply() {
   if (jobs.length + gone.length > 45) return;
   jobs.forEach(j => j());
   if (opening && newHand) {   // hold the Opening hand prompt back until the last card has landed, then check the fit once more
-    const total = dealBase + (Math.min(newHand, 9) - 1) * dealStep + dealDur;
+    const total = (dealBase + (Math.min(newHand, 9) - 1) * dealStep + dealDur) / aspd() + 60;   // v0.99.36 real time: the animations run at the speed setting
+    if (state) state.dealDelay = 0;   // used once, by this deal
     document.body.classList.add('dealing'); clearTimeout(animApply.dealT);
     animApply.dealT = setTimeout(() => { document.body.classList.remove('dealing'); scheduleLayout(); }, total);
   }

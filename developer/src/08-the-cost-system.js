@@ -196,7 +196,12 @@ function additionalCosts(c) {
     if ((m = line.match(/^Offspring\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Offspring', mana: m[1], comps: [], offspring: true }); continue; }   // CR 702.175
     if ((m = line.match(/^Replicate\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Replicate', mana: m[1], comps: [], replicate: true }); continue; }   // v0.96.3
     if ((m = line.match(/^As an additional cost to cast this spell, (you may )?(.+?)\.?$/i))) {
-      const cs = parseCostComps(m[2], c.name), mana = manaOf(cs), rest = cs.filter(k => k.k !== 'mana');
+      // v0.99.36 CR 601.2b: "discard a card or pay {5}" (Lightning Axe) is ONE additional cost with a choice: you pick which to pay as you cast it.
+      // Split on "or" only when every side is a cost the app understands ("sacrifice an artifact or creature" stays one cost: "creature" alone is not a cost).
+      const parseSide = t => { const tt = t.trim().replace(/^pay (?=(?:\{[^}]+\})+$)/i, ''); const cs = parseCostComps(tt, c.name); return { label: t.trim(), mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), ok: cs.length > 0 && cs.every(k => k.k !== 'other') }; };
+      const sides = m[1] ? [] : m[2].split(/\s+or\s+/i).map(parseSide);
+      if (sides.length > 1 && sides.every(x => x.ok)) { req.choice = sides.map(({ label, mana, comps }) => ({ label, mana, comps })); continue; }
+      const cs = parseCostComps(m[2].replace(/^pay (?=(?:\{[^}]+\})+$)/i, ''), c.name), mana = manaOf(cs), rest = cs.filter(k => k.k !== 'mana');
       if (m[1]) optional.push({ label: m[2], mana, comps: rest }); else { req.mana += mana; req.comps.push(...rest); }
     } else if ((m = line.match(/^Kicker\s+((?:\{[^}]+\})+)\s*$/i))) optional.push({ label: 'Kicker', mana: m[1], comps: [], kicker: true });
     else if ((m = line.match(/^Kicker—(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); optional.push({ label: 'Kicker — ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), kicker: true }); }
@@ -207,9 +212,9 @@ function additionalCosts(c) {
 // Every way this card can be cast right now: { label, mana, comps, alt, ok, why, detail }
 function castRoutes(c, extra) {
   const ec = effectiveCost(c), ad = additionalCosts(c), alts = altCostsFor(c).filter(a => !(a.kind === 'warp' && c.fromExile));   // warp is a from-hand cost only
-  const mk = (label, mana, alt, cond) => {
-    const comps = ad.req.comps.concat(alt ? alt.comps : []);
-    const r = { label, mana: mergeGeneric(mana + (extra || '') + ad.req.mana), comps, alt, cond: cond || '', ok: true, why: '', detail: '' };
+  const mk = (label, mana, alt, cond, ch) => {
+    const comps = ad.req.comps.concat(alt ? alt.comps : [], ch ? ch.comps : []);
+    const r = { label: ch ? `${label} \u2014 additional cost: ${ch.label}` : label, mana: mergeGeneric(mana + (extra || '') + ad.req.mana + (ch ? ch.mana : '')), comps, alt, cond: cond || '', ok: true, why: '', detail: '', addChoice: ch ? ch.label : '' };
     const cw = compsFeasible(comps.filter(k => k.k !== 'other'), c.id);
     const altWhy = alt && alt.test ? alt.test(c) : '';
     if (altWhy) { r.ok = false; r.why = 'condition'; r.detail = altWhy; }
@@ -220,9 +225,11 @@ function castRoutes(c, extra) {
     }
     return r;
   };
-  if (c.fromGy) { const a = { kind: 'flashback', label: c.fromGy.label, mana: c.fromGy.mana, comps: c.fromGy.comps || [] }; return [mk(a.label, taxed(a.mana, ec), a, '')]; }
-  const routes = [mk(alts.length || ad.optional.length ? 'Normal cost' : 'Cast', ec.cost, null)];
-  for (const a of alts) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond));
+  const chs = ad.req.choice && ad.req.choice.length ? ad.req.choice : [null];   // one way to cast per choice of additional cost (CR 601.2b; it applies to flashback too)
+  if (c.fromGy) { const a = { kind: 'flashback', label: c.fromGy.label, mana: c.fromGy.mana, comps: c.fromGy.comps || [] }; return chs.map(ch => mk(a.label, taxed(a.mana, ec), a, '', ch)); }
+  const routes = [];
+  for (const ch of chs) routes.push(mk(alts.length || ad.optional.length || ch ? 'Normal cost' : 'Cast', ec.cost, null, '', ch));
+  for (const a of alts) for (const ch of chs) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond, ch));
   const lim = routeLimits(c, routes); return lim.length ? lim : routes;
 }
 function manaFeasible(c, mana) {

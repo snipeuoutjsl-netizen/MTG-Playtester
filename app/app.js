@@ -1404,7 +1404,7 @@ function modalText(md, idxs) {
 }
 function mergeGeneric(cost) { let n = 0; const rest = []; for (const m of String(cost || '').match(/\{[^}]+\}/g) || []) { if (/^\{\d+\}$/.test(m)) n += +m.slice(1, -1); else rest.push(m); } return (n ? `{${n}}` : '') + rest.join(''); }
 function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : md.escalate ? md.escalate.repeat(Math.max(0, idxs.length - 1)) : ''; }
-function openModeChoice(name, md, cb, baseCost) {
+function openModeChoice(name, md, cb, baseCost, onCancel) {
   const chosen = new Set();
   const m = modal(`${name}: choose ${md.spree ? 'additional costs' : md.min === md.max ? md.max === 1 ? 'one mode' : md.max + ' modes' : md.label}`, { width: 640, sticky: true });
   const info = h('div', { class: 'psub' });
@@ -1432,7 +1432,7 @@ function openModeChoice(name, md, cb, baseCost) {
   m.body.prepend(info);
   m.body.append(total, teach('rulesHints') ? h('div', { class: 'muted small', text: 'Modes are chosen as you cast the spell, before you pay. You cannot pick the same mode twice, and the chosen modes happen in the order they are printed.' }) : null);
   ok.addEventListener('click', () => { m.close(); cb(md.repeat ? Object.entries(counts).flatMap(([i, k]) => Array(k).fill(+i)).sort((a, b) => a - b) : [...chosen].sort((a, b) => a - b)); });
-  m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }), ok);
+  m.foot.append(h('button', { text: 'Cancel', onclick: () => { m.close(); if (onCancel) onCancel(); } }), ok);
   refresh();
 }
 
@@ -1473,23 +1473,25 @@ function openAlwaysYield() {
   draw(); m.foot.append(h('button', { text: 'Clear all', onclick: () => { if (state) state.ay = {}; draw(); } }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
 }
 function openTriggerBatch(batch) {
-  const m = modal(batch.length > 1 ? `${batch.length} triggered abilities` : 'Triggered ability', { width: 640, sticky: true, noClose: true });
+  // v0.99.36 CR 603.3: a triggered ability goes on the stack by itself the next time a player would receive priority; nobody confirms it. The only choices are
+  // the ORDER of abilities that trigger at the same time (603.3b) and their modes and targets (603.3c-d); "may" is decided when it resolves (603.5).
+  // So this window opens only to order two or more abilities (or when a single one's choice was cancelled, to decline an ability the app wrongly detected).
+  let m = null; const win = () => m || (m = modal(remaining.length > 1 ? `${remaining.length} triggered abilities: choose the order` : 'Triggered ability', { width: 640, sticky: true, noClose: true }));
   const remaining = [...batch], placed = [];
-  const body = m.body;
   const finish = () => {
-    m.close();
+    if (m) m.close();
     if (placed.length) { render(); askAlwaysYield(placed, () => { render(); if (placed.every(x => x._auto)) ayResolveAuto(); else openStack(); }); }
     else { render(); resolvePendingTrigger(); }
   };
   const put = t => {
     const md = parseModal(t.effect);
-    if (md) { openModeChoice(t.cardName, md, idxs => putWith(t, modalText(md, idxs))); return; }
+    if (md) { openModeChoice(t.cardName, md, idxs => putWith(t, modalText(md, idxs)), undefined, () => draw()); return; }
     putWith(t, t.effect);
   };
   const putWith = (t, text) => {
     const specs = t.special ? [] : parseTargetSpecs(text);
     if (specs.length) {   // a trigger's targets are chosen as it goes on the stack
-      chooseTargets(t.cardName, specs, picked => { if (t._ayRefresh) { t._ayRefresh.targets = picked.map(x => ({ ...x })); t._ayRefresh.sig = legalSig(specs, t.cardId); log(`Always yield: ${t.cardName}'s remembered targets were updated`); } pushWith(t, text, picked); }, { srcId: t.cardId, auto: true, onCancel: () => {} }); return;
+      chooseTargets(t.cardName, specs, picked => { if (t._ayRefresh) { t._ayRefresh.targets = picked.map(x => ({ ...x })); t._ayRefresh.sig = legalSig(specs, t.cardId); log(`Always yield: ${t.cardName}'s remembered targets were updated`); } pushWith(t, text, picked); }, { srcId: t.cardId, auto: true, onCancel: () => draw() }); return;
     }
     pushWith(t, text, null);
   };
@@ -1505,7 +1507,8 @@ function openTriggerBatch(batch) {
   };
   const skip = t => { remaining.splice(remaining.indexOf(t), 1); log(`${t.cardName}: trigger ${t.optional ? 'declined' : 'did not apply'}`); if (!remaining.length) finish(); else draw(); };
   const draw = () => {
-    body.replaceChildren(...[
+    if (!remaining.length) return;
+    win().body.replaceChildren(...[
       teach('stackGuidance') ? h('div', { class: 'psub', text: remaining.length > 1 ? 'Several abilities triggered at once. You choose the order they go on the stack. The LAST one you put on the stack resolves FIRST.' : 'A triggered ability goes on the stack, then resolves like a spell. Read it: if it says "you may", or has a condition, decide whether it applies.' }) : null,
       ...remaining.map(t => h('div', { class: 'trig' },
         h('div', { class: 'trig-src', text: t.cardName }),
@@ -1524,6 +1527,7 @@ function openTriggerBatch(batch) {
     else if (e.sig && e.sig !== legalSig(specs, t.cardId)) { t._ayRefresh = e; log(`Always yield: ${t.cardName} has a different set of possible targets than when you set it, so you choose again`); }   // a new (or missing) possible target: ask again
     else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
   }
+  if (remaining.length === 1) { put(remaining[0]); return; }   // one ability: straight onto the stack (asking only for its modes / targets)
   if (remaining.length) draw();
 }
 const NUMW = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
@@ -2493,7 +2497,12 @@ function additionalCosts(c) {
     if ((m = line.match(/^Offspring\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Offspring', mana: m[1], comps: [], offspring: true }); continue; }   // CR 702.175
     if ((m = line.match(/^Replicate\s+((?:\{[^}]+\})+)\s*$/i))) { optional.push({ label: 'Replicate', mana: m[1], comps: [], replicate: true }); continue; }   // v0.96.3
     if ((m = line.match(/^As an additional cost to cast this spell, (you may )?(.+?)\.?$/i))) {
-      const cs = parseCostComps(m[2], c.name), mana = manaOf(cs), rest = cs.filter(k => k.k !== 'mana');
+      // v0.99.36 CR 601.2b: "discard a card or pay {5}" (Lightning Axe) is ONE additional cost with a choice: you pick which to pay as you cast it.
+      // Split on "or" only when every side is a cost the app understands ("sacrifice an artifact or creature" stays one cost: "creature" alone is not a cost).
+      const parseSide = t => { const tt = t.trim().replace(/^pay (?=(?:\{[^}]+\})+$)/i, ''); const cs = parseCostComps(tt, c.name); return { label: t.trim(), mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), ok: cs.length > 0 && cs.every(k => k.k !== 'other') }; };
+      const sides = m[1] ? [] : m[2].split(/\s+or\s+/i).map(parseSide);
+      if (sides.length > 1 && sides.every(x => x.ok)) { req.choice = sides.map(({ label, mana, comps }) => ({ label, mana, comps })); continue; }
+      const cs = parseCostComps(m[2].replace(/^pay (?=(?:\{[^}]+\})+$)/i, ''), c.name), mana = manaOf(cs), rest = cs.filter(k => k.k !== 'mana');
       if (m[1]) optional.push({ label: m[2], mana, comps: rest }); else { req.mana += mana; req.comps.push(...rest); }
     } else if ((m = line.match(/^Kicker\s+((?:\{[^}]+\})+)\s*$/i))) optional.push({ label: 'Kicker', mana: m[1], comps: [], kicker: true });
     else if ((m = line.match(/^Kicker—(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); optional.push({ label: 'Kicker — ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), kicker: true }); }
@@ -2504,9 +2513,9 @@ function additionalCosts(c) {
 // Every way this card can be cast right now: { label, mana, comps, alt, ok, why, detail }
 function castRoutes(c, extra) {
   const ec = effectiveCost(c), ad = additionalCosts(c), alts = altCostsFor(c).filter(a => !(a.kind === 'warp' && c.fromExile));   // warp is a from-hand cost only
-  const mk = (label, mana, alt, cond) => {
-    const comps = ad.req.comps.concat(alt ? alt.comps : []);
-    const r = { label, mana: mergeGeneric(mana + (extra || '') + ad.req.mana), comps, alt, cond: cond || '', ok: true, why: '', detail: '' };
+  const mk = (label, mana, alt, cond, ch) => {
+    const comps = ad.req.comps.concat(alt ? alt.comps : [], ch ? ch.comps : []);
+    const r = { label: ch ? `${label} \u2014 additional cost: ${ch.label}` : label, mana: mergeGeneric(mana + (extra || '') + ad.req.mana + (ch ? ch.mana : '')), comps, alt, cond: cond || '', ok: true, why: '', detail: '', addChoice: ch ? ch.label : '' };
     const cw = compsFeasible(comps.filter(k => k.k !== 'other'), c.id);
     const altWhy = alt && alt.test ? alt.test(c) : '';
     if (altWhy) { r.ok = false; r.why = 'condition'; r.detail = altWhy; }
@@ -2517,9 +2526,11 @@ function castRoutes(c, extra) {
     }
     return r;
   };
-  if (c.fromGy) { const a = { kind: 'flashback', label: c.fromGy.label, mana: c.fromGy.mana, comps: c.fromGy.comps || [] }; return [mk(a.label, taxed(a.mana, ec), a, '')]; }
-  const routes = [mk(alts.length || ad.optional.length ? 'Normal cost' : 'Cast', ec.cost, null)];
-  for (const a of alts) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond));
+  const chs = ad.req.choice && ad.req.choice.length ? ad.req.choice : [null];   // one way to cast per choice of additional cost (CR 601.2b; it applies to flashback too)
+  if (c.fromGy) { const a = { kind: 'flashback', label: c.fromGy.label, mana: c.fromGy.mana, comps: c.fromGy.comps || [] }; return chs.map(ch => mk(a.label, taxed(a.mana, ec), a, '', ch)); }
+  const routes = [];
+  for (const ch of chs) routes.push(mk(alts.length || ad.optional.length || ch ? 'Normal cost' : 'Cast', ec.cost, null, '', ch));
+  for (const a of alts) for (const ch of chs) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond, ch));
   const lim = routeLimits(c, routes); return lim.length ? lim : routes;
 }
 function manaFeasible(c, mana) {
@@ -3797,10 +3808,10 @@ function drawHandPickBar() {
   const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
   const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
   { const oh = !!state && state.phase === 'mull' && !state.bottomPhase, wasOh = document.body.classList.contains('mullhand'); document.body.classList.toggle('mullhand', oh); if (oh !== wasOh) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the opening hand is shown large too
-  { const op = !!state && (state.phase === 'mull' || state.phase === 'pregame'), wasOp = document.body.classList.contains('opening'); document.body.classList.toggle('opening', op); if (!op && wasOp) openingSize = null; if (op !== wasOp) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.35 one state from the deal to the first turn: the hand keeps one size throughout
   { const was = document.body.classList.contains('mullpick'); document.body.classList.toggle('mullpick', mb); if (was !== mb) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the mulligan step brings the hand up, larger and centred
   document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
-  const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
+  // v0.99.36 the stamp on a chosen card says what happens to it (it always said DISCARD, even for a mulligan's put-on-the-bottom)
+  const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); { const v = mb ? 'bottom' : String((handPick && handPick.verb) || 'discard').toLowerCase(); wrap.dataset.pick = v; wrap.style.setProperty('--pickstamp', JSON.stringify(v === 'bottom' ? 'BOTTOM' : v.split(/\s+/)[0].toUpperCase())); } bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
   if (mb) {
     const n = state.mulls, cnt = bottomSel.size, serum = state.serumPending;
     bar.replaceChildren(
@@ -3905,7 +3916,7 @@ function drawCards(n, silent) {
 }
 
 // v0.99.35 the Opening hand prompt waits until the hand has been dealt; animApply ends it when the last card lands (a safety timer ends it regardless)
-function dealingStart() { if (!animOn('move') || reducedMotion()) return; document.body.classList.add('dealing'); clearTimeout(dealingStart.t); dealingStart.t = setTimeout(() => document.body.classList.remove('dealing'), 3200); }
+function dealingStart() { if (!animOn('move') || reducedMotion()) return; document.body.classList.add('dealing'); clearTimeout(dealingStart.t); dealingStart.t = setTimeout(() => document.body.classList.remove('dealing'), 5000); }
 function startGame() {
   dealingStart();
   lifePrev = { you: null, opp: null }; lastStepShown = null;
@@ -3925,7 +3936,8 @@ function startGame() {
     const rec = resolve(name);
     for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.sideboard.push(c); }
   }
-  shuffleLib({ quiet: true });
+  shuffleLib({ delay: 120 });   // v0.99.36 CR 103.2: the deck is shuffled at the start of the game, on screen, and then the seven are dealt
+  state.dealDelay = 120 + riffleDuration();
   drawCards(7, true);
   state.phase = 'mull';
   state.onPlay = $('#chkPlay').checked;
@@ -3939,8 +3951,9 @@ function doMulligan() {
   dealingStart();
   if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
-  state.library.push(...state.hand.splice(0));
-  shuffleLib({ quiet: true });
+  state.library.push(...state.hand.splice(0));   // CR 103.5: the whole hand goes back into the library ...
+  shuffleLib({ delay: 450 });   // ... which is shuffled (on screen, once the old hand has landed on it) ...
+  state.dealDelay = 450 + riffleDuration();   // ... then a new seven is dealt (London mulligan, CR 103.5)
   const free = !!state.cmdMode && !state.freeMullUsed;   // CR 103.5c: in a multiplayer game such as Commander the first mulligan is free
   if (free) state.freeMullUsed = true; else state.mulls++;
   drawCards(7, true);
@@ -4119,9 +4132,19 @@ function startTurn() {
   flushTriggers();
 }
 
+// v0.99.36 CR 508.1d: a creature that "attacks each combat if able" must be among the attackers you declare. You still declare (the Declare attackers window,
+// with it already chosen and locked, and you may add others); no way of moving on (Next, clicking a later step, Next turn) may pass the declare-attackers step without it.
+function requiredAttackGate(target) {
+  if (!state || state.phase !== 'play' || state.combat.declared) return false;
+  const atk = STEPS.findIndex(s => s.id === 'attack'); if (atk < 0 || state.step > atk || target <= atk && state.step !== atk) return false;
+  if (!mandatoryAttackers().length) return false;
+  if (state.step < atk) { snap(); for (let j = state.step + 1; j <= atk && !state.discarding && !state.pendingTriggers.length; j++) enterStep(j, j !== atk); render(); flushTriggers(); if (state.step !== atk) return true; }
+  openCombatHelper(); return true;
+}
 function jumpToStep(i) {
   if (stackLocked()) { if (i > state.step) stackToast(); return; }
   if (isBlocked() || i <= state.step) { if (state && state.phasePause && i > state.step) toast('Continue first', 'Finish the pause at this step (press Next) before skipping ahead.'); return; }
+  if (requiredAttackGate(i)) return;
   snap();
   for (let j = state.step + 1; j <= i && !state.discarding && !(j > state.step + 1 && state.pendingTriggers.length); j++) enterStep(j, j !== i);
   render();
@@ -4133,7 +4156,7 @@ function nextPhase() {
   if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
-  if (STEPS[state.step].id === 'attack' && !state.combat.declared && declareMandatoryAttackers()) return;
+  if (requiredAttackGate(state.step + 1)) return;
   if (STEPS[state.step].id === 'attack' && !state.combat.declared && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
   if (state.step >= CLEANUP) { nextTurn(); return; }
   jumpToStep(state.step + 1);
@@ -4144,6 +4167,7 @@ function nextTurn() {
   if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
+  if (requiredAttackGate(CLEANUP)) return;
   snap();
   if (state.step < CLEANUP) { for (let j = state.step + 1; j <= CLEANUP && !state.discarding && !state.pendingTriggers.length; j++) enterStep(j, true); }
   if (state.pendingTriggers.length) { render(); flushTriggers(); return; }
@@ -5630,38 +5654,33 @@ function fitBattlefieldCards() {
   }
 }
 
-let openingSize = null;   // v0.99.35 { key, cw }: the locked hand size for the current opening sequence
 function layoutHand() {
   const row = $('#row-hand'), cards = [...row.children], hw = $('#handWrap');
   for (const c of cards) c.style.marginLeft = '';
   // Opening hand / mulligan: size the cards so the WHOLE hand fits on screen (width and height), whatever the window size
-  if (document.body.classList.contains('opening')) {
-    // v0.99.35 One card size for the whole opening (deal, mulligans, put-on-the-bottom, pre-game actions), so the hand never jumps between steps.
-    // Sized for at least seven cards, so bottoming cards does not change it; it shrinks only when something would otherwise not fit (a small window, an eighth card from Draw 1, a tall prompt).
+  if (document.body.classList.contains('mullhand')) {
+    // v0.99.36 The large hand is only for the Keep / Mulligan decision (so the whole hand can be read); from Keep on it is the normal hand.
+    // Sized for seven cards in this window, then shrunk only while a resting card would leave the table or cover the prompt.
     const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 7);
-    const key = innerWidth + 'x' + innerHeight + (img ? 'i' : 't') + ':' + n;
-    // Start from the size worked out for seven cards in this window and shrink only while something does not fit (measured before the frame is drawn, ignoring cards still being dealt);
-    // the result is kept for the rest of the opening, so a later step never makes the hand jump back up.
     const aw = Math.max(hw.parentElement ? hw.parentElement.clientWidth : innerWidth, 300) - 70;
     let cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
-    if (openingSize && openingSize.win === key.split(':')[0]) cw = Math.min(cw, openingSize.cw);   // one size for the whole sequence: once a step needed it smaller, later steps keep it (a new window size starts over)
-    { const sig = state ? state.phase + (state.bottomPhase ? '/b' : '') : '';   // the first frame of a new step is still mid-switch (old bar, new box): use the current size and measure on the next frame
-      if (openingSize && openingSize.sig !== sig) { openingSize.sig = sig; hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px'); spreadHand(row, cards); requestAnimationFrame(scheduleLayout); return; } }
-    // Measure the real (fanned) card boxes against the table and the prompt; cards still flying in from the deal are skipped (they are not where they will rest).
-    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 6;   // a selected card in the put-on-the-bottom step shifts a pixel or two: that must not resize the hand
-    const settled = c => { if (c.matches(':hover')) return false; try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };
+    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 6;
+    const settled = c => { if (c.matches(':hover')) return false; try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };   // cards still being dealt are not where they will rest
     for (let g = 0; g < 14; g++) {
       hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
       spreadHand(row, cards);
-      { const rr = row.getBoundingClientRect(), st = $('#stage'); if (st && rr.height) st.style.setProperty('--openhand', Math.max(0, Math.round(box.bottom - rr.top)) + 'px'); }   // prompts are centred in the space above the hand
-      const pc = $('#overlay:not([hidden]) .pcard'), pr = pc && pc.getBoundingClientRect(), top = pc && pc.offsetHeight ? (pr.top + pr.bottom) / 2 + pc.offsetHeight / 2 + 10 : -Infinity;   // the prompt's real size (it is drawn scaled down while it fades in)
-      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - 2 || r.top < top; });   // the bottom only has to stay inside the table: the fan's tilt there does not shrink with the cards
+      { // v0.99.36 up and centred: the prompt and the hand sit together in the middle of the table (the hand used to rest on its bottom edge)
+        const pc0 = $('#overlay:not([hidden]) .pcard'), ph = pc0 ? pc0.offsetHeight : 0, hh = row.getBoundingClientRect().height + 30;
+        const lift = Math.max(14, Math.round((box.height - (ph + 24 + hh)) / 2));
+        hw.style.paddingBottom = lift + 'px'; }
+      { const rr = row.getBoundingClientRect(), st = $('#stage'); if (st && rr.height) st.style.setProperty('--openhand', Math.max(0, Math.round(box.bottom - rr.top)) + 'px'); }   // the prompt is centred in the space above the hand
+      const pc = $('#overlay:not([hidden]) .pcard'), pr = pc && pc.getBoundingClientRect(), top = pc && pc.offsetHeight ? (pr.top + pr.bottom) / 2 + pc.offsetHeight / 2 + 10 : -Infinity;   // the prompt's real size (it is drawn scaled while it fades in)
+      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - 2 || r.top < top; });
       if (!out || cw <= 90) break;
       cw = Math.max(90, Math.floor(cw * 0.93));
     }
-    openingSize = { key, win: key.split(':')[0], cw, sig: state ? state.phase + (state.bottomPhase ? '/b' : '') : '' };
     return;
-  } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); }
+  } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); hw.style.paddingBottom = ''; }
   spreadHand(row, cards);
 }
 
@@ -5912,7 +5931,7 @@ function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});
   m.body.append(h('div',{class:'psub',text:`You have ${n} creature${n===1?'':'s'} that can attack, and you have not declared attackers this turn.`}));
-  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();if(declareMandatoryAttackers())return;state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
+  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();if(mandatoryAttackers().length){openCombatHelper();return;}state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
 }
 function renderOverlay() {
   const ov = $('#overlay');
@@ -6573,8 +6592,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.35';
+const APP_VERSION = '0.99.36';
 const CHANGELOG = [
+  { v: '0.99.36', title: 'Opening hand, attack requirements, triggers on the stack, choice costs', notes: ['Opening hand: the large, centred hand is only for deciding whether to keep or mulligan, so you can read every card. From Keep on (putting cards on the bottom, Pre-game actions, your first turn) it is the normal hand. The prompt and the hand sit together in the middle of the table.','Mulligan and new game: you see the whole hand go back into the library, the library shuffle, and the new seven dealt one at a time (rules 103.2 and 103.5). Shuffles were already correct (an unbiased Fisher-Yates shuffle with cryptographic randomness); this is now checked by statistical tests.','The card you choose for a mulligan is stamped BOTTOM, not DISCARD (the stamp now says what happens to the card).','FIXED (rules): a creature that "attacks each combat if able" (Dragon\u2019s Rage Channeler with delirium, Goblin Rabblemaster\u2019s Goblins...) no longer attacks by itself. The Declare attackers window opens with it already chosen and locked, and you may add other attackers (rule 508.1d). Clicking a later step or Next turn also stops at declare attackers instead of skipping the requirement.','Triggered abilities go on the stack by themselves (rule 603.3): there is no "Put on the stack" button for a single ability. You are asked only for its targets or modes; if several abilities trigger at once, a window asks for their order (rule 603.3b). A "you may" choice is made when the ability resolves (rule 603.5).','FIXED (rules): an additional cost with a choice, such as Lightning Axe\u2019s "discard a card or pay {5}", is read as two ways to cast the spell (rule 601.2b); each is offered when you can pay it.'] },
   { v: '0.99.35', title: 'A smoother opening hand; the stack shown on top of the table', notes: ['Opening hand: your seven cards are dealt one at a time from the library, and the Opening hand box appears once the last card has landed. After a mulligan the old hand goes back to the library first, then the new one is dealt.','The hand keeps one size from the deal, through mulligans and choosing cards for the bottom, to the Pre-game actions screen, and only goes back to normal size when your first turn begins. On a small window it takes the size that fits every step instead of changing between them.','Pre-game actions shows the first sentence of each card (the full text is in its tooltip), so the screen stays compact.','Stack: the stack panel in the middle of the table is now solid and always on top. Your board is dimmed behind it, your cards and permanents stay usable so you can respond, and the panel shrinks to fit above your hand, so no card or zone covers it or its buttons.'] },
   { v: '0.99.34', title: 'UI check: top bar on wide screens, tidier start of game', notes: ['FIXED: on wide windows (over 1700 pixels) the top bar labels (Undo, Shuffle, Draw, Untap all, Token, Stack) were squeezed into small square buttons, overlapped each other and covered the next button, so a click could hit the wrong one. They now get their full width.','The Pre-game actions screen only appears when a card in your opening hand can actually do something before the game (Leylines, opening-hand reveals...). It no longer stops every game just to say there is nothing to do.','The Opening hand box no longer says "Your hand is shown below."','Pop-ups opened during the opening hand (for example Deck view) now fit above your hand and scroll, instead of running off the top of the window.','The "Download card data?" prompt closes by itself once card data has been loaded from a file.'] },
   { v: '0.99.33', title: 'X counters fixed, animated artifacts show their P/T, no floating Hand bar', notes: ['FIXED (rules): "enters with X +1/+1 counters" was applied twice. Walking Ballista cast with X = 3 (paying 6 mana for {X}{X}) now enters with 3 counters, not 6; Hangarback Walker and every other X creature likewise. X counters still go through Hardened Scales and similar effects once, and a permanent that enters without being cast has X = 0 (rule 107.3m). "Twice X" is read too.','FIXED: when an effect sets a creature\u2019s power and toughness (Karn, the Great Creator making an artifact a creature, a land that becomes a creature, "base power and toughness N/N"), the P/T box now shows on card pictures. The new value was treated as the printed one, so with images on nothing was shown (rule 613.4b). Hover the box to see which effect set it.','The floating Hand bar over your hand is gone. The Card outline key (what the green, red and gold outlines mean) is now in the \u2630 Game tools menu and opens in a normal window.','FIXED: How the app reads cards no longer fails on 837 cards (Magma Sliver, Flashback and others) when no game is running.'] },
@@ -8007,8 +8027,8 @@ function animApply() {
   const now = [...document.querySelectorAll(CARD_SEL)], seen = new Set(), lib = centerOf('#libstack'), jobs = [];
   let newHand = 0;
   // v0.99.35 the opening hand is dealt one card at a time; after a mulligan the old hand goes back to the library first
-  const opening = document.body.classList.contains('opening'), nowIds = new Set(now.map(e => e.dataset.id)), returning = [...prev.cards.keys()].some(id => !nowIds.has(id) && (findCard(+id) || {}).zone === 'library');
-  const dealBase = opening && returning ? 420 : 0, dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
+  const opening = document.body.classList.contains('mullhand'), nowIds = new Set(now.map(e => e.dataset.id)), returning = [...prev.cards.keys()].some(id => !nowIds.has(id) && (findCard(+id) || {}).zone === 'library');
+  const dealBase = opening ? (state && state.dealDelay ? state.dealDelay * aspd() : returning ? 420 : 0) : 0,   /* animation units: wa() divides by the speed setting, and dealDelay is real time */ dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
   for (const el of now) {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
     let p = prev.cards.get(id); const ff = flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
@@ -8021,7 +8041,7 @@ function animApply() {
     } else if (el.closest('#row-hand') && lib) {
       const dx = lib.x - cx, dy = lib.y - cy, k = newHand++, delay = dealBase + Math.min(k, 8) * dealStep;
       jobs.push(() => { const an = wa(el, [{ translate: `${dx}px ${dy}px`, scale: '.4', rotate: '-10deg', opacity: opening ? 0 : 0.2 }, ...(opening ? [{ opacity: 1, offset: 0.12 }] : []), { translate: '0px 0px', scale: '1', rotate: '0deg', opacity: 1 }], { duration: dealDur, delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
-        if (opening && an) setTimeout(() => { try { sfx('draw'); } catch (e) { /* sound only */ } }, delay); });
+        if (opening && an) setTimeout(() => { try { sfx('draw'); } catch (e) { /* sound only */ } }, delay / aspd()); });
     } else {
       jobs.push(() => { wa(el, [{ transform: `${t === 'none' ? '' : t} scale(.55) translateY(-26px)`, opacity: 0, filter: 'brightness(2.2)' }, { transform: `${t === 'none' ? '' : t} scale(1.06)`, opacity: 1, filter: 'brightness(1.5)', offset: 0.6 }, { transform: t === 'none' ? 'none' : t, opacity: 1, filter: 'brightness(1)' }], { duration: 380, easing: 'ease-out' });
         const col = (SPOT_COL[spotKey(el)] || SPOT_COL['']); sparks(cx, cy, col[0], 7, 46, 520); });
@@ -8031,7 +8051,8 @@ function animApply() {
   if (jobs.length + gone.length > 45) return;
   jobs.forEach(j => j());
   if (opening && newHand) {   // hold the Opening hand prompt back until the last card has landed, then check the fit once more
-    const total = dealBase + (Math.min(newHand, 9) - 1) * dealStep + dealDur;
+    const total = (dealBase + (Math.min(newHand, 9) - 1) * dealStep + dealDur) / aspd() + 60;   // v0.99.36 real time: the animations run at the speed setting
+    if (state) state.dealDelay = 0;   // used once, by this deal
     document.body.classList.add('dealing'); clearTimeout(animApply.dealT);
     animApply.dealT = setTimeout(() => { document.body.classList.remove('dealing'); scheduleLayout(); }, total);
   }
@@ -11958,8 +11979,10 @@ for (const [id, cur] of [['default', 'moon'], ['obsidian', 'gold'], ['abyss', 'd
 function shuffleLib(o = {}) {
   if (!state) return;
   shuffle(state.library); state.shuffles = (state.shuffles || 0) + 1;
-  if (!o.quiet) { try { riffleAnimation(); } catch (e) {} }
+  if (!o.quiet) { try { if (o.delay) setTimeout(riffleAnimation, o.delay); else riffleAnimation(); } catch (e) {} }
 }
+// v0.99.36 how long the riffle takes on screen (0 when shuffle animations are off), so the opening deal can wait for it
+function riffleDuration() { return (typeof document !== 'undefined' && animOn('shuffle')) ? (3 * 340 + 160) / aspd() : 0; }
 function riffleAnimation() {
   if (!animOn('shuffle') || typeof document === 'undefined') return;
   const el = document.querySelector('#libstack'); if (!el) return; const r = el.getBoundingClientRect(); if (!r.width) return;
@@ -12486,14 +12509,6 @@ function mustAttackWhy(c) {   // '' unless this creature is required to attack e
   return '';
 }
 const mandatoryAttackers = () => state ? state.battlefield.filter(c => permZone(c) === 'creatures' && !attackBlock(c) && mustAttackWhy(c)) : [];
-function declareMandatoryAttackers() {   // the player leaves the declare-attackers step without declaring: the required attackers attack anyway
-  const req = mandatoryAttackers(); if (!req.length || state.combat.declared) return false;
-  snap(); state.combat.attackers = req.map(c => c.id); state.combat.declared = true;
-  for (const c of req) if (!hasKw(c, 'vigilance')) c.tapped = true;
-  log(`Declared attackers (required): ${req.map(c => c.name).join(', ')} — ${[...new Set(req.map(c => mustAttackWhy(c)))].join('; ')}`);
-  toast('Required attackers', `${req.map(c => c.name).join(', ')} must attack: the rules require it whenever it is able to (CR 508.1d). It was declared for you.`);
-  fireTrigger('attack', { cards: req }); render(); flushTriggers(); return true;
-}
 
 // ---- Protection (CR 702.16b): a permanent with protection from a quality can't be the target of spells or abilities from sources with that quality.
 // Read from printed "Protection from red" and from active "has protection from all colors as long as ..." statics. Only your own spells and abilities choose targets in a goldfish game.

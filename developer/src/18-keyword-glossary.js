@@ -321,38 +321,33 @@ function fitBattlefieldCards() {
   }
 }
 
-let openingSize = null;   // v0.99.35 { key, cw }: the locked hand size for the current opening sequence
 function layoutHand() {
   const row = $('#row-hand'), cards = [...row.children], hw = $('#handWrap');
   for (const c of cards) c.style.marginLeft = '';
   // Opening hand / mulligan: size the cards so the WHOLE hand fits on screen (width and height), whatever the window size
-  if (document.body.classList.contains('opening')) {
-    // v0.99.35 One card size for the whole opening (deal, mulligans, put-on-the-bottom, pre-game actions), so the hand never jumps between steps.
-    // Sized for at least seven cards, so bottoming cards does not change it; it shrinks only when something would otherwise not fit (a small window, an eighth card from Draw 1, a tall prompt).
+  if (document.body.classList.contains('mullhand')) {
+    // v0.99.36 The large hand is only for the Keep / Mulligan decision (so the whole hand can be read); from Keep on it is the normal hand.
+    // Sized for seven cards in this window, then shrunk only while a resting card would leave the table or cover the prompt.
     const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 7);
-    const key = innerWidth + 'x' + innerHeight + (img ? 'i' : 't') + ':' + n;
-    // Start from the size worked out for seven cards in this window and shrink only while something does not fit (measured before the frame is drawn, ignoring cards still being dealt);
-    // the result is kept for the rest of the opening, so a later step never makes the hand jump back up.
     const aw = Math.max(hw.parentElement ? hw.parentElement.clientWidth : innerWidth, 300) - 70;
     let cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
-    if (openingSize && openingSize.win === key.split(':')[0]) cw = Math.min(cw, openingSize.cw);   // one size for the whole sequence: once a step needed it smaller, later steps keep it (a new window size starts over)
-    { const sig = state ? state.phase + (state.bottomPhase ? '/b' : '') : '';   // the first frame of a new step is still mid-switch (old bar, new box): use the current size and measure on the next frame
-      if (openingSize && openingSize.sig !== sig) { openingSize.sig = sig; hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px'); spreadHand(row, cards); requestAnimationFrame(scheduleLayout); return; } }
-    // Measure the real (fanned) card boxes against the table and the prompt; cards still flying in from the deal are skipped (they are not where they will rest).
-    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 6;   // a selected card in the put-on-the-bottom step shifts a pixel or two: that must not resize the hand
-    const settled = c => { if (c.matches(':hover')) return false; try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };
+    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 6;
+    const settled = c => { if (c.matches(':hover')) return false; try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };   // cards still being dealt are not where they will rest
     for (let g = 0; g < 14; g++) {
       hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
       spreadHand(row, cards);
-      { const rr = row.getBoundingClientRect(), st = $('#stage'); if (st && rr.height) st.style.setProperty('--openhand', Math.max(0, Math.round(box.bottom - rr.top)) + 'px'); }   // prompts are centred in the space above the hand
-      const pc = $('#overlay:not([hidden]) .pcard'), pr = pc && pc.getBoundingClientRect(), top = pc && pc.offsetHeight ? (pr.top + pr.bottom) / 2 + pc.offsetHeight / 2 + 10 : -Infinity;   // the prompt's real size (it is drawn scaled down while it fades in)
-      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - 2 || r.top < top; });   // the bottom only has to stay inside the table: the fan's tilt there does not shrink with the cards
+      { // v0.99.36 up and centred: the prompt and the hand sit together in the middle of the table (the hand used to rest on its bottom edge)
+        const pc0 = $('#overlay:not([hidden]) .pcard'), ph = pc0 ? pc0.offsetHeight : 0, hh = row.getBoundingClientRect().height + 30;
+        const lift = Math.max(14, Math.round((box.height - (ph + 24 + hh)) / 2));
+        hw.style.paddingBottom = lift + 'px'; }
+      { const rr = row.getBoundingClientRect(), st = $('#stage'); if (st && rr.height) st.style.setProperty('--openhand', Math.max(0, Math.round(box.bottom - rr.top)) + 'px'); }   // the prompt is centred in the space above the hand
+      const pc = $('#overlay:not([hidden]) .pcard'), pr = pc && pc.getBoundingClientRect(), top = pc && pc.offsetHeight ? (pr.top + pr.bottom) / 2 + pc.offsetHeight / 2 + 10 : -Infinity;   // the prompt's real size (it is drawn scaled while it fades in)
+      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - 2 || r.top < top; });
       if (!out || cw <= 90) break;
       cw = Math.max(90, Math.floor(cw * 0.93));
     }
-    openingSize = { key, win: key.split(':')[0], cw, sig: state ? state.phase + (state.bottomPhase ? '/b' : '') : '' };
     return;
-  } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); }
+  } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); hw.style.paddingBottom = ''; }
   spreadHand(row, cards);
 }
 
@@ -603,7 +598,7 @@ function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});
   m.body.append(h('div',{class:'psub',text:`You have ${n} creature${n===1?'':'s'} that can attack, and you have not declared attackers this turn.`}));
-  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();if(declareMandatoryAttackers())return;state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
+  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();if(mandatoryAttackers().length){openCombatHelper();return;}state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
 }
 function renderOverlay() {
   const ov = $('#overlay');

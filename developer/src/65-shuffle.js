@@ -3,8 +3,10 @@
 function shuffleLib(o = {}) {
   if (!state) return;
   shuffle(state.library); state.shuffles = (state.shuffles || 0) + 1;
-  if (!o.quiet) { try { riffleAnimation(); } catch (e) {} }
+  if (!o.quiet) { try { if (o.delay) setTimeout(riffleAnimation, o.delay); else riffleAnimation(); } catch (e) {} }
 }
+// v0.99.36 how long the riffle takes on screen (0 when shuffle animations are off), so the opening deal can wait for it
+function riffleDuration() { return (typeof document !== 'undefined' && animOn('shuffle')) ? (3 * 340 + 160) / aspd() : 0; }
 function riffleAnimation() {
   if (!animOn('shuffle') || typeof document === 'undefined') return;
   const el = document.querySelector('#libstack'); if (!el) return; const r = el.getBoundingClientRect(); if (!r.width) return;
