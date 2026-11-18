@@ -52,7 +52,7 @@ const RULES_TABLE = [
   ['701.50', 'Connive', 'action', 'named'],
   ['701.51', 'Open an Attraction', 'action', 'none'],
   ['701.52', 'Roll to Visit Your Attractions', 'action', 'none'],
-  ['701.53', 'Incubate', 'action', 'none'],
+  ['701.53', 'Incubate', 'action', 'tested'],
   ['701.54', 'The Ring Tempts You', 'action', 'none'],
   ['701.55', 'Face a Villainous Choice', 'action', 'none'],
   ['701.56', 'Time Travel', 'action', 'none'],

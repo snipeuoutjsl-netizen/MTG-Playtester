@@ -89,6 +89,7 @@ function makeTokensFromDef(d, n, src) {
   for (let i = 0; i < n; i++) {
     const c = newCard(d.name, { token: true, tk: { pt: d.pt, subs: [...d.subs], col: [...d.col], tx: d.tx, types: [...d.types], type: d.type, legendary: !!d.legendary } });
     c.id = state.nextId++;
+    if (d.startPlus) c.counters = { plus: d.startPlus, minus: 0 };   // Incubate N: the token enters with N +1/+1 counters
     if (d.amassOnly) c.counters = { plus: 1, minus: 0 };   // a hand-made Army starts as if amassed once
     enterBattlefield(c, { from: 'effect', tapped: !!d.tapped, logMsg: `${src ? src + ': created' : 'Created'} token ${d.name}${d.pt ? ' ' + d.pt : ''}` });
   }
