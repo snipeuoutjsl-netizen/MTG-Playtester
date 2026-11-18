@@ -38,6 +38,7 @@ function evalCond(text, g) {
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
   if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
+  if ((m = t.match(/^(?:there are )?(\w+) or more (.+?) (?:are )?in your graveyard$/)) && !/^there are/.test(t)) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }   // "seven or more cards are in your graveyard" (threshold)
   if ((m = t.match(/^there are (\w+) or more (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }
   if ((m = t.match(/^there are (\w+) or fewer (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n <= k; }
   if ((m = t.match(/^(?:there (?:is|are)|you have) (.+?) in your graveyard$/)) && /\b(?:an?|one) [a-z]+ cards?\b/.test(m[1])) {   // "there is an instant card and a sorcery card in your graveyard": each listed kind must be there

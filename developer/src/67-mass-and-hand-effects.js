@@ -176,3 +176,35 @@ function exiledReturnOptions(tx, obj) {
   if (!/^return the exiled cards? to the battlefield under (?:its|their) owner'?s? control\.?$/i.test(String(tx || '').replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim())) return null; const src = (obj && obj.sourceName) || 'Ability';
   return [{ full: true, label: `The exiled card returns to the battlefield (the app already did this when ${src} left)`, fn: () => log(`${src}: the card it exiled returns to the battlefield under its owner's control (done automatically)`) }];
 }
+
+// ---- "instead" with a condition (CR 614.1a, 207.2c): "Galvanic Blast deals 2 damage to any target. Metalcraft — Galvanic Blast deals 4 damage instead if you control three or more artifacts."
+// Also "If you control three or more artifacts, ~ deals 4 damage instead." and the same with any ability word or condition the app can evaluate (threshold, delirium, a life total...).
+// The sentence before is the one that gets replaced. When the condition holds the replacement is read in its place, otherwise the sentence is dropped. A condition the app cannot
+// evaluate leaves the text alone, so it is reported as not understood instead of being skipped. recognizeOnly (for the reading panel): drop it if the condition is understood, change nothing else.
+function condSyntaxOk(c) {
+  return /^you control (?:\w+) or more .+$/i.test(c) || /^(?:there are )?(?:\w+) or more .+ (?:are )?in your graveyard$/i.test(c) || /^you have (?:\w+) or (?:more|fewer) cards in (?:your )?hand$/i.test(c) || /^(?:your life total is|you have) (?:\w+) or (?:less|more|greater|fewer)(?: life)?$/i.test(c) || /^you control (?:an?|no) .+$/i.test(c);
+}
+function applyCondInstead(tx, recognizeOnly) {
+  const t = String(tx || ''); if (!/\binstead\b/i.test(t)) return t;
+  const parts = t.split(/((?<=[.!?])\s+)/), strip = s => s.replace(/^[A-Z][A-Za-z' ]+ — /, '');
+  const drop = new Set(), repl = new Map();
+  for (let i = 0; i < parts.length; i += 2) {
+    const s = strip(parts[i].trim()); let m, cond, eff;
+    if ((m = /^(.*\S) instead if (.+?)\.?$/i.exec(s))) { eff = m[1]; cond = m[2]; }
+    else if ((m = /^If (.+?), (.+?) instead\.?$/i.exec(s))) { cond = m[1]; eff = m[2]; }
+    else continue;
+    const known = recognizeOnly ? (condSyntaxOk(cond) || (state && evalCond(cond) !== null)) : (state ? evalCond(cond) : null);
+    if (known === null || known === undefined) continue;
+    if (recognizeOnly) { if (known) drop.add(i); continue; }
+    drop.add(i);
+    if (known && i >= 2 && !drop.has(i - 2)) {
+      let e = eff.replace(/[.!?]$/, ''); const base = strip(parts[i - 2].trim()).replace(/[.!?]$/, '');
+      if (/\bdeals? \d+ damage$/i.test(e)) { const tail = /\bdeals? \d+ damage(.*)$/i.exec(base); if (tail) e += tail[1]; }   // "deals 4 damage instead" keeps the targets of the sentence it replaces
+      repl.set(i - 2, e.charAt(0).toUpperCase() + e.slice(1) + '.');
+    }
+  }
+  if (!drop.size) return t;
+  let out = '';
+  for (let i = 0; i < parts.length; i += 2) { if (drop.has(i)) continue; out += (repl.has(i) ? repl.get(i) : parts[i]) + (parts[i + 1] || (out && i + 2 < parts.length ? ' ' : '')); }
+  return out.trim();
+}

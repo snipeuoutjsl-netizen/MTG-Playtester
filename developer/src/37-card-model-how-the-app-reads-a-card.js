@@ -287,6 +287,7 @@ function verbGaps(sentence, labels) {
 }
 function uncoveredClauses(effectText) {
   if (hasRawQuote(effectText)) effectText = maskQuotes(effectText);   // quoted ability text belongs to the token/granted object, not to this card's own clauses
+  effectText = applyCondInstead(effectText, true);   // a conditional "instead" sentence whose condition the app understands is covered
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
   try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; } catch (e) { /* ignore */ }
