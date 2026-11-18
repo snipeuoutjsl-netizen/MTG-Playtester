@@ -1412,16 +1412,16 @@ function openModeChoice(name, md, cb, baseCost) {
 
 // ---- "Always yield" (like Magic Online): remember, for the rest of THIS game, that a given triggered ability should go on the stack by itself
 // with the same targets and apply the same effect, so it stops asking every time. The first time each ability appears you are asked once.
-const ayKey = (name, text) => String(name || '') + '|' + String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+const ayKey = (name, text, id) => String(name || '') + '#' + (id == null || id < 0 ? '' : id) + '|' + String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
 // CR 603.5 + 603.4: a "may" ability is decided on resolution, and an ability with a condition (intervening "if", "unless") is checked again on resolution.
 // So only plain, unconditional abilities can be remembered as "always yield"; the rest ask every time.
 const ayEligibleText = tx => !/\b(?:may|if|unless|as long as|choose|instead|up to|any number)\b/i.test(String(tx || ''));
-function ayGet(name, text) { return state && state.ay ? state.ay[ayKey(name, text)] || null : null; }
+function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name, text, id)] || null : null; }   // tracked per card (its id), not per name: a second copy asks again
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
-  state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect), tg = t._picked && t._picked.length ? t._picked : null;
-  state.ay[key] = { auto: false, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
+  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
+  state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
+  state.ay[key] = { auto: false, id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
   m.body.append(h('div', { class: 'psub', text: `${t.cardName}: ${t._text || t.effect}` }),
     h('div', { class: 'psub', text: `Always put this ability on the stack${tg ? ' targeting ' + tg.map(x => x.name).join(', ') : ''} and apply the same effect for the rest of this game, without asking each time? (You can undo this from \u2699 \u2192 Always yield. It resets when the game ends.)` }));
@@ -1431,7 +1431,7 @@ function askAlwaysYield(list, next) {
 function ayResolveAuto() {   // resolve always-yield abilities from the top of the stack while their effect is already known
   for (let i = 0; i < 12; i++) {
     const top = state.stack[state.stack.length - 1]; if (!top || !top.ability || !top.trigger) break;
-    const e = ayGet(top.sourceName, top.text); if (!e || !e.auto || !e.label || !ayEligibleText(top.text) || document.querySelector('#modalRoot .backdrop')) break;
+    const e = ayGet(top.sourceName, top.text, top.sourceId); if (!e || !e.auto || !e.label || !ayEligibleText(top.text) || document.querySelector('#modalRoot .backdrop')) break;
     resolveTopOfStack();
   }
   if (state.stack.length && !document.querySelector('#modalRoot .backdrop')) openStack();
@@ -1491,7 +1491,7 @@ function openTriggerBatch(batch) {
     ].filter(Boolean));
   };
   for (const t of [...remaining]) {   // always-yield abilities go on the stack by themselves
-    const e = ayGet(t.cardName, t.effect); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
+    const e = ayGet(t.cardName, t.effect, t.cardId); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
     const specs = t.special ? [] : parseTargetSpecs(t.effect);
     if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
     else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
@@ -1891,7 +1891,7 @@ function openAbilityEffect(obj, done) {
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
-    const e = ayGet(obj.sourceName, tx);
+    const e = ayGet(obj.sourceName, tx, obj.sourceId);
     if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
       if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
   }
@@ -1903,7 +1903,7 @@ function openAbilityEffect(obj, done) {
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
     if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
     if (clean) {
-      const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
+      const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
       log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
       one.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
     }
@@ -1947,7 +1947,7 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
   }
@@ -6385,8 +6385,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.9';
+const APP_VERSION = '0.99.10';
 const CHANGELOG = [
+  { v: '0.99.10', title: 'Always yield is per card', notes: ['FIXED: "Always yield" was remembered by card name, so a second copy of the same card (Kappa Cannonier, for example) reused the first copy\'s targets. It is now tracked per individual card: cast a second copy, pick its targets, and choose Always yield again if you want it (CR 603.5, 601.2c).']},
   { v: '0.99.9', title: 'Attack requirements, quoted token abilities, and every token offline', notes: ['NEW: "Attacks each combat if able" (Dragon\'s Rage Channeler when delirious, Goblin Rabblemaster\'s Goblins, and the same wording on any card or Aura) is now enforced (CR 508.1d). The attack helper pre-selects the creatures that must attack, shows why, and will not let you untick them; skipping attacking still sends them in.', 'FIXED: a quoted ability on a token a card creates ("create a token with \'Whenever this creature attacks, ...\'") was read as the card\'s own ability, so Weapons Manufacturing skipped its token (CR 111.4, 113.3). Quoted text now belongs to the thing it is given to; the card is read without it. Emblems and granted abilities keep their quotes.', 'NEW: every official token and emblem is downloaded from Scryfall on first start and with each card-data load, then saved offline like the cards (refreshed monthly). The status chip shows the token count, so the engine knows every token a deck might create.']},
   { v: '0.99.8', title: 'Vehicles, repeatable modes, and stricter always-yield', notes: ['NEW: Crew (CR 702.122). Right-click a Vehicle, choose Activate, and pick untapped creatures with total power at least the crew number (summoning-sick ones may crew); they tap and the Vehicle becomes an artifact creature with its printed power and toughness until end of turn.','NEW: "Choose three. You may choose the same mode more than once" (Mystic Confluence): each mode has a + / − counter; repeated draws add up and a repeated targeted mode gets its own target (CR 700.2d).','NEW: "Reveal the top card of your library. If it\'s a land card, put it onto the battlefield. Otherwise, put it into your hand." (Coiling Oracle) and the Ad Nauseam loop (reveal, put into hand, lose life equal to its mana value, repeat as often as you like) are applied by the app.','FIXED: "Always yield" now only applies to plain abilities. A "you may" ability or one with an "if"/"unless" condition always asks you on resolution (CR 603.5, 603.4), and an ability with a line the app cannot apply is never auto-resolved.','FIXED: Aura "Enchant …" lines show as understood (the app already makes you choose a legal host and puts the Aura into the graveyard if there is none).'] },
   { v: '0.99.7', title: 'Rules dive 2: global statics, devotion, top-of-library play', notes: ['NEW: Winter Orb / Static Orb ("players can\'t untap more than one land / two permanents") ask which ones untap; Sulfuric Vortex stops life gain; Containment Priest exiles a creature that enters without being cast; Rhonas and similar "can\'t attack or block unless you control another creature with power 4 or greater" are enforced; Humility-style "All creatures lose all abilities and have base power and toughness 1/1" applies to every creature.','NEW: "where X is your devotion to blue" (Thassa\'s Oracle, including its win check), "Add {B} for each Swamp you control" (Cabal Coffers), Nykthos\'s devotion mana, and "you win the game" are all read from the text (CR 700.5).','NEW: Courser of Kruphix and Oracle of Mul Daya: the top card is shown revealed under your library, and the library menu has "Play the top land", which uses your land drop.','FIXED: Torpor Orb\'s real wording ("Creatures entering the battlefield…") is recognised; Oracle-shortened names like "Rhonas" count as the card itself; lord and loyalty lines such as "−X:" (Ugin) now show as understood; Time Warp is read as an extra turn.'] },

@@ -316,16 +316,16 @@ function openModeChoice(name, md, cb, baseCost) {
 
 // ---- "Always yield" (like Magic Online): remember, for the rest of THIS game, that a given triggered ability should go on the stack by itself
 // with the same targets and apply the same effect, so it stops asking every time. The first time each ability appears you are asked once.
-const ayKey = (name, text) => String(name || '') + '|' + String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+const ayKey = (name, text, id) => String(name || '') + '#' + (id == null || id < 0 ? '' : id) + '|' + String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
 // CR 603.5 + 603.4: a "may" ability is decided on resolution, and an ability with a condition (intervening "if", "unless") is checked again on resolution.
 // So only plain, unconditional abilities can be remembered as "always yield"; the rest ask every time.
 const ayEligibleText = tx => !/\b(?:may|if|unless|as long as|choose|instead|up to|any number)\b/i.test(String(tx || ''));
-function ayGet(name, text) { return state && state.ay ? state.ay[ayKey(name, text)] || null : null; }
+function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name, text, id)] || null : null; }   // tracked per card (its id), not per name: a second copy asks again
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
-  state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect), tg = t._picked && t._picked.length ? t._picked : null;
-  state.ay[key] = { auto: false, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
+  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
+  state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
+  state.ay[key] = { auto: false, id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
   m.body.append(h('div', { class: 'psub', text: `${t.cardName}: ${t._text || t.effect}` }),
     h('div', { class: 'psub', text: `Always put this ability on the stack${tg ? ' targeting ' + tg.map(x => x.name).join(', ') : ''} and apply the same effect for the rest of this game, without asking each time? (You can undo this from \u2699 \u2192 Always yield. It resets when the game ends.)` }));
@@ -335,7 +335,7 @@ function askAlwaysYield(list, next) {
 function ayResolveAuto() {   // resolve always-yield abilities from the top of the stack while their effect is already known
   for (let i = 0; i < 12; i++) {
     const top = state.stack[state.stack.length - 1]; if (!top || !top.ability || !top.trigger) break;
-    const e = ayGet(top.sourceName, top.text); if (!e || !e.auto || !e.label || !ayEligibleText(top.text) || document.querySelector('#modalRoot .backdrop')) break;
+    const e = ayGet(top.sourceName, top.text, top.sourceId); if (!e || !e.auto || !e.label || !ayEligibleText(top.text) || document.querySelector('#modalRoot .backdrop')) break;
     resolveTopOfStack();
   }
   if (state.stack.length && !document.querySelector('#modalRoot .backdrop')) openStack();
@@ -395,7 +395,7 @@ function openTriggerBatch(batch) {
     ].filter(Boolean));
   };
   for (const t of [...remaining]) {   // always-yield abilities go on the stack by themselves
-    const e = ayGet(t.cardName, t.effect); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
+    const e = ayGet(t.cardName, t.effect, t.cardId); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
     const specs = t.special ? [] : parseTargetSpecs(t.effect);
     if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
     else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
@@ -795,7 +795,7 @@ function openAbilityEffect(obj, done) {
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
-    const e = ayGet(obj.sourceName, tx);
+    const e = ayGet(obj.sourceName, tx, obj.sourceId);
     if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
       if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
   }
@@ -807,7 +807,7 @@ function openAbilityEffect(obj, done) {
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
     if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
     if (clean) {
-      const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
+      const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
       log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
       one.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
     }
@@ -851,7 +851,7 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
   }

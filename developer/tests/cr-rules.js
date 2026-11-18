@@ -569,7 +569,7 @@ const { setup } = require('./common.js');
     return { ok: !!r && r.n === 1 && r.cost === '{G}', why: JSON.stringify(r) }; });
   await T('603.3b + always yield', 'always yield: an ability set to always yield goes on the stack and resolves itself for the rest of the game (no prompt), and the setting does not carry to a new game', async () => { await reset(); await toMain();
     const r = await ev(() => { const s = __d.state; const pg = Object.assign(__d.newCard('Mock Pinger'), { id: s.nextId++ }); s.battlefield.push(pg); const tr = __d.parseTriggers(pg)[0];
-      s.ay = {}; s.ay[__d.ayKey('Mock Pinger', tr.effect)] = { auto: true, name: 'Mock Pinger', text: tr.effect, targets: null, label: 'Deal 1 damage to the opponent' };
+      s.ay = {}; s.ay[__d.ayKey('Mock Pinger', tr.effect, pg.id)] = { auto: true, name: 'Mock Pinger', text: tr.effect, targets: null, label: 'Deal 1 damage to the opponent' };
       const before = s.oppLife; s.stack = []; const c = Object.assign(__d.newCard('Mock One Drop'), { id: s.nextId++ }); s.stack.push(c); __d.fireTrigger('cast', { card: c }); __d.resolvePendingTrigger();
       return { dmg: before - s.oppLife, modals: document.querySelectorAll('.backdrop').length, stack: s.stack.map(x => x.name).join() }; });
     return { ok: r.dmg === 1 && r.modals === 0 && r.stack === 'Mock One Drop', why: JSON.stringify(r) }; });
@@ -944,6 +944,11 @@ const { setup } = require('./common.js');
       let list; try{ list=await d.downloadAllTokens(); } finally{ window.fetch=realFetch; }
       d.mergeTokens(list); return {calls, n:list.length, delta:d.tokenTotal()-before, tok:!!d.officialToken('Zzmock Beast','3/3',['G'],'')}; });
     return { ok: r.calls===2 && r.n===2 && r.delta===2 && r.tok, why: JSON.stringify(r) };
+  });
+  await T('603.5', 'always yield is remembered per card, not per card name', async()=>{
+    const r = await ev(()=>{ const d=window.__d, state=d.state; state.ay={}; state.ay[d.ayKey('Mock Twin','Draw a card.',11)]={auto:true,id:11};
+      return { a: !!d.ayGet('Mock Twin','Draw a card.',11), b: !!d.ayGet('Mock Twin','Draw a card.',12) }; });
+    return { ok: r.a && !r.b, why: JSON.stringify(r) };
   });
   await T('603.4 + 701.3', 'Cori-Steel Cutter: the flurry trigger fires only on the SECOND spell each turn; the Monk token enters unequipped (an unattached Equipment gives nothing); you may then attach the Equipment to it and only then does it get +1/+1, trample and haste', async () => { await reset(); await toMain();
     const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const cut = mk('Cori-Steel Cutter'); s.battlefield.push(cut);
