@@ -267,8 +267,8 @@ function resolve(name) {
   return c || null;
 }
 // v0.95.0 What a permanent says, as a card record: a token's own rules text, or the card's. Used by everything that reads abilities.
-function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; return cardInfo(c.name); }
-function cardText(c) { if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
+function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: ov.grant.concat(c.gained || []).join('\n'), ovr: true }); } return base; }
+function cardText(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
 function isTransformCard(c) { const p = faceParent(c); return !!(p && p.fc && p.fc.length > 1 && !p.mdfc && !p.kind); }   // a transform card (not a modal double-faced one)
@@ -687,6 +687,7 @@ function kwGrant(c, kw) {
 }
 function hasKw(c, kw) {
   if (!c) return false;
+  { const ov = ovrOf(c); if (ov && ov.loseKws.includes(kw)) return false; }   // "loses flying"
   if (state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)) return true;   // "gains haste until end of turn"
   if (kw === 'haste' && c.suspHaste && state && state.battlefield.includes(c)) return true;   // cast from suspend
   if (kwLine(cardText(c), kw)) return true;
@@ -792,7 +793,7 @@ function cdaValues(c) {
 }
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
-  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; }   // CR 613.4b: an effect that sets base power and toughness
+  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; { const ov = ovrOf(c); if (ov && ov.pt) pt = ov.pt; } }   // CR 613.4b: an effect that sets base power and toughness
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
@@ -898,6 +899,7 @@ function runDelayed(when) {
     const f = e.targetId ? findCard(e.targetId) : null, nm = e.targetName || (f && f.card.name) || 'it';
     if (e.mana) { for (const [k, n] of Object.entries(e.mana)) state.manaPool[k] = (state.manaPool[k] || 0) + n; log(`${e.srcName}: delayed trigger at the beginning of the ${where}: added ${Object.entries(e.mana).map(([k, n]) => '{' + k + '}'.repeat(1) + (n > 1 ? '×' + n : '')).join('')} to your mana pool`); toast('Delayed mana', `${e.srcName}: ${e.text}`); continue; }
     if (e.action === 'unbase') { if (f && f.card.basePT) { delete f.card.basePT; log(`${e.srcName}: ${nm}'s base power and toughness are back to normal`); } continue; }
+    if (e.action === 'unovr') { if (f && f.card.ovr) { delete f.card.ovr; log(`${e.srcName}: ${nm} is back to normal (the effect ended)`); } continue; }
     if (e.action === 'unbecome') { if (f && f.zone === 'battlefield' && f.card.becomes) { delete f.card.becomes; log(`${e.srcName}: ${nm} is no longer a creature (the effect ended)`); } continue; }
     if (e.action === 'exile') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was exiled at the beginning of the ${where}`); delete f.card.exileInstead; leaveBattlefield(f.card, 'exile'); } }
     else if (e.action === 'sacrifice') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} was sacrificed at the beginning of the ${where}`); leaveBattlefield(f.card, 'graveyard'); } }
@@ -1086,7 +1088,7 @@ function parseTriggers(c) {
   if (!c) return [];
   const info = rulesInfo(c);
   if (!info || !info.tx) return [];
-  const key = c.token ? 'tok:' + norm(c.name) + '|' + info.tx : norm(c.name);
+  const key = c.token ? 'tok:' + norm(c.name) + '|' + info.tx : info.ovr ? 'ovr:' + norm(c.name) + '|' + info.tx : norm(c.name);
   if (TRIG_CACHE.has(key)) return TRIG_CACHE.get(key);
   const out = [];
   const nameRe = selfNameRe(info.name);
@@ -1160,6 +1162,7 @@ function frontType(c) {
     const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
+  if (c && t && (c.ovr || (state && state.battlefield.length))) t = ovrTypeLine(c, t);
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
@@ -1179,7 +1182,7 @@ function fireTrigger(ev, ctx = {}) {
   if (!state || !teach('triggerPrompts')) return;
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if ((t.zone === 'graveyard') !== inGy(src)) return; state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
+  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -1643,7 +1646,7 @@ function effectOptionsInner(tx, obj) {
 function effectOptionsBase(tx, obj) {
   obj = obj || {}; tx = String(tx || '');
   if (obj.kw && KW_EFFECTS[obj.kw]) return KW_EFFECTS[obj.kw](obj);   // v0.96.1 a keyword trigger resolving (exalted, evolve ...)
-  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || animateGeneralEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
+  { const srcN = obj.sourceName || 'Ability', te = emblemEffect(tx, srcN) || targetPermanentEffect(tx, srcN, obj) || becomesCreatureEffect(tx, srcN, obj) || animateGeneralEffect(tx, srcN, obj) || charChangeEffect(tx, srcN, obj) || wishEffect(tx, srcN); if (te) return [te]; }   // v0.96.12 emblems (CR 114) and "untap/put counters on target permanent. If it's ..." read from the rules text
   { const L = defLine(obj.sourceName, tx);
     if (L) {
       const o = L.options(obj, L._line || tx);
@@ -3059,6 +3062,7 @@ function parseTargetSpecs(text) {
 function permTypeLine(c) { return c.token ? (c.tk && c.tk.type ? c.tk.type : c.tk && c.tk.pt ? 'Token Creature' : 'Token Artifact') : (frontType(c) || (isLandName(c.name) ? 'Land' : '')); }
 // CR 105.2: an object's colors come from its mana cost (colorless when it has none); tokens use their listed colors.
 function cardColorSet(c) {
+  { const ov = ovrOf(c); if (ov && ov.colors) return new Set(ov.colors); }
   if (c.token) return new Set(((c.tk && (c.tk.colors || c.tk.color)) || '').toString().toUpperCase().replace(/[^WUBRG]/g, '').split(''));
   const inf = cardInfo(c.name); return new Set(((String((inf && (inf.mc || '')) || '').split(' // ')[0].match(/\{[^}]*\}/g) || []).join('')).replace(/[^WUBRG]/g, '').split('').filter(Boolean));
 }
@@ -4892,6 +4896,7 @@ function manaSources() {
     }
     // Same colour logic as tapping by hand: printed mana plus the basic land types the board gives it
     // (Leyline of the Guildpact, Dryad of the Ilysian Grove, Urborg, Blood Moon...).
+    { const om = ovrLandMana(c); if (om) { if (!om.length) continue; om.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:om.length})); continue; } }   // a land that lost its abilities (Song of the Dryads, Imprisoned in the Moon)
     const lm=landMulti(c);
     if(lm){ lm.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:lm.fixed.length})); continue; }
     const cols=landManaColors(c);
@@ -5000,7 +5005,7 @@ function cardEl(c, zone) {
     h('div', { class: 'ctop' },
       h('span', { class: 'cname', text: c.name }),
       info && !info.land && info.mc ? (() => { const ec = zone === 'hand' || zone === 'stack' ? effectiveCost(c) : null; const red = ec && ec.reduced; return h('span', { class: 'cmc' + (red ? (ec.increased ? ' increased' : ' reduced') : ''), text: String(red ? symCmc(ec.cost) : Math.round(info.cmc)), title: red ? `Costs ${ec.cost.replace(/[{}]/g, '') || '0'} now (printed ${info.mc.replace(/[{}]/g, '')}; ${ec.why})` : '' }); })() : null),
-    h('div', { class: 'ctype', text: c.token ? ((c.tk && c.tk.type) || 'Token') : info ? (c.becomes && zone === 'battlefield' ? frontType(c) : info.t) : '' }),
+    h('div', { class: 'ctype', text: c.token ? ((c.tk && c.tk.type) || 'Token') : info ? ((c.becomes || hasOvr(c)) && zone === 'battlefield' ? frontType(c) : info.t) : '' }),
     pt ? (() => { const d = ptc ? ptDelta(ptc) : ''; const prev = lastPT.get(c.id); lastPT.set(c.id, pt); const flash = prev !== undefined && prev !== pt;
       return h('div', { class: 'cpt' + (ptc && (ptc.dynamic || ptc.modified) ? ' ptmod' : '') + (d ? ' pt-' + d + ' ptshow' : '') + (flash ? ' ptflash' : ''), text: pt, 'data-len': String(String(pt).length), title: ptc ? ptTitle(c, ptc) : '' }); })() : null,
     pw && zone === 'battlefield' ? h('div', { class: 'cloyalty', text: String(c.loyalty ?? '?'), title: 'Loyalty counters. Double-click to use loyalty abilities.' }) : null,
@@ -6282,8 +6287,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.98.3';
+const APP_VERSION = '0.98.4';
 const CHANGELOG = [
+  { v: '0.98.4', title: 'Fix: "when this dies / is put into a graveyard" triggers, and loses-all-abilities effects', notes: ['FIXED: abilities like "When ~ dies" and "When ~ is put into a graveyard from the battlefield" (Flagstones of Trokair) were being dropped, because the check that a card is in the right zone ran after the card had already reached the graveyard. Leaves-the-battlefield abilities now look back as the rules say (CR 603.10a). A test now sends cards to the graveyard by every route (destroy, sacrifice, move, leave) and checks the trigger appears.', 'New: effects that change what a permanent is (CR 613): "loses all abilities", "becomes a blue Frog with base power and toughness 1/1" (Turn to Frog), "loses flying", and Auras such as Kenrith\'s Transformation, Darksteel Mutation, Imprisoned in the Moon and Song of the Dryads (a land that becomes a Forest taps for G and loses its other abilities, CR 305.7). Triggers, keywords, type line, colour, power/toughness and mana follow the new characteristics, and temporary effects end on their own.'] },
   { v: '0.98.3', title: 'Mutate, Splice, spell target filters and a tidier gear menu', notes: ['Mutate (CR 702.140): cast a creature for its mutate cost, target a non-Human creature, and choose over or under. The merged permanent is one creature with every card\'s abilities, keeps its counters and auras, fires "whenever this creature mutates" triggers, and all its cards leave the battlefield together. If the target is gone it resolves as a normal creature spell.', 'Splice onto Arcane (CR 702.47): when you cast an Arcane spell, splice cards in your hand are offered as optional extra costs. The spell gains their effects and they stay in your hand.', 'Counter and other spell-targeting text now honours "with mana value N (or less/greater)", "nonland" style words and colour words when choosing targets on the stack.', 'The gear menu is now only Settings, Update, Import / edit deck, Card data, Images and help. In-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin, Multiplayer) moved to a new Game tools button (the ☰ beside the gear).'] },
   { v: '0.98.2', title: 'Counterspell rules', notes: ['"Counter target spell unless its controller pays {N}" (Mana Leak, Force Spike, Spell Pierce...) now asks whether the cost was paid; it only counters if it was not (CR 608.2c).', '"If that spell is countered this way, put it into its owner\'s hand / on top of its library / exile it instead" (Remand, Memory Lapse, Dissipate) is honoured for your own spells.', '"Counter target spell if it has mana value 3 or less" checks the mana value.', '"Its controller may search their library..." (Boseiju, Path to Exile) is linked to the target and read as your own library when the permanent is yours.'] },
   { v: '0.98.1', title: 'Official token pictures from Scryfall', notes: ['Token pictures can now be downloaded the same way card pictures are: the tokens your deck can make are fetched automatically when Images auto-download is on, and the Token glossary has Download buttons for your deck\'s tokens or every token.', 'Order of art on a token: your own picture, then the official picture, then the generic art.', 'Official pictures are cached on this computer, so they keep working offline once downloaded.'] },
@@ -11164,6 +11170,101 @@ function spliceApply(c, ids) {
     if (tx) parts.push(tx.replace(selfNameRe(x.name), c.name));
     log(`${c.name}: spliced ${x.name} onto it (revealed from your hand; it stays in your hand). Its effect is added after this spell's own (CR 702.47)`); }
   if (parts.length) c.splicedTx = (c.splicedTx ? c.splicedTx + '\n' : '') + parts.join('\n');
+}
+// ---------------------------------------------------------------- v0.98.4 characteristic-changing effects (CR 613, 205.1, 305.7, 613.1f)
+// "Until end of turn, target creature loses all abilities and becomes a blue Frog with base power and toughness 1/1." (Turn to Frog)
+// "Enchanted creature loses all abilities and is a green Elk creature with base power and toughness 3/3."  (Kenrith's Transformation)
+// "Enchanted creature is a 0/1 Insect artifact creature with no abilities and loses all other card types and creature types."  (Darksteel Mutation)
+// "Enchanted permanent is a colorless land with "{T}: Add {C}" and loses all other card types and abilities."  (Imprisoned in the Moon)
+// "Enchanted permanent is a colorless Forest land."  (Song of the Dryads)   "target creature loses flying until end of turn"
+// Read from the words, never from card names. A permanent's override = its own temporary effect (c.ovr) merged with the Auras attached to it.
+const CC_COLORS = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+const CC_TYPES = ['creature', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle', 'instant', 'sorcery'];
+const CC_BASIC = { plains: 'W', island: 'U', swamp: 'B', mountain: 'R', forest: 'G' };
+const cap1 = w => w[0].toUpperCase() + w.slice(1);
+// Parse what an effect does to its object. `rest` starts at the verb: "loses all abilities and becomes a blue Frog with base power and toughness 1/1".
+function parseCharChange(rest) {
+  let r = String(rest || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim().replace(/\.$/, '').replace(/\s+until end of turn$/i, '');
+  const grant = [...r.matchAll(/"([^"]+)"/g)].map(m => m[1]); r = r.replace(/"[^"]*"/g, '""');
+  const out = { lose: false, grant, loseKws: [] };
+  if (/\bloses all (?:other card types and )?abilities\b|\bwith no abilities\b|\bhas no abilities\b|\bloses all other card types and abilities\b/i.test(r)) out.lose = true;
+  const resetTypes = /\bloses all other card types\b/i.test(r), resetSubs = resetTypes || /\bloses all (?:other )?creature types\b|\band creature types\b/i.test(r);
+  const im = /\b(is|are|becomes?) an? (?:(\d+)\/(\d+) )?((?:[A-Za-z'-]+ )*?[A-Za-z'-]+?)(?= with | and |,|$)/i.exec(r);
+  if (im) {
+    const words = im[4].split(/\s+/).filter(Boolean).map(w => w.toLowerCase()), types = [], subs = []; let colors = null;
+    for (const w of words) {
+      if (CC_COLORS[w]) { colors = (colors || []).concat(CC_COLORS[w]); } else if (w === 'colorless') colors = [];
+      else if (CC_TYPES.includes(w)) types.push(cap1(w)); else if (w === 'permanent' || w === 'legendary' || w === 'basic' || w === 'snow') continue; else subs.push(cap1(w));
+    }
+    if (im[2] !== undefined) out.pt = im[2] + '/' + im[3];
+    if (colors) out.colors = colors; if (subs.length) out.subs = subs;
+    if (types.length) { if (resetTypes || /^(is|are)$/i.test(im[1])) out.types = types; else out.addTypes = types; }
+  }
+  if ((out.subs || []).some(s => CC_BASIC[s.toLowerCase()]) && (out.types || []).includes('Land')) out.lose = true;   // CR 305.7: a land set to a basic land type loses its other abilities
+  if (resetTypes && !out.types && !out.addTypes) out.types = [];
+  if (resetSubs && !out.subs) out.subs = [];
+  const bp = /base power and toughness (\d+)\/(\d+)/i.exec(r); if (bp) out.pt = bp[1] + '/' + bp[2];
+  for (const lm of r.matchAll(/\bloses? ((?:[a-z]+(?: strike)?(?:, | and |,? and )?)+?)(?= and |$|,)/gi)) for (const k of GRANTABLE) if (new RegExp('\\b' + k + '\\b', 'i').test(lm[1]) && !/\ball\b/i.test(lm[1])) out.loseKws.push(k);
+  if (!(out.lose || out.subs || out.types || out.addTypes || out.colors || out.loseKws.length)) return null;
+  return out;
+}
+const AURA_OVR_CACHE = new Map();
+function auraOvrOf(a) {   // the override an attached Aura / Equipment applies to what it is attached to
+  const tx = (a.token ? (a.tk && a.tk.tx) : (cardInfo(a.name) || {}).tx) || ''; if (!/\benchanted\b|\bequipped\b/i.test(tx)) return null;
+  if (AURA_OVR_CACHE.has(tx)) return AURA_OVR_CACHE.get(tx);
+  let res = null;
+  for (const raw of tx.replace(/\([^)]*\)/g, ' ').split(/\n|(?<=\.)\s+(?=[A-Z])/)) {
+    const m = /^(?:Enchanted|Equipped) (?:creature|permanent|land|artifact|enchantment) (.+)$/i.exec(raw.trim()); if (!m) continue;
+    const p = parseCharChange(m[1]); if (p) res = Object.assign(res || {}, p, { grant: (res && res.grant || []).concat(p.grant || []), loseKws: (res && res.loseKws || []).concat(p.loseKws || []) });
+  }
+  AURA_OVR_CACHE.set(tx, res); return res;
+}
+function ovrOf(c) {
+  if (!state || !c) return null; let out = null;
+  const merge = o => { if (!o) return; out = out || { lose: false, grant: [], loseKws: [] }; if (o.lose) out.lose = true; for (const k of ['subs', 'types', 'addTypes', 'colors', 'pt']) if (o[k] !== undefined) out[k] = o[k]; out.grant = out.grant.concat(o.grant || []); out.loseKws = out.loseKws.concat(o.loseKws || []); };
+  merge(c.ovr);
+  for (const a of state.battlefield) if (a.att === c.id) merge(auraOvrOf(a));
+  return out;
+}
+const hasOvr = c => !!(c && (c.ovr || (state && state.battlefield.some(a => a.att === c.id && auraOvrOf(a)))));
+// What a type line looks like after the override (frontType calls this).
+function ovrTypeLine(c, t) {
+  const ov = ovrOf(c); if (!ov || !t || !(ov.types || ov.addTypes || ov.subs)) return t;
+  const [a, b] = t.split('—').map(x => x.trim()), SUP = new Set(['Legendary', 'Basic', 'Snow', 'World', 'Token']);
+  let words = a.split(/\s+/).filter(Boolean), sup = words.filter(w => SUP.has(w)), tys = words.filter(w => !SUP.has(w));
+  if (ov.types) tys = ov.types.slice(); if (ov.addTypes) for (const w of ov.addTypes) if (!tys.includes(w)) tys.push(w);
+  const subs = ov.subs ? ov.subs.slice() : (ov.types && !ov.subs ? [] : (b ? b.split(/\s+/) : []));
+  return [...sup, ...tys].join(' ') + (subs.length ? ' — ' + subs.join(' ') : '');
+}
+// A land that now has a basic land type taps for that colour; one with a granted "{T}: Add {C}" ability taps for that. null = no override applies.
+function ovrLandMana(c) {
+  const ov = ovrOf(c); if (!ov || !ov.lose) return null;
+  const cols = new Set(); for (const s of ov.subs || []) if (CC_BASIC[s.toLowerCase()]) cols.add(CC_BASIC[s.toLowerCase()]);
+  for (const g of ov.grant || []) { const m = /\{T\}: Add ((?:\{[A-Z]\})+)/i.exec(g); if (m) for (const x of m[1].match(/[A-Z]/g)) cols.add(x); }
+  return [...cols];
+}
+// The effect on a spell or ability: "[Until end of turn,] target creature loses all abilities and becomes a blue Frog with base power and toughness 1/1."
+function charChangeEffect(tx, src, obj) {
+  const T = String(tx || '').replace(/’/g, "'").replace(/\n/g, ' ').replace(/\s+/g, ' ').replace(selfNameRe(src), '~').trim();
+  const m = /^(?:(until end of turn|until your next turn),\s*)?(?:(~|this [a-z]+|it)|(?:up to one )?target ([a-z ,\/-]+?)(?: you control| an opponent controls)?) ((?:loses?|is|becomes?) .+?)\.?$/i.exec(T);
+  if (!m) return null;
+  const p = parseCharChange(m[4]); if (!p || !(p.lose || p.loseKws.length || (p.subs && p.subs.length) || p.colors || p.types)) return null;
+  const durTxt = m[1] || (/until end of turn\s*$/i.test(m[4]) ? 'until end of turn' : ''), dur = /your next turn/i.test(durTxt) ? 'upkeep' : durTxt ? 'end' : null, selfTok = m[2], phrase = (m[3] || '').toLowerCase();
+  const bits = [p.lose ? 'loses all abilities' : '', p.loseKws.length ? 'loses ' + p.loseKws.join(', ') : '', p.subs && p.subs.length ? 'is a ' + (p.colors && p.colors.length ? p.colors.map(x => Object.keys(CC_COLORS).find(k => CC_COLORS[k] === x)).join(' ') + ' ' : '') + p.subs.join(' ') : '', p.pt ? 'base P/T ' + p.pt : ''].filter(Boolean).join(', ');
+  const label = `${selfTok ? 'It' : 'Target ' + phrase}: ${bits}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''}`;
+  const apply = c => {
+    snap(); c.ovr = Object.assign({}, c.ovr || {}, p, { grant: (c.ovr && c.ovr.grant || []).concat(p.grant || []), loseKws: (c.ovr && c.ovr.loseKws || []).concat(p.loseKws) });
+    if (dur) addFx({ kind: 'delayed', when: dur, action: 'unovr', targetId: c.id, targetName: c.name, text: `${c.name}: the effect ends.`, srcName: src });
+    log(`${src}: ${c.name} ${bits}${dur ? (dur === 'upkeep' ? ' until your next turn' : ' until end of turn') : ''} (CR 613)`); render(); flushTriggers();
+  };
+  return { full: true, label, fn: () => {
+    if (selfTok) { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null; if (f && f.zone === 'battlefield') { apply(f.card); return; } const c = state.battlefield.find(x => x.name === src); if (c) { apply(c); return; } toast('Not on the battlefield', 'The permanent is no longer here.'); return; }
+    const tg = obj && (obj.targets || []).find(t => t.kind === 'perm' && !t.gone);
+    if (tg) { const f = findCard(tg.id); if (f && f.zone === 'battlefield') apply(f.card); else log(`${src}: its target is gone, so the ability does nothing (CR 608.2b)`); return; }
+    const words = phrase.split(/\s*(?:,|\bor\b)\s*/).map(w => singularWord(w.trim())).filter(Boolean), cards = state.battlefield.filter(c => !words.length || permHasAny(c, words));
+    if (!cards.length) { toast('No legal target', `There is no ${phrase} on the battlefield.`); return; }
+    openPickCards({ title: `${src}: choose target ${phrase}`, note: 'Choose the target.', cards, min: 1, max: 1, done: q => { const x = q && q[0]; if (x) apply(x); } });
+  } };
 }
 init();
 

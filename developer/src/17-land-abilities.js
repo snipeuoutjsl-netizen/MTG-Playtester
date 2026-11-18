@@ -145,6 +145,7 @@ function manaSources() {
     }
     // Same colour logic as tapping by hand: printed mana plus the basic land types the board gives it
     // (Leyline of the Guildpact, Dryad of the Ilysian Grove, Urborg, Blood Moon...).
+    { const om = ovrLandMana(c); if (om) { if (!om.length) continue; om.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:om.length})); continue; } }   // a land that lost its abilities (Song of the Dryads, Imprisoned in the Moon)
     const lm=landMulti(c);
     if(lm){ lm.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:lm.fixed.length})); continue; }
     const cols=landManaColors(c);
@@ -253,7 +254,7 @@ function cardEl(c, zone) {
     h('div', { class: 'ctop' },
       h('span', { class: 'cname', text: c.name }),
       info && !info.land && info.mc ? (() => { const ec = zone === 'hand' || zone === 'stack' ? effectiveCost(c) : null; const red = ec && ec.reduced; return h('span', { class: 'cmc' + (red ? (ec.increased ? ' increased' : ' reduced') : ''), text: String(red ? symCmc(ec.cost) : Math.round(info.cmc)), title: red ? `Costs ${ec.cost.replace(/[{}]/g, '') || '0'} now (printed ${info.mc.replace(/[{}]/g, '')}; ${ec.why})` : '' }); })() : null),
-    h('div', { class: 'ctype', text: c.token ? ((c.tk && c.tk.type) || 'Token') : info ? (c.becomes && zone === 'battlefield' ? frontType(c) : info.t) : '' }),
+    h('div', { class: 'ctype', text: c.token ? ((c.tk && c.tk.type) || 'Token') : info ? ((c.becomes || hasOvr(c)) && zone === 'battlefield' ? frontType(c) : info.t) : '' }),
     pt ? (() => { const d = ptc ? ptDelta(ptc) : ''; const prev = lastPT.get(c.id); lastPT.set(c.id, pt); const flash = prev !== undefined && prev !== pt;
       return h('div', { class: 'cpt' + (ptc && (ptc.dynamic || ptc.modified) ? ' ptmod' : '') + (d ? ' pt-' + d + ' ptshow' : '') + (flash ? ' ptflash' : ''), text: pt, 'data-len': String(String(pt).length), title: ptc ? ptTitle(c, ptc) : '' }); })() : null,
     pw && zone === 'battlefield' ? h('div', { class: 'cloyalty', text: String(c.loyalty ?? '?'), title: 'Loyalty counters. Double-click to use loyalty abilities.' }) : null,

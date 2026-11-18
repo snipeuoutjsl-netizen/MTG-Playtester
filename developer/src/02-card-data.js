@@ -186,8 +186,8 @@ function resolve(name) {
   return c || null;
 }
 // v0.95.0 What a permanent says, as a card record: a token's own rules text, or the card's. Used by everything that reads abilities.
-function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; return cardInfo(c.name); }
-function cardText(c) { if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
+function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: ov.grant.concat(c.gained || []).join('\n'), ovr: true }); } return base; }
+function cardText(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
 function isTransformCard(c) { const p = faceParent(c); return !!(p && p.fc && p.fc.length > 1 && !p.mdfc && !p.kind); }   // a transform card (not a modal double-faced one)
@@ -606,6 +606,7 @@ function kwGrant(c, kw) {
 }
 function hasKw(c, kw) {
   if (!c) return false;
+  { const ov = ovrOf(c); if (ov && ov.loseKws.includes(kw)) return false; }   // "loses flying"
   if (state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)) return true;   // "gains haste until end of turn"
   if (kw === 'haste' && c.suspHaste && state && state.battlefield.includes(c)) return true;   // cast from suspend
   if (kwLine(cardText(c), kw)) return true;
@@ -711,7 +712,7 @@ function cdaValues(c) {
 }
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
-  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; }   // CR 613.4b: an effect that sets base power and toughness
+  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; { const ov = ovrOf(c); if (ov && ov.pt) pt = ov.pt; } }   // CR 613.4b: an effect that sets base power and toughness
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
