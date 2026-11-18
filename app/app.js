@@ -4214,6 +4214,8 @@ function rockInfo(c) {
     if ((mm = first.match(/^((?:\{[WUBRGC]\})+)\.?$/))) r = { fixed: [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) };
     else if ((mm = first.match(/^(\{[WUBRGC]\}(?:,? (?:or )?\{[WUBRGC]\})+)\.?$/))) r = { choice: [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) };
     else if (/^one mana of any color among legendary creatures and planeswalkers you control\.?$/i.test(first)) r = { among: true, choice: [] };
+    else if ((mm = first.match(/^\{([WUBRGC])\} for each (.+?) you control\.?$/i))) r = { fixed: [mm[1]], per: mm[2] + ' you control' };   // CR 106.1: Elvish Archdruid, Gaea's Cradle style
+    else if ((mm = first.match(/^(two|three|four|five) mana of any one color\.?$/i))) r = { choice: ['W', 'U', 'B', 'R', 'G'], multi: ({ two: 2, three: 3, four: 4, five: 5 })[mm[1].toLowerCase()] };   // Gilded Lotus
     else if (/^one mana of any color\.?$/i.test(first)) r = { choice: ['W', 'U', 'B', 'R', 'G'] };
     else if (/^one mana of any of the exiled card'?s colou?rs?\.?$/i.test(first)) r = { exiled: true, choice: [] };   // v0.95.2 imprint (Chrome Mox)
     if (!r) continue;
@@ -4334,16 +4336,17 @@ function tapRock(card) {
   const run = () => {
     const f = findCard(id); if (!f || f.zone !== 'battlefield' || f.card.tapped) return;
     if (r.fixed) {
-      snap(); f.card.tapped = true; noteManaTap(f.card, r.fixed); markAbilityUsed(f.card); for (const col of r.fixed) addFloatingMana(col);
-      log(`${f.card.name} tapped → floated ${r.fixed.join('')}`); render(); return;
+      let fx = r.fixed; if (r.per) { const n = csCount(r.per, f.card) || 0; fx = Array(n).fill(r.fixed[0]); }   // counted when you tap
+      snap(); f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col);
+      log(`${f.card.name} tapped → floated ${fx.join('') || 'no mana'}`); render(); return;
     }
     const colors = rockColors(f.card);
     const use = colors.length ? colors : ['W', 'U', 'B', 'R', 'G'];
     openManaChoice(f.card, color => {
       if (!color) return;
       const g = findCard(id); if (!g || g.zone !== 'battlefield' || g.card.tapped) return;
-      snap(); g.card.tapped = true; noteManaTap(g.card, [color]); markAbilityUsed(g.card); addFloatingMana(color);
-      log(`${g.card.name} tapped → floated ${color}`); render();
+      const nm = r.multi || 1; snap(); g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color);
+      log(`${g.card.name} tapped → floated ${color.repeat(nm)}`); render();
     }, use);
   };
   const st = rockStatus(card);
@@ -6333,8 +6336,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.4';
+const APP_VERSION = '0.99.5';
 const CHANGELOG = [
+  { v: '0.99.5', title: 'Scaling mana: Elvish Archdruid, Gilded Lotus', notes: ['NEW: "{T}: Add {G} for each Elf you control" (and any "for each <thing> you control") is counted when you tap, so the right amount floats (CR 106.1, 605.1a).','NEW: "{T}: Add three mana of any one color" (Gilded Lotus) gives three mana of the colour you choose.'] },
   { v: '0.99.4', title: 'Rules dive 2: more death and equipment triggers', notes: ['NEW: "Whenever ~ or another creature dies" (Blood Artist style) now also triggers on its own death (CR 603.10a).','NEW: "Whenever equipped/enchanted creature dies, attacks, or deals combat damage" triggers on the Equipment or Aura (Skullclamp, Sword-style cards); the creature\'s death is remembered even though the attachment falls off (CR 603.10a, 301.5).'] },
   { v: '0.99.3', title: 'Rules dive 1: mass effects, hand effects, kicker, and more cards fully read', notes: ['A broad check of 93 well-known cards against the rules-text reader found 41 with lines the app only partly read; this release brings that to 11, and the rest are honest limits (the opponent\'s hand, board and library are not tracked in a goldfish game; divided damage; Balance-style choices).', 'NEW mass effects, read from the rules text: "Destroy all creatures / lands / each artifact, creature, and enchantment with mana value X or less", "Exile all ...", "Return all ... to their owners\' hands", "Tap / Untap all ..." with other / nonland / non-colour / tapped / power / mana value / keyword qualifiers (Wrath of God, Armageddon, Pernicious Deed...). Indestructible permanents survive; "can\'t be regenerated" is accepted.', 'NEW hands: "Each player discards their hand, then draws seven cards" (Wheel of Fortune, Windfall asks how many your opponent discarded), "Each player shuffles their hand and graveyard into their library, then draws seven" (Timetwister), "Draw three cards, then put two cards from your hand on top of your library in any order" (Brainstorm, with an ordering window), "You may put a land card from your hand onto the battlefield" (Growth Spiral).', 'NEW kicker: "If this spell was kicked, it deals 4 damage instead" (Burst Lightning) and "If this spell was kicked, ..." riders are applied when it resolves.', 'NEW look-at-the-top sorting can put cards onto the battlefield with a cap and a filter ("put up to two creature cards with mana value 3 or less ... onto the battlefield", Collected Company; buttons are disabled for cards that do not qualify).', 'NEW target-player compounds: "Target player draws two cards and loses 2 life" (Sign in Blood), "mills two cards", "discards two cards (at random)"; opponent halves that are not tracked are logged, not skipped.', 'NEW: Swords to Plowshares-style "Its controller gains life equal to its power" and Path to Exile-style "may search for a basic land", "Destroy target creature if it has mana value 2 or less" (Fatal Push), Oblivion Ring\'s paired enter / leave effects, "Return ~ to its owner\'s hand" (Rancor) and "put this artifact on top of its owner\'s library" (Sensei\'s Top), Gamble\'s random discard, Duress-style opponent hand reveals (acknowledged, not tracked), and the Suspend line.'] },
   { v: '0.99.2', title: 'Fix: Flow State and "if ..., instead" sorting', notes: ['FIXED: Flow State ignored its graveyard check. "Look at the top N cards ... put one into your hand and the rest on the bottom. If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand ..." is now read as a base sort plus a conditional "instead" sort (CR 608.2c): when it resolves the app checks the condition and uses the right one (and tells you if it cannot check a wording).', 'NEW condition wording: "there is an instant card and a sorcery card in your graveyard" / "you have a land card and a creature card in your graveyard" (each listed kind must be there), usable by any condition-reading effect.'] },
@@ -9160,7 +9164,7 @@ function compileCardOne(c) {
       const rn = restrictionNote(stripped);
       if (isLand && landManaAbilities(card).some(a => a.unread && a.unread.length)) { const un = landManaAbilities(card).flatMap(a => a.unread); push(text, 'mana', 'part', 'Mana ability of a land: the mana is handled, but NOT applied by the app (do this by hand): ' + un.map(x => '"' + x + '"').join(' ')); }
       else if (isLand) push(text, 'mana', 'ok', 'Mana ability of a land: taps for the listed mana' + (/ for each | \{C\}\{C\}\./.test(stripped) ? ' (the amount is counted from the board when you tap)' : '') + '.' + rn.note);
-      else if (r && !extra) push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability: taps for ${r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')}.` + rn.note, { restriction: rn });
+      else if (r && !extra) push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability: taps for ${r.per ? r.fixed[0] + ' for each ' + r.per + ' (counted when you tap)' : r.multi ? r.multi + ' mana of one colour you choose' : r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')}.` + rn.note, { restriction: rn });
       else if (extra && /^\{T\},\s*Sacrifice [^,:]+:/.test(stripped) && !/,\s*(?!Sacrifice)[A-Z{]/.test(stripped.split(':')[0].replace(/^\{T\},\s*Sacrifice [^,:]+/, '')) && recognizedEffects(stripped.replace(/^[^:]+:\s*/, '').replace(nameRe, '~')).length) push(text, 'mana', 'ok', 'Mana ability with a sacrifice cost: the tap and the sacrifice are paid as you activate it, and the mana is added at once without using the stack (rule 605.3b).' + rn.note);
       else push(text, 'mana', 'part', (extra ? 'Mana ability with an extra cost. The tap is handled, the extra cost (' + stripped.split(':')[0].replace('{T},', '').trim() + ') is not enforced.' : 'Mana ability the app cannot produce automatically: float the mana by hand.') + rn.note);
       continue;

@@ -20,6 +20,8 @@ function rockInfo(c) {
     if ((mm = first.match(/^((?:\{[WUBRGC]\})+)\.?$/))) r = { fixed: [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) };
     else if ((mm = first.match(/^(\{[WUBRGC]\}(?:,? (?:or )?\{[WUBRGC]\})+)\.?$/))) r = { choice: [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) };
     else if (/^one mana of any color among legendary creatures and planeswalkers you control\.?$/i.test(first)) r = { among: true, choice: [] };
+    else if ((mm = first.match(/^\{([WUBRGC])\} for each (.+?) you control\.?$/i))) r = { fixed: [mm[1]], per: mm[2] + ' you control' };   // CR 106.1: Elvish Archdruid, Gaea's Cradle style
+    else if ((mm = first.match(/^(two|three|four|five) mana of any one color\.?$/i))) r = { choice: ['W', 'U', 'B', 'R', 'G'], multi: ({ two: 2, three: 3, four: 4, five: 5 })[mm[1].toLowerCase()] };   // Gilded Lotus
     else if (/^one mana of any color\.?$/i.test(first)) r = { choice: ['W', 'U', 'B', 'R', 'G'] };
     else if (/^one mana of any of the exiled card'?s colou?rs?\.?$/i.test(first)) r = { exiled: true, choice: [] };   // v0.95.2 imprint (Chrome Mox)
     if (!r) continue;
@@ -140,16 +142,17 @@ function tapRock(card) {
   const run = () => {
     const f = findCard(id); if (!f || f.zone !== 'battlefield' || f.card.tapped) return;
     if (r.fixed) {
-      snap(); f.card.tapped = true; noteManaTap(f.card, r.fixed); markAbilityUsed(f.card); for (const col of r.fixed) addFloatingMana(col);
-      log(`${f.card.name} tapped → floated ${r.fixed.join('')}`); render(); return;
+      let fx = r.fixed; if (r.per) { const n = csCount(r.per, f.card) || 0; fx = Array(n).fill(r.fixed[0]); }   // counted when you tap
+      snap(); f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col);
+      log(`${f.card.name} tapped → floated ${fx.join('') || 'no mana'}`); render(); return;
     }
     const colors = rockColors(f.card);
     const use = colors.length ? colors : ['W', 'U', 'B', 'R', 'G'];
     openManaChoice(f.card, color => {
       if (!color) return;
       const g = findCard(id); if (!g || g.zone !== 'battlefield' || g.card.tapped) return;
-      snap(); g.card.tapped = true; noteManaTap(g.card, [color]); markAbilityUsed(g.card); addFloatingMana(color);
-      log(`${g.card.name} tapped → floated ${color}`); render();
+      const nm = r.multi || 1; snap(); g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color);
+      log(`${g.card.name} tapped → floated ${color.repeat(nm)}`); render();
     }, use);
   };
   const st = rockStatus(card);
