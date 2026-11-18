@@ -109,10 +109,14 @@ function frontType(c) {
   return t;
 }
 function filterMatches(filter, card) {
-  const t = frontType(card);
   const f = filter.toLowerCase();
+  if (card && card.token && /\bnon-?token\b/.test(f)) return false;   // CR 111.1: a "nontoken" filter never matches a token (Weapons Manufacturing must not trigger on its own Munitions)
+  if (/(?<!non-?)\btokens?\b/.test(f) && card && !card.token) return false;   // "a creature token enters" never matches a card
+  let t = frontType(card);
+  if (!t && card && card.token && card.tk) t = String(card.tk.type || (card.tk.types || []).join(' ') || '');   // a token has no printed card, so its own types decide
   if (!t) return true;
-  if (/\bnoncreature\b/.test(f) && /\bCreature\b/.test(t)) return false;
+  for (const w of ['creature', 'artifact', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery']) if (new RegExp('\\bnon-?' + w + '\\b').test(f) && new RegExp('\\b' + w + '\\b', 'i').test(t)) return false;   // CR 205.4b: "nonland", "nonartifact" ... exclude that type
+  if (/\bnonlegendary\b/.test(f) && /\bLegendary\b/i.test(t)) return false;
   const words = [['instant or sorcery', /\b(Instant|Sorcery)\b/], ['instant', /\bInstant\b/], ['sorcery', /\bSorcery\b/], ['artifact', /\bArtifact\b/], ['enchantment', /\bEnchantment\b/], ['planeswalker', /\bPlaneswalker\b/], ['land', /\bLand\b/], ['creature', /\bCreature\b/]];
   { const cw = f.match(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/); if (cw && !colorWordOk(cw[1], cardColorSet(card))) return false; }
   const mentioned = words.filter(([w]) => new RegExp('(?<!non)\\b' + w + '\\b').test(f));
