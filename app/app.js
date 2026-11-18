@@ -1690,7 +1690,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -4570,6 +4570,7 @@ function makeTokensFromDef(d, n, src) {
   for (let i = 0; i < n; i++) {
     const c = newCard(d.name, { token: true, tk: { pt: d.pt, subs: [...d.subs], col: [...d.col], tx: d.tx, types: [...d.types], type: d.type, legendary: !!d.legendary } });
     c.id = state.nextId++;
+    if (d.startPlus) c.counters = { plus: d.startPlus, minus: 0 };   // Incubate N: the token enters with N +1/+1 counters
     if (d.amassOnly) c.counters = { plus: 1, minus: 0 };   // a hand-made Army starts as if amassed once
     enterBattlefield(c, { from: 'effect', tapped: !!d.tapped, logMsg: `${src ? src + ': created' : 'Created'} token ${d.name}${d.pt ? ' ' + d.pt : ''}` });
   }
@@ -5671,6 +5672,7 @@ function openCombatHelper(){
   if(!state||!['attack','block'].includes(STEPS[state.step].id))return;
   const attackStep=STEPS[state.step].id==='attack';
   const m=modal(attackStep?'Declare attackers':'Declare blockers',{width:680,sticky:true});
+  m.el.classList.add('seethru'); if(m.el.parentElement) m.el.parentElement.classList.add('seethru-bd');   // see the board through the window while you choose
   if(attackStep){
     const cb=state.combat;
     if(cb.declared){
@@ -5699,7 +5701,7 @@ function openCombatHelper(){
     const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();for(const id of mand.keys())picks.add(id);creatures.forEach(sync);allNote.textContent='';}});
     const allNote=h('div',{class:'muted small'});
     m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),rows);
-    rows.prepend(h('div',{class:'row',style:'gap:8px;justify-content:flex-start'},allBtn,noneBtn),allNote);
+    rows.append(h('div',{class:'row',style:'gap:8px;justify-content:flex-start'},allBtn,noneBtn),allNote);   // below the list of possible attackers
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{
       for(const id of mand.keys())picks.add(id);
       snap();state.combat.attackers=[...picks];state.combat.declared=true;
@@ -6397,8 +6399,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.13';
+const APP_VERSION = '0.99.14';
 const CHANGELOG = [
+  { v: '0.99.14', title: 'Incubate, and a clearer attack window', notes: ['NEW: Incubate N (CR 701.53) creates an Incubator token with N +1/+1 counters. Its "{2}: Transform this artifact" turns it into a 0/0 Phyrexian artifact creature that keeps its counters (CR 701.28, 111.10).', 'CHANGED: in the Declare attackers window, "Attack with all" and "Clear" now sit below the list of creatures, and the combat windows are slightly see-through so you can still read the board.']},
   { v: '0.99.13', title: 'Trigger filters: nontoken, token, nonland', notes: ['FIXED: Weapons Manufacturing and Kappa Cannoneer built an endless chain of triggers. A trigger filter such as "nontoken artifact" did not exclude tokens, so the Munitions token it made triggered it again. Trigger filters now read the whole qualifier for any card: "nontoken" and "token" (CR 111.1), and "nonland", "nonartifact", "noncreature", "nonenchantment", "nonlegendary" (CR 205.4b). A token is judged by its own types, since it has no printed card.']},
   { v: '0.99.12', title: 'Land piles by colour and token bundles', notes: ['NEW: lands pile by what they do. Untapped lands that make the same colours share one pile (all your {G} lands together, all {U}/{B} lands together), every tapped land goes into one Tapped pile, and a land with an activated ability (fetch lands, Wasteland, manlands) only piles with exact copies of itself until it is tapped. A pile is a cascade like the deck view, so the name of every land stays readable; click one land to tap or untap just that land. Tapped lands in a pile are dimmed rather than turned sideways so their names still read. Turn it off with Settings > Layout > Land piles by mana colour.', 'NEW: identical tokens bundle in fives. Two fives make a ten, five tens a fifty, two fifties a hundred, and so on up to a thousand, each with a count and a stronger colour as it grows, so an infinite-token engine is easy to see. Fewer than five stay as separate tokens; click a bundle to spread the whole group out.']},
   { v: '0.99.11', title: 'Only usable tokens', notes: ['CHANGED: the offline token set now holds only tokens that can appear in a paper game. Joke / Un-set and memorabilia tokens are left out, and entries that differ only by artwork, colour order or reminder text collapse into one. Older saved token lists are replaced by a fresh filtered download on next start.']},
@@ -9712,7 +9715,7 @@ const RULES_TABLE = [
   ['701.50', 'Connive', 'action', 'named'],
   ['701.51', 'Open an Attraction', 'action', 'none'],
   ['701.52', 'Roll to Visit Your Attractions', 'action', 'none'],
-  ['701.53', 'Incubate', 'action', 'none'],
+  ['701.53', 'Incubate', 'action', 'tested'],
   ['701.54', 'The Ring Tempts You', 'action', 'none'],
   ['701.55', 'Face a Villainous Choice', 'action', 'none'],
   ['701.56', 'Time Travel', 'action', 'none'],
@@ -12227,6 +12230,30 @@ async function syncTokens(force, onProgress) {
     return true;
   } catch (e) { console.warn('Token download failed', e); return false; }
   finally { tokenSyncing = false; updateDbStatus(); }
+}
+// ---- Incubate (CR 701.53) and the Incubator token's transform (CR 701.28, 111.10)
+// "Incubate N." creates an Incubator token (a colorless artifact) with N +1/+1 counters on it and "{2}: Transform this artifact."
+// A transformed Incubator is a 0/0 colorless Phyrexian artifact creature token; its counters stay on it.
+function incubateOptions(tx, obj) {
+  const t = String(tx || '').replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  let m = /^Incubate (\d+)\.?$/i.exec(t);
+  if (m) {
+    const n = +m[1], src = obj && obj.sourceName ? obj.sourceName : 'Incubate';
+    return [{ label: `Incubate ${n}: create an Incubator token with ${n} +1/+1 counter${n === 1 ? '' : 's'}`, full: true, fn: () => {
+      makeTokensFromDef({ name: 'Incubator', pt: '', col: [], types: ['Artifact'], subs: [], type: 'Token Artifact', tx: '{2}: Transform this artifact.', startPlus: n }, 1, src);
+    } }];
+  }
+  if (/^Transform this (?:artifact|token|permanent)\.?$/i.test(t) && obj && obj.sourceId != null) {
+    const f = findCard(obj.sourceId);
+    if (f && f.card.token && f.card.tk && /^incubator$/i.test(f.card.name)) {
+      return [{ label: 'Transform the Incubator into a 0/0 Phyrexian artifact creature', full: true, fn: () => {
+        const c = f.card; snap();
+        c.name = 'Phyrexian'; c.tk = Object.assign({}, c.tk, { pt: '0/0', types: ['Artifact', 'Creature'], subs: ['Phyrexian'], type: 'Token Artifact Creature — Phyrexian', tx: '' });
+        log(`Incubator transformed into a 0/0 Phyrexian artifact creature (its counters stay on it)`); render();
+      } }];
+    }
+  }
+  return null;
 }
 init();
 

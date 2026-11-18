@@ -1696,3 +1696,7 @@ body[data-uitheme="pixmusic"] { --bar-a: #33205f; --bar-b: #211443; --hand-a: #2
 .card.bundle.bt100, .card.bundle.bt500, .card.bundle.bt1000 { outline: 2px solid #d9534f; outline-offset: 2px; }
 #mat .cardrow .landpile { --card-w: calc(var(--cw) * var(--zone-scale)); --card-h: calc(var(--ch) * var(--zone-scale)); }
 .landpile > .card.idle:hover, .landpile.tappile > .card.tapped:hover { filter: none; }
+/* v0.99.14 the combat windows let the board show through */
+#modalRoot .backdrop.seethru-bd { background: rgba(0,0,0,.28); }
+.modal.seethru { background: color-mix(in srgb, var(--panel) 80%, transparent); backdrop-filter: blur(3px); }
+.modal.seethru header, .modal.seethru footer { background: color-mix(in srgb, var(--panel) 70%, transparent); }

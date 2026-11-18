@@ -483,6 +483,7 @@ function openCombatHelper(){
   if(!state||!['attack','block'].includes(STEPS[state.step].id))return;
   const attackStep=STEPS[state.step].id==='attack';
   const m=modal(attackStep?'Declare attackers':'Declare blockers',{width:680,sticky:true});
+  m.el.classList.add('seethru'); if(m.el.parentElement) m.el.parentElement.classList.add('seethru-bd');   // see the board through the window while you choose
   if(attackStep){
     const cb=state.combat;
     if(cb.declared){
@@ -511,7 +512,7 @@ function openCombatHelper(){
     const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();for(const id of mand.keys())picks.add(id);creatures.forEach(sync);allNote.textContent='';}});
     const allNote=h('div',{class:'muted small'});
     m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),rows);
-    rows.prepend(h('div',{class:'row',style:'gap:8px;justify-content:flex-start'},allBtn,noneBtn),allNote);
+    rows.append(h('div',{class:'row',style:'gap:8px;justify-content:flex-start'},allBtn,noneBtn),allNote);   // below the list of possible attackers
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{
       for(const id of mand.keys())picks.add(id);
       snap();state.combat.attackers=[...picks];state.combat.declared=true;
