@@ -170,10 +170,12 @@ function compileCardOne(c) {
       continue;
     }
     // mana ability
-    if (/^(?:[A-Z][A-Za-z' ]+ \u2014 )?\{T\}(?:,[^:]+)?: Add\b/.test(stripped)) {
+    if (/^(?:[A-Z][A-Za-z' ]+ \u2014 )?(?:\{T\}(?:,[^:]+)?|Sacrifice [^,:]+): Add\b/.test(stripped)) {
       const r = isLand ? null : rockInfo(card);
       const extra = /^\{T\},/.test(stripped);
       const rn = restrictionNote(stripped);
+      const what = r ? (r.per ? r.fixed[0] + ' for each ' + r.per : r.multi ? r.multi + ' mana of one colour you choose' : r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')) : '';
+      if (r && r.sac) { push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability with a sacrifice cost (rule 605.1a): ${r.tap ? 'tap and sacrifice it' : 'sacrifice it'} for ${what}. Casting and paying use it automatically, after your lands and other mana sources; the sacrifice happens as you pay and it does not use the stack (rule 605.3b).${r.tap ? '' : ' It has no {T}, so it works even while summoning sick or tapped (rule 302.6).'}` + rn.note, { restriction: rn }); continue; }
       if (isLand && landManaAbilities(card).some(a => a.unread && a.unread.length)) { const un = landManaAbilities(card).flatMap(a => a.unread); push(text, 'mana', 'part', 'Mana ability of a land: the mana is handled, but NOT applied by the app (do this by hand): ' + un.map(x => '"' + x + '"').join(' ')); }
       else if (isLand) push(text, 'mana', 'ok', 'Mana ability of a land: taps for the listed mana' + (/ for each | \{C\}\{C\}\./.test(stripped) ? ' (the amount is counted from the board when you tap)' : '') + '.' + rn.note);
       else if (r && !extra) push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability: taps for ${r.per ? r.fixed[0] + ' for each ' + r.per + ' (counted when you tap)' : r.multi ? r.multi + ' mana of one colour you choose' : r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')}.` + rn.note, { restriction: rn });

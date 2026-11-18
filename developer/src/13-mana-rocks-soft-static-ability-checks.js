@@ -11,9 +11,13 @@ function rockInfo(c) {
   if (ROCK_CACHE.has(key + '|' + tx.length + '|' + tx.slice(0, 40))) return ROCK_CACHE.get(key + '|' + tx.length + '|' + tx.slice(0, 40));
   let out = null;
   for (const line of tx.split('\n')) {
-    const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^\{T\}: Add (.+)$/);   // v0.95.2 ability words (Metalcraft \u2014, Threshold \u2014 ...) are just labels
+    const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^([^:]+): Add (.+)$/);   // v0.95.2 ability words (Metalcraft \u2014, Threshold \u2014 ...) are just labels
     if (!m) continue;
-    const body = m[1];
+    // v0.99.32 CR 605.1a: a mana ability is any activated ability that adds mana (no target, not loyalty). The app pays {T} and "Sacrifice this ..." itself,
+    // so Treasure, Lotus Petal, Eldrazi Spawn/Scion and the like are mana sources too. Costs it cannot pay itself (mana, life, other permanents) stay manual.
+    let comps; try { comps = parseCostComps(m[1].trim(), (cardInfo(c.name) || {}).name ? cardInfo(c.name).name.split(' // ')[0] : c.name); } catch (e) { comps = null; }
+    if (!comps || !comps.length || !comps.every(k => k.k === 'tap' || k.k === 'sacSelf')) continue;
+    const body = m[2];
     const first = body.split(/(?<=\.)\s+/)[0], rest = body.slice(first.length).trim();
     let r = null;
     let mm;
@@ -25,6 +29,7 @@ function rockInfo(c) {
     else if (/^one mana of any color\.?$/i.test(first)) r = { choice: ['W', 'U', 'B', 'R', 'G'] };
     else if (/^one mana of any of the exiled card'?s colou?rs?\.?$/i.test(first)) r = { exiled: true, choice: [] };   // v0.95.2 imprint (Chrome Mox)
     if (!r) continue;
+    r.tap = comps.some(k => k.k === 'tap'); r.sac = comps.some(k => k.k === 'sacSelf');
     const cm = (rest + ' ' + first).match(/Activate (?:this ability )?only ([^.]+)\./i);
     r.cond = cm ? cm[1].trim() : null;
     { const rs = (rest + ' ' + first).replace(/\s+/g, ' '); if (/this mana can'?t be spent to cast (?:a )?nonartifact spells?/i.test(rs)) r.noSpend = 'nonartifact'; const so = rs.match(/spend this mana only (?:to|on) ([^.]+)\./i); if (so) r.only = so[1].trim(); }   // CR 106.6 restrictions on what the mana may pay for (Powerstone, Mishra's Workshop style)
@@ -126,12 +131,19 @@ function rockColors(c) {
 }
 function rockStatus(c) {   // can this rock produce mana right now? (soft)
   const r = rockInfo(c); if (!r) return { ok: false, why: '' };
-  if (isSick(c)) return { ok: false, why: 'Summoning sickness: this creature came under your control this turn, so it cannot tap for mana (it has no haste).' };
+  if (r.tap && isSick(c)) return { ok: false, why: 'Summoning sickness: this creature came under your control this turn, so it cannot tap for mana (it has no haste).' };
   if (r.exiled && !rockColors(c).length) return { ok: false, why: `${c.name} has no exiled card with a colour (imprint), so it adds no mana.` };
   if (r.among && !amongColors().length) return { ok: false, why: 'You control no legendary creature or planeswalker with a colour, so there is no colour of mana to add.' };
   return r.cond ? staticCheck(r.cond, c) : { ok: true, why: '' };
 }
 function isManaPermanent(c) { return isLandName(c.name) || !!rockInfo(c); }
+// v0.99.32 A mana source whose cost includes sacrificing itself: payments use it automatically (last), but a double-click or the tap toggle never sacrifices it by accident.
+function isSacManaSource(c) { const r = !isLandName(c.name) && rockInfo(c); return !!(r && r.sac); }
+function manaVerb(r) { return r.sac ? (r.tap ? 'tapped and sacrificed' : 'sacrificed') : 'tapped'; }
+function manaSacrifice(c, r) {   // CR 602.2b / 601.2h: the sacrifice is part of the cost, so it happens as the mana is made; "dies"/"leaves" abilities trigger normally
+  if (!r || !r.sac) return; const f = findCard(c.id); if (!f || f.zone !== 'battlefield') return;
+  log(`${c.name}: sacrificed as part of a mana ability's cost (rule 605.3b: it does not use the stack)`); leaveBattlefield(f.card, 'graveyard');
+}
 function softWarn(title, msg, proceed) {
   const m = modal(title, { width: 480, sticky: true });
   m.body.append(h('div', { class: 'psub', text: msg }), h('div', { class: 'muted small', text: 'This check is a soft one: it can be wrong, so you may continue anyway.' }));
@@ -140,19 +152,19 @@ function softWarn(title, msg, proceed) {
 function tapRock(card) {
   const id = card.id, r = rockInfo(card);
   const run = () => {
-    const f = findCard(id); if (!f || f.zone !== 'battlefield' || f.card.tapped) return;
+    const f = findCard(id); if (!f || f.zone !== 'battlefield' || (r.tap && f.card.tapped)) return;
     if (r.fixed) {
       let fx = r.fixed; if (r.per) { const n = csCount(r.per, f.card) || 0; fx = Array(n).fill(r.fixed[0]); }   // counted when you tap
-      snap(); f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col);
-      log(`${f.card.name} tapped → floated ${fx.join('') || 'no mana'}`); render(); return;
+      snap(); if (r.tap) f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col);
+      log(`${f.card.name} ${manaVerb(r)} → floated ${fx.join('') || 'no mana'}`); manaSacrifice(f.card, r); render(); return;
     }
     const colors = rockColors(f.card);
     const use = colors.length ? colors : ['W', 'U', 'B', 'R', 'G'];
     openManaChoice(f.card, color => {
       if (!color) return;
-      const g = findCard(id); if (!g || g.zone !== 'battlefield' || g.card.tapped) return;
-      const nm = r.multi || 1; snap(); g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color);
-      log(`${g.card.name} tapped → floated ${color.repeat(nm)}`); render();
+      const g = findCard(id); if (!g || g.zone !== 'battlefield' || (r.tap && g.card.tapped)) return;
+      const nm = r.multi || 1; snap(); if (r.tap) g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color);
+      log(`${g.card.name} ${manaVerb(r)} → floated ${color.repeat(nm)}`); manaSacrifice(g.card, r); render();
     }, use);
   };
   const st = rockStatus(card);
@@ -208,7 +220,7 @@ function tapForMana(id) {
 function toggleTap(id) {
   const f = findCard(id);
   if (!f || f.zone !== 'battlefield') return;
-  if (!f.card.tapped && isManaPermanent(f.card)) { tapForMana(id); return; }
+  if (!f.card.tapped && isManaPermanent(f.card) && !isSacManaSource(f.card)) { tapForMana(id); return; }
   if (f.card.tapped) {
     const uc = untapCheck(f.card);
     if (!uc.ok) { toast('It stays tapped', uc.why); return; }

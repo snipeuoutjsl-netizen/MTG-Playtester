@@ -2879,7 +2879,7 @@ function matchPips(pips, srcIdx, sources) {
   const tryPip = (pi, seen) => {
     for (const si of srcIdx) {
       if (seen.has(si)) continue;
-      const ok = pips[pi] === 'C' ? true : sources[si].colors.has(pips[pi]);
+      const ok = sources[si].colors.has(pips[pi]);   // v0.99.32 CR 107.4c: {C} is paid only with colourless mana (it was accepted from any source)
       if (!ok) continue;
       seen.add(si);
       if (!owner.has(si) || tryPip(owner.get(si), seen)) { owner.set(si, pi); return true; }
@@ -2895,7 +2895,7 @@ function manaPaymentAllocation(parts, pool, sources, chosen) {
   const pips = [];
   for (const col of parts.colors) { if (p[col] > 0) p[col]--; else pips.push(col); }
   let generic = parts.generic + (parts.hyb ? 0 : parts.flexible.length);
-  const avail = chosen ? [...chosen] : sources.map((_, i) => i);
+  const avail = (chosen ? [...chosen] : sources.map((_, i) => i)).sort((a, b) => (sources[a].sac ? 1 : 0) - (sources[b].sac ? 1 : 0));   // v0.99.32 lands and rocks before anything that must be sacrificed
   // Hybrid / two-brid / Phyrexian symbols (CR 107.4e-f): paid with a matching colour if there is one; else the alternative (2 generic, or 2 life).
   let life = 0; const later = [];
   for (const hs of parts.hyb || []) {
@@ -2919,7 +2919,7 @@ function manaPaymentAllocation(parts, pool, sources, chosen) {
   if (life) Object.defineProperty(p, '_life', { value: life, enumerable: false, writable: true, configurable: true });   // paid by whoever spends this pool: see settlePhyrexianLife
   if (!owner) return { ok: false, pool: p, used: [], poolUsed, needLands: pips.length + generic, life: 0 };
   const used = [...owner.keys()];
-  const spare = avail.filter(i => !used.includes(i)).sort((a, b) => sources[a].colors.size - sources[b].colors.size);
+  const spare = avail.filter(i => !used.includes(i)).sort((a, b) => ((sources[a].sac ? 1 : 0) - (sources[b].sac ? 1 : 0)) || (sources[a].colors.size - sources[b].colors.size));
   for (const i of spare) { if (generic <= 0) break; used.push(i); generic--; }
   return { ok: generic <= 0, life, pool: p, used, poolUsed, needLands: pips.length + parts.generic + parts.flexible.length - (parts.generic + parts.flexible.length - Math.max(0, generic)) };
 }
@@ -2947,7 +2947,7 @@ function openManaPayment(c, done, costOverride, verb, skipId) {
   };
   sources.forEach((src, i) => {
     const label = [...src.colors].join('') || 'C';
-    const row = h('div', { class: 'row' }, h('span', { class: 'nm' }, src.card.name + (src.of > 1 ? ` (mana ${src.slot + 1} of ${src.of})` : '')), h('span', { class: 'muted small', text: label }));
+    const row = h('div', { class: 'row' }, h('span', { class: 'nm' }, src.card.name + (src.of > 1 ? ` (mana ${src.slot + 1} of ${src.of})` : '') + (src.sac ? ' (sacrificed)' : '')), h('span', { class: 'muted small', text: label }));
     row.addEventListener('click', () => { if (chosen.has(i)) chosen.delete(i); else chosen.add(i); refresh(); });
     rows.append(row);
   });
@@ -2972,10 +2972,13 @@ function settlePhyrexianLife() {   // CR 107.4f: a Phyrexian symbol paid with li
 function tapManaIds(manaIds){
   settlePhyrexianLife();
   const used=new Map(); for(const mid of manaIds) used.set(mid,(used.get(mid)||0)+1);
-  for(const [mid,n] of used){const mf=findCard(mid);if(mf&&mf.zone==='battlefield'){mf.card.tapped=true; mf.card.mt={cols:[],spent:true,life:0}; fireTrigger('tapmana',{card:mf.card});
+  const sacs=[];
+  for(const [mid,n] of used){const mf=findCard(mid);if(mf&&mf.zone==='battlefield'){const rr=!isLandName(mf.card.name)&&rockInfo(mf.card); if(rr&&rr.sac){ if(rr.tap) mf.card.tapped=true; sacs.push([mf.card,rr]); if(rr.fixed&&n<rr.fixed.length){ rr.fixed.slice(n).forEach(col=>addFloatingMana(col)); } continue; }
+    mf.card.tapped=true; mf.card.mt={cols:[],spent:true,life:0}; fireTrigger('tapmana',{card:mf.card});
     if(isLandName(mf.card.name)){ const lm=landMulti(mf.card); if(lm){ applyLandCost(mf.card,{dmg:lm.dmg,life:lm.life}); if(n<lm.fixed.length){ if(lm.only) log(`${mf.card.name}: ${lm.fixed.length-n} unused restricted mana is lost`); else { lm.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${lm.fixed.length-n} unused mana floats`); } } } else applyLandCost(mf.card,landTapCost(mf.card)); }
     const r=!isLandName(mf.card.name)&&rockInfo(mf.card);   // a multi-mana rock taps once: unused mana floats
     if(r&&r.fixed&&n<r.fixed.length){ r.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${r.fixed.length-n} unused mana floats`); }}}
+  for(const [c,rr] of sacs) manaSacrifice(c,rr);   // after every source has paid, so a dies trigger cannot change the payment
 }
 function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   const f=findCard(id); if(!f||f.zone!=='hand'||isLandName(f.card.name))return;
@@ -4295,9 +4298,13 @@ function rockInfo(c) {
   if (ROCK_CACHE.has(key + '|' + tx.length + '|' + tx.slice(0, 40))) return ROCK_CACHE.get(key + '|' + tx.length + '|' + tx.slice(0, 40));
   let out = null;
   for (const line of tx.split('\n')) {
-    const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^\{T\}: Add (.+)$/);   // v0.95.2 ability words (Metalcraft \u2014, Threshold \u2014 ...) are just labels
+    const m = line.trim().replace(/^[A-Z][A-Za-z' ]+ \u2014 /, '').match(/^([^:]+): Add (.+)$/);   // v0.95.2 ability words (Metalcraft \u2014, Threshold \u2014 ...) are just labels
     if (!m) continue;
-    const body = m[1];
+    // v0.99.32 CR 605.1a: a mana ability is any activated ability that adds mana (no target, not loyalty). The app pays {T} and "Sacrifice this ..." itself,
+    // so Treasure, Lotus Petal, Eldrazi Spawn/Scion and the like are mana sources too. Costs it cannot pay itself (mana, life, other permanents) stay manual.
+    let comps; try { comps = parseCostComps(m[1].trim(), (cardInfo(c.name) || {}).name ? cardInfo(c.name).name.split(' // ')[0] : c.name); } catch (e) { comps = null; }
+    if (!comps || !comps.length || !comps.every(k => k.k === 'tap' || k.k === 'sacSelf')) continue;
+    const body = m[2];
     const first = body.split(/(?<=\.)\s+/)[0], rest = body.slice(first.length).trim();
     let r = null;
     let mm;
@@ -4309,6 +4316,7 @@ function rockInfo(c) {
     else if (/^one mana of any color\.?$/i.test(first)) r = { choice: ['W', 'U', 'B', 'R', 'G'] };
     else if (/^one mana of any of the exiled card'?s colou?rs?\.?$/i.test(first)) r = { exiled: true, choice: [] };   // v0.95.2 imprint (Chrome Mox)
     if (!r) continue;
+    r.tap = comps.some(k => k.k === 'tap'); r.sac = comps.some(k => k.k === 'sacSelf');
     const cm = (rest + ' ' + first).match(/Activate (?:this ability )?only ([^.]+)\./i);
     r.cond = cm ? cm[1].trim() : null;
     { const rs = (rest + ' ' + first).replace(/\s+/g, ' '); if (/this mana can'?t be spent to cast (?:a )?nonartifact spells?/i.test(rs)) r.noSpend = 'nonartifact'; const so = rs.match(/spend this mana only (?:to|on) ([^.]+)\./i); if (so) r.only = so[1].trim(); }   // CR 106.6 restrictions on what the mana may pay for (Powerstone, Mishra's Workshop style)
@@ -4410,12 +4418,19 @@ function rockColors(c) {
 }
 function rockStatus(c) {   // can this rock produce mana right now? (soft)
   const r = rockInfo(c); if (!r) return { ok: false, why: '' };
-  if (isSick(c)) return { ok: false, why: 'Summoning sickness: this creature came under your control this turn, so it cannot tap for mana (it has no haste).' };
+  if (r.tap && isSick(c)) return { ok: false, why: 'Summoning sickness: this creature came under your control this turn, so it cannot tap for mana (it has no haste).' };
   if (r.exiled && !rockColors(c).length) return { ok: false, why: `${c.name} has no exiled card with a colour (imprint), so it adds no mana.` };
   if (r.among && !amongColors().length) return { ok: false, why: 'You control no legendary creature or planeswalker with a colour, so there is no colour of mana to add.' };
   return r.cond ? staticCheck(r.cond, c) : { ok: true, why: '' };
 }
 function isManaPermanent(c) { return isLandName(c.name) || !!rockInfo(c); }
+// v0.99.32 A mana source whose cost includes sacrificing itself: payments use it automatically (last), but a double-click or the tap toggle never sacrifices it by accident.
+function isSacManaSource(c) { const r = !isLandName(c.name) && rockInfo(c); return !!(r && r.sac); }
+function manaVerb(r) { return r.sac ? (r.tap ? 'tapped and sacrificed' : 'sacrificed') : 'tapped'; }
+function manaSacrifice(c, r) {   // CR 602.2b / 601.2h: the sacrifice is part of the cost, so it happens as the mana is made; "dies"/"leaves" abilities trigger normally
+  if (!r || !r.sac) return; const f = findCard(c.id); if (!f || f.zone !== 'battlefield') return;
+  log(`${c.name}: sacrificed as part of a mana ability's cost (rule 605.3b: it does not use the stack)`); leaveBattlefield(f.card, 'graveyard');
+}
 function softWarn(title, msg, proceed) {
   const m = modal(title, { width: 480, sticky: true });
   m.body.append(h('div', { class: 'psub', text: msg }), h('div', { class: 'muted small', text: 'This check is a soft one: it can be wrong, so you may continue anyway.' }));
@@ -4424,19 +4439,19 @@ function softWarn(title, msg, proceed) {
 function tapRock(card) {
   const id = card.id, r = rockInfo(card);
   const run = () => {
-    const f = findCard(id); if (!f || f.zone !== 'battlefield' || f.card.tapped) return;
+    const f = findCard(id); if (!f || f.zone !== 'battlefield' || (r.tap && f.card.tapped)) return;
     if (r.fixed) {
       let fx = r.fixed; if (r.per) { const n = csCount(r.per, f.card) || 0; fx = Array(n).fill(r.fixed[0]); }   // counted when you tap
-      snap(); f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col);
-      log(`${f.card.name} tapped → floated ${fx.join('') || 'no mana'}`); render(); return;
+      snap(); if (r.tap) f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col);
+      log(`${f.card.name} ${manaVerb(r)} → floated ${fx.join('') || 'no mana'}`); manaSacrifice(f.card, r); render(); return;
     }
     const colors = rockColors(f.card);
     const use = colors.length ? colors : ['W', 'U', 'B', 'R', 'G'];
     openManaChoice(f.card, color => {
       if (!color) return;
-      const g = findCard(id); if (!g || g.zone !== 'battlefield' || g.card.tapped) return;
-      const nm = r.multi || 1; snap(); g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color);
-      log(`${g.card.name} tapped → floated ${color.repeat(nm)}`); render();
+      const g = findCard(id); if (!g || g.zone !== 'battlefield' || (r.tap && g.card.tapped)) return;
+      const nm = r.multi || 1; snap(); if (r.tap) g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color);
+      log(`${g.card.name} ${manaVerb(r)} → floated ${color.repeat(nm)}`); manaSacrifice(g.card, r); render();
     }, use);
   };
   const st = rockStatus(card);
@@ -4492,7 +4507,7 @@ function tapForMana(id) {
 function toggleTap(id) {
   const f = findCard(id);
   if (!f || f.zone !== 'battlefield') return;
-  if (!f.card.tapped && isManaPermanent(f.card)) { tapForMana(id); return; }
+  if (!f.card.tapped && isManaPermanent(f.card) && !isSacManaSource(f.card)) { tapForMana(id); return; }
   if (f.card.tapped) {
     const uc = untapCheck(f.card);
     if (!uc.ok) { toast('It stays tapped', uc.why); return; }
@@ -5068,16 +5083,18 @@ function manaSources() {
   const out=[];
   if(!state) return out;
   for(const c of state.battlefield){
-    if(c.tapped || !isManaPermanent(c)) continue;
+    if(!isManaPermanent(c)) continue;
     if(!isLandName(c.name)){
       const r=rockInfo(c), st=rockStatus(c);
+      if(r.tap && c.tapped) continue;   // v0.99.32 a sacrifice-only mana ability (Eldrazi Spawn) has no {T}: a tapped creature can still pay with it
       if(st.ok===false) continue;
       if(PAY_CTX && r.noSpend==='nonartifact' && !state.battlefield.includes(PAY_CTX) && !/\bArtifact\b/.test(PAY_CTX.token ? ((PAY_CTX.tk&&PAY_CTX.tk.type)||'') : ((cardInfo(PAY_CTX.name)||{}).t||'').split(' // ')[0])) continue;   // "This mana can't be spent to cast a nonartifact spell"
       if(PAY_CTX && r.only && !spendOnlyOk(r.only, PAY_CTX)) continue;               // restriction clearly not met: not offered automatically (tap it by hand to override)
-      if(r.fixed) r.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:r.fixed.length}));
-      else out.push({card:c, colors:new Set(rockColors(c)), any:true, slot:0, of:1});
+      if(r.fixed) r.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:r.fixed.length, sac:!!r.sac}));
+      else out.push({card:c, colors:new Set(rockColors(c)), any:true, slot:0, of:1, sac:!!r.sac});
       continue;
     }
+    if(c.tapped) continue;
     // Same colour logic as tapping by hand: printed mana plus the basic land types the board gives it
     // (Leyline of the Guildpact, Dryad of the Ilysian Grove, Urborg, Blood Moon...).
     { const om = ovrLandMana(c); if (om) { if (!om.length) continue; om.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:om.length})); continue; } }   // a land that lost its abilities (Song of the Dryads, Imprisoned in the Moon)
@@ -5265,7 +5282,7 @@ function onCardDbl(c, zone) {
   if (zone === 'battlefield') {
     if (isPlaneswalker(c)) openLoyalty(c);
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);
-    else if (isManaPermanent(c) && !c.tapped) tapForMana(c.id);
+    else if (isManaPermanent(c) && !c.tapped && !isSacManaSource(c)) tapForMana(c.id);
     else if (!/\bCreature\b/.test(frontType(c)) && !isLandName(c.name) && activatedAbilityFor(c)) { const L = activatedAbilitiesFor(c); const ab = L.find(x => !abilityReady(c, x)) || L[0]; activateAbility(c.id, false, ab.ix); }
     else if (!isLandName(c.name) && activatedAbilitiesFor(c).some(x => !abilityReady(c, x))) openAbilityPicker(c);   // v0.86: a creature with a usable ability (Psychic Frog): choose which
     else toggleTap(c.id);
@@ -5614,9 +5631,30 @@ function layoutHand() {
   if (document.body.classList.contains('mullpick') || document.body.classList.contains('mullhand')) {
     const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 1);
     const aw = Math.max(hw.parentElement ? hw.parentElement.clientWidth : innerWidth, 300) - 70;
-    const cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
-    hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
+    let cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
+    // v0.99.32 The arithmetic above ignores the fan's tilt and float, so the outer cards could spill past the table (seen in picture mode at 1280 and 1673 wide).
+    // Measure the real (transformed) card boxes against the table and shrink until every card sits inside it with a small margin.
+    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 12;
+    for (let g = 0; g < 14; g++) {
+      hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
+      spreadHand(row, cards);
+      const pc = $('#overlay:not([hidden]) .pcard'), top = pc ? pc.getBoundingClientRect().bottom + 10 : -Infinity;   // and never cover the Opening hand prompt
+      const settled = c => { try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };   // a card still flying in from the deal is not where it will rest; the endless float is
+      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - pad || r.top < top; });
+      if (!out || cw <= 90) break;
+      cw = Math.max(90, Math.floor(cw * 0.93));
+    }
+    if (cards.some(c => !c.getAnimations || !c.getAnimations({ subtree: true }).every(a => a.playState !== 'running' || (a.effect && a.effect.getTiming().iterations === Infinity)))) {
+      clearTimeout(layoutHand.again); layoutHand.again = setTimeout(scheduleLayout, 350);   // check the fit again once the deal has landed
+    }
+    return;
   } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); }
+  spreadHand(row, cards);
+}
+
+// Overlap the hand cards when they do not fit side by side.
+function spreadHand(row, cards) {
+  for (const c of cards) c.style.marginLeft = '';
   if (cards.length < 2) return;
   const avail = $('#handWrap').clientWidth - 70, cw = cards[0].offsetWidth;
   if (!cw) return;
@@ -6071,7 +6109,7 @@ function showCardMenu(c, zone, x, y) {
   if (!state) return;
   const items = [];
   if (zone === 'battlefield') {
-    if (isManaPermanent(c) && !c.tapped && !(isLandName(c.name) && fetchInfo(c))) items.push({ label: 'Tap for mana…', fn: () => tapForMana(c.id) });
+    if (isManaPermanent(c) && !c.tapped && !isSacManaSource(c) && !(isLandName(c.name) && fetchInfo(c))) items.push({ label: 'Tap for mana…', fn: () => tapForMana(c.id) });
     else { items.push({ label: c.tapped ? 'Untap' : 'Tap', fn: () => toggleTap(c.id) }); if (c.tapped) items.push({ label: 'Untap (a card effect untaps it)', fn: () => untapByEffect(c.id) }); }
     if (isLandName(c.name) && !c.tapped) items.push({ label: 'Tap without floating mana', fn: () => { snap(); c.tapped=true; render(); } });
     if (permZone(c) === 'creatures') items.push({ label: isSick(c) ? 'Remove summoning sickness (it has haste / was untapped)' : 'Mark as summoning sick', fn: () => { snap(); c.sickManual = isSick(c) ? 'off' : 'on'; render(); } });
@@ -6519,8 +6557,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.31';
+const APP_VERSION = '0.99.32';
 const CHANGELOG = [
+  { v: '0.99.32', title: 'Sacrifice-for-mana sources pay like lands; clearer opening hand', notes: ['FIXED (rules): mana abilities whose cost is a sacrifice (Eldrazi Spawn and Scion, Treasure, Gold, Lotus Petal and any card worded the same way) now count as mana sources (rule 605.1a). Your hand shows spells as playable when those sources can pay, and paying a cost uses them automatically: lands and other mana sources first, then the sacrifice sources, which are sacrificed as you pay (no stack, rule 605.3b). "Dies" and "leaves" abilities trigger as usual.','A sacrifice-only mana ability (no {T}) works while the creature is summoning sick or tapped (rule 302.6). A double-click or the tap toggle never sacrifices it by accident: use the ability menu, or simply cast the spell.','FIXED (rules): a {C} symbol in a cost is paid only with colourless mana (rule 107.4c). Before, any land could pay it.','The payment window marks sources that will be sacrificed, and How the app reads cards explains sacrifice mana abilities.','Opening hand: the hand is sized to fit inside the table (and below the Opening hand box) at every window size, measured with the cards fanned out. The Opening hand box is no longer dimmed: it sits above the dark layer with a gold outline so it is clearly the thing to click.'] },
   { v: '0.99.31', title: 'Echo, persist, undying, Spacecraft, creature-type choices, uncounterable spells', notes: ['NEW (rules): Echo (702.30) asks for the echo cost at your next upkeep or sacrifices the permanent; Persist (702.79) and Undying (702.93) return the creature with a -1/-1 or +1/+1 counter only if it had none of that kind when it died (last known information); "Sacrifice it unless you ..." (Glint Hawk style) is a choice between doing the cost and losing the permanent.', 'NEW: Spacecraft and Station (702.184, 721): Station taps another creature and adds charge counters equal to its power; at each STATION N+ threshold the card gains the lines under it, and at the highest one with a power/toughness it is an artifact creature (Borg Cube: 6/6 at 12). Assimilate (701.72) is read from the Borg Cube text.', 'FIXED (engine): "As this creature enters, choose a creature type" (Roaming Throne) was not recognised because it does not say "the battlefield". The picker now lists creature types on the battlefield first, then in your deck, and a typed answer must be a real creature type. Roaming Throne is the chosen type too and makes triggers of other creatures of that type trigger an additional time.', 'NEW (engine): "Can\'t be countered" is one check for every counter effect: the spell\'s own text, statics such as "Green spells you control can\'t be countered", and mana such as Cavern of Souls ("and that spell can\'t be countered"). The Countered button then reads "Can\'t be countered".', 'Opening hand now always fits the window. Hand Key sits at the far right of the hand bar and opens an opaque window. Commander mode piles run Deck, Commander, Graveyard, Exile; hovering any pile shows its top card (your commander for the command zone).'] },
   { v: '0.99.30', title: 'Commander decks have their own tab', notes: ['Click the deck name: the deck screen now has a Decks | Commander switch. Commander mode is chosen there; Commander decks (a Commander section in the list) are only listed in Commander mode and normal decks only in normal mode. In Commander mode a gold Commander mode chip shows beside On the play; click it to go back to the deck screen.','Saving or importing a deck of the other kind switches to its mode so you can see it. Importing in Commander mode starts with a Commander heading ready.'] },
   { v: '0.99.29', title: 'Commander mode (goldfish)', notes: ['Put your commander under a Commander heading in the deck list (or mark it *CMDR*). A Commander switch appears beside On the play.','Rules enforced: 40 life, 99-card library, a command zone pile, casting it from there costs {2} more per previous cast, a free first mulligan, and the choice to put it back into the command zone when it would go to the graveyard, exile, hand or library (CR 903.9). Commander combat damage to your opponent is tracked (21 is lethal).','A deck check at the start of a game reports the card count, singleton and colour identity problems.'] },
@@ -9433,10 +9472,12 @@ function compileCardOne(c) {
       continue;
     }
     // mana ability
-    if (/^(?:[A-Z][A-Za-z' ]+ \u2014 )?\{T\}(?:,[^:]+)?: Add\b/.test(stripped)) {
+    if (/^(?:[A-Z][A-Za-z' ]+ \u2014 )?(?:\{T\}(?:,[^:]+)?|Sacrifice [^,:]+): Add\b/.test(stripped)) {
       const r = isLand ? null : rockInfo(card);
       const extra = /^\{T\},/.test(stripped);
       const rn = restrictionNote(stripped);
+      const what = r ? (r.per ? r.fixed[0] + ' for each ' + r.per : r.multi ? r.multi + ' mana of one colour you choose' : r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')) : '';
+      if (r && r.sac) { push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability with a sacrifice cost (rule 605.1a): ${r.tap ? 'tap and sacrifice it' : 'sacrifice it'} for ${what}. Casting and paying use it automatically, after your lands and other mana sources; the sacrifice happens as you pay and it does not use the stack (rule 605.3b).${r.tap ? '' : ' It has no {T}, so it works even while summoning sick or tapped (rule 302.6).'}` + rn.note, { restriction: rn }); continue; }
       if (isLand && landManaAbilities(card).some(a => a.unread && a.unread.length)) { const un = landManaAbilities(card).flatMap(a => a.unread); push(text, 'mana', 'part', 'Mana ability of a land: the mana is handled, but NOT applied by the app (do this by hand): ' + un.map(x => '"' + x + '"').join(' ')); }
       else if (isLand) push(text, 'mana', 'ok', 'Mana ability of a land: taps for the listed mana' + (/ for each | \{C\}\{C\}\./.test(stripped) ? ' (the amount is counted from the board when you tap)' : '') + '.' + rn.note);
       else if (r && !extra) push(text, 'mana', rn.ok ? 'ok' : 'part', `Mana ability: taps for ${r.per ? r.fixed[0] + ' for each ' + r.per + ' (counted when you tap)' : r.multi ? r.multi + ' mana of one colour you choose' : r.fixed ? r.fixed.join('') : r.among ? 'one mana of a colour among your legendary permanents' : r.choice.length === 5 ? 'one mana of any colour' : 'a choice of ' + r.choice.join('/')}.` + rn.note, { restriction: rn });
