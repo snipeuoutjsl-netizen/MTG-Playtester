@@ -827,8 +827,9 @@ function cdaValues(c) {
 }
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
-  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; { const ov = ovrOf(c); if (ov && ov.pt) pt = ov.pt; } }   // CR 613.4b: an effect that sets base power and toughness
-  { const sp = stationPT(c); if (sp) pt = sp; }   // CR 721.2 a Spacecraft with enough charge counters has the P/T of its highest reached STATION line
+  const printed = pt; let setBy = '';   // v0.99.32 keep the PRINTED value: an effect that sets base P/T is a change from it (it used to be taken as the printed value, so a picture showed no P/T box)
+  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) { pt = bc.pt; setBy = bc.src || 'an effect that makes it a creature'; } if (c.basePT) { pt = c.basePT; setBy = 'an effect that sets its base power and toughness'; } { const ov = ovrOf(c); if (ov && ov.pt) { pt = ov.pt; setBy = 'an effect that sets its base power and toughness'; } } }   // CR 613.4b: an effect that sets base power and toughness
+  { const sp = stationPT(c); if (sp) { pt = sp; setBy = ''; } }   // CR 721.2 a Spacecraft with enough charge counters has the P/T of its highest reached STATION line (printed on the card itself)
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
@@ -842,6 +843,7 @@ function ptCalc(c) {
     } else { const n = parseInt(raw, 10); out[k] = isNaN(n) ? 0 : n; }
   });
   { const bp = parseInt(sides[0], 10), bt = parseInt(sides[1], 10); out.bp = isNaN(bp) || /\*/.test(sides[0] || '') ? null : bp; out.bt = isNaN(bt) || /\*/.test(sides[1] || '') ? null : bt; }
+  if (setBy && pt !== printed) { const pp = String(printed || '').split('/'), bp = parseInt(pp[0], 10), bt = parseInt(pp[1], 10); out.bp = isNaN(bp) || /\*/.test(pp[0] || '') ? null : bp; out.bt = isNaN(bt) || /\*/.test(pp[1] || '') ? null : bt; out.modified = true; out.why.push(`base ${pt} set by ${setBy} (CR 613.4b)`); }
   if (cda && out.dynamic) out.why.push(...cda.why);
   if (out.unknown) out.why.push('Power/toughness depends on something the app cannot read; shown as 0. Adjust with counters if needed.');
   const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {});
@@ -3448,10 +3450,7 @@ function resolveTopOfStack() {
     if(c.impended) impendingEnter(c);
     if(c.blitzed||c.dashed) altKwResolved(c);
     if(c.evoked){ delete c.evoked; queueTrigger({kind:'ability',cardId:c.id,cardName:c.name,text:'Evoke: when this enters, sacrifice it.',effect:'Sacrifice ~.',special:'sacSelf',optional:false,why:'You cast it for its evoke cost, so it is sacrificed when it enters. Its other enters-the-battlefield abilities still trigger; you choose the order they go on the stack.'}); }
-    if(c.xValue!==undefined){
-      const cm=cardText(c).match(/enters(?: the battlefield)? with (twice )?X (\+1\/\+1|[a-z\-]+) counters?/i);
-      if(cm){ const n=(cm[1]?2:1)*c.xValue; if(cm[2]==='+1/+1'){ c.counters.plus=(c.counters.plus||0)+n; log(`${c.name} entered with ${n} +1/+1 counter${n===1?'':'s'} (X = ${c.xValue})`); } else log(`${c.name} should have ${n} ${cm[2]} counters (X = ${c.xValue}); add them by hand`); }
-    }
+    // v0.99.32 "enters with X counters" is applied once, by etbCounters (with replacement effects such as Hardened Scales). This block added them a second time: Walking Ballista cast for X = 3 got 6 counters.
     }});
   } else {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
@@ -3847,6 +3846,7 @@ function log(msg) {
 }
 
 function findCard(id) {
+  if (!state) return null;   // v0.99.32 the card reader also runs with no game (deck scan, How the app reads cards): there is nothing to look at yet
   for (const z of ZONES) {
     const i = state[z].findIndex(c => c.id === id);
     if (i >= 0) return { zone: z, idx: i, card: state[z][i] };
@@ -5036,7 +5036,7 @@ function etbCounters(c) {
   { const its = kwItems(tx); const mi = its.map(x => x.match(/^modular (\d+)$/i)).find(Boolean); if (mi) tx += `\n~ enters with ${mi[1]} +1/+1 counters on it.`;
     const vn = its.map(x => x.match(/^vanishing (\d+)$/i)).find(Boolean); if (vn) tx += `\n~ enters with ${vn[1]} time counters on it.`;   // CR 702.63a
     const fd = its.map(x => x.match(/^fading (\d+)$/i)).find(Boolean); if (fd) tx += `\n~ enters with ${fd[1]} fade counters on it.`; }   // CR 702.32a   // v0.96.1 modular (CR 702.43a)
-  const m = tx.match(/\benters(?: the battlefield)? with (an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);
+  const m = tx.match(/\benters(?: the battlefield)? with (twice )?(an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);   // v0.99.32 also "twice X"
   if (!m) return;
   // v0.84 "...counter on it for each <type> card exiled with it" (Murktide Regent): one per matching card exiled while casting it (delve), not a flat one.
   const fe = tx.match(/\bcounters? on it for each ([^.]+?)(?:\.|$)/im);
@@ -5045,13 +5045,13 @@ function etbCounters(c) {
     const em = /^(.+?) cards? exiled with it$/i.exec(fe[1].trim());
     if (em) { const phrase = em[1].replace(/\s+and\s+/g, ' or '); n = (c.exiledWith || []).filter(e => filterMatches(phrase, { name: e.name })).length; log(`${c.name}: ${n} ${em[1]} card${n === 1 ? '' : 's'} exiled with it while casting it: enters with ${n} counter${n === 1 ? '' : 's'}`); if (!n) return; }
     else { log(`${c.name}: enters with counters "for each ${fe[1]}": count them yourself and add the counters by hand`); toast('Add counters by hand', `${c.name} gets one counter for each ${fe[1]}. The app cannot count that, so add them from the card menu.`); return; }
-  } else n = /^x$/i.test(m[1]) ? (+c.xValue || 0) : /^\d+$/.test(m[1]) ? +m[1] : (TOKEN_NUMW[m[1].toLowerCase()] || 1);
+  } else n = (m[1] ? 2 : 1) * (/^x$/i.test(m[2]) ? (+c.xValue || 0) : /^\d+$/.test(m[2]) ? +m[2] : (TOKEN_NUMW[m[2].toLowerCase()] || 1));   // CR 107.3m: X is 0 unless it was cast with X chosen
   if (!n) return;
-  let kind = m[2].toLowerCase(); if (kind === 'loyalty') return;
+  let kind = m[3].toLowerCase(); if (kind === 'loyalty') return;
   const key = kind === '+1/+1' ? 'plus' : /^[−-]1/.test(kind) ? 'minus' : kind;
   if (typeof c.counters === 'number') c.counters = { plus: c.counters, minus: 0 };
   c.counters = c.counters || { plus: 0, minus: 0 };
-  const adj = adjustCounterAdd(c, key, n, false); c.counters[key] = (c.counters[key] || 0) + adj; log(`${c.name} entered with ${adj} ${kind} counter${adj === 1 ? '' : 's'}`);
+  const adj = adjustCounterAdd(c, key, n, false); c.counters[key] = (c.counters[key] || 0) + adj; log(`${c.name} entered with ${adj} ${kind} counter${adj === 1 ? '' : 's'}${/^x$/i.test(m[2]) ? ` (X = ${+c.xValue || 0})` : ''}`);
 }
 // State-triggered "When ~ has no <kind> counters on it, ..." (Dark Depths): queued once each time the last counter goes away.
 function checkNoCounterTriggers() {
@@ -6518,7 +6518,7 @@ function openWelcome(onDone) {
       P('Pick a built-in playmat under ', B('Settings → Board'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
     ['7. What the icons and colours mean', [P('Cards in your hand glow to tell you what you can do: ', B('Playable'), ' (green), ', B('Can\'t pay'), ' (not enough or wrong mana), ', B('Wrong timing'), ' (sorcery-speed card outside your main phase), ', B('Instant speed'), ' (can be cast in response), and ', B('Selected'), '.'),
       P('The row of small icons at the top shows game states (monarch, initiative, storm count, energy, poison and more); they light up when active, and you can click them to change them. Tapped cards are turned sideways, summoning-sick creatures are dimmed, and a count badge like ', B('×4'), ' means identical cards are piled together (click it to spread them out).'),
-      P('Round icons on a creature are keywords it has right now. The ', B('Key'), ' button by the Hand label explains the glow colours, and you can drag that label wherever you like. The Stack panel shows what is waiting to resolve.')]],
+      P('Round icons on a creature are keywords it has right now. ', B('Card outline key'), ' in the \u2630 Game tools menu explains the glow colours. The Stack panel shows what is waiting to resolve.')]],
     ['8. Learning and honesty', [P('Tutor mode adds hints such as phase pauses, mana payment help and rules reminders. Turn off whatever you do not want.'),
       P('A small ', B('\u26a0'), ' on a permanent means part of its rules text is only a reminder: the app does not apply it, so do it by hand. Hover the badge to see which lines. A power/toughness shown with a ', B('?'), ' means a condition on the card could not be read.'),
       P('The app reads the rules text on each card and applies what it understands, then tells you what is left for you to do by hand. ', B('⚙ → How the app reads cards'), ' shows, card by card, which lines it handles and which it does not. When in doubt, the official rules text is what counts.'),
@@ -6557,8 +6557,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.32';
+const APP_VERSION = '0.99.33';
 const CHANGELOG = [
+  { v: '0.99.33', title: 'X counters fixed, animated artifacts show their P/T, no floating Hand bar', notes: ['FIXED (rules): "enters with X +1/+1 counters" was applied twice. Walking Ballista cast with X = 3 (paying 6 mana for {X}{X}) now enters with 3 counters, not 6; Hangarback Walker and every other X creature likewise. X counters still go through Hardened Scales and similar effects once, and a permanent that enters without being cast has X = 0 (rule 107.3m). "Twice X" is read too.','FIXED: when an effect sets a creature\u2019s power and toughness (Karn, the Great Creator making an artifact a creature, a land that becomes a creature, "base power and toughness N/N"), the P/T box now shows on card pictures. The new value was treated as the printed one, so with images on nothing was shown (rule 613.4b). Hover the box to see which effect set it.','The floating Hand bar over your hand is gone. The Card outline key (what the green, red and gold outlines mean) is now in the \u2630 Game tools menu and opens in a normal window.','FIXED: How the app reads cards no longer fails on 837 cards (Magma Sliver, Flashback and others) when no game is running.'] },
   { v: '0.99.32', title: 'Sacrifice-for-mana sources pay like lands; clearer opening hand', notes: ['FIXED (rules): mana abilities whose cost is a sacrifice (Eldrazi Spawn and Scion, Treasure, Gold, Lotus Petal and any card worded the same way) now count as mana sources (rule 605.1a). Your hand shows spells as playable when those sources can pay, and paying a cost uses them automatically: lands and other mana sources first, then the sacrifice sources, which are sacrificed as you pay (no stack, rule 605.3b). "Dies" and "leaves" abilities trigger as usual.','A sacrifice-only mana ability (no {T}) works while the creature is summoning sick or tapped (rule 302.6). A double-click or the tap toggle never sacrifices it by accident: use the ability menu, or simply cast the spell.','FIXED (rules): a {C} symbol in a cost is paid only with colourless mana (rule 107.4c). Before, any land could pay it.','The payment window marks sources that will be sacrificed, and How the app reads cards explains sacrifice mana abilities.','Opening hand: the hand is sized to fit inside the table (and below the Opening hand box) at every window size, measured with the cards fanned out. The Opening hand box is no longer dimmed: it sits above the dark layer with a gold outline so it is clearly the thing to click.'] },
   { v: '0.99.31', title: 'Echo, persist, undying, Spacecraft, creature-type choices, uncounterable spells', notes: ['NEW (rules): Echo (702.30) asks for the echo cost at your next upkeep or sacrifices the permanent; Persist (702.79) and Undying (702.93) return the creature with a -1/-1 or +1/+1 counter only if it had none of that kind when it died (last known information); "Sacrifice it unless you ..." (Glint Hawk style) is a choice between doing the cost and losing the permanent.', 'NEW: Spacecraft and Station (702.184, 721): Station taps another creature and adds charge counters equal to its power; at each STATION N+ threshold the card gains the lines under it, and at the highest one with a power/toughness it is an artifact creature (Borg Cube: 6/6 at 12). Assimilate (701.72) is read from the Borg Cube text.', 'FIXED (engine): "As this creature enters, choose a creature type" (Roaming Throne) was not recognised because it does not say "the battlefield". The picker now lists creature types on the battlefield first, then in your deck, and a typed answer must be a real creature type. Roaming Throne is the chosen type too and makes triggers of other creatures of that type trigger an additional time.', 'NEW (engine): "Can\'t be countered" is one check for every counter effect: the spell\'s own text, statics such as "Green spells you control can\'t be countered", and mana such as Cavern of Souls ("and that spell can\'t be countered"). The Countered button then reads "Can\'t be countered".', 'Opening hand now always fits the window. Hand Key sits at the far right of the hand bar and opens an opaque window. Commander mode piles run Deck, Commander, Graveyard, Exile; hovering any pile shows its top card (your commander for the command zone).'] },
   { v: '0.99.30', title: 'Commander decks have their own tab', notes: ['Click the deck name: the deck screen now has a Decks | Commander switch. Commander mode is chosen there; Commander decks (a Commander section in the list) are only listed in Commander mode and normal decks only in normal mode. In Commander mode a gold Commander mode chip shows beside On the play; click it to go back to the deck screen.','Saving or importing a deck of the other kind switches to its mode so you can see it. Importing in Commander mode starts with a Commander heading ready.'] },
@@ -9183,7 +9184,11 @@ function openHandSortMenu(ev) {
 
 function setupDrop() {
   document.addEventListener('dragover', e => { if (dragHand == null) return; if (e.target.closest && e.target.closest('#handWrap')) { e.preventDefault(); showHandMarker(handSlotAt(e.clientX)); } else clearHandMarker(); });
-  $('#btnHandKey').addEventListener('click', e => { e.stopPropagation(); const o = $('#handLegend').classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', o); });
+  // v0.99.32 the outline key lives in the \u2630 Game tools menu and opens in a normal centred window (the floating Hand bar is gone)
+  $('#btnHandKey').addEventListener('click', e => { e.stopPropagation(); try { toggleGameMenu(false); } catch (err) { /* menu only */ }
+    const m = modal('Card outline key', { width: 520 }), src = $('#handLegend');
+    const rows = [...src.querySelectorAll('.kr')].map(r => { const c = r.cloneNode(true); c.classList.add('keyrow'); return c; });
+    m.body.append(h('div', { class: 'outline-key' }, ...rows)); m.foot.append(h('button', { class: 'primary', text: 'Close', onclick: () => m.close() })); });
   document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !e.target.closest('#handLegend') && !e.target.closest('#btnHandKey')) l.classList.remove('open'); });
   document.addEventListener('keydown', e => { const l = $('#handLegend'); if (e.key === 'Escape' && l && l.classList.contains('open')) { l.classList.remove('open'); $('#btnHandKey').setAttribute('aria-expanded', 'false'); } });
   // v0.96.13 the small Hand label (count, Key) can be dragged anywhere over the table; its place is remembered, double-click puts it back. (Sorting is done by dragging cards in the hand.)
@@ -9610,6 +9615,7 @@ function uncoveredClauses(effectText) {
   return missed;
 }
 function recognizedEffects(tx) {
+  if (!state) { state = freshState(); try { return recognizedEffects(tx); } finally { state = null; } }   // v0.99.32 read cards with no game running (an empty board), instead of crashing on 837 cards
   if (hasRawQuote(tx)) return recognizedEffects(maskQuotes(tx)).map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o);
   const r = effectOptions(tx, { sourceName: '~', sourceId: -1 }).map(o => o.label ? o.label.toLowerCase() : o.summary);
   if (r.length) return r;
@@ -11202,7 +11208,7 @@ function becomesCreatureEffect(tx, src, obj) {
   const ok = c => (!noncreature || !/\bCreature\b/.test(frontType(c) || permTypeLine(c))) && (!words.length || permHasAny(c, words));
   const apply = c => {
     snap(); const info = c.token ? null : cardInfo(c.name), mv = info ? mvOf(info) : 0;
-    c.becomes = { pt: mv + '/' + mv, types: [...new Set([...extra, 'creature'])], subs: [] };
+    c.becomes = { pt: mv + '/' + mv, types: [...new Set([...extra, 'creature'])], subs: [], src: src + ' (its mana value)' };
     addFx({ kind: 'delayed', when: dur, action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name} stops being a creature.`, srcName: src });
     log(`${src}: ${c.name} becomes a ${mv}/${mv} ${[...new Set([...extra, 'creature'])].join(' ')} (its mana value, ${dur === 'upkeep' ? 'until your next turn' : 'until end of turn'})`); render(); flushTriggers();
   };
@@ -11714,6 +11720,7 @@ function csCountZone(arr, thing) {
 }
 // Count "things": "land cards in your graveyard", "creatures you control", "other artifacts you control", "cards in your hand", "Elves you control".
 function csCount(phrase, g) {
+  if (!state) return 0;   // v0.99.32 the card reader also runs with no game (deck scan, How the app reads cards): there is nothing to look at yet
   const t = String(phrase).toLowerCase().replace(/’/g, "'").trim();
   let m;
   if ((m = t.match(/^(.*?)\s*in your graveyard$/))) return csCountZone(state.graveyard, m[1]);

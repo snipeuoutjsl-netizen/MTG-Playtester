@@ -744,8 +744,9 @@ function cdaValues(c) {
 }
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
-  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; { const ov = ovrOf(c); if (ov && ov.pt) pt = ov.pt; } }   // CR 613.4b: an effect that sets base power and toughness
-  { const sp = stationPT(c); if (sp) pt = sp; }   // CR 721.2 a Spacecraft with enough charge counters has the P/T of its highest reached STATION line
+  const printed = pt; let setBy = '';   // v0.99.32 keep the PRINTED value: an effect that sets base P/T is a change from it (it used to be taken as the printed value, so a picture showed no P/T box)
+  { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) { pt = bc.pt; setBy = bc.src || 'an effect that makes it a creature'; } if (c.basePT) { pt = c.basePT; setBy = 'an effect that sets its base power and toughness'; } { const ov = ovrOf(c); if (ov && ov.pt) { pt = ov.pt; setBy = 'an effect that sets its base power and toughness'; } } }   // CR 613.4b: an effect that sets base power and toughness
+  { const sp = stationPT(c); if (sp) { pt = sp; setBy = ''; } }   // CR 721.2 a Spacecraft with enough charge counters has the P/T of its highest reached STATION line (printed on the card itself)
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
@@ -759,6 +760,7 @@ function ptCalc(c) {
     } else { const n = parseInt(raw, 10); out[k] = isNaN(n) ? 0 : n; }
   });
   { const bp = parseInt(sides[0], 10), bt = parseInt(sides[1], 10); out.bp = isNaN(bp) || /\*/.test(sides[0] || '') ? null : bp; out.bt = isNaN(bt) || /\*/.test(sides[1] || '') ? null : bt; }
+  if (setBy && pt !== printed) { const pp = String(printed || '').split('/'), bp = parseInt(pp[0], 10), bt = parseInt(pp[1], 10); out.bp = isNaN(bp) || /\*/.test(pp[0] || '') ? null : bp; out.bt = isNaN(bt) || /\*/.test(pp[1] || '') ? null : bt; out.modified = true; out.why.push(`base ${pt} set by ${setBy} (CR 613.4b)`); }
   if (cda && out.dynamic) out.why.push(...cda.why);
   if (out.unknown) out.why.push('Power/toughness depends on something the app cannot read; shown as 0. Adjust with counters if needed.');
   const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {});

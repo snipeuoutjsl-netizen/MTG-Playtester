@@ -9,7 +9,7 @@ function becomesCreatureEffect(tx, src, obj) {
   const ok = c => (!noncreature || !/\bCreature\b/.test(frontType(c) || permTypeLine(c))) && (!words.length || permHasAny(c, words));
   const apply = c => {
     snap(); const info = c.token ? null : cardInfo(c.name), mv = info ? mvOf(info) : 0;
-    c.becomes = { pt: mv + '/' + mv, types: [...new Set([...extra, 'creature'])], subs: [] };
+    c.becomes = { pt: mv + '/' + mv, types: [...new Set([...extra, 'creature'])], subs: [], src: src + ' (its mana value)' };
     addFx({ kind: 'delayed', when: dur, action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name} stops being a creature.`, srcName: src });
     log(`${src}: ${c.name} becomes a ${mv}/${mv} ${[...new Set([...extra, 'creature'])].join(' ')} (its mana value, ${dur === 'upkeep' ? 'until your next turn' : 'until end of turn'})`); render(); flushTriggers();
   };

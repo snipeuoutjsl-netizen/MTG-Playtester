@@ -308,6 +308,7 @@ function uncoveredClauses(effectText) {
   return missed;
 }
 function recognizedEffects(tx) {
+  if (!state) { state = freshState(); try { return recognizedEffects(tx); } finally { state = null; } }   // v0.99.32 read cards with no game running (an empty board), instead of crashing on 837 cards
   if (hasRawQuote(tx)) return recognizedEffects(maskQuotes(tx)).map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o);
   const r = effectOptions(tx, { sourceName: '~', sourceId: -1 }).map(o => o.label ? o.label.toLowerCase() : o.summary);
   if (r.length) return r;

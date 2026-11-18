@@ -1803,3 +1803,14 @@ body.mullhand #overlay .pcard .ptitle { color: var(--text); }
 body.mullhand #overlay .pcard .psub { color: var(--text); opacity: .85; }
 @keyframes mullPromptIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { body.mullhand #overlay .pcard { animation: none; } }
+/* v0.99.32b the floating Hand bar is removed; the outline key opens from the ☰ Game tools menu, above the hand */
+#handWrap > .zlabel { display: none; }
+.outline-key { display: flex; flex-direction: column; gap: 12px; }
+.outline-key .kr { display: flex; gap: 12px; align-items: flex-start; height: auto; line-height: 1.45; }
+.outline-key .kr b { color: var(--text); }
+.outline-key .sw { flex: 0 0 28px; height: 38px; border-radius: 6px; background: rgba(255,255,255,.06); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.outline-key .sw.ready { box-shadow: 0 0 0 2px rgba(70,220,120,.95); }
+.outline-key .sw.mana { box-shadow: 0 0 0 2px rgba(235,80,80,.9); }
+.outline-key .sw.timing { box-shadow: 0 0 0 2px rgba(235,178,70,.9); }
+.outline-key .sw.inst { box-shadow: 0 0 0 2px rgba(70,160,220,.9); color: #f3d36b; }
+.outline-key .sw.sel { box-shadow: 0 0 0 2px #fff; }
