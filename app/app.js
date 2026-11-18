@@ -1205,10 +1205,14 @@ function frontType(c) {
   return t;
 }
 function filterMatches(filter, card) {
-  const t = frontType(card);
   const f = filter.toLowerCase();
+  if (card && card.token && /\bnon-?token\b/.test(f)) return false;   // CR 111.1: a "nontoken" filter never matches a token (Weapons Manufacturing must not trigger on its own Munitions)
+  if (/(?<!non-?)\btokens?\b/.test(f) && card && !card.token) return false;   // "a creature token enters" never matches a card
+  let t = frontType(card);
+  if (!t && card && card.token && card.tk) t = String(card.tk.type || (card.tk.types || []).join(' ') || '');   // a token has no printed card, so its own types decide
   if (!t) return true;
-  if (/\bnoncreature\b/.test(f) && /\bCreature\b/.test(t)) return false;
+  for (const w of ['creature', 'artifact', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery']) if (new RegExp('\\bnon-?' + w + '\\b').test(f) && new RegExp('\\b' + w + '\\b', 'i').test(t)) return false;   // CR 205.4b: "nonland", "nonartifact" ... exclude that type
+  if (/\bnonlegendary\b/.test(f) && /\bLegendary\b/i.test(t)) return false;
   const words = [['instant or sorcery', /\b(Instant|Sorcery)\b/], ['instant', /\bInstant\b/], ['sorcery', /\bSorcery\b/], ['artifact', /\bArtifact\b/], ['enchantment', /\bEnchantment\b/], ['planeswalker', /\bPlaneswalker\b/], ['land', /\bLand\b/], ['creature', /\bCreature\b/]];
   { const cw = f.match(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/); if (cw && !colorWordOk(cw[1], cardColorSet(card))) return false; }
   const mentioned = words.filter(([w]) => new RegExp('(?<!non)\\b' + w + '\\b').test(f));
@@ -6393,8 +6397,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.12';
+const APP_VERSION = '0.99.13';
 const CHANGELOG = [
+  { v: '0.99.13', title: 'Trigger filters: nontoken, token, nonland', notes: ['FIXED: Weapons Manufacturing and Kappa Cannoneer built an endless chain of triggers. A trigger filter such as "nontoken artifact" did not exclude tokens, so the Munitions token it made triggered it again. Trigger filters now read the whole qualifier for any card: "nontoken" and "token" (CR 111.1), and "nonland", "nonartifact", "noncreature", "nonenchantment", "nonlegendary" (CR 205.4b). A token is judged by its own types, since it has no printed card.']},
   { v: '0.99.12', title: 'Land piles by colour and token bundles', notes: ['NEW: lands pile by what they do. Untapped lands that make the same colours share one pile (all your {G} lands together, all {U}/{B} lands together), every tapped land goes into one Tapped pile, and a land with an activated ability (fetch lands, Wasteland, manlands) only piles with exact copies of itself until it is tapped. A pile is a cascade like the deck view, so the name of every land stays readable; click one land to tap or untap just that land. Tapped lands in a pile are dimmed rather than turned sideways so their names still read. Turn it off with Settings > Layout > Land piles by mana colour.', 'NEW: identical tokens bundle in fives. Two fives make a ten, five tens a fifty, two fifties a hundred, and so on up to a thousand, each with a count and a stronger colour as it grows, so an infinite-token engine is easy to see. Fewer than five stay as separate tokens; click a bundle to spread the whole group out.']},
   { v: '0.99.11', title: 'Only usable tokens', notes: ['CHANGED: the offline token set now holds only tokens that can appear in a paper game. Joke / Un-set and memorabilia tokens are left out, and entries that differ only by artwork, colour order or reminder text collapse into one. Older saved token lists are replaced by a fresh filtered download on next start.']},
   { v: '0.99.10', title: 'Always yield is per card', notes: ['FIXED: "Always yield" was remembered by card name, so a second copy of the same card (Kappa Cannonier, for example) reused the first copy\'s targets. It is now tracked per individual card: cast a second copy, pick its targets, and choose Always yield again if you want it (CR 603.5, 601.2c).']},
