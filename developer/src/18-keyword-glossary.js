@@ -397,7 +397,7 @@ function renderInner() {
       if (g.pile && g.cards.length > 1) {   // v0.99.12 land pile: a cascade where every land's name strip stays readable (the deck-view layout)
         const n = g.cards.length, tapped = g.cards[0].tapped, f = n <= 8 ? 1 : Math.max(.35, 7 / (n - 1));
         const el = h('div', { class: 'landpile' + (tapped ? ' tappile' : ''), style: `--n:${n};--f:${f}`, title: `${n} lands: ${g.cap}` });
-        g.cards.forEach((c, i) => { counts[z]++; const e = cardEl(c, 'battlefield'); e.style.setProperty('--i', String(i)); e.style.zIndex = String(i + 1); if (layoutOn('dimIdle') && c.tapped) e.classList.add('idle'); el.append(e); });
+        g.cards.forEach((c, i) => { counts[z]++; const e = cardEl(c, 'battlefield'); e.style.setProperty('--i', String(i)); if (!c.tapped) e.style.zIndex = String(i + 1); el.append(e); });
         el.append(h('span', { class: 'pilecount', text: '\u00d7' + n }), h('span', { class: 'pilecap', text: g.cap }));
         rows[z].append(el); continue;
       }
