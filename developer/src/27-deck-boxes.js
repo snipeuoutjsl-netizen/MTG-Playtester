@@ -209,8 +209,9 @@ async function setCustomArt(deck, name, file, print) {   // v0.99.37 print: the 
   if (old) URL.revokeObjectURL(old.front);
   CUSTOM.set(mk, { front: URL.createObjectURL(blob), back: null, remote: false, custom: true });
 }
-async function resetCustomArt(deck, name) {
+async function resetCustomArt(deck, name, _face) {
   const mk = customMapKey(deck, name), old = CUSTOM.get(mk); if (old) URL.revokeObjectURL(old.front); CUSTOM.delete(mk); setPrintMeta(deck, name, null);
+  if (!_face) { const inf = cardInfo(name); for (const f of (inf && inf.fc) || []) if (f && f.name && f.name !== name && CUSTOM.has(customMapKey(deck, f.name))) await resetCustomArt(deck, f.name, true); }   // and the back face's picture of that printing
   try { await idbDelete(['cart:' + mk]); } catch (e) { /* ignore */ }
 }
 function clearDeckArt(deck) {

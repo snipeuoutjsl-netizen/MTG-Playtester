@@ -1926,3 +1926,9 @@ body.a11y-targets .setgrid .teachopt { min-height: 44px; }
 body.a11y-calm .bk, body.a11y-calm .bk.big { transition: none; }
 @media (prefers-reduced-motion: reduce) { .bk { transition: none; } }
 .bk[data-col=W] .bk-title { color: #2b2413; text-shadow: 0 1px 0 rgba(255,255,255,.4); }
+/* v0.99.43 look at the top card, then choose to reveal it (Delver of Secrets) */
+.peek-wrap { display: flex; gap: 16px; align-items: flex-start; }
+.peek-wrap .peek-card { width: 170px; flex: none; border-radius: 9px; box-shadow: 0 8px 22px rgba(0,0,0,.55); }
+.peek-wrap img.peek-card { height: auto; display: block; }
+.peek-txt { flex: 1; min-width: 0; }
+.peek-yes { color: var(--gold, #e3b95c); font-weight: 600; }
