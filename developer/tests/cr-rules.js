@@ -1207,6 +1207,10 @@ const { setup } = require('./common.js');
       } finally { window.fetch = realFetch; window.open = realOpen; document.querySelectorAll('.backdrop').forEach(b => b.remove()); }
       return out; });
     return { ok: r.cells === 2 && r.print === 'm10#146:111111' && r.art && r.base && r.exact && r.plain && r.noBolt && r.cleared, why: JSON.stringify(r) }; });
+  await T('115.1 + 601.2c', 'a spell that targets only a creature or planeswalker ("deals 3 damage to target creature or planeswalker", Lightning Axe\'s "target creature") is never offered as damage to the opponent; "any target" and "target creature or player" still are', async () => {
+    const r = await ev(() => { const has = tx => __d.effectOptions(tx, { sourceName: 'Test', sourceId: -1 }).some(o => /damage to the opponent/i.test(o.label));
+      return { cp: has('Strangle deals 3 damage to target creature or planeswalker.'), c: has('Lightning Axe deals 5 damage to target creature.'), any: has('Lightning Bolt deals 3 damage to any target.'), cpl: has('Shock deals 2 damage to target creature or player.'), ppw: has('Lava Spike deals 3 damage to target player or planeswalker.') }; });
+    return { ok: !r.cp && !r.c && r.any && r.cpl && r.ppw, why: JSON.stringify(r) }; });
   await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card lies inside the table and below the Opening hand prompt, the prompt is on top of the dim layer, and the prompt box lies fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await p.mouse.move(2, 2);   // a card lifted under a resting pointer is hover, not layout
  await reset();
     const out = [];
