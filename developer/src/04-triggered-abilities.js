@@ -325,11 +325,12 @@ const ayKey = (name, text, id) => String(name || '') + '#' + (id == null || id <
 // So only plain, unconditional abilities can be remembered as "always yield"; the rest ask every time.
 const ayEligibleText = tx => !/\b(?:may|if|unless|as long as|choose|instead|up to|any number)\b/i.test(String(tx || ''));
 function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name, text, id)] || null : null; }   // tracked per card (its id), not per name: a second copy asks again
+const legalSig = (specs, srcId) => specs.map(sp => legalTargets(sp, { srcId }).map(t => String(t.id)).sort().join(',')).join('|');   // the set of things an ability could target right now
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
   const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
-  state.ay[key] = { auto: false, id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
+  state.ay[key] = { auto: false, sig: (() => { try { const sp = parseTargetSpecs(t._text || t.effect); return sp.length ? legalSig(sp, t.cardId) : null; } catch (e) { return null; } })(), id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
   m.body.append(h('div', { class: 'psub', text: `${t.cardName}: ${t._text || t.effect}` }),
     h('div', { class: 'psub', text: `Always put this ability on the stack${tg ? ' targeting ' + tg.map(x => x.name).join(', ') : ''} and apply the same effect for the rest of this game, without asking each time? (You can undo this from \u2699 \u2192 Always yield. It resets when the game ends.)` }));
@@ -370,7 +371,7 @@ function openTriggerBatch(batch) {
   const putWith = (t, text) => {
     const specs = t.special ? [] : parseTargetSpecs(text);
     if (specs.length) {   // a trigger's targets are chosen as it goes on the stack
-      chooseTargets(t.cardName, specs, picked => pushWith(t, text, picked), { srcId: t.cardId, onCancel: () => {} }); return;
+      chooseTargets(t.cardName, specs, picked => { if (t._ayRefresh) { t._ayRefresh.targets = picked.map(x => ({ ...x })); t._ayRefresh.sig = legalSig(specs, t.cardId); log(`Always yield: ${t.cardName}'s remembered targets were updated`); } pushWith(t, text, picked); }, { srcId: t.cardId, auto: true, onCancel: () => {} }); return;
     }
     pushWith(t, text, null);
   };
@@ -381,7 +382,7 @@ function openTriggerBatch(batch) {
     state.stack.push(obj);
     state.priority = { active: true, passed: false };
     placed.push(t);
-    log(`${t.cardName}: triggered ability put on the stack`);
+    log(`${t.cardName}: triggered ability put on the stack${t._auto ? ' (always yield \u2014 turn it off in \u2699 \u2192 Always yield)' : ''}`);
     if (!remaining.length) finish(); else draw();
   };
   const skip = t => { remaining.splice(remaining.indexOf(t), 1); log(`${t.cardName}: trigger ${t.optional ? 'declined' : 'did not apply'}`); if (!remaining.length) finish(); else draw(); };
@@ -402,6 +403,7 @@ function openTriggerBatch(batch) {
     const e = ayGet(t.cardName, t.effect, t.cardId); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
     const specs = t.special ? [] : parseTargetSpecs(t.effect);
     if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
+    else if (e.sig && e.sig !== legalSig(specs, t.cardId)) { t._ayRefresh = e; log(`Always yield: ${t.cardName} has a different set of possible targets than when you set it, so you choose again`); }   // a new (or missing) possible target: ask again
     else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
   }
   if (remaining.length) draw();
