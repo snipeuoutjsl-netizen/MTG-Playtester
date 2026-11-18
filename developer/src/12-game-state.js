@@ -274,15 +274,16 @@ function enterStep(i, quiet) {
   if (id === 'untap') {
     // Rule 502.3: untap everything except permanents that say they don't (v0.63): "~ doesn't untap during your untap step", Back to Basics.
     const noUntapNonbasic = state.battlefield.some(x => /nonbasic lands don'?t untap during their controllers' untap steps/i.test(cardText(x)));
-    const held = [];
+    const held = [], pendUntap = [];
     for (const c of state.battlefield) {
       const tx = (cardText(c) || '').replace(/\u2019/g, "'"), nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const self = new RegExp("^(?:" + nm + "|this \\w+) doesn't untap during your untap step", 'im').test(tx);
       const bb = noUntapNonbasic && /\bLand\b/.test(c.types ? c.types.join(' ') : (cardInfo(c.name) || {}).t || '') && !/\bBasic\b/.test((cardInfo(c.name) || {}).t || '');
       if (c.exerted && c.exerted < state.turn) { delete c.exerted; if (c.tapped) { held.push(c.name + ' (exerted)'); continue; } }   // CR 701.43a: an exerted permanent does not untap during your next untap step
       if ((self || bb) && c.tapped) { held.push(c.name); continue; }
-      c.tapped = false; delete c.mt;
+      if (c.tapped) pendUntap.push(c); else delete c.mt;
     }
+    untapWithLimits(pendUntap, held);
     log('Untap' + (held.length ? ` (stayed tapped: ${[...new Set(held)].join(', ')})` : '')); endFx(e => e.until === 'yourNextTurn' && e.turn < state.turn, 'your turn began'); }
   else if (id === 'draw') {
     const fx = staticFx();
@@ -435,6 +436,7 @@ function openLibMenu(ev) {
     h('div', { class: 'lm-title', text: `Library · ${state.library.length} cards` }),
     item('Draw a card', 'Takes the top card into your hand', drawOne, !play),
     h('div', { class: 'lm-n' }, h('span', { text: 'Number of cards (type any number)' }), nIn),
+    ...(topLandSource() ? [item('Play the top land', 'Your top card, if it is a land (' + topLandSource().g.name + ')', playTopLand, !topLandPlayable())] : []),
     item('Look at top N', 'Look at, reorder or move the top cards', () => openLibraryManipulation(n())),
     item('Scry N', 'Look, then keep on top or bottom', () => openScry(n(), false)),
     item('Surveil N', 'Look, then keep on top or put in graveyard', () => openScry(n(), true)),

@@ -1676,3 +1676,7 @@ body[data-uitheme="pixfrog"] { --bar-a: #17564a; --bar-b: #0f3a34; --hand-a: #0f
 body[data-uitheme="pixmusic"] { --bar-a: #33205f; --bar-b: #211443; --hand-a: #211443; --hand-b: #140d2b; --bg: #0f0924; --panel: #211443; --panel-2: #33205f; --line: #5a3d94; --text: #f4f1ff; --muted: #b4a6e0; --accent: #ff7ac8; --accent-text: #2a0720; --gold: #46d6c0; }
 .gapbox { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--gold, #e3b95c); border-radius: 8px; background: rgba(227,185,92,.08); }
 .gapbox .chk { display: block; margin-top: 4px; }
+
+/* top card of the library, revealed (Courser of Kruphix, Oracle of Mul Daya) — sits under the library pile like the other pile labels */
+.libtop { margin-top: 4px; max-width: 120px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--text); font-size: 10px; line-height: 1.5; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.libtop.land { border-color: var(--acc); }

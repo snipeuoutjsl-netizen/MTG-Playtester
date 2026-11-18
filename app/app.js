@@ -1067,6 +1067,7 @@ function attackBlock(c) {   // why this creature cannot attack right now ('' = i
   if (isSick(c)) return 'Summoning sickness: it came under your control this turn (and has no haste).';
   if (hasKw(c, 'defender')) return 'Defender: this creature cannot attack.';
   { const gb = globalAttackBlock(c); if (gb) return gb; }
+  { const sb = selfCantUnless(c, 'attack'); if (sb) return sb; }
   { const cb = statics().find(e => e.kind === 'cant' && e.attack && e.subj.test(c)); if (cb) return `${cb.g.name}: this creature can't attack.`; }
   return '';
 }
@@ -1100,7 +1101,7 @@ const MAIN_STEPS = [[/\b(?:precombat|first) main phase\b/, 'main1'], [/\b(?:post
 // A token's name ("Rat", "Pest") is a creature type its own rules text uses for OTHER creatures ("each other Rat you control"), never a reference to itself, so tokens match only "this creature" and friends.
 const selfNm = c => c && c.token ? '\u0000' : (c ? c.name : '');
 function selfNameRe(full) {
-  const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : '';
+  const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : (/^[A-Z][\w'’-]+ (?:the|of the) /.test(f) ? f.split(' ')[0] : '');   // Oracle shortens legendary names: "Rhonas" for Rhonas the Indomitable
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
   return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle|token)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
@@ -1647,6 +1648,7 @@ function runChain(steps, src, baseModals) {
 }
 function effectOptions(tx, obj) {
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
+  tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
@@ -1662,7 +1664,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || manaCountOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -1808,7 +1810,7 @@ function effectOptionsBase(tx, obj) {
   if (!/^\{T\}/.test(tx) && (mm = txNq.match(/\badd ((?:\{[WUBRGC]\})+)/i)) && !/for each|any number/i.test(tx)) { const cols = [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]); opts.push({ label: `Add ${cols.join('')}`, fn: () => { snap(); for (const col of cols) addFloatingMana(col); render(); } }); }
   if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana of any (one )?color\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana of any one color`, fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col, nn); render(); } }, ['W', 'U', 'B', 'R', 'G']) }); }
   if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana in any combination of colors\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana in any combination of colors`, fn: () => { let left = nn; const next = () => { if (left <= 0) return; openManaChoice({ name: src + ` (${left} left)` }, col => { if (col) { snap(); addFloatingMana(col, 1); left--; render(); next(); } }, ['W', 'U', 'B', 'R', 'G']); }; next(); } }); }
-  if (/\btake an extra turn after this one\b/i.test(tx)) opts.push({ label: 'Take an extra turn after this one', fn: () => { state.extraTurns = (state.extraTurns || 0) + 1; log(`${src}: you will take an extra turn after this one`); toast('Extra turn', 'You take another turn right after this one (rule 500.7). In a goldfish every turn is already yours; the log notes it.'); } });
+  if (/\btakes? an extra turn after this one\b/i.test(tx)) opts.push({ label: 'Take an extra turn after this one', fn: () => { state.extraTurns = (state.extraTurns || 0) + 1; log(`${src}: you will take an extra turn after this one`); toast('Extra turn', 'You take another turn right after this one (rule 500.7). In a goldfish every turn is already yours; the log notes it.'); } });
   if (/\badd one mana of any color\b/i.test(txNq)) opts.push({ label: 'Add one mana of any color', fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col); render(); } }, ['W', 'U', 'B', 'R', 'G']) });
   // v0.67.1 Thespian's Stage: "~ becomes a copy of target land, except it has this ability." (rule 707.9: it keeps counters and tapped state; no enter-the-battlefield event)
   if (obj.sourceId && /\bbecomes a copy of target land, except it has this ability\b/i.test(tx)) return [{ full: true, label: `${src} becomes a copy of a land`, fn: () => {
@@ -1999,6 +2001,7 @@ function enterBattlefield(c, o = {}) {
   // o.from: 'hand' | 'stack' | 'library' | 'graveyard' | 'exile' | 'effect'   o.tapped: force tapped/untapped
   // o.logMsg: logged first   o.afterPlace(c): runs once it is on the battlefield, before any triggers (counters, flags)
   if (cageBlocksEnter(c, o.from)) { const g = globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i); log(`${g.g.name}: ${c.name} can't enter the battlefield from your ${o.from}; it stays there`); toast("It can't enter", `${g.g.name}: creature cards in graveyards and libraries can't enter the battlefield.`); if (o.from === 'graveyard' && !state.graveyard.includes(c)) state.graveyard.push(c); else if (o.from === 'library' && !state.library.includes(c)) state.library.unshift(c); return c; }
+  { const pr = priestExiles(c, o.from); if (pr) { log(`${pr.name}: ${c.name} would enter without being cast, so it is exiled instead`); toast('Exiled instead', `${pr.name}: a nontoken creature that would enter and wasn't cast is exiled instead.`); for (const z of ['hand', 'library', 'graveyard']) { const k = state[z].indexOf(c); if (k >= 0) state[z].splice(k, 1); } state.exile.push(c); render(); return c; } }
   c.counters = c.counters || { plus: 0, minus: 0 };
   sfx(!c.token && isLandName(c.name) ? 'land' : 'enter');
   if (o.logMsg) log(o.logMsg);
@@ -3967,15 +3970,16 @@ function enterStep(i, quiet) {
   if (id === 'untap') {
     // Rule 502.3: untap everything except permanents that say they don't (v0.63): "~ doesn't untap during your untap step", Back to Basics.
     const noUntapNonbasic = state.battlefield.some(x => /nonbasic lands don'?t untap during their controllers' untap steps/i.test(cardText(x)));
-    const held = [];
+    const held = [], pendUntap = [];
     for (const c of state.battlefield) {
       const tx = (cardText(c) || '').replace(/\u2019/g, "'"), nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const self = new RegExp("^(?:" + nm + "|this \\w+) doesn't untap during your untap step", 'im').test(tx);
       const bb = noUntapNonbasic && /\bLand\b/.test(c.types ? c.types.join(' ') : (cardInfo(c.name) || {}).t || '') && !/\bBasic\b/.test((cardInfo(c.name) || {}).t || '');
       if (c.exerted && c.exerted < state.turn) { delete c.exerted; if (c.tapped) { held.push(c.name + ' (exerted)'); continue; } }   // CR 701.43a: an exerted permanent does not untap during your next untap step
       if ((self || bb) && c.tapped) { held.push(c.name); continue; }
-      c.tapped = false; delete c.mt;
+      if (c.tapped) pendUntap.push(c); else delete c.mt;
     }
+    untapWithLimits(pendUntap, held);
     log('Untap' + (held.length ? ` (stayed tapped: ${[...new Set(held)].join(', ')})` : '')); endFx(e => e.until === 'yourNextTurn' && e.turn < state.turn, 'your turn began'); }
   else if (id === 'draw') {
     const fx = staticFx();
@@ -4128,6 +4132,7 @@ function openLibMenu(ev) {
     h('div', { class: 'lm-title', text: `Library · ${state.library.length} cards` }),
     item('Draw a card', 'Takes the top card into your hand', drawOne, !play),
     h('div', { class: 'lm-n' }, h('span', { text: 'Number of cards (type any number)' }), nIn),
+    ...(topLandSource() ? [item('Play the top land', 'Your top card, if it is a land (' + topLandSource().g.name + ')', playTopLand, !topLandPlayable())] : []),
     item('Look at top N', 'Look at, reorder or move the top cards', () => openLibraryManipulation(n())),
     item('Scry N', 'Look, then keep on top or bottom', () => openScry(n(), false)),
     item('Surveil N', 'Look, then keep on top or put in graveyard', () => openScry(n(), true)),
@@ -4437,6 +4442,7 @@ function addCounter(id,d,type='plus',manual) {
 
 function changeLife(d, real) {   // real = life gained or lost by a card effect (manual +/- buttons do not trigger anything)
   if (!state) return;
+  if (real && d > 0 && lifeGainBlocked()) { log(`Life gain prevented: ${lifeGainBlocked().g.name} says a player who would gain life gains no life instead`); toast('No life gained', `${lifeGainBlocked().g.name}: if a player would gain life, that player gains no life instead.`); render(); return; }
   snap();
   state.life += d;
   log(`Life ${d > 0 ? '+' : ''}${d} → ${state.life}`);
@@ -5527,6 +5533,7 @@ function renderInner() {
   $('#handLegend')?.classList.toggle('hidden', !teach('playability'));
   for (const z of ['graveyard', 'exile']) renderPileTop(z);
   $('#libstack').classList.toggle('empty', !has || !state.library.length);
+  if (has) renderTopReveal(); else { const lt = $('#libTop'); if (lt) lt.remove(); }
 
   const rows = { creatures: $('#row-creatures'), noncreature: $('#row-noncreature'), lands: $('#row-lands') };
   const hand = $('#row-hand');
@@ -6338,8 +6345,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.6';
+const APP_VERSION = '0.99.7';
 const CHANGELOG = [
+  { v: '0.99.7', title: 'Rules dive 2: global statics, devotion, top-of-library play', notes: ['NEW: Winter Orb / Static Orb ("players can\'t untap more than one land / two permanents") ask which ones untap; Sulfuric Vortex stops life gain; Containment Priest exiles a creature that enters without being cast; Rhonas and similar "can\'t attack or block unless you control another creature with power 4 or greater" are enforced; Humility-style "All creatures lose all abilities and have base power and toughness 1/1" applies to every creature.','NEW: "where X is your devotion to blue" (Thassa\'s Oracle, including its win check), "Add {B} for each Swamp you control" (Cabal Coffers), Nykthos\'s devotion mana, and "you win the game" are all read from the text (CR 700.5).','NEW: Courser of Kruphix and Oracle of Mul Daya: the top card is shown revealed under your library, and the library menu has "Play the top land", which uses your land drop.','FIXED: Torpor Orb\'s real wording ("Creatures entering the battlefield…") is recognised; Oracle-shortened names like "Rhonas" count as the card itself; lord and loyalty lines such as "−X:" (Ugin) now show as understood; Time Warp is read as an extra turn.'] },
   { v: '0.99.6', title: 'Lords, player-choice clauses, and a consistency pass on the look', notes: ['NEW: "Other Merfolk get +1/+1 and have islandwalk", "Other Goblin creatures you control get +1/+1 and have haste" and "Creature tokens you control get +1/+1 and have vigilance" now work: a line that gives both a bonus and an ability is read as two static effects (CR 611.3). Landwalk keywords can be granted.','NEW: "Each player discards a card", "Each player sacrifices a creature" and "Target player sacrifices a creature" (Liliana of the Veil) let you choose yours; the opponent\'s half is stated in the log. "Untap up to three lands" (Frantic Search) lets you pick which lands. "Look at the top card of your library. You may put it into your graveyard" works.','NEW: "Exile each permanent with mana value X or less that\'s one or more colors" (Ugin, the Spirit Dragon) leaves colourless permanents alone.','LOOK: one shared corner radius for buttons, fields and toolbar controls; stray half-pixel font sizes and odd radii were moved onto the shared scale; the four pixel-art playmats are dimmed so they sit back like the other mats and the zone labels stay readable.'] },
   { v: '0.99.5', title: 'Scaling mana: Elvish Archdruid, Gilded Lotus', notes: ['NEW: "{T}: Add {G} for each Elf you control" (and any "for each <thing> you control") is counted when you tap, so the right amount floats (CR 106.1, 605.1a).','NEW: "{T}: Add three mana of any one color" (Gilded Lotus) gives three mana of the colour you choose.'] },
   { v: '0.99.4', title: 'Rules dive 2: more death and equipment triggers', notes: ['NEW: "Whenever ~ or another creature dies" (Blood Artist style) now also triggers on its own death (CR 603.10a).','NEW: "Whenever equipped/enchanted creature dies, attacks, or deals combat damage" triggers on the Equipment or Aura (Skullclamp, Sword-style cards); the creature\'s death is remembered even though the attachment falls off (CR 603.10a, 301.5).'] },
@@ -9114,7 +9122,7 @@ function compileCardOne(c) {
     const norml = stripped.replace(nameRe, '~').replace(/\u2019/g, "'");
     let m;
     // loyalty ability
-    if (/^[+−–-]?\d+:|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
+    if (/^[+−–-]?(?:\d+|X):|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
       const eff = recognizedEffects(stripped.replace(/^[^:]+:\s*/, '').replace(nameRe, '~'));
       push(text, 'loyalty', eff.length ? 'ok' : 'part', eff.length ? `Loyalty ability: the cost is tracked and the app can apply: ${eff.join('; ')}.` : 'Loyalty ability: the loyalty cost is tracked; apply its effect by hand.');
       continue;
@@ -9184,7 +9192,10 @@ function compileCardOne(c) {
       continue;
     }
     // static abilities with an engine
-    const rec = statRecs.find(r => r.line === norml.replace(/\.$/, ''));
+    let rec = statRecs.find(r => r.line === norml.replace(/\.$/, ''));
+    if (!rec) { const two = norml.replace(/\.$/, '').match(/^(.+?) (gets? [+-]\d+\/[+-]\d+) and (has|have) (.+)$/i);   // "+1/+1 and have <keyword>" is read as two static effects
+      if (two) { const a = statRecs.find(r => r.line === two[1] + ' ' + two[2]), b = statRecs.find(r => r.line === two[1] + ' ' + two[3] + ' ' + two[4]);
+        if (a && b) { push(text, 'static', 'ok', `Static ability (CR 611.3): ${two[2].replace(/^gets?/, '').trim()} and ${two[4]} to ${two[1].toLowerCase()} — read as two effects and applied automatically.`); continue; } } }
     if (rec) {
       const subjText = norml.replace(/ (?:has|have|get|gets|is|are) .*$/i, '');
       if (rec.kind === 'cs') { const okc = (!rec.cond || csUnderstood(rec.cond, null)) && (!rec.per || csUnderstood(null, rec.per.thing)) && !rec.other.length;
@@ -9208,6 +9219,7 @@ function compileCardOne(c) {
     if (/^You may cast (?:~|this card|this creature|[A-Z][\w' ,-]*?) from your graveyard (?:as long as|using its)\b/i.test(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Cast from your graveyard: the card shows a Cast option in your graveyard while its condition holds (or for its alternative cost).'); continue; }
     if (globalStaticLine(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Static rule read from its words: the app applies it automatically while this is on the battlefield (attack limits, enter-trigger suppression, zone locks, cost and mana effects). Evasion against blockers is not needed in a goldfish game.'); continue; }
     if (OPEN_REVEAL_RE.test(selfTxt({ name: info.name, tx: info.tx }).split('\n').find(l => /opening hand/i.test(l)) || '') && /opening hand/i.test(stripped)) { push(text, 'other', 'ok', 'Opening-hand reveal: the pre-game screen offers a Reveal button; the effect goes on the stack at your first upkeep.'); continue; }
+    if (oppOnlyStatic(stripped.replace(nameRe, '~'))) { push(text, 'static', 'info', 'Static ability that only affects your opponent (their attackers or their graveyard): a goldfish game has no opposing creatures or graveyard, so nothing is needed here.'); continue; }
     if (tokenReplLine(stripped)) { push(text, 'static', 'ok', 'Replacement effect (rule 614): every time an effect creates tokens for you, the app changes the number as it creates them and logs it.'); continue; }
     { const sb = sbParseLine(stripped.replace(nameRe, '~')); if (sb) { push(text, 'static', 'ok', sb.becomes ? `Static ability: ${sb.cond ? 'as long as ' + sb.cond + ', ' : ''}it is a ${sb.pt || ''} ${sb.subs.join(' ')} creature${sb.kws.length ? ' with ' + sb.kws.join(', ') : ''}; the app applies the type, P/T and keywords while the condition holds.` : sb.cantBlock ? `Static ability: it can't block${sb.cond ? ' as long as ' + sb.cond : ''}; the app keeps it out of the blocker list.` : `Static ability: it has ${sb.kws.join(', ')}${sb.cond ? ' as long as ' + sb.cond : ''}; the app checks the condition each time it reads the card.`); continue; } }
     push(text, 'other', 'unk', 'Not understood: the app does nothing for this line. Handle it by hand.');
@@ -10627,7 +10639,7 @@ function openingRevealEffect(obj, done) {
 // ---------------------------------------------------------------- v0.96.26 global static abilities of permanents, read from rules text
 // Each is a short pattern for a whole FAMILY of cards (Oracle wording), checked against every permanent on the battlefield.
 //  CR 508.1c-style attack restriction:  "Creatures with power greater than the number of cards in your hand can't attack."   (Ensnaring Bridge)
-//  CR 603.2g (events that don't cause abilities to trigger):  "Creatures entering don't cause abilities to trigger."   (Torpor Orb)
+//  CR 603.2g (events that don't cause abilities to trigger):  "Creatures entering(?: the battlefield)? don't cause abilities to trigger."   (Torpor Orb)
 //  CR 614.12 / 401.? zone restrictions:  "Creature cards in graveyards and libraries can't enter the battlefield." / "Players can't cast spells from graveyards or libraries."  (Grafdigger's Cage)
 //  CR 614.1 replacement of mana loss:  "If you would lose unspent mana, that mana becomes colorless instead."   (Omnath, Locus of the Void)
 //  CR 118.7 cost increase per spell cast:  "Each spell a player casts costs {1} more to cast for each other spell that player has cast this turn."   (Damping Sphere)
@@ -10651,7 +10663,7 @@ function globalAttackBlock(c) {
   }
   return '';
 }
-const torporOrbOn = c => !!c && /\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering don't cause abilities to trigger\.?$/i);
+const torporOrbOn = c => !!c && /\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i);
 const cageBlocksEnter = (c, from) => (from === 'graveyard' || from === 'library') && !!c && /\bCreature\b/.test(frontType(c) || '') && globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i);
 const cageBlocksCast = () => !!globalHas(/^Players can't cast spells from graveyards or libraries\.?$/i);
 const omnathColorless = () => !!globalHas(/^If you would lose unspent mana, that mana becomes colorless instead\.?$/i);
@@ -10662,7 +10674,7 @@ function perSpellTaxAdj(c) {
   return out;
 }
 const GLOBAL_STATIC_RES = [
-  /^Creatures with power (?:greater than the number of cards in your hand|\d+ or (?:greater|less)) can't attack\.?$/i, /^Creatures entering don't cause abilities to trigger\.?$/i,
+  /^Creatures with power (?:greater than the number of cards in your hand|\d+ or (?:greater|less)) can't attack\.?$/i, /^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i,
   /^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i, /^Players can't cast spells from graveyards or libraries\.?$/i,
   /^If you would lose unspent mana, that mana becomes colorless instead\.?$/i, /^Each spell a player casts costs \{\d+\} more to cast for each other spell that player has cast this turn\.?$/i,
   /^(?:Lands|Permanents) you control enter untapped\.?$/i, /^~ can't be blocked by creatures with power \d+ or less\.?$/i];
@@ -11293,7 +11305,7 @@ function parseCharChange(rest) {
   let r = String(rest || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim().replace(/\.$/, '').replace(/\s+until end of turn$/i, '');
   const grant = [...r.matchAll(/"([^"]+)"/g)].map(m => m[1]); r = r.replace(/"[^"]*"/g, '""');
   const out = { lose: false, grant, loseKws: [] };
-  if (/\bloses all (?:other card types and )?abilities\b|\bwith no abilities\b|\bhas no abilities\b|\bloses all other card types and abilities\b/i.test(r)) out.lose = true;
+  if (/\bloses? all (?:other card types and )?abilities\b|\bwith no abilities\b|\bhas no abilities\b|\bloses all other card types and abilities\b/i.test(r)) out.lose = true;
   const resetTypes = /\bloses all other card types\b/i.test(r), resetSubs = resetTypes || /\bloses all (?:other )?creature types\b|\band creature types\b/i.test(r);
   const im = /\b(is|are|becomes?) an? (?:(\d+)\/(\d+) )?((?:[A-Za-z'-]+ )*?[A-Za-z'-]+?)(?= with | and |,|$)/i.exec(r);
   if (im) {
@@ -11329,6 +11341,7 @@ function ovrOf(c) {
   if (!state || !c) return null; let out = null;
   const merge = o => { if (!o) return; out = out || { lose: false, grant: [], loseKws: [] }; if (o.lose) out.lose = true; for (const k of ['subs', 'types', 'addTypes', 'colors', 'pt']) if (o[k] !== undefined) out[k] = o[k]; out.grant = out.grant.concat(o.grant || []); out.loseKws = out.loseKws.concat(o.loseKws || []); };
   merge(c.ovr);
+  for (const o of globalOvrFor(c)) merge(o);   // CR 613: a permanent's own static effect applies to every object it describes (Humility)
   for (const a of state.battlefield) if (a.att === c.id) merge(auraOvrOf(a));
   return out;
 }
@@ -11883,6 +11896,127 @@ function playerChoiceOptions(tx, obj) {
     return head.map(o => ({ full: !!o.full, label: o.label + ', then ' + tail[0].label.charAt(0).toLowerCase() + tail[0].label.slice(1), fn: () => { o.fn(); setTimeout(() => tail[0].fn(), 0); } }));
   }
   return null;
+}
+
+// ---- Counting from the board (v0.99.7): devotion (CR 700.5), "where X is ...", scaling mana, "you win the game"
+const DEV_COLORS = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+function devotionTo(cols) {   // CR 700.5: the number of mana symbols of those colours among the mana costs of permanents you control
+  let n = 0; if (!state) return 0;
+  for (const c of state.battlefield) { if (c.token) continue; const i = cardInfo(c.name); if (!i) continue; const mc = String(i.mc || '').split(' // ')[0];
+    for (const m of mc.matchAll(/\{([^}]+)\}/g)) { const parts = m[1].split('/'); if (parts.some(p => cols.includes(p))) n++; } }
+  return n;
+}
+function applyWhereX(tx, obj) {
+  let T = String(tx || ''), m, n = null;
+  if ((m = /,? where X is your devotion to (white|blue|black|red|green)(?: and (white|blue|black|red|green))?/i.exec(T))) { n = devotionTo([DEV_COLORS[m[1].toLowerCase()], m[2] && DEV_COLORS[m[2].toLowerCase()]].filter(Boolean)); T = T.replace(m[0], ''); }
+  else if ((m = /,? where X is the number of ([a-z' -]+?)(?: you control)?(?=[.,]|$)/i.exec(T))) { const src = obj && obj.sourceId > 0 && findCard(obj.sourceId); n = csCount(m[1].trim() + ' you control', src ? src.card : { id: -1 }) || 0; T = T.replace(m[0], ''); }
+  if (n === null) return T;
+  T = T.replace(/(?<![{\w])X(?![\w}])/g, String(n));
+  T = T.replace(/(?:^|(?<=\. ))If (\d+) is greater than or equal to the number of cards in your library, you win the game\.?/i, (all, v) => (state ? +v >= state.library.length : true) ? 'You win the game.' : '');   // Thassa's Oracle
+  return T.replace(/\s+$/, '');
+}
+function manaCountOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx); if (!sents.length) return null; const src = (obj && obj.sourceName) || 'Ability';
+  const s0 = sents[0].replace(/^[^:{]*(?:\{[^}]*\}[^:]*)*?:\s*(?=add\b)/i, '').replace(/\.$/, ''); let m;
+  if (sents.length === 1 && (m = /^add ((?:\{[WUBRGC]\})+) for each (.+?)(?: you control)?$/i.exec(s0))) {
+    const col = m[1].match(/[WUBRGC]/g), thing = m[2]; const srcC = obj && obj.sourceId > 0 && findCard(obj.sourceId);
+    const n = () => csCount(thing + ' you control', srcC ? srcC.card : { id: -1 }) || 0;
+    return [{ full: true, label: `Add ${m[1]} for each ${thing} you control (counted when it resolves)`, fn: () => { const k = n(); snap(); for (let i = 0; i < k; i++) for (const c of col) addFloatingMana(c); log(`${src}: added ${k * col.length} mana (${m[1]} × ${k})`); render(); } }];
+  }
+  if (sents.length === 2 && /^choose a colou?r$/i.test(sents[0].replace(/\.$/, '')) && (m = /^add an amount of mana of that colou?r equal to your devotion to that colou?r$/i.exec(sents[1].replace(/\.$/, '')))) {
+    return Object.entries(DEV_COLORS).map(([nm, sym]) => ({ full: true, label: `Choose ${nm}: add mana equal to your devotion to ${nm} (${devotionTo([sym])})`, fn: () => { const k = devotionTo([sym]); snap(); for (let i = 0; i < k; i++) addFloatingMana(sym); log(`${src}: chose ${nm}, added ${k} {${sym}} (devotion ${k})`); render(); } }));
+  }
+  if (sents.length === 1 && /^you win the game$/i.test(s0)) return [{ full: true, label: 'You win the game', fn: () => { log(`${src}: you win the game!`); toast('You win the game', `${src}: the game is over, and you won.`); render(); } }];
+  return null;
+}
+// ---- More static abilities read from rules text (v0.99.7)
+//  CR 502.3 + 614 "As long as ~ is untapped, players can't untap more than one land during their untap steps."  (Winter Orb, Static Orb)
+//  CR 119.7 + 614.1 "If a player would gain life, that player gains no life instead."  (Sulfuric Vortex)
+//  CR 614.6 "If a nontoken creature would enter and it wasn't cast, exile it instead."  (Containment Priest)
+//  CR 508.1c/509.1b "~ can't attack or block unless you control another creature with power 4 or greater."  (Rhonas the Indomitable)
+//  CR 613.1f/613.4b "All creatures lose all abilities and have base power and toughness 1/1."  (Humility) — layer effects from any permanent's static line
+//  Opponent-side statics (Propaganda, Leyline of the Void) are recognised and stated, because a goldfish game has no opposing attackers or graveyard.
+GLOBAL_STATIC_RES.push(
+  /^As long as ~ is untapped, players can't untap more than (?:one|two|three|four|\d+) (?:lands?|permanents|artifacts|creatures) during their untap steps\.?$/i,
+  /^If a player would gain life, that player gains no life instead\.?$/i,
+  /^If a nontoken creature would enter and it wasn't cast, exile it instead\.?$/i,
+  /^~ can't (?:attack|block|attack or block) unless you control (?:another|an?) [a-z ]+? with (?:power|toughness) \d+ or greater\.?$/i,
+  /^All (?:creatures|lands|artifacts|enchantments|permanents) (?:lose all abilities|are|have base power and toughness)\b.*$/i);
+const OPP_STATIC_RES = [/^Creatures can't attack you unless their controller pays \{\d+\} for each creature they control that's attacking you\.?$/i,
+  /^If a card would be put into an opponent's graveyard from anywhere, exile it instead\.?$/i];
+const oppOnlyStatic = line => OPP_STATIC_RES.some(re => re.test(String(line || '').trim().replace(/’/g, "'")));
+const selfLn = (g, ln) => ln.replace(selfNameRe(g.name), '~');
+const USW_NUM = { one: 1, two: 2, three: 3, four: 4 };
+function untapWithLimits(pend, held) {
+  if (!pend.length) return;
+  const rules = [];
+  for (const g of state.battlefield) { if (g.token || g.tapped) continue; const i = cardInfo(g.name); if (!i || !i.tx) continue;
+    for (const ln of i.tx.replace(/\([^)]*\)/g, '').replace(/’/g, "'").split('\n')) { const m = selfLn(g, ln.trim()).match(/^As long as ~ is untapped, players can't untap more than (one|two|three|four|\d+) (lands?|permanents|artifacts|creatures) during their untap steps\.?$/i);
+      if (m) rules.push({ g, n: USW_NUM[m[1].toLowerCase()] || +m[1], word: m[2].toLowerCase().replace(/s$/, '') }); } }
+  let free = pend.slice();
+  for (const r of rules) {
+    const kind = r.word === 'permanent' ? null : r.word, set = free.filter(c => pcPermIs(c, kind));
+    if (set.length <= r.n) continue;
+    free = free.filter(c => !set.includes(c));
+    held.push(`${set.length - r.n} ${r.word}${set.length - r.n === 1 ? '' : 's'} (${r.g.name})`);
+    const keepOpts = set;
+    setTimeout(() => openPickCards({ title: `${r.g.name}: untap only ${r.n}`, note: `${r.g.name} says players can't untap more than ${r.n} ${r.word}${r.n === 1 ? '' : 's'} during their untap steps. Choose which ${r.n} to untap; the rest stay tapped.`, cards: keepOpts, max: r.n, min: r.n, done: picked => { snap(); for (const c of picked) { c.tapped = false; delete c.mt; log(`${r.g.name}: untapped ${c.name}`); } render(); } }), 0);
+  }
+  for (const c of free) { c.tapped = false; delete c.mt; }
+}
+const lifeGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i);
+function priestExiles(c, from) {
+  if (!c || c.token || from === 'stack' || !/\bCreature\b/.test(frontType(c) || '')) return null;
+  const g = globalHas(/^If a nontoken creature would enter and it wasn't cast, exile it instead\.?$/i); return g ? g.g : null;
+}
+function selfCantUnless(c, kind) {   // why this creature can't attack/block right now, from its own "can't attack or block unless ..." line
+  const info = c.token ? null : cardInfo(c.name); if (!info || !info.tx) return '';
+  for (const ln of info.tx.replace(/\([^)]*\)/g, '').replace(/’/g, "'").split('\n')) {
+    const m = selfLn(c, ln.trim()).match(/^~ can't (attack|block|attack or block) unless you control (another|an?) ([a-z ]+?) with (power|toughness) (\d+) or greater\.?$/i); if (!m) continue;
+    if (!new RegExp('\\b' + kind + '\\b').test(m[1])) continue;
+    const word = m[3].toLowerCase(), ok = state.battlefield.some(x => (m[2].toLowerCase() !== 'another' || x.id !== c.id) && pcPermIs(x, PC_TYPES[word] === undefined ? null : PC_TYPES[word]) && (() => { const r = ptCalc(x); return !r.unknown && (m[4].toLowerCase() === 'power' ? r.p : r.t) >= +m[5]; })());
+    if (!ok) return `${c.name} can't ${kind} unless you control ${m[2].toLowerCase()} ${word} with ${m[4].toLowerCase()} ${m[5]} or greater.`;
+  }
+  return '';
+}
+const GLOBAL_OVR_PARSED = new Map(); let inGlobalOvr = false;
+function globalOvrFor(c) {   // layer 4-7 effects from any permanent's "All creatures lose all abilities and have base power and toughness 1/1"
+  if (!state || inGlobalOvr || !c) return [];
+  const out = [];
+  for (const g of state.battlefield) { if (g.token) continue; const i = cardInfo(g.name); if (!i || !i.tx || !/\b(?:All|Each) (?:creatures|lands|artifacts|enchantments|permanents) (?:lose|are|have)\b/.test(i.tx)) continue;
+    for (const ln of i.tx.replace(/\([^)]*\)/g, '').replace(/’/g, "'").split('\n')) {
+      const m = ln.trim().match(/^(?:All|Each) ([a-z]+) ((?:lose all abilities|are|have base power and toughness) .+)$/i); if (!m) continue;
+      let ent = GLOBAL_OVR_PARSED.get(m[0]); if (ent === undefined) { ent = parseCharChange(m[2]); GLOBAL_OVR_PARSED.set(m[0], ent); } if (!ent) continue;
+      inGlobalOvr = true; let hit = false; try { const S = parseMassSet(m[1], { sourceId: g.id }); hit = !!S && massMatch(c, S, g.id); } finally { inGlobalOvr = false; }
+      if (hit) out.push(ent);
+    } }
+  return out;
+}
+
+// CR 401.5 + 305.2: "Play with the top card of your library revealed." and "You may play lands from the top of your library." (Courser of Kruphix, Oracle of Mul Daya)
+GLOBAL_STATIC_RES.push(/^Play with the top card of your library revealed\.?$/i, /^You may play lands from the top of your library\.?$/i);
+const topRevealSource = () => state ? globalHas(/^Play with the top card of your library revealed\.?$/i) : null;
+const topLandSource = () => state ? globalHas(/^You may play lands from the top of your library\.?$/i) : null;
+function topLandPlayable() {
+  if (!state || state.phase !== 'play' || !topLandSource() || !state.library.length) return false;
+  const c = state.library[0]; return !c.token && isLandName(c.name) && canPlayLandNow();
+}
+function playTopLand() {
+  if (!topLandSource()) return;
+  if (!state.library.length || !isLandName(state.library[0].name)) { toast('No land on top', 'The top card of your library is not a land.'); return; }
+  if (!canPlayLandNow()) { toast(landDropUsed() ? 'Land already played' : 'Wrong phase', landDropUsed() ? 'You have already used all your land plays this turn.' : 'Lands can only be played during your main phase when the stack is empty.'); return; }
+  snap(); const [c] = state.library.splice(0, 1); state.landsPlayed = (state.landsPlayed || 0) + 1; state.landPlayedThisTurn = state.landsPlayed >= landDropsAllowed();
+  enterBattlefield(c, { from: 'library', logMsg: `Played land from the top of your library: ${c.name} (${topLandSource().g.name})` });
+  render(); if (state.pendingTriggers.length) resolvePendingTrigger();
+}
+function renderTopReveal() {   // a small label under the library showing the revealed top card
+  const ls = $('#libstack'); if (!ls) return; let el = $('#libTop');
+  const src = topRevealSource(), c = src && state.library[0];
+  if (!src) { if (el) el.remove(); return; }
+  if (!el) { el = h('div', { id: 'libTop', class: 'libtop' }); ls.parentElement.append(el); }
+  const info = c && !c.token ? cardInfo(c.name) : null;
+  el.textContent = c ? `Top: ${c.name}` : 'Top: (empty)'; el.title = `${src.g.name}: you play with the top card of your library revealed.` + (info && info.t ? ` ${info.t}` : '');
+  el.classList.toggle('land', !!c && isLandName(c.name));
 }
 init();
 

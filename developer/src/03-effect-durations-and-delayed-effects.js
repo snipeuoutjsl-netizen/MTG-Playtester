@@ -218,6 +218,7 @@ function attackBlock(c) {   // why this creature cannot attack right now ('' = i
   if (isSick(c)) return 'Summoning sickness: it came under your control this turn (and has no haste).';
   if (hasKw(c, 'defender')) return 'Defender: this creature cannot attack.';
   { const gb = globalAttackBlock(c); if (gb) return gb; }
+  { const sb = selfCantUnless(c, 'attack'); if (sb) return sb; }
   { const cb = statics().find(e => e.kind === 'cant' && e.attack && e.subj.test(c)); if (cb) return `${cb.g.name}: this creature can't attack.`; }
   return '';
 }

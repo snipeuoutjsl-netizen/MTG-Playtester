@@ -118,7 +118,7 @@ function compileCardOne(c) {
     const norml = stripped.replace(nameRe, '~').replace(/\u2019/g, "'");
     let m;
     // loyalty ability
-    if (/^[+−–-]?\d+:|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
+    if (/^[+−–-]?(?:\d+|X):|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
       const eff = recognizedEffects(stripped.replace(/^[^:]+:\s*/, '').replace(nameRe, '~'));
       push(text, 'loyalty', eff.length ? 'ok' : 'part', eff.length ? `Loyalty ability: the cost is tracked and the app can apply: ${eff.join('; ')}.` : 'Loyalty ability: the loyalty cost is tracked; apply its effect by hand.');
       continue;
@@ -188,7 +188,10 @@ function compileCardOne(c) {
       continue;
     }
     // static abilities with an engine
-    const rec = statRecs.find(r => r.line === norml.replace(/\.$/, ''));
+    let rec = statRecs.find(r => r.line === norml.replace(/\.$/, ''));
+    if (!rec) { const two = norml.replace(/\.$/, '').match(/^(.+?) (gets? [+-]\d+\/[+-]\d+) and (has|have) (.+)$/i);   // "+1/+1 and have <keyword>" is read as two static effects
+      if (two) { const a = statRecs.find(r => r.line === two[1] + ' ' + two[2]), b = statRecs.find(r => r.line === two[1] + ' ' + two[3] + ' ' + two[4]);
+        if (a && b) { push(text, 'static', 'ok', `Static ability (CR 611.3): ${two[2].replace(/^gets?/, '').trim()} and ${two[4]} to ${two[1].toLowerCase()} — read as two effects and applied automatically.`); continue; } } }
     if (rec) {
       const subjText = norml.replace(/ (?:has|have|get|gets|is|are) .*$/i, '');
       if (rec.kind === 'cs') { const okc = (!rec.cond || csUnderstood(rec.cond, null)) && (!rec.per || csUnderstood(null, rec.per.thing)) && !rec.other.length;
@@ -212,6 +215,7 @@ function compileCardOne(c) {
     if (/^You may cast (?:~|this card|this creature|[A-Z][\w' ,-]*?) from your graveyard (?:as long as|using its)\b/i.test(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Cast from your graveyard: the card shows a Cast option in your graveyard while its condition holds (or for its alternative cost).'); continue; }
     if (globalStaticLine(stripped.replace(nameRe, '~'))) { push(text, 'static', 'ok', 'Static rule read from its words: the app applies it automatically while this is on the battlefield (attack limits, enter-trigger suppression, zone locks, cost and mana effects). Evasion against blockers is not needed in a goldfish game.'); continue; }
     if (OPEN_REVEAL_RE.test(selfTxt({ name: info.name, tx: info.tx }).split('\n').find(l => /opening hand/i.test(l)) || '') && /opening hand/i.test(stripped)) { push(text, 'other', 'ok', 'Opening-hand reveal: the pre-game screen offers a Reveal button; the effect goes on the stack at your first upkeep.'); continue; }
+    if (oppOnlyStatic(stripped.replace(nameRe, '~'))) { push(text, 'static', 'info', 'Static ability that only affects your opponent (their attackers or their graveyard): a goldfish game has no opposing creatures or graveyard, so nothing is needed here.'); continue; }
     if (tokenReplLine(stripped)) { push(text, 'static', 'ok', 'Replacement effect (rule 614): every time an effect creates tokens for you, the app changes the number as it creates them and logs it.'); continue; }
     { const sb = sbParseLine(stripped.replace(nameRe, '~')); if (sb) { push(text, 'static', 'ok', sb.becomes ? `Static ability: ${sb.cond ? 'as long as ' + sb.cond + ', ' : ''}it is a ${sb.pt || ''} ${sb.subs.join(' ')} creature${sb.kws.length ? ' with ' + sb.kws.join(', ') : ''}; the app applies the type, P/T and keywords while the condition holds.` : sb.cantBlock ? `Static ability: it can't block${sb.cond ? ' as long as ' + sb.cond : ''}; the app keeps it out of the blocker list.` : `Static ability: it has ${sb.kws.join(', ')}${sb.cond ? ' as long as ' + sb.cond : ''}; the app checks the condition each time it reads the card.`); continue; } }
     push(text, 'other', 'unk', 'Not understood: the app does nothing for this line. Handle it by hand.');
