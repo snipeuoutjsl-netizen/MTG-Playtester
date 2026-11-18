@@ -431,10 +431,13 @@ function parseLookDistribute(tx) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = t.split(/(?<=[.!?])\s+/);
   const m0 = /^(?:look at|reveal) the top (a|one|two|three|four|five|six|seven|\d+|x) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
   const n = numOf(m0[1]); let play = false; const slots = []; let ok = true; let alt = null;
-  for (const sent of sents.slice(1)) {
+  for (let sent of sents.slice(1)) {
     // CR 608.2c: "If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand and the rest on the bottom." (Flow State): an alternative way to sort, chosen by a condition when it resolves
     { const im = /^if (.+?), instead (put .+|exile .+)$/i.exec(sent.replace(/\.$/, '')); if (im) { const a2 = parseLookDistribute(`Look at the top ${m0[1]} cards of your library. ${im[2]}.`); if (a2 && a2.slots.length) { alt = { cond: im[1], slots: a2.slots }; continue; } ok = false; continue; } }
     if (/^you may play (?:it|the exiled card|that card|those cards|them) this turn\.?$/i.test(sent)) { play = true; continue; }
+    // "You may reveal a colorless card from among them and put it into your hand." (Ancient Stirrings): reading it as "put up to one colorless card into your hand" keeps the filter and the cap
+    const rv = /^(?:you may )?reveal (an?|one|up to (?:one|two|three|\d+)) ([a-z ]+? cards?)(?: with mana value (?:x|\d+) or (?:less|greater))? from among (?:them|those cards) and put (?:it|them|that card|those cards) into your hand\.?$/i.exec(sent);
+    if (rv) sent = `Put up to ${/^up to /i.test(rv[1]) ? rv[1].slice(6) : 'one'} ${rv[2]}${(/ with mana value (?:x|\d+) or (?:less|greater)/i.exec(sent) || [''])[0]} into your hand.`;
     if (!/^(?:put|exile|then|you may put)\b/i.test(sent)) { ok = false; continue; }
     for (const cl of sent.replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+(?=(?:the rest|put|exile|one|two|a)\b)/i)) {
       const c = cl.trim().toLowerCase(); if (!c) continue;
@@ -446,13 +449,13 @@ function parseLookDistribute(tx) {
       const nm = { hand: 'Hand', bottom: 'Bottom', graveyard: 'Graveyard', exile: 'Exile', top: 'Top', battlefield: 'Battlefield' }[dest];
       // "put up to two creature cards with mana value 3 or less from among them onto the battlefield": a cap and a card filter (CR 608.2c)
       let max = null, filt = null, fdesc = '';
-      if (dest === 'battlefield') {
+      if (dest === 'battlefield' || dest === 'hand') {
         const um = /\bup to (a|one|two|three|four|five|\d+)\b/.exec(c); if (um) max = numOf(um[1]);
         const fm = /\b(?:put|puts) (?:up to (?:a|one|two|three|four|five|\d+) |any number of |an? |one |two |three |\d+ )?([a-z ]+?) cards?\b(?: with mana value (x|\d+) or (less|greater))?/.exec(c);
         if (fm) { const words = fm[1].trim().split(/\s+/).filter(w => w !== 'or' && w !== 'and'), mvn = fm[2] ? (fm[2] === 'x' ? numOf(m0[1]) : +fm[2]) : null, op = fm[3];
-          const okWord = w => /^(?:creature|land|artifact|enchantment|planeswalker|permanent|nonland|noncreature|instant|sorcery)$/.test(w);
+          const okWord = w => /^(?:creature|land|artifact|enchantment|planeswalker|permanent|nonland|noncreature|instant|sorcery|colorless)$/.test(w);
           if (words.every(okWord)) { filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || ''; if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
-            return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
+            return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : w === 'colorless' ? !/\{[^}]*[WUBRG]/.test(info.mc || '') : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
           else { ok = false; } }
       }
       slots.push({ dest, count, max, filt, fdesc: fdesc.trim(), label: `${count === 'rest' ? 'the rest' : count === 'any' ? 'any number' : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : dest === 'battlefield' ? `${fdesc ? '(' + fdesc.trim() + ') ' : ''}onto the battlefield${max ? ' (up to ' + max + ')' : ''}` : 'exiled'}`, short: nm });
@@ -3766,6 +3769,7 @@ function drawHandPickBar() {
   if (handPick && !(state && state.discarding)) handPick = null;
   const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
   const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
+  { const oh = !!state && state.phase === 'mull' && !state.bottomPhase, wasOh = document.body.classList.contains('mullhand'); document.body.classList.toggle('mullhand', oh); if (oh !== wasOh) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the opening hand is shown large too
   { const was = document.body.classList.contains('mullpick'); document.body.classList.toggle('mullpick', mb); if (was !== mb) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the mulligan step brings the hand up, larger and centred
   document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
   const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
@@ -6472,8 +6476,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.26';
+const APP_VERSION = '0.99.27';
 const CHANGELOG = [
+  { v: '0.99.27', title: 'Bigger opening hand; Ancient Stirrings read in full', notes: ['The opening-hand screen (Keep / Draw / Mulligan) now shows your hand large and centred so every card can be read.','"Look at the top N cards. You may reveal a [type or colorless] card from among them and put it into your hand. Put the rest on the bottom" is now read in full (Ancient Stirrings and similar): at most one card, only cards of that kind.'] },
   { v: '0.99.26', title: 'Multi-step abilities apply every step (Orcish Bowmasters)', notes: ['An ability like "deals 1 damage to any target. Then amass Orcs 1." is now one button that applies every step in written order, instead of one button per step where the later steps were easy to miss. Always Yield repeats the whole chain too, not just the first step.'] },
   { v: '0.99.25', title: 'Opponent search asks what they searched for; bigger mulligan hand', notes: ['The opponent-search button now asks what your opponent searched for (basic land, other land, creature, other card, or nothing). "Whenever an opponent searches their library for a land card" abilities only trigger for a land search.','Opposition Agent: you name the card they found, it is exiled, and you may play it for as long as it stays there, spending mana as though it were any colour. "Your opponents can\'t search libraries\" (Stranglehold) now stops the search.','Mulligan: the hand rises, enlarges and centres on the table under a "Select X cards and put them at the bottom to continue" box.'] },
   { v: '0.99.24', title: 'Barrowgoyf-style "mill that many, then take one"', notes: ['The amount an event carried (combat damage dealt, life gained or lost) now reaches the triggered ability, so "that many" is a real number.', 'New reader for "Mill N. If you do, you may put a creature (or other type, or mana value limit) card from among them into your hand or onto the battlefield": only the cards that mill put in the graveyard are offered, not the rest of it.'] },
