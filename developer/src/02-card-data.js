@@ -112,8 +112,9 @@ function updateDbStatus(msg) {
   const el = $('#dbStatus');
   el.dataset.state = (cardCount || META.size) ? 'ok' : 'warn';
   if (msg) { el.textContent = msg; return; }
-  if (cardCount) el.textContent = `Card data: ${cardCount.toLocaleString()} cards`;
-  else if (META.size) el.textContent = `Card data: ${deckMetaCount().toLocaleString()} cards`;
+  const tk = typeof tokenTotal === 'function' ? tokenTotal() : 0, tkTxt = tk ? ` · ${tk.toLocaleString()} tokens` : '';
+  if (cardCount) el.textContent = `Card data: ${cardCount.toLocaleString()} cards${tkTxt}`;
+  else if (META.size) el.textContent = `Card data: ${deckMetaCount().toLocaleString()} cards${tkTxt}`;
   else el.textContent = 'No card data loaded (names only)';
   el.title = cardCount ? 'Full Scryfall Oracle data is loaded.' : META.size ? 'Rules text and types were saved when the card images were downloaded. Load the full Oracle file in Card data… to cover every card.' : 'Open Tools → Card data… to download card data, or Images… to fetch images for this deck.';
 }
@@ -145,7 +146,7 @@ async function importCardData(file) {
     const out = []; const seen = new Set(); const toks = [];
     for (const o of raw) {
       if (!o || !o.name) continue;
-      if (o.layout === 'token' || o.layout === 'double_faced_token') { try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
+      if (o.layout === 'token' || o.layout === 'double_faced_token' || o.layout === 'emblem') { try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
       if (SKIP_LAYOUTS.has(o.layout)) continue;
       const k = norm(o.name);
       if (seen.has(k)) continue;
@@ -153,10 +154,11 @@ async function importCardData(file) {
       out.push(compact(o));
     }
     if (!out.length) { alert('No cards found in that file.'); updateDbStatus(); return; }
-    installCards(out); installTokens(toks);
+    installCards(out); mergeTokens(toks);
     let saved = true;
-    try { await idbSet('cards', out); await idbSet('tokens', toks); } catch (e) { saved = false; }
+    try { await idbSet('cards', out); await idbSet('tokens', (() => { const a = []; TOKENDB.forEach(x => x.forEach(r => a.push(r))); return a; })()); } catch (e) { saved = false; }
     updateDbStatus();
+    syncTokens(true);
     if (!saved) alert('Cards loaded, but your browser would not save them. You will need to load the file again next time.');
     render();
     prepareImages();
@@ -520,6 +522,7 @@ function parseStaticCard(g) {
             const x = part.trim(); let q; if (!x) continue;
             if ((q = x.match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { p += +q[1]; t += +q[2]; }
             else if ((q = x.match(/^(?:has|have) (.+)$/i))) { for (const k of q[1].toLowerCase().split(/\s+and\s+/)) { if (GRANTABLE.includes(k.trim())) kws.push(k.trim()); else other.push(k.trim()); } }
+            else if (/^attacks each (?:combat|turn) if able$/i.test(x)) kws.push('mustattack');   // CR 508.1d, enforced when attackers are declared
             else other.push(x);
           }
           list.push({ line: l0, kind: 'cond', g, cond: 'delirium', n, p, t, kws, other }); continue;

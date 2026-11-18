@@ -63,7 +63,7 @@ function globalOvrFor(c) {   // layer 4-7 effects from any permanent's "All crea
 }
 
 // CR 401.5 + 305.2: "Play with the top card of your library revealed." and "You may play lands from the top of your library." (Courser of Kruphix, Oracle of Mul Daya)
-GLOBAL_STATIC_RES.push(/^Play with the top card of your library revealed\.?$/i, /^You may play lands from the top of your library\.?$/i);
+GLOBAL_STATIC_RES.push(/^(?:All|Each) creatures? (?:attacks?|must attack) each combat if able\.?$/i, /^Other [A-Za-z]+ creatures you control attack each combat if able\.?$/i, /^Play with the top card of your library revealed\.?$/i, /^You may play lands from the top of your library\.?$/i);
 const topRevealSource = () => state ? globalHas(/^Play with the top card of your library revealed\.?$/i) : null;
 const topLandSource = () => state ? globalHas(/^You may play lands from the top of your library\.?$/i) : null;
 function topLandPlayable() {
@@ -106,4 +106,30 @@ function vehicleOptions(tx, obj) {
   return [{ full: true, label: `${nm} becomes an artifact creature until end of turn`, fn: () => { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null, c = f && f.zone === 'battlefield' ? f.card : state.battlefield.find(x => x.name === nm); if (!c) { log(`${nm} is no longer on the battlefield`); render(); return; }
     const i = cardInfo(c.name); snap(); c.becomes = { pt: (i && i.pt) || '0/0', types: ['artifact', 'creature'], subs: ['vehicle'], kws: [] };
     addFx({ kind: 'delayed', when: 'end', action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name}: it stops being a creature.`, srcName: nm }); log(`${nm} becomes an artifact creature until end of turn (${c.becomes.pt})`); render(); } }];
+}
+
+// ---- Attack requirements (CR 508.1d): "~ attacks each combat if able."  Dragon's Rage Channeler (delirium), Auras like "Enchanted creature attacks each combat if able", "All creatures attack each combat if able" (Grand Melee).
+// A requirement is not a trigger: the declare-attackers step simply has to include every creature that is able to attack and is required to.
+const MUST_ATK_SELF = /^(?:~|this creature) (?:attacks each (?:combat|turn) if able|must attack each (?:combat|turn) if able)\.?$/i;
+function mustAttackWhy(c) {   // '' unless this creature is required to attack each combat (it still must be ABLE to; see mandatoryAttackers)
+  if (!state || !c || c.token && !c.tk) return '';
+  if (hasKw(c, 'mustattack')) return `${c.name}'s ability: it attacks each combat if able`;
+  const own = String(cardText(c) || '').replace(/\([^)]*\)/g, '').replace(/’/g, "'").split('\n');
+  for (const ln of own) if (MUST_ATK_SELF.test(ln.trim().replace(selfNameRe(c.name), '~'))) return `${c.name}: it attacks each combat if able`;
+  for (const a of state.battlefield) { if (a.att !== c.id) continue;
+    for (const ln of String(cardText(a) || '').replace(/’/g, "'").split('\n')) if (/^(?:Enchanted|Equipped) creature (?:[^.]*? and )?attacks each combat if able\.?$/i.test(ln.trim())) return `${a.name}: enchanted/equipped creature attacks each combat if able`; }
+  const g = globalHas(/^(?:All|Each) creatures? (?:attacks?|must attack) each combat if able\.?$/i); if (g) return `${g.g.name}: all creatures attack each combat if able`;
+  for (const o of state.battlefield) { if (o.id === c.id || o.token) continue;   // "Other Goblin creatures you control attack each combat if able." (Goblin Rabblemaster)
+    for (const ln of String(cardText(o) || '').replace(/\([^)]*\)/g, '').replace(/\u2019/g, "'").split('\n')) { const m = ln.trim().match(/^Other ([A-Za-z]+) creatures you control attack each combat if able\.?$/i);
+      if (m && (() => { const ti = permTypeInfo(c), w = m[1].toLowerCase(); return ti.changeling || (ti.subs && ti.subs.has(w)); })()) return `${o.name}: other ${m[1]} creatures you control attack each combat if able`; } }
+  return '';
+}
+const mandatoryAttackers = () => state ? state.battlefield.filter(c => permZone(c) === 'creatures' && !attackBlock(c) && mustAttackWhy(c)) : [];
+function declareMandatoryAttackers() {   // the player leaves the declare-attackers step without declaring: the required attackers attack anyway
+  const req = mandatoryAttackers(); if (!req.length || state.combat.declared) return false;
+  snap(); state.combat.attackers = req.map(c => c.id); state.combat.declared = true;
+  for (const c of req) if (!hasKw(c, 'vigilance')) c.tapped = true;
+  log(`Declared attackers (required): ${req.map(c => c.name).join(', ')} — ${[...new Set(req.map(c => mustAttackWhy(c)))].join('; ')}`);
+  toast('Required attackers', `${req.map(c => c.name).join(', ')} must attack: the rules require it whenever it is able to (CR 508.1d). It was declared for you.`);
+  fireTrigger('attack', { cards: req }); render(); flushTriggers(); return true;
 }

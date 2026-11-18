@@ -340,7 +340,7 @@ function openWelcome(onDone) {
   const pages = [
     ['Welcome to MTG Playtester', [P('A solo "goldfish" table for Magic: The Gathering. Load your deck, draw a hand, and practise sequencing your turns with no opponent needed. It runs fully offline once your card data is loaded.'),
       P('This short tour covers getting set up, how a turn works, and how to make the table look the way you like. You can skip it now and reopen it any time from the ', B('⚙ menu → Welcome tour'), '.')]],
-    ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It then works offline.'),
+    ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
       P('The deck button at the top left lists your saved decks and switches between them.')]],

@@ -16,13 +16,23 @@ const TOKEN_PRE = {
 };
 const TOKEN_NUMW = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const TOKEN_COL = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+// Quoted rules text ("When this token leaves the battlefield, it deals 2 damage to any target.") is an ability of the thing being created or granted, NOT of the card that says it.
+// The card's own readers must not see inside the quotes; the token reader gets them back. (CR 111.4 / 113.3: an ability belongs to the object that has it.)
+const QUOTE_STORE = [];
+const normQuotes = s => String(s || '').replace(/[\u201c\u201d]/g, '"');
+// Only a quote that follows "...token... with/and" is the created token's ability. Emblems and "gains/has "..."" grants keep their quotes for their own readers.
+const quoteIsTokens = (s, off) => { const seg = s.slice(Math.max(s.lastIndexOf('. ', off) + 1, 0), off); return /\btokens?\b/i.test(seg) && !/\bemblem\b/i.test(seg) && !/\b(?:gains?|has|have|loses?)\b/i.test(seg.slice(seg.search(/\btokens?\b/i))); };
+function maskQuotes(tx) { const s = normQuotes(tx); return s.replace(/"([^"]*)"/g, (m, inner, off) => { if (/^\u0001Q\d+\u0001$/.test(inner) || !quoteIsTokens(s, off)) return m; QUOTE_STORE.push(inner); return '"\u0001Q' + (QUOTE_STORE.length - 1) + '\u0001"'; }); }
+const hasRawQuote = s => { const n = normQuotes(s); let hit = false; n.replace(/"([^"]*)"/g, (m, inner, off) => { if (!/^\u0001Q\d+\u0001$/.test(inner) && quoteIsTokens(n, off)) hit = true; return m; }); return hit; };
+function unmaskQuotes(s) { return String(s == null ? '' : s).replace(/\u0001Q(\d+)\u0001/g, (m, i) => QUOTE_STORE[+i] != null ? QUOTE_STORE[+i] : ''); }
 function tokenDefsFromText(text, srcName) {
-  const t = String(text || '').replace(/\([^)]*\)/g, ' ').replace(/\n/g, ' ').replace(/\u2019/g, "'");
+  const t = unmaskQuotes(normQuotes(text)).replace(/\([^)]*\)/g, ' ').replace(/\n/g, ' ').replace(/\u2019/g, "'");
   const out = [], re = /\bcreates?\s+([^"]*?)\btokens?\b((?:"[^"]*"|[^."])*)/gi; let m;
   const mk = d => { d.from = srcName || ''; d.key = [d.name, d.pt || '', (d.col || []).join(''), d.tx || ''].join('|'); out.push(d); };
   while ((m = re.exec(t))) {
     let head = m[1].trim(), tail = m[2] || '';
-    if (/\b(?:cop(?:y|ies)|that's a|named)\b/i.test(head + ' ' + tail.slice(0, 30)) || !head) continue;
+    let tokNamed = ''; { const nm0 = tail.match(/^\s+named ([A-Z][^"]*?)(?=\s+with\b|\s*,|\s*$)/); if (nm0) { tokNamed = nm0[1].trim(); tail = tail.slice(nm0[0].length); } }   // "a colorless artifact token named Munitions with ..."
+    if (/\b(?:cop(?:y|ies)|that's a)\b/i.test(head + ' ' + tail.slice(0, 30)) || (!tokNamed && /\bnamed\b/i.test(tail.slice(0, 30))) || !head) continue;
     if (/^(?:one or more|that many|twice that many|those|an additional|a number of)\b/i.test(head) || /\bof those\b/i.test(head + ' ' + tail.slice(0, 30))) continue;   // v0.95.1 replacement-effect wording (Doubling Season), not a token to make
     let named = '', lg = /\blegendary\b/i.test(head), nmM = head.match(/^([A-Z][^,]*),\s+(?:an?\s+)?(.*)$/);
     if (nmM) { named = nmM[1].trim(); head = nmM[2]; }
@@ -35,7 +45,7 @@ function tokenDefsFromText(text, srcName) {
     for (const w of words) { const lw = w.toLowerCase().replace(/,$/, '');
       if (TOKEN_COL[lw]) col.push(TOKEN_COL[lw]); else if (lw === 'colorless' || lw === 'and' || lw === 'legendary') continue;
       else if (/^(creature|artifact|enchantment|land)$/.test(lw)) types.push(lw[0].toUpperCase() + lw.slice(1)); else nameW.push(w); }
-    const name = named || nameW.join(' ').trim(); if (!name) continue;
+    const name = tokNamed || named || nameW.join(' ').trim(); if (!name) continue;
     const pre = TOKEN_PRE[name.toLowerCase()] || {};
     if (!pt && pre.pt) pt = pre.pt;
     const off = officialToken(name, pt, col, '');
@@ -43,12 +53,12 @@ function tokenDefsFromText(text, srcName) {
     if (pt && !ty.includes('Creature')) ty.unshift('Creature');
     const lines = [], tm = tail.match(/^\s*,?\s*(?:tapped(?: and attacking)?,?\s*)?with\s+(.*)$/i);
     if (tm) { const rest = tm[1], q0 = rest.indexOf('"'); let kwPart = q0 >= 0 ? rest.slice(0, q0) : rest;
-      if (q0 >= 0) { const qm = rest.slice(q0).match(/^(?:"[^"]*")(?:\s*(?:,|and)?\s*"[^"]*")*/); if (qm) for (const q of qm[0].matchAll(/"([^"]*)"/g)) lines.push(q[1]); }
+      if (q0 >= 0) { const qm = rest.slice(q0).match(/^(?:"[^"]*")(?:\s*(?:,|and)?\s*"[^"]*")*/); if (qm) for (const q of qm[0].matchAll(/"([^"]*)"/g)) lines.push(q[1].replace(/~/g, 'this token')); }   // inside quotes "~" was this token itself
       const kw = kwPart.split(/,|\band\b/).map(x => x.trim()).filter(x => x && !/counter|\bon it\b/i.test(x));
       for (const k of kw.reverse()) lines.unshift(k[0].toUpperCase() + k.slice(1)); }
     let tx = lines.join('\n'); if (!tx && pre.tx) tx = pre.tx;
-    const subW = named ? nameW : name.split(/\s+/);
-    const d = { name, pt, col, types: ty, subs: subW.map(x => x.toLowerCase()), tx, count, tapped, legendary: lg, type: `Token ${lg ? 'Legendary ' : ''}${ty.join(' ')} — ${subW.join(' ') || name}` };
+    const subW = tokNamed ? [] : named ? nameW : name.split(/\s+/);
+    const d = { name, pt, col, types: ty, subs: subW.map(x => x.toLowerCase()), tx, count, tapped, legendary: lg, type: `Token ${lg ? 'Legendary ' : ''}${ty.join(' ')}${subW.join(' ') || !tokNamed ? ' — ' + (subW.join(' ') || name) : ''}` };
     if (off) {   // v0.95.0 the official token card is the truth for its type line and rules text; what the card text said is the fallback
       d.type = off.t.replace(/^(?!Token)/, 'Token ');
       d.official = true; if (off.tx && off.tx.replace(/\([^)]*\)/g, '').trim()) d.tx = off.tx.replace(/\([^)]*\)/g, '').replace(/\n{2,}/g, '\n').trim();

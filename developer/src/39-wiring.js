@@ -84,7 +84,7 @@ document.addEventListener('keydown', e => {
   loadSleeve();
   render();
   updateDbStatus();
-  idbGet('tokens').then(t => { if (Array.isArray(t)) installTokens(t); }).catch(() => {});
+  idbGet('tokens').then(t => { if (Array.isArray(t)) { installTokens(t); updateDbStatus(); } }).catch(() => {}).then(() => setTimeout(() => syncTokens(false), 2500));
   idbGet('cards').then(list => {
     if (Array.isArray(list) && list.length) { installCards(list); render(); }
     else updateDbStatus();

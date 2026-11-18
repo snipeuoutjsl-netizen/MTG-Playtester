@@ -346,6 +346,7 @@ function nextPhase() {
   if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
+  if (STEPS[state.step].id === 'attack' && !state.combat.declared && declareMandatoryAttackers()) return;
   if (STEPS[state.step].id === 'attack' && !state.combat.declared && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
   if (state.step >= CLEANUP) { nextTurn(); return; }
   jumpToStep(state.step + 1);

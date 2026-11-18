@@ -145,6 +145,7 @@ function compileCardOne(c) {
     if (/\bspells?\b.*\bcost\b.*\b(?:more|less) to cast\b/i.test(stripped) && !/^this\b/i.test(stripped)) {
       push(text, 'static', 'ok', /opponents/i.test(stripped) ? 'Cost effect on opponents’ spells: not used in a goldfish game.' : 'Cost modifier: applied automatically to every spell you cast while this is on the battlefield (shown on the card in hand). Add effects the app cannot see with Tools → Cost effects.'); continue;
     }
+    if (MUST_ATK_SELF.test(stripped.replace(nameRe, '~')) || /^(?:Enchanted|Equipped) creature (?:[^.]*? and )?attacks each combat if able\.?$/i.test(stripped) || /^Other [A-Za-z]+ creatures you control attack each combat if able\.?$/i.test(stripped)) { push(text, 'static', 'ok', 'Attack requirement (rule 508.1d): the declare-attackers window pre-selects it and will not let you leave it out whenever it is able to attack; skipping combat declares it for you.'); continue; }
     if (/^Enchant\b/i.test(stripped) && /\bAura\b/.test(front) && !/graveyard|opponent|don'?t control|\bplayer\b/i.test(stripped)) { push(text, 'static', 'ok', 'Enchant (rule 303.4 / 702.5): when the Aura enters you choose a legal permanent to attach it to; with no legal host it goes to the graveyard (704.5m), and it falls off if the host stops being legal or leaves.'); continue; }
     if (/^Crew \d+\b/i.test(stripped)) { push(text, 'activated', 'ok', 'Crew (rule 702.122): right-click the Vehicle, choose Activate and pick untapped creatures with total power at least the crew number (summoning-sick creatures may crew); they tap, and the Vehicle becomes an artifact creature until end of turn.'); continue; }
     if (/^Equip\b/i.test(stripped)) { push(text, 'activated', 'ok', 'Equip (rule 702.6): a sorcery-speed ability. Right-click the Equipment, choose Activate, pay the cost and pick a creature you control; it stays attached until it moves or either leaves.'); continue; }
@@ -198,7 +199,7 @@ function compileCardOne(c) {
       const subjText = norml.replace(/ (?:has|have|get|gets|is|are) .*$/i, '');
       if (rec.kind === 'cs') { const okc = (!rec.cond || csUnderstood(rec.cond, null)) && (!rec.per || csUnderstood(null, rec.per.thing)) && !rec.other.length;
         push(text, 'static', okc ? 'ok' : 'part', okc ? `Conditional static (CR 611.3): the app checks ${rec.cond ? '"' + rec.cond + '"' : 'the count of "' + rec.per.thing + '"'}${rec.per ? ' (per ' + rec.per.every + ')' : ''} as the game changes and applies ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', rec.kws.join(', '), rec.cant ? 'a restriction' : ''].filter(Boolean).join(' and ')} automatically.` : `Static ability the app could not fully read (${!rec.cond || csUnderstood(rec.cond, null) ? '' : 'its condition "' + rec.cond + '" is not understood'}${rec.other.length ? ' its effect "' + rec.other.join('; ') + '"' : ''}). Apply it by hand.`); continue; }
-      if (rec.kind === 'cond') { push(text, 'static', rec.other.length ? 'part' : 'ok', `${rec.cond === 'ctrl' ? 'Conditional bonus: while you control a ' + rec.need + ' the app applies' : 'Delirium: while there are ' + rec.n + '+ card types in your graveyard the app applies'}`.replace(/applies$/, 'applies') + `  ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', ...rec.kws].filter(Boolean).join(', ')} live${rec.other.length ? '; “' + rec.other.join('; ') + '” is not enforced' : ''}. A badge on the card shows the count.`); continue; }
+      if (rec.kind === 'cond') { push(text, 'static', rec.other.length ? 'part' : 'ok', `${rec.cond === 'ctrl' ? 'Conditional bonus: while you control a ' + rec.need + ' the app applies' : 'Delirium: while there are ' + rec.n + '+ card types in your graveyard the app applies'}`.replace(/applies$/, 'applies') + `  ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', ...rec.kws.map(k => k === "mustattack" ? "attacks each combat if able" : k)].filter(Boolean).join(', ')} live${rec.other.length ? '; “' + rec.other.join('; ') + '” is not enforced' : ''}. A badge on the card shows the count.`); continue; }
       const note = rec.kind === 'color' ? `Static ability: changes the colours of ${subjText.toLowerCase()} (applied to every permanent it describes).`
         : rec.kind === 'kw' ? `Static ability: grants ${rec.items.map(i => i.kws.join('/') + (i.cond ? ' if it’s ' + i.cond : '')).join('; ')} to ${subjText.toLowerCase()}.`
         : `Static ability: ${rec.p >= 0 ? '+' : ''}${rec.p}/${rec.t >= 0 ? '+' : ''}${rec.t} to ${subjText.toLowerCase()}.`;
@@ -285,6 +286,7 @@ function verbGaps(sentence, labels) {
   return VERB_CHECKS.filter(([v, l]) => v.test(s) && !l.test(labels)).map(([v]) => v.source);
 }
 function uncoveredClauses(effectText) {
+  if (hasRawQuote(effectText)) effectText = maskQuotes(effectText);   // quoted ability text belongs to the token/granted object, not to this card's own clauses
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
   try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; } catch (e) { /* ignore */ }
@@ -301,6 +303,7 @@ function uncoveredClauses(effectText) {
   return missed;
 }
 function recognizedEffects(tx) {
+  if (hasRawQuote(tx)) return recognizedEffects(maskQuotes(tx)).map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o);
   const r = effectOptions(tx, { sourceName: '~', sourceId: -1 }).map(o => o.label ? o.label.toLowerCase() : o.summary);
   if (r.length) return r;
   // effects on a chosen target are applied once the target is picked (targetedOptions), so they count as handled

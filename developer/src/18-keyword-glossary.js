@@ -487,22 +487,25 @@ function openCombatHelper(){
     const rows=h('div',{class:'prelist'});
     const creatures=state.battlefield.filter(c=>permZone(c)==='creatures');
     if(!creatures.length) rows.append(h('div',{class:'muted',text:'You control no creatures.'}));
+    const mand=new Map(mandatoryAttackers().map(c=>[c.id,mustAttackWhy(c)])); for(const id of mand.keys()) picks.add(id);   // CR 508.1d: required attackers are already chosen
     const btns=new Map(), sync=(c)=>{const b=btns.get(c.id); if(!b) return; b.className=picks.has(c.id)?'tgl on':'tgl'; b.textContent=picks.has(c.id)?'Attacking':'Attack';};
     creatures.forEach(c=>{
       const why=attackBlock(c), vig=hasKw(c,'vigilance');
-      const btn=h('button',{class:'tgl',text:'Attack',disabled:!!why,title:why}); btns.set(c.id,btn);
+      const btn=h('button',{class:'tgl',text:'Attack',disabled:!!why||mand.has(c.id),title:why||mand.get(c.id)||''}); btns.set(c.id,btn);
       btn.addEventListener('click',()=>{picks.has(c.id)?picks.delete(c.id):picks.add(c.id);sync(c);});
       const pw=powerOf(c);
-      rows.append(h('div',{class:'row'+(why?' cantatk':'')},h('span',{class:'nm'},c.name+(vig?' (vigilance: does not tap)':'')),h('span',{class:'muted small',text:why?why:`power ${pw.n}${pw.star?' (*)':''}`}),btn));
+      rows.append(h('div',{class:'row'+(why?' cantatk':'')},h('span',{class:'nm'},c.name+(vig?' (vigilance: does not tap)':'')),h('span',{class:'muted small',text:why?why:mand.has(c.id)?`must attack — ${mand.get(c.id)}`:`power ${pw.n}${pw.star?' (*)':''}`}),btn));
     });
+    creatures.forEach(c=>sync(c));
     // v0.94.3 Attack with all: picks every creature that can legally attack (not tapped, not summoning sick unless it has haste, no defender, no "can't attack" effect)
     const viable=creatures.filter(c=>!attackBlock(c)), skipped=creatures.filter(c=>attackBlock(c));
     const allBtn=h('button',{text:`Attack with all (${viable.length})`,disabled:!viable.length,title:viable.length?'Selects every creature that can attack right now':'No creature can attack right now',onclick:()=>{viable.forEach(c=>picks.add(c.id));creatures.forEach(sync);allNote.textContent=skipped.length?`Left out: ${skipped.map(c=>`${c.name} (${c.tapped?'tapped':isSick(c)?'summoning sick':hasKw(c,'defender')?'defender':"can't attack"})`).join(', ')}.`:'Every creature you control is attacking.';}});
-    const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();creatures.forEach(sync);allNote.textContent='';}});
+    const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();for(const id of mand.keys())picks.add(id);creatures.forEach(sync);allNote.textContent='';}});
     const allNote=h('div',{class:'muted small'});
     m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),rows);
     rows.prepend(h('div',{class:'row',style:'gap:8px;justify-content:flex-start'},allBtn,noneBtn),allNote);
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{
+      for(const id of mand.keys())picks.add(id);
       snap();state.combat.attackers=[...picks];state.combat.declared=true;
       const atk=[...picks].map(id=>findCard(id)?.card).filter(Boolean);
       for(const c of atk){ if(!hasKw(c,'vigilance')) c.tapped=true; }
@@ -544,7 +547,7 @@ function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});
   m.body.append(h('div',{class:'psub',text:`You have ${n} creature${n===1?'':'s'} that can attack, and you have not declared attackers this turn.`}));
-  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
+  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();if(declareMandatoryAttackers())return;state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
 }
 function renderOverlay() {
   const ov = $('#overlay');
