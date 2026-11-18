@@ -522,6 +522,7 @@ function parseStaticCard(g) {
           }
           continue;
         } }
+      { const cs = parseCondStatic(raw.trim(), g); if (cs) { list.push(cs); continue; } }   // v0.98.5 conditional / scaling statics
       const line = raw.trim().replace(/\.$/, ''); if (!line || /"/.test(line) || /^(as long as|if|when|whenever|at |until)/i.test(line) || /\bas long as\b|\buntil\b/i.test(line)) continue;
       let m;
       // colour: "Each nonland permanent you control is all colors."
@@ -597,6 +598,7 @@ function condHolds2(e) {
 }
 function kwGrant(c, kw) {
   if (!state || !c || permZone(c) !== 'creatures' || !onBattlefield(c)) return null;
+  for (const e of statics()) if (e.kind === 'cs' && e.g.id === c.id && e.kws.includes(kw) && csActive(e)) return e.line;
   for (const e of statics()) if (e.kind === 'cond' && e.g.id === c.id && e.kws.includes(kw) && condHolds2(e)) return 'its delirium ability';
   for (const e of statics()) {
     if (e.kind !== 'kw' || !e.subj.test(c)) continue;
@@ -741,6 +743,7 @@ function ptCalc(c) {
     out.p += ep; out.t += et; out.modified = true; out.why.push(`${ep >= 0 ? '+' : ''}${ep}/${et >= 0 ? '+' : ''}${et} from ${e.g.name}${e.perFn ? ' (' + mul + ' × ' + (e.p >= 0 ? '+' : '') + e.p + '/' + (e.t >= 0 ? '+' : '') + e.t + ' for each ' + e.perText + ')' : ''}`);
   }
   if (state && onBattlefield(c)) for (const e of statics()) {
+    if (e.kind === 'cs' && e.g.id === c.id && (e.p || e.t)) { const st = csState(e); if (!st.known) { out.unknown = true; out.why.push(`"${e.line}": the app cannot read this condition, so the power/toughness is unknown`); } else if (st.on) { out.p += e.p * st.mult; out.t += e.t * st.mult; out.modified = true; out.why.push(`${e.p * st.mult >= 0 ? '+' : ''}${e.p * st.mult}/${e.t * st.mult >= 0 ? '+' : ''}${e.t * st.mult} from "${e.line}"`); } continue; }
     if (e.kind !== 'cond' || e.g.id !== c.id || !(e.p || e.t) || !condHolds2(e)) continue;
     out.p += e.p; out.t += e.t; out.modified = true; out.why.push(`${e.p >= 0 ? '+' : ''}${e.p}/${e.t >= 0 ? '+' : ''}${e.t} from ${e.cond === 'ctrl' ? 'controlling a ' + e.need : 'delirium (' + deliriumCount() + ' card types in your graveyard)'}`);
   }

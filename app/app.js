@@ -603,6 +603,7 @@ function parseStaticCard(g) {
           }
           continue;
         } }
+      { const cs = parseCondStatic(raw.trim(), g); if (cs) { list.push(cs); continue; } }   // v0.98.5 conditional / scaling statics
       const line = raw.trim().replace(/\.$/, ''); if (!line || /"/.test(line) || /^(as long as|if|when|whenever|at |until)/i.test(line) || /\bas long as\b|\buntil\b/i.test(line)) continue;
       let m;
       // colour: "Each nonland permanent you control is all colors."
@@ -678,6 +679,7 @@ function condHolds2(e) {
 }
 function kwGrant(c, kw) {
   if (!state || !c || permZone(c) !== 'creatures' || !onBattlefield(c)) return null;
+  for (const e of statics()) if (e.kind === 'cs' && e.g.id === c.id && e.kws.includes(kw) && csActive(e)) return e.line;
   for (const e of statics()) if (e.kind === 'cond' && e.g.id === c.id && e.kws.includes(kw) && condHolds2(e)) return 'its delirium ability';
   for (const e of statics()) {
     if (e.kind !== 'kw' || !e.subj.test(c)) continue;
@@ -822,6 +824,7 @@ function ptCalc(c) {
     out.p += ep; out.t += et; out.modified = true; out.why.push(`${ep >= 0 ? '+' : ''}${ep}/${et >= 0 ? '+' : ''}${et} from ${e.g.name}${e.perFn ? ' (' + mul + ' × ' + (e.p >= 0 ? '+' : '') + e.p + '/' + (e.t >= 0 ? '+' : '') + e.t + ' for each ' + e.perText + ')' : ''}`);
   }
   if (state && onBattlefield(c)) for (const e of statics()) {
+    if (e.kind === 'cs' && e.g.id === c.id && (e.p || e.t)) { const st = csState(e); if (!st.known) { out.unknown = true; out.why.push(`"${e.line}": the app cannot read this condition, so the power/toughness is unknown`); } else if (st.on) { out.p += e.p * st.mult; out.t += e.t * st.mult; out.modified = true; out.why.push(`${e.p * st.mult >= 0 ? '+' : ''}${e.p * st.mult}/${e.t * st.mult >= 0 ? '+' : ''}${e.t * st.mult} from "${e.line}"`); } continue; }
     if (e.kind !== 'cond' || e.g.id !== c.id || !(e.p || e.t) || !condHolds2(e)) continue;
     out.p += e.p; out.t += e.t; out.modified = true; out.why.push(`${e.p >= 0 ? '+' : ''}${e.p}/${e.t >= 0 ? '+' : ''}${e.t} from ${e.cond === 'ctrl' ? 'controlling a ' + e.need : 'delirium (' + deliriumCount() + ' card types in your graveyard)'}`);
   }
@@ -1188,7 +1191,7 @@ function fireTrigger(ev, ctx = {}) {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id && (!t.test || t.test(c))) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
   } else if (ev === 'etb') {
-    const e = ctx.card; soulbondOnEnter(e);
+    const e = ctx.card; soulbondOnEnter(e); noteGapsOnEnter(e);
     for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
@@ -5010,6 +5013,7 @@ function cardEl(c, zone) {
       return h('div', { class: 'cpt' + (ptc && (ptc.dynamic || ptc.modified) ? ' ptmod' : '') + (d ? ' pt-' + d + ' ptshow' : '') + (flash ? ' ptflash' : ''), text: pt, 'data-len': String(String(pt).length), title: ptc ? ptTitle(c, ptc) : '' }); })() : null,
     pw && zone === 'battlefield' ? h('div', { class: 'cloyalty', text: String(c.loyalty ?? '?'), title: 'Loyalty counters. Double-click to use loyalty abilities.' }) : null,
     !c.token && isLandName(c.name) && effectiveLandTypes(c).types.length && effectiveLandTypes(c).types.join('|') !== baseLandTypesOf(c.name).types.join('|') ? h('div', { class: 'land-effect-badge', text: effectiveLandTypes(c).types.map(t => t[0]).join(' '), title: `Effective land types: ${effectiveLandTypes(c).types.join(', ')}` }) : null,
+    zone === 'battlefield' && !c.token && teach('gapBadges') && ruleGaps(c).length ? h('div', { class: 'gapbadge', text: '\u26a0', title: 'The app only reminds you of these rules (apply them by hand):\n' + ruleGaps(c).map(g => '\u2022 ' + g.text).join('\n') }) : null,
     zone === 'battlefield' && c.mutParts ? h('div', { class: 'fxbadge', text: '\u29c9 Mutated \u00d7' + c.mutParts.length, title: 'A merged permanent: ' + c.mutParts.map(x => x.name).join(' + ') + '. It has all of their abilities; the top card is ' + c.mutParts[0].name }) : null,
     zone === 'battlefield' && c.pairedWith ? h('div', { class: 'fxbadge', text: '\u26D3 Paired', title: 'Soulbond: paired with another creature for as long as you control both' }) : null,
     zone === 'battlefield' ? kwIconsOnTile(c) : null,
@@ -6251,6 +6255,7 @@ function openWelcome(onDone) {
       P('The row of small icons at the top shows game states (monarch, initiative, storm count, energy, poison and more); they light up when active, and you can click them to change them. Tapped cards are turned sideways, summoning-sick creatures are dimmed, and a count badge like ', B('×4'), ' means identical cards are piled together (click it to spread them out).'),
       P('Round icons on a creature are keywords it has right now. The ', B('Key'), ' button by the Hand label explains the glow colours, and you can drag that label wherever you like. The Stack panel shows what is waiting to resolve.')]],
     ['8. Learning and honesty', [P('Tutor mode adds hints such as phase pauses, mana payment help and rules reminders. Turn off whatever you do not want.'),
+      P('A small ', B('\u26a0'), ' on a permanent means part of its rules text is only a reminder: the app does not apply it, so do it by hand. Hover the badge to see which lines. A power/toughness shown with a ', B('?'), ' means a condition on the card could not be read.'),
       P('The app reads the rules text on each card and applies what it understands, then tells you what is left for you to do by hand. ', B('⚙ → How the app reads cards'), ' shows, card by card, which lines it handles and which it does not. When in doubt, the official rules text is what counts.'),
       P('In "How the app reads cards", ', B('understood'), ' means the app carries out every part of that line; ', B('partly'), ' or ', B('by hand'), ' means some of it is left to you, and the app says which part.')]],
     ['9. Updates', [P('The version number at the top right shows what changed in each release when you click it. New versions are published on GitHub.'),
@@ -6287,8 +6292,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.98.4';
+const APP_VERSION = '0.98.5';
 const CHANGELOG = [
+  { v: '0.98.5', title: 'Conditional statics, and the app now knows what it is missing', notes: ['New rules-text reader for conditional and scaling static abilities (CR 611.3, 613.4c): "gets +2/+2 as long as there are three or more land cards in your graveyard", "gets +2/+0 for every seven cards in your graveyard", "as long as it\'s your turn, this creature has first strike". It understands graveyard / hand / battlefield counts by card type or subtype, life totals, hand size, counters on it, tapped / attacking, spells cast this turn and "or more / or fewer / no" wording, joined with "and" / "or". Nothing is keyed to card names.', 'Honest gaps: wording the reader cannot evaluate is never guessed. The line is marked as only a reminder in How the app reads cards, a \u26a0 badge appears on the permanent (hover it to see the lines), the log says so when the card enters, and a conditional power/toughness is shown with a ?. Both aids can be switched off in Settings.'] },
   { v: '0.98.4', title: 'Fix: "when this dies / is put into a graveyard" triggers, and loses-all-abilities effects', notes: ['FIXED: abilities like "When ~ dies" and "When ~ is put into a graveyard from the battlefield" (Flagstones of Trokair) were being dropped, because the check that a card is in the right zone ran after the card had already reached the graveyard. Leaves-the-battlefield abilities now look back as the rules say (CR 603.10a). A test now sends cards to the graveyard by every route (destroy, sacrifice, move, leave) and checks the trigger appears.', 'New: effects that change what a permanent is (CR 613): "loses all abilities", "becomes a blue Frog with base power and toughness 1/1" (Turn to Frog), "loses flying", and Auras such as Kenrith\'s Transformation, Darksteel Mutation, Imprisoned in the Moon and Song of the Dryads (a land that becomes a Forest taps for G and loses its other abilities, CR 305.7). Triggers, keywords, type line, colour, power/toughness and mana follow the new characteristics, and temporary effects end on their own.'] },
   { v: '0.98.3', title: 'Mutate, Splice, spell target filters and a tidier gear menu', notes: ['Mutate (CR 702.140): cast a creature for its mutate cost, target a non-Human creature, and choose over or under. The merged permanent is one creature with every card\'s abilities, keeps its counters and auras, fires "whenever this creature mutates" triggers, and all its cards leave the battlefield together. If the target is gone it resolves as a normal creature spell.', 'Splice onto Arcane (CR 702.47): when you cast an Arcane spell, splice cards in your hand are offered as optional extra costs. The spell gains their effects and they stay in your hand.', 'Counter and other spell-targeting text now honours "with mana value N (or less/greater)", "nonland" style words and colour words when choosing targets on the stack.', 'The gear menu is now only Settings, Update, Import / edit deck, Card data, Images and help. In-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin, Multiplayer) moved to a new Game tools button (the ☰ beside the gear).'] },
   { v: '0.98.2', title: 'Counterspell rules', notes: ['"Counter target spell unless its controller pays {N}" (Mana Leak, Force Spike, Spell Pierce...) now asks whether the cost was paid; it only counters if it was not (CR 608.2c).', '"If that spell is countered this way, put it into its owner\'s hand / on top of its library / exile it instead" (Remand, Memory Lapse, Dissipate) is honoured for your own spells.', '"Counter target spell if it has mana value 3 or less" checks the mana value.', '"Its controller may search their library..." (Boseiju, Path to Exile) is linked to the target and read as your own library when the permanent is yours.'] },
@@ -8389,7 +8395,7 @@ const SET_DEFAULT = {
   anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
   sound: { on: true, vol: 0.5, music: true, musicStyle: 'ambient', musicBeat: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
   teaching: { master: true, playability: true, phasePopups: true, phasePauses: true, stackGuidance: true,
-    triggerPrompts: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
+    triggerPrompts: true, gapNotes: true, gapBadges: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
     keywordTips: true, autoResolve: true, vaultPrompt: true, keywordIcons: true, stateIcons: true, durationHints: true, replaceNotes: true, costGuidance: true, preGame: true, autoStart: true, summoningSick: true, libraryMenu: true }
 };
 let settings = Object.assign({}, SET_DEFAULT, lsGet('mtgpt.settings', {}));
@@ -8616,6 +8622,8 @@ function openSettings() {
     ['replaceNotes','Replacement-effect notes','Log line showing which replacement effects changed an event and in what order (the order choice itself is always asked when it matters)'],
     ['costGuidance','Cost explanations','Explains alternative costs, taxes and Delve/Convoke when you cast (the cost windows themselves always appear)'],
     ['triggerPrompts','Triggered ability prompts','Stops to show detected triggered abilities'],
+    ['gapBadges','Warning badge on cards with rules the app cannot apply','A small \u26a0 on a permanent when part of its rules text is only a reminder (hover it to see which lines)'],
+    ['gapNotes','Log rules the app cannot apply','When a card enters, logs any of its rules the app only reminds you of'],
     ['dredgePrompts','Dredge prompt','When you would draw and have a dredge card in your graveyard, asks whether to dredge instead (the dredge rule itself is always correct)'],
     ['replaceNotes','Replacement effect notes','Logs how a replacement effect changed an event, for example Hardened Scales adding a counter'],
     ['libraryPreview','Library card previews','Large card preview while hovering library lists'],
@@ -9117,6 +9125,8 @@ function compileCardOne(c) {
     const rec = statRecs.find(r => r.line === norml.replace(/\.$/, ''));
     if (rec) {
       const subjText = norml.replace(/ (?:has|have|get|gets|is|are) .*$/i, '');
+      if (rec.kind === 'cs') { const okc = (!rec.cond || csUnderstood(rec.cond, null)) && (!rec.per || csUnderstood(null, rec.per.thing)) && !rec.other.length;
+        push(text, 'static', okc ? 'ok' : 'part', okc ? `Conditional static (CR 611.3): the app checks ${rec.cond ? '"' + rec.cond + '"' : 'the count of "' + rec.per.thing + '"'}${rec.per ? ' (per ' + rec.per.every + ')' : ''} as the game changes and applies ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', rec.kws.join(', '), rec.cant ? 'a restriction' : ''].filter(Boolean).join(' and ')} automatically.` : `Static ability the app could not fully read (${!rec.cond || csUnderstood(rec.cond, null) ? '' : 'its condition "' + rec.cond + '" is not understood'}${rec.other.length ? ' its effect "' + rec.other.join('; ') + '"' : ''}). Apply it by hand.`); continue; }
       if (rec.kind === 'cond') { push(text, 'static', rec.other.length ? 'part' : 'ok', `${rec.cond === 'ctrl' ? 'Conditional bonus: while you control a ' + rec.need + ' the app applies' : 'Delirium: while there are ' + rec.n + '+ card types in your graveyard the app applies'}`.replace(/applies$/, 'applies') + `  ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', ...rec.kws].filter(Boolean).join(', ')} live${rec.other.length ? '; “' + rec.other.join('; ') + '” is not enforced' : ''}. A badge on the card shows the count.`); continue; }
       const note = rec.kind === 'color' ? `Static ability: changes the colours of ${subjText.toLowerCase()} (applied to every permanent it describes).`
         : rec.kind === 'kw' ? `Static ability: grants ${rec.items.map(i => i.kws.join('/') + (i.cond ? ' if it’s ' + i.cond : '')).join('; ')} to ${subjText.toLowerCase()}.`
@@ -11265,6 +11275,117 @@ function charChangeEffect(tx, src, obj) {
     if (!cards.length) { toast('No legal target', `There is no ${phrase} on the battlefield.`); return; }
     openPickCards({ title: `${src}: choose target ${phrase}`, note: 'Choose the target.', cards, min: 1, max: 1, done: q => { const x = q && q[0]; if (x) apply(x); } });
   } };
+}
+// ---------------------------------------------------------------- v0.98.5 conditional static abilities + "know what is missing"
+// CR 611.3 / 613.4c: "~ gets +2/+2 as long as there are three or more land cards in your graveyard."  (Elvish Reclaimer)
+//                    "This creature gets +2/+0 for every seven cards in your graveyard."
+//                    "As long as it's your turn, this creature has first strike."
+// The condition is read from its words by evalCond(), which answers true, false or null ("I do not understand this wording"). A rule the app cannot
+// evaluate is never guessed: it is reported as a gap (compileCard marks it, the card gets a warning badge, and the log says so once).
+const CS_NUM = w => { w = String(w).toLowerCase(); return /^\d+$/.test(w) ? +w : (NUMW[w] !== undefined ? NUMW[w] : (w === 'zero' || w === 'no' ? 0 : NaN)); };
+const cardTy = c => { if (c.token) return permTypeLine(c); const i = cardInfo(c.name); return i && i.t ? i.t.split(' // ')[0] : ''; };
+const CS_TYPE_WORDS = ['land', 'creature', 'artifact', 'enchantment', 'planeswalker', 'instant', 'sorcery', 'battle'];
+// "land cards", "creature and land cards", "instant or sorcery cards", "cards", "permanent cards" in a zone array
+function csCountZone(arr, thing) {
+  const t = String(thing).toLowerCase().replace(/\bcards?\b/g, '').replace(/\band\/or\b|\band\b|\bor\b|,/g, ' ').trim();
+  const words = t.split(/\s+/).filter(Boolean); if (!words.length) return arr.length;
+  const ty = words.filter(w => CS_TYPE_WORDS.includes(singularWord(w))).map(singularWord);
+  if (ty.length !== words.length) { if (words.every(w => w === 'permanent')) return arr.filter(c => !/\b(Instant|Sorcery)\b/.test(cardTy(c))).length; return null; }
+  return arr.filter(c => ty.some(w => new RegExp('\\b' + w + '\\b', 'i').test(cardTy(c)))).length;
+}
+// Count "things": "land cards in your graveyard", "creatures you control", "other artifacts you control", "cards in your hand", "Elves you control".
+function csCount(phrase, g) {
+  const t = String(phrase).toLowerCase().replace(/’/g, "'").trim();
+  let m;
+  if ((m = t.match(/^(.*?)\s*in your graveyard$/))) return csCountZone(state.graveyard, m[1]);
+  if ((m = t.match(/^(.*?)\s*in your hand$/))) return csCountZone(state.hand, m[1]);
+  if ((m = t.match(/^(?:(other|another) )?(.+?) you control$/))) {
+    const other = !!m[1], what = singularWord(m[2].trim().replace(/^nonland /, ''));
+    if (/^permanent$/.test(what)) return state.battlefield.filter(c => !(other && g && c.id === g.id)).length;
+    const nonland = /^nonland /.test(m[2]);
+    return state.battlefield.filter(c => !(other && g && c.id === g.id) && (!nonland || !isLandName(c.name)) && (() => { try { const p = permTypeInfo(c); return p.types.has(what) || p.subs.has(what) || [...p.subs].some(x => singularWord(x) === what); } catch (e) { return false; } })()).length;
+  }
+  const f = typeof countForEach === 'function' ? countForEach(t) : null; return f;
+}
+function csCmp(n, op, k) { return /less|fewer/.test(op) ? n <= k : n >= k; }
+function evalCond(text, g) {
+  if (!state) return null;
+  let t = String(text || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim().replace(/\.$/, '').toLowerCase(), m;
+  if (!t) return null;
+  { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
+  { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
+  if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
+  if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
+  if ((m = t.match(/^there are (\w+) or more (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }
+  if ((m = t.match(/^there are (\w+) or fewer (.+?) in your graveyard$/))) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n <= k; }
+  if ((m = t.match(/^there are no (.+?) in your graveyard$/))) { const n = csCountZone(state.graveyard, m[1]); return n === null ? null : n === 0; }
+  if ((m = t.match(/^you have (\w+) or more cards in (?:your )?hand$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.hand.length >= k; }
+  if ((m = t.match(/^you have (\w+) or fewer cards in (?:your )?hand$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.hand.length <= k; }
+  if (/^you have no cards in (?:your )?hand$|^you have an empty hand$/.test(t)) return state.hand.length === 0;
+  if ((m = t.match(/^you have exactly (\w+) cards? in (?:your )?hand$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.hand.length === k; }
+  if ((m = t.match(/^(?:your life total is|you have) (\w+) or (less|more|greater|fewer)(?: life)?$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : (/less|fewer/.test(m[2]) ? state.life <= k : state.life >= k); }
+  if ((m = t.match(/^you control a creature with power (\w+) or greater$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : state.battlefield.some(c => permTypeInfo(c).types.has('creature') && ptCalc(c).p >= k); }   // ferocious
+  if ((m = t.match(/^you control (\w+) or more (.+)$/))) { const k = CS_NUM(m[1]), n = csCount(m[2] + ' you control', g); return isNaN(k) || n === null ? null : n >= k; }
+  if ((m = t.match(/^you control no (.+)$/))) { const n = csCount(m[1] + ' you control', g); return n === null ? null : n === 0; }
+  if ((m = t.match(/^you control (?:an? |another )(.+)$/))) { const n = csCount((/^you control another/.test(t) ? 'other ' : '') + m[1] + ' you control', g); return n === null ? null : n >= 1; }
+  if ((m = t.match(/^(?:it|~|this \w+) (?:is|'s) (tapped|untapped|attacking|blocking)$/))) {
+    if (!g) return null; if (m[1] === 'tapped') return !!g.tapped; if (m[1] === 'untapped') return !g.tapped;
+    if (m[1] === 'attacking') return !!(state.combat && state.combat.attackers && state.combat.attackers.some(a => (a.id ?? a) === g.id)); return null;
+  }
+  if ((m = t.match(/^(?:it|~|this \w+) has (an?|\w+) (?:([+-]\d+\/[+-]\d+|[a-z]+) )?counters? on it$/))) { if (!g) return null; const k = CS_NUM(m[1] === 'a' || m[1] === 'an' ? 'one' : m[1]); return isNaN(k) ? null : counterCount(g, /^[+-]/.test(m[2] || '') ? 'plus' : (m[2] || 'plus')) >= k; }
+  if ((m = t.match(/^you(?:'ve| have) cast (\w+) or more (?:other )?spells this turn$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : spellsCastNow() >= k; }
+  if (/^you(?:'ve| have) cast (?:an? )?\w+ spell this turn$/.test(t)) return null;
+  return null;
+}
+// Parse the effect half: "~ gets +2/+2 and has flying" -> { p, t, kws, cant, other }
+function csEffect(eff) {
+  const out = { p: 0, t: 0, kws: [], cant: null, other: [] };
+  const body = eff.replace(/^(?:~|it|this \w+)\s+/i, '');
+  for (const part of body.split(/,\s*(?:and\s+)?|\s+and\s+(?=gets?\b|has\b|have\b|can't\b)/i)) {
+    const x = part.trim(); let q; if (!x) continue;
+    if ((q = x.match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { out.p += +q[1]; out.t += +q[2]; }
+    else if ((q = x.match(/^(?:has|have) (.+)$/i))) { for (const k of q[1].toLowerCase().split(/\s*(?:,|\band\b)\s*/)) { const w = k.trim(); if (GRANTABLE.includes(w)) out.kws.push(w); else if (w) out.other.push(w); } }
+    else if ((q = x.match(/^can't (attack(?: or block)?|block)$/i))) out.cant = { attack: /attack/i.test(q[1]), block: /block/i.test(q[1]) };
+    else out.other.push(x);
+  }
+  return out;
+}
+// A conditional / scaling static on the card itself. Returns a record for parseStaticCard, or null if this is not that shape.
+function parseCondStatic(line, g) {
+  const L = String(line).replace(/\.$/, '').trim(); let m, cond = null, eff = null, per = null;
+  if ((m = L.match(/^as long as (.+?), ((?:~|it|this \w+) .+)$/i))) { cond = m[1]; eff = m[2]; }
+  else if ((m = L.match(/^((?:~|this \w+) (?:gets?|has|have|can't) .+?) as long as (.+)$/i))) { eff = m[1]; cond = m[2]; }
+  else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for every (\w+) (.+)$/i))) { eff = m[1]; per = { every: CS_NUM(m[2]), thing: m[3] }; if (isNaN(per.every)) per = { every: 1, thing: m[2] + ' ' + m[3] }; }
+  else return null;
+  const e = csEffect(eff); if (!(e.p || e.t || e.kws.length || e.cant)) return null;
+  return { line: L, kind: 'cs', g, cond, per, p: e.p, t: e.t, kws: e.kws, cant: e.cant, other: e.other };
+}
+// Is it on right now? true / false / null (not understood). The numbers for a "for every N things" static come back as `mult`.
+function csState(e) {
+  if (!state) return { on: false, known: true, mult: 0 };
+  if (e.cond) { const v = evalCond(e.cond, e.g); if (v === null) return { on: false, known: false, mult: 0 }; if (!v) return { on: false, known: true, mult: 0 }; }
+  if (e.per) { const n = csCount(e.per.thing, e.g); if (n === null) return { on: false, known: false, mult: 0 }; const mult = Math.floor(n / Math.max(1, e.per.every)); return { on: mult > 0, known: true, mult, n }; }
+  return { on: true, known: true, mult: 1 };
+}
+const csActive = e => csState(e).on;
+// What the app does NOT apply for a card: every rules line the reader marks partly / unknown, plus conditional statics whose wording it cannot evaluate.
+function ruleGaps(c) {
+  try { const r = c && !c.token ? compileCard({ name: c.name }) : null; return r ? r.lines.filter(l => l.status === 'part' || l.status === 'unk').map(l => ({ text: l.text, why: l.note || '' })) : []; } catch (e) { return []; }
+}
+const GAP_LOGGED = new Set();
+function noteGapsOnEnter(c) {
+  if (!state || !c || c.token || !teach('gapNotes')) return;
+  const k = state.turn + '|' + c.id; if (GAP_LOGGED.has(k)) return; GAP_LOGGED.add(k);
+  const g = ruleGaps(c); if (!g.length) return;
+  log(`Heads up: ${c.name} has ${g.length} rule${g.length === 1 ? '' : 's'} the app only reminds you of (apply by hand): ${g.map(x => '"' + x.text.slice(0, 70) + (x.text.length > 70 ? '…' : '') + '"').join('; ')}`);
+}
+
+// Is this condition / count wording one the evaluator understands? (checked against an empty board, so only the wording matters)
+const CS_STUB = () => ({ graveyard: [], hand: [], battlefield: [], life: 20, turn: 0, combat: null, manaPool: {}, spellsCast: { turn: 0, n: 0 } });
+function csUnderstood(cond, thing) {
+  const old = state; state = CS_STUB();
+  try { const g = { id: -1, tapped: false, counters: { plus: 0, minus: 0 }, name: 'x' }; return cond !== null ? evalCond(cond, g) !== null : csCount(thing, g) !== null; }
+  catch (e) { return false; } finally { state = old; }
 }
 init();
 
