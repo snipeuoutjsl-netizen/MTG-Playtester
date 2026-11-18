@@ -1735,3 +1735,19 @@ body.hand3d #mat .attstack.hosttap > .card.tapped:not(.dragging):hover { transfo
 #handPickBar button.primary:disabled { opacity: .45; }
 #handWrap.picking { box-shadow: 0 0 0 2px var(--accent), 0 0 26px rgba(91,156,245,.3); }
 #handWrap.picking .card.pickable { outline-color: rgba(91,156,245,.8); }
+
+/* ---- v0.99.25 mulligan "put on the bottom": the hand comes up, larger and centred, under a rounded prompt box */
+body.mullpick::after { content: ''; position: fixed; inset: 0; background: rgba(5,10,18,.55); z-index: 39; pointer-events: none; }
+body.mullpick #handWrap { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -42%); width: min(1180px, 94vw); height: auto; z-index: 60; --cw: 168px; --ch: 132px; padding: 0 0 8px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+body.imgmode.mullpick #handWrap { --cw: 156px; --ch: 218px; }
+body.mullpick #handWrap #row-hand { justify-content: center; flex-wrap: nowrap; max-width: 100%; }
+body.mullpick #handWrap #row-hand .card + .card { margin-left: 10px; }
+body.mullpick #handWrap .zlabel { order: 3; }
+body.mullpick #handPickBar { order: -1; position: static; left: auto; right: auto; bottom: auto; flex-direction: column; justify-content: center; text-align: center; gap: 8px; padding: 14px 26px 16px; min-height: 0; border-radius: 18px; max-width: 560px; }
+body.mullpick #handPickBar .hp-msg { font-size: 17px; font-weight: 600; }
+body.mullpick #handPickBar .hp-count { font-size: 12px; color: var(--muted); background: transparent; border: 0; padding: 0; }
+body.mullpick #handPickBar button { padding: 8px 28px; font-size: 14px; }
+body.mullpick #handWrap { gap: 40px; }
+body.mullpick #handWrap > .zlabel { position: static; order: 3; }
+body.mullpick #row-hand.fan { padding-top: 22px; }
+body.mullpick #handWrap { left: calc((100vw - 340px) / 2 + 8px); width: min(1100px, calc(100vw - 400px)); }

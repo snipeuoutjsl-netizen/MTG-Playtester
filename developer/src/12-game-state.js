@@ -21,13 +21,14 @@ function drawHandPickBar() {
   if (handPick && !(state && state.discarding)) handPick = null;
   const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
   const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
+  { const was = document.body.classList.contains('mullpick'); document.body.classList.toggle('mullpick', mb); if (was !== mb) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the mulligan step brings the hand up, larger and centred
   document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
   const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
   if (mb) {
     const n = state.mulls, cnt = bottomSel.size, serum = state.serumPending;
     bar.replaceChildren(
-      h('span', { class: 'hp-msg', text: `Mulligan: select ${n} card${n === 1 ? '' : 's'} to put on the bottom` }), h('span', { class: 'hp-count', text: `${cnt}/${n}` }),
-      serum ? h('span', { class: 'hp-note muted small', text: 'Serum Powder is used after you choose.' }) : null, h('span', { class: 'hp-sp' }),
+      h('span', { class: 'hp-msg', text: `Select ${n} card${n === 1 ? '' : 's'} and put ${n === 1 ? 'it' : 'them'} at the bottom to continue` }), h('span', { class: 'hp-count', text: `${cnt} of ${n} selected` }),
+      serum ? h('span', { class: 'hp-note muted small', text: 'Serum Powder is used after you choose.' }) : null,
       h('button', { class: 'primary', text: serum ? 'Confirm and use Serum Powder' : 'Confirm', disabled: cnt !== n, onclick: serum ? finishSerumPowder : finishMulligan }));
     return;
   }

@@ -60,7 +60,7 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) (?:equipped|enchanted) creature deals combat damage(?: to (?:a player|an opponent|the opponent|you))?$/.test(cond)) ev = 'host-combat-damage';
     else if (/^whenever you draw/.test(cond)) ev = 'draw';
     else if (/^whenever an opponent draws a card/.test(cond)) ev = 'opp-draw';
-    else if (/^whenever an opponent searches their library/.test(cond)) ev = 'opp-search';
+    else if ((q0 = cond.match(/^whenever an opponent searches their library(?: for (?:an? )?(.+?) cards?)?$/))) { ev = 'opp-search'; filter = q0[1] || ''; }   // v0.99.25 the optional "for a land card" is a filter on what they searched for
     else if (/^(?:when|whenever) (?:~|this \w+) leaves the battlefield/.test(cond)) ev = 'leaves-self';
     else if (/^whenever you gain life/.test(cond)) ev = 'lifegain';
     else if (/^(?:when|whenever) (?:~|this \w+) deals combat damage to (?:a player|an opponent|a creature or player|a player or planeswalker)/.test(cond)) ev = 'combat-damage-self';
@@ -164,7 +164,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'draw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'draw') add(c, t, 'You drew a card.');
   } else if (ev === 'oppsearch') {
-    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-search') add(c, t, 'Your opponent searched their library.');
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-search' && oppSearchMatches(t.filter, ctx.found)) add(c, t, t.filter ? `Your opponent searched their library for a ${t.filter} card.` : 'Your opponent searched their library.');
   } else if (ev === 'oppdraw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-draw') add(c, t, 'Your opponent drew a card (not the first one of their draw step), so this ability triggers.');
   } else if (ev === 'monstrous') {
