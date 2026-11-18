@@ -173,10 +173,44 @@ function openOppDraw() {
       log('Opponent drew an extra card'); fireTrigger('oppdraw'); render(); flushTriggers(); } }));
 }
 function treasureDef() { return { name: 'Treasure', pt: '', col: [], types: ['Artifact'], subs: ['treasure'], tx: TOKEN_PRE.treasure.tx, type: 'Token Artifact \u2014 Treasure' }; }
+// ---- The opponent searched their library (CR 701.23): ask WHAT they searched for so the right permanents react.
+// "searches their library for a land card" abilities look at the kind; Opposition Agent (CR 722 control of a player) exiles the card they found and lets you play it.
+const SEARCH_KINDS = [['basic land', 'Basic land'], ['land', 'Nonbasic land'], ['creature', 'Creature'], ['other', 'Other card'], ['none', 'Found nothing']];
+function oppSearchMatches(filter, found) {
+  const f = String(filter || '').toLowerCase().trim(); if (!f) return true; if (!found) return false;
+  const kind = found.kind, types = found.types || [];
+  if (f === 'basic land') return kind === 'basic land'; if (f === 'land' || f === 'nonbasic land') return f === 'land' ? (kind === 'basic land' || kind === 'land') : kind === 'land';
+  return types.includes(f) || kind === f;
+}
+const oppSearchBlocker = () => state.battlefield.find(c => !c.token && /(?:your opponents|players|each player|opponents) can'?t search (?:libraries|their libraries)|can'?t search libraries/i.test(((cardInfo(c.name) || {}).tx || '').replace(/\s+/g, ' ')));
+const oppSearchAgent = () => state.battlefield.find(c => !c.token && /you control your opponents while they'?re searching their libraries/i.test(((cardInfo(c.name) || {}).tx || '').replace(/\s+/g, ' ')));
+function oppSearchCares() { return state.battlefield.some(c => parseTriggers(c).some(t => t.ev === 'opp-search')) || !!oppSearchAgent(); }
+function finishOppSearch(found) {
+  log(found && found.kind !== 'none' ? `Your opponent searched their library${found.name ? ' and found ' + found.name : ' for a ' + found.kind + ' card'}` : 'Your opponent searched their library');
+  const ag = oppSearchAgent();
+  if (ag && found && found.name && found.kind !== 'none') {
+    const info = cardInfo(found.name);
+    if (info) { const c = Object.assign(newCard(info.name), { id: state.nextId++, mayPlayAlways: true, anyColorSpend: true }); state.exile.push(c);
+      log(`${ag.name}: you control your opponent while they search, so ${info.name} is exiled instead of going to their hand. You may play it for as long as it stays exiled, spending mana as though it were mana of any colour`); toast(`${ag.name}`, `${info.name} is exiled. Cast it from the Exile zone (any colour of mana).`); }
+    else log(`${ag.name}: "${found.name}" is not in the card database, so it could not be exiled for you to play`);
+  }
+  fireTrigger('oppsearch', { found }); render(); flushTriggers();
+}
 function openOppSearch() {
   if (!state) return;
-  log('Your opponent searched their library'); fireTrigger('oppsearch'); render(); flushTriggers();
-  if (!state.pendingTriggers.length && !state.battlefield.some(c => parseTriggers(c).some(t => t.ev === 'opp-search'))) toast('Opponent searched', 'Noted. None of your permanents care when an opponent searches their library.');
+  const blk = oppSearchBlocker(); if (blk) { log(`${blk.name}: your opponent can't search their library, so nothing happens (CR 701.23)`); toast(`${blk.name}`, `Searching libraries is not allowed, so there is no search.`); return; }
+  if (!oppSearchCares()) { log('Your opponent searched their library'); fireTrigger('oppsearch', { found: null }); render(); flushTriggers(); toast('Opponent searched', 'Noted. None of your permanents care when an opponent searches their library.'); return; }
+  const agent = oppSearchAgent(), m = modal('What did your opponent search for?', { width: 520 });
+  m.body.append(h('div', { class: 'psub', text: agent ? `${agent.name} lets you control them while they search: the card they find is exiled and you may play it. Pick what they searched for, then name the card.` : 'Pick what they searched for: some abilities only trigger for a certain kind of card.' }));
+  const nameIn = h('input', { type: 'text', placeholder: 'Name of the card they found', list: 'oppSearchNames', style: 'width:100%' }), dl = h('datalist', { id: 'oppSearchNames' });
+  if (agent) { nameIn.addEventListener('input', () => { const q = norm(nameIn.value); dl.replaceChildren(); if (q.length < 2) return; let n = 0; for (const c of CARDS.values()) { if (c.name && norm(c.name).includes(q)) { dl.append(h('option', { value: c.name })); if (++n >= 30) break; } } }); m.body.append(nameIn, dl); }
+  const kindOf = nm => { const i = cardInfo(nm), t = ((i && i.t) || '').toLowerCase(); return { kind: /basic land/.test(t) ? 'basic land' : /\bland\b/.test(t) ? 'land' : /\bcreature\b/.test(t) ? 'creature' : 'other', types: t.split(/[\s—-]+/) }; };
+  const go = kind => { const nm = nameIn.value.trim(); let found;
+    if (kind === 'none') found = { kind: 'none', types: [] }; else if (nm && cardInfo(nm)) { const info = cardInfo(nm), k = kindOf(info.name); found = { kind: k.kind, types: k.types, name: info.name }; } else found = { kind, types: kind === 'basic land' ? ['basic', 'land'] : kind === 'land' ? ['land'] : kind === 'creature' ? ['creature'] : [], name: '' };
+    if (agent && kind !== 'none' && !found.name) { toast('Name the card', 'Type the card they found so it can be exiled for you.'); return; }
+    m.close(); finishOppSearch(found); };
+  const row = h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;margin-top:10px' }); for (const [k, lab] of SEARCH_KINDS) row.append(h('button', { class: k === 'none' ? '' : 'primary', text: lab, onclick: () => go(k) }));
+  m.body.append(row); m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }));
 }
 function makeToken(name, pt) {
   if (!state) return;

@@ -155,6 +155,7 @@ function effectiveCost(c) {
   if (out.tri) { const pb = manaCostParts(base), col = pb.colors.length + pb.flexible.length; if (g1 + col < 3) { g1 = 3 - col; notes.push('Trinisphere: each spell costs at least {3}'); } }
   const net = g1 - g0;
   if (net !== 0) out.cost = (g1 > 0 ? `{${g1}}` : '') + base.replace(/\{\d+\}/, '');
+  if (c.anyColorSpend && !/\{X\}/i.test(out.cost)) { const pc = manaCostParts(out.cost); if (!pc.flexible.length && pc.colors.length) { out.cost = `{${pc.generic + pc.colors.length}}`; notes.push('You may spend mana as though it were mana of any colour (CR 609.4b)'); } }   // v0.99.25 Opposition Agent
   out.reduced = Math.abs(net); out.increased = net > 0; out.why = notes.join('; ');
   return out;
 }

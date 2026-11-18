@@ -332,7 +332,7 @@ function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.fac
 // v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
 function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
@@ -372,7 +372,7 @@ function withGy(c, o, fn) { if (o.fi === null || o.fi === undefined) return fn()
 // ---- v0.82 "may play it this turn" cards in exile (impulse draw): lands use your land drop, other cards are cast normally.
 function playFromExile(id) {
   if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i];
-  if (c.mayPlayTurn !== state.turn) { toast('No longer playable', 'This card could only be played in the turn it was exiled.'); return; }
+  if (c.mayPlayTurn !== state.turn && !c.mayPlayAlways) { toast('No longer playable', 'This card could only be played in the turn it was exiled.'); return; }
   if (isLandName(c.name)) {
     if (!canPlayLandNow()) { toast(landDropUsed() ? 'Land already played' : 'Wrong phase', 'A land from exile uses your land drop: your main phase, empty stack, and a land play left.'); return; }
     state.exile.splice(i, 1); delete c.mayPlayTurn; state.hand.push(c); playLand(c.id); return;
@@ -1165,7 +1165,7 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) (?:equipped|enchanted) creature deals combat damage(?: to (?:a player|an opponent|the opponent|you))?$/.test(cond)) ev = 'host-combat-damage';
     else if (/^whenever you draw/.test(cond)) ev = 'draw';
     else if (/^whenever an opponent draws a card/.test(cond)) ev = 'opp-draw';
-    else if (/^whenever an opponent searches their library/.test(cond)) ev = 'opp-search';
+    else if ((q0 = cond.match(/^whenever an opponent searches their library(?: for (?:an? )?(.+?) cards?)?$/))) { ev = 'opp-search'; filter = q0[1] || ''; }   // v0.99.25 the optional "for a land card" is a filter on what they searched for
     else if (/^(?:when|whenever) (?:~|this \w+) leaves the battlefield/.test(cond)) ev = 'leaves-self';
     else if (/^whenever you gain life/.test(cond)) ev = 'lifegain';
     else if (/^(?:when|whenever) (?:~|this \w+) deals combat damage to (?:a player|an opponent|a creature or player|a player or planeswalker)/.test(cond)) ev = 'combat-damage-self';
@@ -1269,7 +1269,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'draw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'draw') add(c, t, 'You drew a card.');
   } else if (ev === 'oppsearch') {
-    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-search') add(c, t, 'Your opponent searched their library.');
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-search' && oppSearchMatches(t.filter, ctx.found)) add(c, t, t.filter ? `Your opponent searched their library for a ${t.filter} card.` : 'Your opponent searched their library.');
   } else if (ev === 'oppdraw') {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'opp-draw') add(c, t, 'Your opponent drew a card (not the first one of their draw step), so this ability triggers.');
   } else if (ev === 'monstrous') {
@@ -2429,6 +2429,7 @@ function effectiveCost(c) {
   if (out.tri) { const pb = manaCostParts(base), col = pb.colors.length + pb.flexible.length; if (g1 + col < 3) { g1 = 3 - col; notes.push('Trinisphere: each spell costs at least {3}'); } }
   const net = g1 - g0;
   if (net !== 0) out.cost = (g1 > 0 ? `{${g1}}` : '') + base.replace(/\{\d+\}/, '');
+  if (c.anyColorSpend && !/\{X\}/i.test(out.cost)) { const pc = manaCostParts(out.cost); if (!pc.flexible.length && pc.colors.length) { out.cost = `{${pc.generic + pc.colors.length}}`; notes.push('You may spend mana as though it were mana of any colour (CR 609.4b)'); } }   // v0.99.25 Opposition Agent
   out.reduced = Math.abs(net); out.increased = net > 0; out.why = notes.join('; ');
   return out;
 }
@@ -3759,13 +3760,14 @@ function drawHandPickBar() {
   if (handPick && !(state && state.discarding)) handPick = null;
   const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
   const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
+  { const was = document.body.classList.contains('mullpick'); document.body.classList.toggle('mullpick', mb); if (was !== mb) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the mulligan step brings the hand up, larger and centred
   document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
   const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
   if (mb) {
     const n = state.mulls, cnt = bottomSel.size, serum = state.serumPending;
     bar.replaceChildren(
-      h('span', { class: 'hp-msg', text: `Mulligan: select ${n} card${n === 1 ? '' : 's'} to put on the bottom` }), h('span', { class: 'hp-count', text: `${cnt}/${n}` }),
-      serum ? h('span', { class: 'hp-note muted small', text: 'Serum Powder is used after you choose.' }) : null, h('span', { class: 'hp-sp' }),
+      h('span', { class: 'hp-msg', text: `Select ${n} card${n === 1 ? '' : 's'} and put ${n === 1 ? 'it' : 'them'} at the bottom to continue` }), h('span', { class: 'hp-count', text: `${cnt} of ${n} selected` }),
+      serum ? h('span', { class: 'hp-note muted small', text: 'Serum Powder is used after you choose.' }) : null,
       h('button', { class: 'primary', text: serum ? 'Confirm and use Serum Powder' : 'Confirm', disabled: cnt !== n, onclick: serum ? finishSerumPowder : finishMulligan }));
     return;
   }
@@ -4670,10 +4672,44 @@ function openOppDraw() {
       log('Opponent drew an extra card'); fireTrigger('oppdraw'); render(); flushTriggers(); } }));
 }
 function treasureDef() { return { name: 'Treasure', pt: '', col: [], types: ['Artifact'], subs: ['treasure'], tx: TOKEN_PRE.treasure.tx, type: 'Token Artifact \u2014 Treasure' }; }
+// ---- The opponent searched their library (CR 701.23): ask WHAT they searched for so the right permanents react.
+// "searches their library for a land card" abilities look at the kind; Opposition Agent (CR 722 control of a player) exiles the card they found and lets you play it.
+const SEARCH_KINDS = [['basic land', 'Basic land'], ['land', 'Nonbasic land'], ['creature', 'Creature'], ['other', 'Other card'], ['none', 'Found nothing']];
+function oppSearchMatches(filter, found) {
+  const f = String(filter || '').toLowerCase().trim(); if (!f) return true; if (!found) return false;
+  const kind = found.kind, types = found.types || [];
+  if (f === 'basic land') return kind === 'basic land'; if (f === 'land' || f === 'nonbasic land') return f === 'land' ? (kind === 'basic land' || kind === 'land') : kind === 'land';
+  return types.includes(f) || kind === f;
+}
+const oppSearchBlocker = () => state.battlefield.find(c => !c.token && /(?:your opponents|players|each player|opponents) can'?t search (?:libraries|their libraries)|can'?t search libraries/i.test(((cardInfo(c.name) || {}).tx || '').replace(/\s+/g, ' ')));
+const oppSearchAgent = () => state.battlefield.find(c => !c.token && /you control your opponents while they'?re searching their libraries/i.test(((cardInfo(c.name) || {}).tx || '').replace(/\s+/g, ' ')));
+function oppSearchCares() { return state.battlefield.some(c => parseTriggers(c).some(t => t.ev === 'opp-search')) || !!oppSearchAgent(); }
+function finishOppSearch(found) {
+  log(found && found.kind !== 'none' ? `Your opponent searched their library${found.name ? ' and found ' + found.name : ' for a ' + found.kind + ' card'}` : 'Your opponent searched their library');
+  const ag = oppSearchAgent();
+  if (ag && found && found.name && found.kind !== 'none') {
+    const info = cardInfo(found.name);
+    if (info) { const c = Object.assign(newCard(info.name), { id: state.nextId++, mayPlayAlways: true, anyColorSpend: true }); state.exile.push(c);
+      log(`${ag.name}: you control your opponent while they search, so ${info.name} is exiled instead of going to their hand. You may play it for as long as it stays exiled, spending mana as though it were mana of any colour`); toast(`${ag.name}`, `${info.name} is exiled. Cast it from the Exile zone (any colour of mana).`); }
+    else log(`${ag.name}: "${found.name}" is not in the card database, so it could not be exiled for you to play`);
+  }
+  fireTrigger('oppsearch', { found }); render(); flushTriggers();
+}
 function openOppSearch() {
   if (!state) return;
-  log('Your opponent searched their library'); fireTrigger('oppsearch'); render(); flushTriggers();
-  if (!state.pendingTriggers.length && !state.battlefield.some(c => parseTriggers(c).some(t => t.ev === 'opp-search'))) toast('Opponent searched', 'Noted. None of your permanents care when an opponent searches their library.');
+  const blk = oppSearchBlocker(); if (blk) { log(`${blk.name}: your opponent can't search their library, so nothing happens (CR 701.23)`); toast(`${blk.name}`, `Searching libraries is not allowed, so there is no search.`); return; }
+  if (!oppSearchCares()) { log('Your opponent searched their library'); fireTrigger('oppsearch', { found: null }); render(); flushTriggers(); toast('Opponent searched', 'Noted. None of your permanents care when an opponent searches their library.'); return; }
+  const agent = oppSearchAgent(), m = modal('What did your opponent search for?', { width: 520 });
+  m.body.append(h('div', { class: 'psub', text: agent ? `${agent.name} lets you control them while they search: the card they find is exiled and you may play it. Pick what they searched for, then name the card.` : 'Pick what they searched for: some abilities only trigger for a certain kind of card.' }));
+  const nameIn = h('input', { type: 'text', placeholder: 'Name of the card they found', list: 'oppSearchNames', style: 'width:100%' }), dl = h('datalist', { id: 'oppSearchNames' });
+  if (agent) { nameIn.addEventListener('input', () => { const q = norm(nameIn.value); dl.replaceChildren(); if (q.length < 2) return; let n = 0; for (const c of CARDS.values()) { if (c.name && norm(c.name).includes(q)) { dl.append(h('option', { value: c.name })); if (++n >= 30) break; } } }); m.body.append(nameIn, dl); }
+  const kindOf = nm => { const i = cardInfo(nm), t = ((i && i.t) || '').toLowerCase(); return { kind: /basic land/.test(t) ? 'basic land' : /\bland\b/.test(t) ? 'land' : /\bcreature\b/.test(t) ? 'creature' : 'other', types: t.split(/[\s—-]+/) }; };
+  const go = kind => { const nm = nameIn.value.trim(); let found;
+    if (kind === 'none') found = { kind: 'none', types: [] }; else if (nm && cardInfo(nm)) { const info = cardInfo(nm), k = kindOf(info.name); found = { kind: k.kind, types: k.types, name: info.name }; } else found = { kind, types: kind === 'basic land' ? ['basic', 'land'] : kind === 'land' ? ['land'] : kind === 'creature' ? ['creature'] : [], name: '' };
+    if (agent && kind !== 'none' && !found.name) { toast('Name the card', 'Type the card they found so it can be exiled for you.'); return; }
+    m.close(); finishOppSearch(found); };
+  const row = h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;margin-top:10px' }); for (const [k, lab] of SEARCH_KINDS) row.append(h('button', { class: k === 'none' ? '' : 'primary', text: lab, onclick: () => go(k) }));
+  m.body.append(row); m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }));
 }
 function makeToken(name, pt) {
   if (!state) return;
@@ -6179,7 +6215,7 @@ function openZone(zone) {
         draw();
       } });
       if(teach('libraryPreview')) row.addEventListener('mouseenter', () => showPreview(c));
-      if (zone === 'exile' && c.mayPlayTurn === state.turn) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
+      if (zone === 'exile' && (c.mayPlayTurn === state.turn || c.mayPlayAlways)) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
       if (zone === 'exile' && c.freeCastTurn === state.turn && !isLandName(c.name)) row.append(h('button', { class: 'primary', text: 'Cast free (this turn)', title: 'An effect lets you cast this exiled card without paying its mana cost until end of turn', onclick: () => { m.close(); suspendCastFree(c.id, null, 'Free cast'); } }));
       if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && stashReady(c)) row.append(h('button', { class: 'primary', text: c.plotted ? 'Cast free (plotted)' : 'Cast (foretold)', title: c.plotted ? 'You plotted this on an earlier turn: cast it without paying its mana cost, at sorcery speed' : 'You foretold this on an earlier turn: cast it for its foretell cost', onclick: () => { m.close(); castFromExile(c.id); } }));
@@ -6430,8 +6466,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.24';
+const APP_VERSION = '0.99.25';
 const CHANGELOG = [
+  { v: '0.99.25', title: 'Opponent search asks what they searched for; bigger mulligan hand', notes: ['The opponent-search button now asks what your opponent searched for (basic land, other land, creature, other card, or nothing). "Whenever an opponent searches their library for a land card" abilities only trigger for a land search.','Opposition Agent: you name the card they found, it is exiled, and you may play it for as long as it stays there, spending mana as though it were any colour. "Your opponents can\'t search libraries\" (Stranglehold) now stops the search.','Mulligan: the hand rises, enlarges and centres on the table under a "Select X cards and put them at the bottom to continue" box.'] },
   { v: '0.99.24', title: 'Barrowgoyf-style "mill that many, then take one"', notes: ['The amount an event carried (combat damage dealt, life gained or lost) now reaches the triggered ability, so "that many" is a real number.', 'New reader for "Mill N. If you do, you may put a creature (or other type, or mana value limit) card from among them into your hand or onto the battlefield": only the cards that mill put in the graveyard are offered, not the rest of it.'] },
   { v: '0.99.23', title: 'News-ticker status text and a matching mulligan bar', notes: ['Top-bar status chips whose text is too long (Images 20/23, Card data…) now scroll sideways and back, news-ticker style, instead of being clipped.', 'The mulligan "put on the bottom" bar and the discard bar now use the same panel look, accent colours, pill counter and buttons as the rest of the game.'] },
   { v: '0.99.22', title: 'Auras and Equipment stack under their host', notes: ['NEW: an Aura or Equipment is now drawn in a stack with the permanent it is attached to, the same cascade as a land pile: the host sits in front and each attachment shows its name strip above it. The "attached" tag on each card stays as it was.', 'CHANGED: piles no longer print the land or artifact name under them, since the cascade already shows each name. The colour and Tapped labels stay.', 'CHANGED: the Hand / Key tag now sits permanently in the bottom-right corner, level with the bottom of your hand.']},

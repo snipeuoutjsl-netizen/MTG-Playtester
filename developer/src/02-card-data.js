@@ -249,7 +249,7 @@ function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.fac
 // v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
 function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
@@ -289,7 +289,7 @@ function withGy(c, o, fn) { if (o.fi === null || o.fi === undefined) return fn()
 // ---- v0.82 "may play it this turn" cards in exile (impulse draw): lands use your land drop, other cards are cast normally.
 function playFromExile(id) {
   if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i];
-  if (c.mayPlayTurn !== state.turn) { toast('No longer playable', 'This card could only be played in the turn it was exiled.'); return; }
+  if (c.mayPlayTurn !== state.turn && !c.mayPlayAlways) { toast('No longer playable', 'This card could only be played in the turn it was exiled.'); return; }
   if (isLandName(c.name)) {
     if (!canPlayLandNow()) { toast(landDropUsed() ? 'Land already played' : 'Wrong phase', 'A land from exile uses your land drop: your main phase, empty stack, and a land play left.'); return; }
     state.exile.splice(i, 1); delete c.mayPlayTurn; state.hand.push(c); playLand(c.id); return;
