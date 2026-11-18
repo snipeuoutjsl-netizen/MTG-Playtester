@@ -1793,3 +1793,13 @@ body.a11y-focus :focus-visible { outline: 3px solid #ffd84d !important; outline-
 #handLegend .sw.sel { box-shadow: 0 0 0 2px #fff; }
 #handWrap { position: relative; }
 @media (max-width: 800px) { .handlegend { display: none; } #handLegend.open { display: flex !important; } }
+
+/* v0.99.32 Opening hand: the prompt must look active, not dimmed. The dim layer (body::after, z 39) used to sit above #overlay (inside #mat, which isolates its own stacking).
+   Lift the table above the dim while the opening-hand step is shown (the battlefield is empty then and #overlay covers it); the hand (z 60) and modals (z 50) stay above. */
+body.mullhand #mat { z-index: 40; }
+body.mullhand #overlay { background: rgba(5, 10, 18, .62); backdrop-filter: none; }
+body.mullhand #overlay .pcard { border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(227,185,92,.35), 0 0 34px rgba(227,185,92,.28), 0 18px 60px rgba(0,0,0,.7); animation: mullPromptIn .28s ease-out; }
+body.mullhand #overlay .pcard .ptitle { color: var(--text); }
+body.mullhand #overlay .pcard .psub { color: var(--text); opacity: .85; }
+@keyframes mullPromptIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { body.mullhand #overlay .pcard { animation: none; } }

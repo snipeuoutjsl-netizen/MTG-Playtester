@@ -1065,18 +1065,52 @@ const { setup } = require('./common.js');
       __d.openSettings(); const tab = !!document.querySelector('.settabbtn[data-k=a11y]'); document.querySelector('.settabbtn[data-k=a11y]').click(); const heading = (document.querySelector('.settitle h3') || {}).textContent;
       document.querySelector('.modal footer button.primary').click(); S.a11y = { scale: 100 }; __d.applyA11y(); return { on, z, live, tab, heading, off: !b.classList.contains('a11y-calm') && document.documentElement.style.zoom === '' }; });
     return { ok: r.on && r.z === '1.25' && r.live && r.tab && r.heading === 'Accessibility' && r.off, why: JSON.stringify(r) }; });
-  await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card and the prompt box lie fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await reset();
+  // v0.99.32 mana abilities with a sacrifice cost (Eldrazi Spawn, Treasure, Lotus Petal) are mana sources for casting, like lands (CR 605.1a)
+  const spawnSetup = (lands, spawns, extra) => ev(([lands, spawns, extra]) => { const s = __d.state; s.battlefield = []; s.hand = []; s.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+    for (const n of lands) { const c = Object.assign(__d.newCard(n), { id: s.nextId++ }); c.sick = false; s.battlefield.push(c); }
+    if (spawns) { const d = __d.tokenDefsFromText('Target player creates ' + ['zero','one','two','three','four','five','six','seven'][spawns] + ' 0/1 colorless Eldrazi Spawn creature tokens with "Sacrifice this token: Add {C}."', 'Kozilek’s Command')[0]; __d.makeTokensFromDef(d, spawns, 'Kozilek’s Command'); }
+    for (const n of extra || []) { const c = Object.assign(__d.newCard(n), { id: s.nextId++ }); c.sick = false; s.battlefield.push(c); }
+    const dev = Object.assign(__d.newCard('Devourer of Destiny'), { id: s.nextId++ }); s.hand.push(dev); return dev.id; }, [lands, spawns, extra]);
+  await T('605.1a', 'mana abilities with a sacrifice cost: seven Eldrazi Spawn ("Sacrifice this token: Add {C}") pay for Devourer of Destiny {5}{C}{C} on their own, and the hand shows it as playable', async () => { await reset(); await spawnSetup([], 7);
+    const r = await ev(() => { const s = __d.state, dev = s.hand[0], src = __d.manaSources(); return { n: src.length, sac: src.every(x => x.sac), pay: __d.canPayMana(dev), hi: __d.handInteraction(dev) }; });
+    return { ok: r.n === 7 && r.sac && r.pay && r.pay.ok && r.hi === 'ready', why: JSON.stringify(r) }; });
+  await T('302.6', 'summoning sickness only stops {T}/{Q} abilities: Spawn that just entered (and even tapped ones) can still be sacrificed for mana; a sick Llanowar-style {T} creature cannot', async () => { await reset(); await spawnSetup([], 2);
+    const r = await ev(() => { const s = __d.state; const sp = s.battlefield.filter(c => c.token); sp[0].sick = true; sp[1].tapped = true; const sick = __d.isSick(sp[0]); return { sick, n: __d.manaSources().length }; });
+    return { ok: r.n === 2, why: JSON.stringify(r) }; });
+  await T('107.4c', '{C} in a cost is paid only with colourless mana: seven Forests cannot pay Devourer of Destiny {5}{C}{C}; five Forests plus two Spawn can', async () => { await reset(); await spawnSetup(['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Forest'], 0);
+    const a = await ev(() => __d.canPayMana(__d.state.hand[0]).ok); await reset(); await spawnSetup(['Forest', 'Forest', 'Forest', 'Forest', 'Forest'], 2);
+    const b = await ev(() => __d.canPayMana(__d.state.hand[0]).ok); return { ok: a === false && b === true, why: JSON.stringify({ sevenForests: a, fivePlusSpawn: b }) }; });
+  await T('605.3b', 'paying with a sacrifice mana ability: the Spawn are sacrificed as the cost is paid (they leave the battlefield, nothing goes on the stack) and the lands are tapped', async () => { await reset(); await spawnSetup(['Forest', 'Forest', 'Forest', 'Forest', 'Forest'], 2);
+    const r = await ev(() => { const s = __d.state, src = __d.manaSources(), plan = __d.manaPaymentAllocation(__d.manaCostParts('{5}{C}{C}'), s.manaPool, src, null); s.manaPool = plan.pool; __d.tapManaIds(plan.used.map(i => src[i].card.id));
+      return { ok: plan.ok, spawnLeft: s.battlefield.filter(c => c.token).length, tapped: s.battlefield.filter(c => !c.token && c.tapped).length, stack: s.stack.length }; });
+    return { ok: r.ok && r.spawnLeft === 0 && r.tapped === 5 && r.stack === 0, why: JSON.stringify(r) }; });
+  await T('605.1a', 'auto-pay prefers lands and rocks: {C}{C} with Sol Ring and three Spawn taps Sol Ring and sacrifices no Spawn', async () => { await reset(); await spawnSetup([], 3, ['Sol Ring']);
+    const r = await ev(() => { const s = __d.state, src = __d.manaSources(), plan = __d.manaPaymentAllocation(__d.manaCostParts('{C}{C}'), s.manaPool, src, null); return { ok: plan.ok, used: plan.used.map(i => src[i].card.name) }; });
+    return { ok: r.ok && r.used.every(n => n === 'Sol Ring'), why: JSON.stringify(r) }; });
+  await T('605.1a', 'Treasure ("{T}, Sacrifice this token: Add one mana of any color") and Lotus Petal are mana sources while untapped, not once tapped ({T} is part of the cost)', async () => { await reset(); await spawnSetup([], 0, ['Lotus Petal']);
+    const r = await ev(() => { const s = __d.state; __d.makeTokensFromDef({ name: 'Treasure', pt: '', subs: ['treasure'], col: [], types: ['artifact'], type: 'Token Artifact — Treasure', tx: '{T}, Sacrifice this token: Add one mana of any color.' }, 1, 'test');
+      const a = __d.manaSources().map(x => x.card.name + (x.sac ? '*' : '')).sort().join(','); s.battlefield.forEach(c => c.tapped = true); return { untapped: a, tapped: __d.manaSources().length, red: __d.manaPaymentAllocation(__d.manaCostParts('{R}'), s.manaPool, [], null).ok }; });
+    return { ok: r.untapped === 'Lotus Petal*,Treasure*' && r.tapped === 0, why: JSON.stringify(r) }; });
+  await T('UI 605', 'the tap toggle (double-click / T) never sacrifices a Spawn by accident: it only taps it; paying a cost or the ability menu sacrifices it', async () => { await reset(); await spawnSetup([], 1);
+    const r = await ev(() => { const s = __d.state, sp = s.battlefield.find(c => c.token); __d.toggleTap(sp.id); return { still: s.battlefield.includes(sp), tapped: sp.tapped, pool: s.manaPool.C || 0 }; });
+    return { ok: r.still && r.pool === 0, why: JSON.stringify(r) }; });
+  await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card lies inside the table and below the Opening hand prompt, the prompt is on top of the dim layer, and the prompt box lies fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await reset();
     const out = [];
     for (const [w, h] of [[1280, 720], [1673, 990], [2509, 1484]]) for (const img of [false, true]) { await p.setViewportSize({ width: w, height: h });
       const r = await ev(async (img) => { document.body.classList.toggle('imgmode', img); const s = __d.state; s.hand.length = 0; for (let i = 0; i < 7; i++) s.hand.push(Object.assign(__d.newCard(['Grizzly Bears', 'Island', 'Mock Flyer'][i % 3]), { id: 900 + i })); const res = [];
-        for (const bottom of [false, true]) { s.phase = 'mull'; s.bottomPhase = bottom; s.mulls = 1; __d.render(); await new Promise(r => setTimeout(r, 450));
+        for (const bottom of [false, true]) { s.phase = 'mull'; s.bottomPhase = bottom; s.mulls = 1; __d.render(); await new Promise(r => setTimeout(r, 1400));
           const boxes = [...document.querySelectorAll('#row-hand .card')].map(c => c.getBoundingClientRect()), bar = document.querySelector('#handPickBar'), bb = bar && !bar.hidden ? bar.getBoundingClientRect() : null, hw = document.querySelector('#handWrap');
           const inside = b => b.left >= -14 && b.right <= innerWidth + 14 && b.top >= -1 && b.bottom <= innerHeight + 14;
-          res.push({ bottom, cards: boxes.length, allIn: boxes.every(inside), barIn: bb ? inside(bb) : true, fixed: getComputedStyle(hw).position === 'fixed' }); }
+          // v0.99.32 the cards must also sit inside the table (#mat), below the Opening hand prompt, and the prompt must be on top of the dim layer (clickable, not greyed)
+          const mat = document.querySelector('#mat').getBoundingClientRect(), inMat = b => b.left >= mat.left + 2 && b.right <= mat.right - 2 && b.bottom <= mat.bottom - 2;
+          const pc = document.querySelector('#overlay:not([hidden]) .pcard'), pr = pc && pc.getBoundingClientRect();
+          const keep = pc && [...pc.querySelectorAll('button')].find(b => b.textContent === 'Keep'), kr = keep && keep.getBoundingClientRect();
+          const promptTop = !pc || (kr && keep.contains(document.elementFromPoint(kr.left + kr.width / 2, kr.top + kr.height / 2)));
+          res.push({ bottom, cards: boxes.length, allIn: boxes.every(inside), inMat: boxes.every(inMat), belowPrompt: !pr || boxes.every(b => b.top >= pr.bottom), promptTop: !!promptTop, prompt: bottom || !!pc, barIn: bb ? inside(bb) : true, fixed: getComputedStyle(hw).position === 'fixed' }); }
         s.phase = 'play'; s.bottomPhase = false; document.body.classList.remove('imgmode'); __d.render(); return res; }, img);
       await new Promise(r => setTimeout(r, 200)); out.push({ w, img, r }); }
     await p.setViewportSize({ width: 1280, height: 800 });
-    const bad = out.filter(o => o.r.some(x => !x.allIn || !x.barIn || x.fixed || x.cards !== 7));
+    const bad = out.filter(o => o.r.some(x => !x.allIn || !x.inMat || !x.belowPrompt || !x.promptTop || !x.prompt || !x.barIn || x.fixed || x.cards !== 7));
     return { ok: bad.length === 0, why: JSON.stringify(bad.slice(0, 2)) }; });
   await T('122.1 + 608.2c', 'The One Ring (and any "for each <kind> counter on it" text): the amount follows EVERY counter, not just the first: activating three times draws 1, 2, 3 cards; the upkeep trigger loses life equal to all burden counters; Always Yield still matches the action as the live count changes', async () => { await reset(); await toMain();
     const r = await ev(async () => { const s = __d.state, rg = Object.assign(__d.newCard('The One Ring'), { id: s.nextId++ }); s.battlefield.push(rg);

@@ -134,16 +134,18 @@ function manaSources() {
   const out=[];
   if(!state) return out;
   for(const c of state.battlefield){
-    if(c.tapped || !isManaPermanent(c)) continue;
+    if(!isManaPermanent(c)) continue;
     if(!isLandName(c.name)){
       const r=rockInfo(c), st=rockStatus(c);
+      if(r.tap && c.tapped) continue;   // v0.99.32 a sacrifice-only mana ability (Eldrazi Spawn) has no {T}: a tapped creature can still pay with it
       if(st.ok===false) continue;
       if(PAY_CTX && r.noSpend==='nonartifact' && !state.battlefield.includes(PAY_CTX) && !/\bArtifact\b/.test(PAY_CTX.token ? ((PAY_CTX.tk&&PAY_CTX.tk.type)||'') : ((cardInfo(PAY_CTX.name)||{}).t||'').split(' // ')[0])) continue;   // "This mana can't be spent to cast a nonartifact spell"
       if(PAY_CTX && r.only && !spendOnlyOk(r.only, PAY_CTX)) continue;               // restriction clearly not met: not offered automatically (tap it by hand to override)
-      if(r.fixed) r.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:r.fixed.length}));
-      else out.push({card:c, colors:new Set(rockColors(c)), any:true, slot:0, of:1});
+      if(r.fixed) r.fixed.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:r.fixed.length, sac:!!r.sac}));
+      else out.push({card:c, colors:new Set(rockColors(c)), any:true, slot:0, of:1, sac:!!r.sac});
       continue;
     }
+    if(c.tapped) continue;
     // Same colour logic as tapping by hand: printed mana plus the basic land types the board gives it
     // (Leyline of the Guildpact, Dryad of the Ilysian Grove, Urborg, Blood Moon...).
     { const om = ovrLandMana(c); if (om) { if (!om.length) continue; om.forEach((col,k)=>out.push({card:c, colors:new Set([col]), any:true, slot:k, of:om.length})); continue; } }   // a land that lost its abilities (Song of the Dryads, Imprisoned in the Moon)
@@ -331,7 +333,7 @@ function onCardDbl(c, zone) {
   if (zone === 'battlefield') {
     if (isPlaneswalker(c)) openLoyalty(c);
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);
-    else if (isManaPermanent(c) && !c.tapped) tapForMana(c.id);
+    else if (isManaPermanent(c) && !c.tapped && !isSacManaSource(c)) tapForMana(c.id);
     else if (!/\bCreature\b/.test(frontType(c)) && !isLandName(c.name) && activatedAbilityFor(c)) { const L = activatedAbilitiesFor(c); const ab = L.find(x => !abilityReady(c, x)) || L[0]; activateAbility(c.id, false, ab.ix); }
     else if (!isLandName(c.name) && activatedAbilitiesFor(c).some(x => !abilityReady(c, x))) openAbilityPicker(c);   // v0.86: a creature with a usable ability (Psychic Frog): choose which
     else toggleTap(c.id);

@@ -328,9 +328,30 @@ function layoutHand() {
   if (document.body.classList.contains('mullpick') || document.body.classList.contains('mullhand')) {
     const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 1);
     const aw = Math.max(hw.parentElement ? hw.parentElement.clientWidth : innerWidth, 300) - 70;
-    const cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
-    hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
+    let cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
+    // v0.99.32 The arithmetic above ignores the fan's tilt and float, so the outer cards could spill past the table (seen in picture mode at 1280 and 1673 wide).
+    // Measure the real (transformed) card boxes against the table and shrink until every card sits inside it with a small margin.
+    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 12;
+    for (let g = 0; g < 14; g++) {
+      hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
+      spreadHand(row, cards);
+      const pc = $('#overlay:not([hidden]) .pcard'), top = pc ? pc.getBoundingClientRect().bottom + 10 : -Infinity;   // and never cover the Opening hand prompt
+      const settled = c => { try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };   // a card still flying in from the deal is not where it will rest; the endless float is
+      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - pad || r.top < top; });
+      if (!out || cw <= 90) break;
+      cw = Math.max(90, Math.floor(cw * 0.93));
+    }
+    if (cards.some(c => !c.getAnimations || !c.getAnimations({ subtree: true }).every(a => a.playState !== 'running' || (a.effect && a.effect.getTiming().iterations === Infinity)))) {
+      clearTimeout(layoutHand.again); layoutHand.again = setTimeout(scheduleLayout, 350);   // check the fit again once the deal has landed
+    }
+    return;
   } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); }
+  spreadHand(row, cards);
+}
+
+// Overlap the hand cards when they do not fit side by side.
+function spreadHand(row, cards) {
+  for (const c of cards) c.style.marginLeft = '';
   if (cards.length < 2) return;
   const avail = $('#handWrap').clientWidth - 70, cw = cards[0].offsetWidth;
   if (!cw) return;
