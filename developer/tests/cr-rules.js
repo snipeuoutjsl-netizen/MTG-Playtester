@@ -1399,6 +1399,16 @@ const { setup } = require('./common.js');
       document.querySelector('.dbx-shelf .dbx-stage').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await W(300); const picked = !document.querySelector('.dbx-modal');
       document.getElementById('modalRoot').innerHTML = ''; return { btns, back, picked }; });
     return { ok: r.btns.some(b => /Use this deck|Keep using/.test(b)) && r.btns.includes('Edit list') && r.btns.some(b => /Sideboard/.test(b)) && r.back && r.picked, why: JSON.stringify(r) }; });
+  await T('716.2 + 716.3', "Class (Stormchaser's Talent): enters at level 1 with only its level-1 ability; the level-3 \"whenever you cast an instant or sorcery\" makes no token before level 3; Level N is offered only from level N-1 at sorcery speed; becoming level 2 triggers its level-2 ability; leaving the battlefield resets the level", async () => { await reset(); await toMain();
+    const r = await ev(async () => { const s = __d.state; s.battlefield = []; s.stack = []; s.pendingTriggers = []; const c = Object.assign(__d.newCard("Stormchaser's Talent"), { id: s.nextId++ }); s.battlefield.push(c);
+      const cast = () => { s.pendingTriggers = []; s.stack = []; const b = Object.assign(__d.newCard('Lightning Bolt'), { id: s.nextId++ }); s.stack.push(b); __d.fireTrigger('cast', { card: b }); const n = s.pendingTriggers.length + s.stack.filter(x => /Talent/.test(x.name)).length; s.pendingTriggers = []; s.stack = []; return n; };
+      const ready = () => __d.activatedAbilitiesFor(c).map(a => __d.abilityReady(c, a)); const out = { l1: cast(), r1: ready(), has1: /Whenever you cast/.test(__d.cardText(c)) };
+      document.querySelectorAll('.backdrop').forEach(x => x.remove()); __d.effectOptions('~ becomes level 2.', { sourceName: c.name, sourceId: c.id })[0].fn(); await new Promise(r => setTimeout(r, 250));
+      out.trig2 = /became level 2/.test((document.querySelector('#modalRoot .modal') || {}).innerText || '') || s.stack.some(x => /Talent/.test(x.name)); document.querySelectorAll('.backdrop').forEach(x => x.remove());
+      out.l2 = cast(); out.r2 = ready(); __d.effectOptions('~ becomes level 3.', { sourceName: c.name, sourceId: c.id })[0].fn(); document.querySelectorAll('.backdrop').forEach(x => x.remove()); out.l3 = cast();
+      __d.moveCard(c.id, 'graveyard'); out.reset = c.classLevel === undefined; return out; });
+    const lvlOk = (a, i) => a[i] !== 'restriction';
+    return { ok: r.l1 === 0 && !r.has1 && lvlOk(r.r1, 0) && r.r1[1] === 'restriction' && r.trig2 && r.l2 === 0 && r.r2[0] === 'restriction' && lvlOk(r.r2, 1) && r.l3 === 1 && r.reset, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

@@ -65,7 +65,7 @@ const RULINGS = [
   [/^untap ~ during each other player'?s untap step/i, 'Untap (rule 502.3): you also untap this during your opponents\' untap steps. Untap it yourself when the opponent\'s turn begins.'],
   [/^(?:metalcraft|threshold|spell mastery|revolt|ferocious|hellbent|formidable|raid|morbid|fateful hour|coven|descend \d+) —/i, 'Ability word (rule 207.2c): the condition is checked continuously. Count it yourself (metalcraft = three or more artifacts, threshold = seven or more cards in your graveyard).'],
   [/^(?:i|ii|iii|iv|v)(?:, (?:i|ii|iii|iv|v))* —/i, 'Saga chapter (rule 714): put a lore counter on it as your first main phase begins, then the chapter ability triggers; sacrifice it after the final chapter has resolved.'],
-  [/^level up\b|^level \d/i, 'Class level (rule 716): pay the level cost at sorcery speed; levels are gained one at a time in order.'],
+  [/^level up\b|^level \d/i, 'Class level (rule 716): offered as an ability at sorcery speed, one level at a time; a level\'s abilities apply only once the Class reaches it.'],
   [/^(?:this spell|~) can'?t be countered/i, "Can't be countered (rule 101.2 / 701.5): the app refuses to counter it."],
   [/^when you cast this spell, take an extra turn|^take an extra turn after this one/i, 'Extra turn (rule 500.7): the extra turn is taken immediately after this one; extra turns stack, with the last created taken first. Use the "extra turn" tools to start another turn.'],
   [/^this spell costs \{\w\} less to cast for each/i, 'Cost reduction by count (rule 601.2f): the reduction is applied while paying. Enter it in the cost window.'],
@@ -83,7 +83,7 @@ function triggerRuling(t) {
   if (/whenever a player casts/.test(x)) return "Triggers on every player's spells, including yours (rule 603.2). The app only watches your own casts; apply it by hand when the opponent casts.";
   if (/deals combat damage to a creature|dealt damage by|deals damage to a creature/.test(x)) return 'Combat-damage trigger on a creature (rule 510.2): triggers after combat damage is dealt. The goldfish has no opposing creatures; apply when it happens against a real opponent.';
   if (/whenever you tap .* for mana|whenever .* is tapped for mana/.test(x)) return 'Mana-tap trigger (rule 605.5): it triggers when the mana ability resolves and goes on the stack after it. Apply by hand when you tap it.';
-  if (/becomes level|becomes the target/.test(x)) return 'Class/level trigger (rule 716.2c): triggers when it reaches that level. Apply by hand when you level it up.';
+  if (/becomes the target/.test(x)) return 'Targeting trigger (rule 603.2): triggers when it becomes the target of a spell or ability. Apply by hand when that happens.';
   if (/you may pay \{.*\}\. when you do|reflexive/.test(x)) return 'Reflexive trigger (rule 603.12): you pay as the first ability resolves; only if you did, the second ability triggers and goes on the stack.';
   if (/when ~ is turned face up|transforms|return him to the battlefield transformed|transformed under/.test(x)) return 'Transform (rule 701.28 / 712): turn the card to its other face; it stays the same object. Right-click it on the battlefield and choose Transform (a trigger that says transform offers it too).';
   return null;

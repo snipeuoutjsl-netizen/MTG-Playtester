@@ -195,8 +195,11 @@ const AW_RE = /^(?:Addendum|Adamant|Alliance|Battalion|Bloodrush|Channel|Chroma|
 const stripAW = tx => String(tx == null ? '' : tx).replace(AW_RE, '');
 const AW_CACHE = new WeakMap();
 function awInfo(base) { if (!base || !base.tx || !AW_RE.test(base.tx)) { AW_RE.lastIndex = 0; return base; } AW_RE.lastIndex = 0; let r = AW_CACHE.get(base); if (!r || r.__src !== base.tx) { r = Object.assign({}, base, { tx: stripAW(base.tx), __src: base.tx }); AW_CACHE.set(base, r); } return r; }
-function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
-function cardText(c) { return stationText(c, stripAW(cardTextRaw(c))); }
+// v0.99.40 the rules a permanent has now: a Class (CR 716.2b) or Spacecraft (CR 721.2) only has the level/station sections it has reached,
+// so its triggers and statics are read from that text (marked ovr so the trigger cache keys on the text).
+function rulesInfo(c) { const r = rulesInfo0(c); if (!r || !r.tx || !c || c.token || !state) return r; let tx = r.tx; try { tx = classText(c, stationText(c, r.tx)); } catch (e) { return r; } return tx === r.tx ? r : Object.assign({}, r, { tx, ovr: true }); }
+function rulesInfo0(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
+function cardText(c) { return classText(c, stationText(c, stripAW(cardTextRaw(c)))); }
 function cardTextRaw(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
