@@ -896,7 +896,6 @@ body[data-matmotion="parallax"] #mat::before { transform: translate(calc(var(--m
 /* ---- v0.57 deck button + 3D deck boxes */
 button.deckpick { color: var(--text); cursor: pointer; padding: 0 10px 0 11px; }
 button.deckpick b { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
-.dbx-shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 16px; padding: 6px 4px 10px; }
 .dbx-tile { position: relative; display: flex; flex-direction: column; align-items: center; padding: 10px 0 8px; border-radius: 12px; }
 .dbx-tile.on { background: radial-gradient(ellipse at 50% 40%, rgba(227,185,92,.16), transparent 70%); }
 .dbx-cur { position: absolute; top: 6px; right: 8px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); border: 1px solid var(--gold); border-radius: 999px; padding: 1px 8px; }
@@ -1869,33 +1868,9 @@ body.a11y-targets .setgrid .teachopt { min-height: 44px; }
 /* v0.99.40 Deck bookcase: boxes stand on wooden shelves; hover slides one forward, click takes it off the shelf */
 .dbx-modal { position: relative; }
 .dbx-modal .mbody { background: linear-gradient(180deg, #2a1c12, #1d130c); border-radius: 0 0 4px 4px; }
-.dbx-shelf { display: flex; flex-wrap: wrap; gap: 0; padding: 14px 18px 4px; row-gap: 26px;
-  background: repeating-linear-gradient(90deg, rgba(0,0,0,.18) 0 2px, transparent 2px 46px), linear-gradient(180deg, #23170e, #1a110a); border-radius: 8px; box-shadow: inset 0 0 40px rgba(0,0,0,.7); }
-.dbx-shelf .dbx-tile { width: 168px; padding: 4px 0 30px; border-radius: 0; background: none; }
-.dbx-shelf .dbx-tile::after { content: ''; position: absolute; left: -1px; right: -1px; bottom: 0; height: 22px; pointer-events: none;
-  background: linear-gradient(180deg, #8a5a32 0, #6e4524 4px, #563419 12px, #3a220f 22px); box-shadow: 0 8px 12px rgba(0,0,0,.55); }
-.dbx-shelf .dbx-tile::before { content: ''; position: absolute; left: 0; right: 0; bottom: 22px; height: 26px; pointer-events: none; background: linear-gradient(0deg, rgba(0,0,0,.45), transparent); }
-.dbx-shelf .dbx-stage { width: 168px; height: 226px; align-items: flex-end; padding-bottom: 6px; perspective: 900px; outline: none; }
-.dbx-shelf .dbx { transform: translateZ(0) rotateX(calc(-6deg + var(--ry, 0) * -6deg)) rotateY(calc(-34deg + var(--rx, 0) * 16deg)); transition: transform .32s cubic-bezier(.2,.8,.25,1), filter .3s; transform-origin: 50% 100%; filter: brightness(.9); }
-.dbx-shelf .dbx-stage:hover .dbx, .dbx-shelf .dbx-stage:focus-visible .dbx { transform: translateZ(46px) translateY(-10px) rotateX(calc(-4deg + var(--ry, 0) * -8deg)) rotateY(calc(-14deg + var(--rx, 0) * 22deg)); filter: brightness(1.08); transition-duration: .22s; }
-.dbx-shelf .dbx-stage:focus-visible .dbx-face.front { box-shadow: inset 0 0 0 3px #ffd84d, 0 0 0 3px #ffd84d; }
-.dbx-shelf .dbx-shadow { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); margin: 0; width: 130px; height: 14px; z-index: 0; }
-.dbx-name { position: absolute; bottom: 3px; left: 8px; right: 8px; z-index: 1; text-align: center; font: 700 10.5px/16px var(--font, system-ui); color: #f3dfb8; text-shadow: 0 1px 1px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .03em; }
-.dbx-shelf .dbx-cur { top: 2px; right: 6px; background: rgba(20,12,6,.8); z-index: 2; }
-.dbx-tile.out .dbx-stage .dbx { visibility: hidden; }
-.dbx-tile.out .dbx-shadow { opacity: 0; }
 .dbx-pull { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(10,7,4,.94); border-radius: inherit; }
 .dbx-pull-in { display: flex; align-items: center; gap: 34px; padding: 20px; max-width: 100%; }
 .dbx-turn { perspective: 1100px; width: 300px; height: 400px; display: flex; align-items: center; justify-content: center; flex: none; }
-.dbx.big { width: 220px; height: 312px; transform: rotateX(calc(-6deg + var(--ry, 0) * -14deg)) rotateY(calc(-24deg + var(--rx, 0) * 40deg)); transition: transform .25s ease-out; }
-.dbx.big .dbx-face.front { transform: translateZ(27px); }
-.dbx.big .dbx-face.side { right: -27px; width: 54px; }
-.dbx.big .dbx-face.side span { font-size: 17px; max-height: 280px; }
-.dbx.big .dbx-face.top { top: -27px; height: 54px; }
-.dbx.big .dbx-art { left: 10px; right: 10px; top: 10px; }
-.dbx.big .dbx-label { top: 172px; left: 10px; right: 10px; bottom: 12px; }
-.dbx.big .dbx-label b { font-size: 18px; }
-.dbx.big .dbx-label span { font-size: 13px; }
 .dbx-info { width: 330px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; color: var(--text); }
 .dbx-info h3 { margin: 0; font-size: 20px; }
 .dbx-pips { display: flex; gap: 5px; } .dbx-pips .dbx-pip { width: 14px; height: 14px; }
@@ -1908,5 +1883,46 @@ body.a11y-targets .setgrid .teachopt { min-height: 44px; }
 .dbx-top { font-size: 12.5px; line-height: 1.5; } .dbx-top .fhead { margin: 4px 0 2px; }
 .dbx-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; } .dbx-acts .primary { flex: 1 0 100%; }
 @media (max-width: 860px) { .dbx-pull-in { flex-direction: column; gap: 6px; } .dbx-turn { height: 330px; } .dbx-info { width: min(330px, 90vw); max-height: 40vh; } }
-body.a11y-calm .dbx-shelf .dbx, body.a11y-calm .dbx.big { transition: none; }
+
 .dbx-modal .mbody { min-height: min(470px, 70vh); }
+
+/* v0.99.42 Deck bookcase: books spine-out, ten to a shelf; hover pulls one out and turns it to its cover */
+.bk-case { display: flex; flex-direction: column; gap: 18px; padding: 16px 20px 10px; border-radius: 8px;
+  background: repeating-linear-gradient(90deg, rgba(0,0,0,.16) 0 2px, transparent 2px 58px), linear-gradient(180deg, #24180e, #170f08); box-shadow: inset 0 0 50px rgba(0,0,0,.75), inset 0 0 0 10px #3b2513, inset 0 0 0 12px #24160a; }
+.bk-shelf { position: relative; }
+.bk-row { display: flex; align-items: flex-end; justify-content: center; gap: 3px; min-height: 236px; padding: 0 14px; perspective: 1300px; perspective-origin: 50% 30%; }
+.bk-plank { height: 20px; margin: 0 -6px; border-radius: 2px; background: linear-gradient(180deg, #9a663a 0, #7a4c27 4px, #5b3719 12px, #3a220f 20px); box-shadow: 0 10px 14px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,220,170,.35); position: relative; z-index: 2; }
+.bk-shelf::before { content: ''; position: absolute; left: 0; right: 0; bottom: 20px; height: 30px; pointer-events: none; background: linear-gradient(0deg, rgba(0,0,0,.5), transparent); }
+.bk-tile { position: relative; flex: none; padding: 0; background: none !important; display: block; }
+.bk-tile:hover, .bk-tile:focus-within { z-index: 5; }
+.bk-stage { width: 100%; height: auto; display: block; cursor: pointer; outline: none; perspective: none; }
+.bk { position: relative; width: var(--T); height: var(--H); transform-style: preserve-3d; transform: rotateY(calc(var(--rx, 0) * 3deg)); transition: transform .38s cubic-bezier(.2,.8,.25,1); }
+.bk-stage:hover .bk, .bk-stage:focus-visible .bk { transform: translateZ(calc(var(--D) * .55)) translateY(-6px) rotateY(calc(66deg + var(--rx, 0) * 10deg)) rotateX(calc(var(--ry, 0) * -5deg)); transition-duration: .3s; }
+.bk-face { position: absolute; top: 0; overflow: hidden; backface-visibility: hidden; }
+.bk-face.spine { left: 0; width: var(--T); height: var(--H); transform: translateZ(calc(var(--D) / 2)); border-radius: 3px 3px 2px 2px;
+  background: linear-gradient(90deg, rgba(0,0,0,.45), rgba(255,255,255,.14) 22%, rgba(0,0,0,.05) 45%, rgba(0,0,0,.4)), linear-gradient(180deg, var(--ca), var(--cad));
+  display: flex; flex-direction: column; align-items: center; padding: 10px 0 8px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(0,0,0,.5); }
+.bk-band { display: block; width: 100%; height: 5px; flex: none; background: linear-gradient(180deg, #f3d48a, #a77a2c); opacity: .85; box-shadow: 0 6px 0 -3px rgba(243,212,138,.6); }
+.bk-band.low { margin-top: auto; box-shadow: 0 -6px 0 -3px rgba(243,212,138,.6); }
+.bk-title { flex: 1 1 auto; min-height: 0; margin: 10px 0 6px; writing-mode: vertical-rl; font: 700 13px/1.05 Georgia, 'Times New Roman', serif; color: #fbf2da; text-shadow: 0 1px 2px #000; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-height: calc(var(--H) - 70px); }
+.bk-pips { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+.bk-pips .dbx-pip { width: 8px; height: 8px; }
+.bk-face.cover { left: calc((var(--T) - var(--D)) / 2); width: var(--D); height: var(--H); transform: rotateY(-90deg) translateZ(calc(var(--T) / 2)); border-radius: 2px 5px 5px 2px;
+  background: linear-gradient(155deg, var(--ca), var(--cad)); box-shadow: inset 0 0 0 3px rgba(0,0,0,.35), inset 0 0 0 4px rgba(255,255,255,.18), inset 8px 0 10px -4px rgba(0,0,0,.6); }
+.bk-face.cover .dbx-art { left: 9px; right: 7px; top: 8px; }
+.bk-face.cover .dbx-label { left: 9px; right: 7px; top: calc((var(--D) - 16px) / 1.357 + 16px); bottom: 9px; }
+.bk-face.back { left: calc((var(--T) - var(--D)) / 2); width: var(--D); height: var(--H); transform: rotateY(90deg) translateZ(calc(var(--T) / 2)); background: linear-gradient(155deg, var(--cad), var(--ca)); }
+.bk-face.top { left: 0; top: calc((var(--H) - var(--D)) / 2); width: var(--T); height: var(--D); transform: rotateX(90deg) translateZ(calc(var(--H) / 2)); background: repeating-linear-gradient(90deg, #efe6cf 0 2px, #d8ccae 2px 3px); }
+.bk-tile.on .bk-face.spine { box-shadow: inset 0 0 0 2px var(--gold, #e3b95c), 0 0 14px rgba(227,185,92,.5); }
+.bk-ribbon { position: absolute; top: -4px; left: 50%; width: 10px; height: 34px; transform: translateX(-50%) translateZ(80px); background: linear-gradient(180deg, #e3b95c, #b8862f); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); pointer-events: none; z-index: 3; }
+.bk-stage:focus-visible .bk-face.spine { outline: 3px solid #ffd84d; outline-offset: -3px; }
+.bk-tile.out .bk { visibility: hidden; }
+.bk-tile.out + .bk-tile, .bk-tile.out { }
+/* the book taken off the shelf */
+.dbx-turn .bk.big { transform: rotateX(calc(var(--ry, 0) * -12deg)) rotateY(calc(62deg + var(--rx, 0) * 40deg)); transition: transform .25s ease-out; }
+.bk.big .bk-title { font-size: 19px; }
+.bk.big .dbx-label b { font-size: 18px; } .bk.big .dbx-label span { font-size: 13px; }
+.bk.big .bk-pips .dbx-pip { width: 11px; height: 11px; }
+body.a11y-calm .bk, body.a11y-calm .bk.big { transition: none; }
+@media (prefers-reduced-motion: reduce) { .bk { transition: none; } }
+.bk[data-col=W] .bk-title { color: #2b2413; text-shadow: 0 1px 0 rgba(255,255,255,.4); }

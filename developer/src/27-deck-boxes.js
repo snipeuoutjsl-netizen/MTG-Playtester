@@ -4,6 +4,7 @@ const DECKBOX_COL = { W: ['#4b4733', '#d8d1a2'], U: ['#0e2a52', '#3f7fcc'], B: [
 function deckColorsOf(deck) {
   const cnt = { W: 0, U: 0, B: 0, R: 0, G: 0 };
   for (const { qty, name } of deck.main) { const i = cardInfo(name); if (!i || !i.mc) continue; for (const m of i.mc.matchAll(/\{([WUBRG])\}|\{([WUBRG])\/[^}]+\}/g)) cnt[m[1] || m[2]] += qty; }
+  if (!Object.values(cnt).some(Boolean)) for (const { qty, name } of deck.main) { const t = ((cardInfo(name) || {}).t || '') + ' ' + name; for (const [k, w] of [['W', 'Plains'], ['U', 'Island'], ['B', 'Swamp'], ['R', 'Mountain'], ['G', 'Forest']]) if (new RegExp('\\b' + w + '\\b').test(t)) cnt[k] += qty; }   // no coloured spells: go by the basic land types
   return Object.entries(cnt).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]).map(e => e[0]);
 }
 function deckArtName(deckName, deck) {
@@ -12,18 +13,24 @@ function deckArtName(deckName, deck) {
   return deck.main[0] ? deck.main[0].name : '';
 }
 function artStyle(im) { return im && im.front ? `background-image:url("${im.front}")` : ''; }
-// v0.99.40 The deck screen is a bookcase: boxes stand on wooden shelves at an angle (front and spine both show). Hover slides a box forward;
-// clicking pulls it off the shelf into the middle of the window, where it can be turned with the mouse and played, edited or sideboarded.
-// Double-click (or Enter twice) still picks a deck straight away.
-function deckBoxModel(deckName, deck, cols, im) {
-  const a = DECKBOX_COL[cols[0] || ''], b = DECKBOX_COL[cols[1] || cols[0] || ''];
-  return h('div', { class: 'dbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
-    h('div', { class: 'dbx-face front' },
+// v0.99.42 The deck screen is a bookcase of books, ten to a shelf. Each deck is a book standing spine out (its name on the spine); hovering
+// pulls it part-way off the shelf and turns it so the front cover (art from the deck) shows. Clicking takes it right off the shelf into the
+// middle of the window, where it can be turned with the mouse and played, edited or sideboarded. Double-click (or Enter twice) uses it at once.
+const BOOKS_PER_SHELF = 10;
+const BOOK_COL = { W: ['#8f8566', '#eee6c4'], U: ['#0d2a57', '#3d82d6'], B: ['#0b090e', '#3c3446'], R: ['#4a0f08', '#d4442a'], G: ['#0b2d16', '#3f9f58'], '': ['#2a2d33', '#8b9099'] };
+const strHash = t => { let x = 7; for (const ch of String(t)) x = (x * 31 + ch.charCodeAt(0)) >>> 0; return x; };
+function bookModel(deckName, deck, cols, im, big) {
+  const a = BOOK_COL[cols[0] || ''], b = BOOK_COL[cols[1] || cols[0] || ''], hs = strHash(deckName);   // the book is the deck's main colour (the colour with the most mana symbols)
+  const T = big ? 70 : 44 + hs % 11, H = big ? 330 : 198 + (hs >> 4) % 26, D = big ? 236 : 146;
+  const pips = cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }));
+  return h('div', { class: 'bk' + (big ? ' big' : ''), 'data-col': cols[0] || 'C', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]};--T:${T}px;--H:${H}px;--D:${D}px` },
+    h('div', { class: 'bk-face spine' }, h('i', { class: 'bk-band' }), h('span', { class: 'bk-title', text: deckName }), h('span', { class: 'bk-pips' }, ...pips.map(x => x.cloneNode())), h('i', { class: 'bk-band low' })),
+    h('div', { class: 'bk-face cover' },
       h('div', { class: 'dbx-art' + (im ? '' : ' none'), style: artStyle(im) }, im ? null : h('span', { text: (deckName.trim()[0] || '?').toUpperCase() })),
       h('div', { class: 'dbx-gloss' }),
-      h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }))))),
-    h('div', { class: 'dbx-face side' }, h('span', { text: deckName })),
-    h('div', { class: 'dbx-face top' }));
+      h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...pips))),
+    h('div', { class: 'bk-face back' }),
+    h('div', { class: 'bk-face top' }));
 }
 const tiltWith = (zone, box) => {
   zone.addEventListener('mousemove', e => { const r = zone.getBoundingClientRect(); box.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); box.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
@@ -38,21 +45,21 @@ function deckSummary(deck) {
 }
 function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
   const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
-  const dbx = deckBoxModel(deckName, deck, cols, im);
-  const stage = h('div', { class: 'dbx-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: isCur ? `${deckName} (current deck) — click to take it off the shelf, double-click to use it` : `${deckName} — click to take it off the shelf, double-click to use it` }, dbx);
+  const bk = bookModel(deckName, deck, cols, im, false);
+  const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf, double-click to use it` }, bk);
   let clickT = 0;
   stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
   stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
-  tiltWith(stage, dbx);
-  const tile = h('div', { class: 'dbx-tile' + (isCur ? ' on' : '') }, stage, h('div', { class: 'dbx-shadow' }), h('div', { class: 'dbx-name', text: deckName }), isCur ? h('div', { class: 'dbx-cur', text: 'In use' }) : null);
+  tiltWith(stage, bk);
+  const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
   return tile;
 }
-// Take a box off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
+// Take a book off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
 function pullDeckBox(m, tile, d) {
   if (m.el.querySelector('.dbx-pull')) return;
-  const src = tile.querySelector('.dbx'), mr = m.el.getBoundingClientRect(), sr = src.getBoundingClientRect();
-  const big = deckBoxModel(d.deckName, d.deck, d.cols, d.im); big.classList.add('big');
+  const src = tile.querySelector('.bk-stage'), sr = src.getBoundingClientRect();
+  const big = bookModel(d.deckName, d.deck, d.cols, d.im, true);
   const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big); tiltWith(turn, big);
   const sm = deckSummary(d.deck), maxC = Math.max(1, ...sm.curve);
   const btn = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => { putBack(true); fn(); } });
@@ -128,13 +135,13 @@ function openDeckPicker() {
     const seg = FEATURES.commander ? h('div', { class: 'modeseg', role: 'tablist', 'aria-label': 'Game mode' },
       ...[['standard', 'Decks', 'Normal goldfish games'], ['commander', 'Commander', 'Commander decks and Commander rules (40 life, command zone, commander tax)']].map(([k, lab, tip]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: tip, text: lab, onclick: () => pick(k) }))) : null;
     m.body.replaceChildren(seg, names.length
-      ? h('div', { class: 'dbx-shelf' }, names.map(n => deckBoxEl(n, n === cur,
+      ? h('div', { class: 'bk-case' }, Array.from({ length: Math.ceil(names.length / BOOKS_PER_SHELF) }, (_, r) => h('div', { class: 'bk-shelf' }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
         () => openDeckArtPicker(n, draw),
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
         () => openCustomArt(n, draw),
         () => openSideboarding(n, draw),
-        (tile, d) => pullDeckBox(m, tile, d))))
+        (tile, d) => pullDeckBox(m, tile, d)))), h('div', { class: 'bk-plank' }))))
       : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();

@@ -167,6 +167,7 @@ function doMulligan() {
   dealingStart();
   snap();
   state.library.push(...state.hand.splice(0));   // CR 103.5: the whole hand goes back into the library ...
+  state.mullReset = true;   // the animation shows all seven going back, even cards that are drawn again
   shuffleLib({ delay: 450 });   // ... which is shuffled (on screen, once the old hand has landed on it) ...
   state.dealDelay = 450 + riffleDuration();   // ... then a new seven is dealt (London mulligan, CR 103.5)
   const free = !!state.cmdMode && !state.freeMullUsed;   // CR 103.5c: in a multiplayer game such as Commander the first mulligan is free
