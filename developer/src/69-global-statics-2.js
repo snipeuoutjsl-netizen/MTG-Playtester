@@ -125,14 +125,6 @@ function mustAttackWhy(c) {   // '' unless this creature is required to attack e
   return '';
 }
 const mandatoryAttackers = () => state ? state.battlefield.filter(c => permZone(c) === 'creatures' && !attackBlock(c) && mustAttackWhy(c)) : [];
-function declareMandatoryAttackers() {   // the player leaves the declare-attackers step without declaring: the required attackers attack anyway
-  const req = mandatoryAttackers(); if (!req.length || state.combat.declared) return false;
-  snap(); state.combat.attackers = req.map(c => c.id); state.combat.declared = true;
-  for (const c of req) if (!hasKw(c, 'vigilance')) c.tapped = true;
-  log(`Declared attackers (required): ${req.map(c => c.name).join(', ')} — ${[...new Set(req.map(c => mustAttackWhy(c)))].join('; ')}`);
-  toast('Required attackers', `${req.map(c => c.name).join(', ')} must attack: the rules require it whenever it is able to (CR 508.1d). It was declared for you.`);
-  fireTrigger('attack', { cards: req }); render(); flushTriggers(); return true;
-}
 
 // ---- Protection (CR 702.16b): a permanent with protection from a quality can't be the target of spells or abilities from sources with that quality.
 // Read from printed "Protection from red" and from active "has protection from all colors as long as ..." statics. Only your own spells and abilities choose targets in a goldfish game.

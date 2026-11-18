@@ -22,10 +22,10 @@ function drawHandPickBar() {
   const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
   const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
   { const oh = !!state && state.phase === 'mull' && !state.bottomPhase, wasOh = document.body.classList.contains('mullhand'); document.body.classList.toggle('mullhand', oh); if (oh !== wasOh) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the opening hand is shown large too
-  { const op = !!state && (state.phase === 'mull' || state.phase === 'pregame'), wasOp = document.body.classList.contains('opening'); document.body.classList.toggle('opening', op); if (!op && wasOp) openingSize = null; if (op !== wasOp) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.35 one state from the deal to the first turn: the hand keeps one size throughout
   { const was = document.body.classList.contains('mullpick'); document.body.classList.toggle('mullpick', mb); if (was !== mb) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the mulligan step brings the hand up, larger and centred
   document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
-  const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
+  // v0.99.36 the stamp on a chosen card says what happens to it (it always said DISCARD, even for a mulligan's put-on-the-bottom)
+  const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); { const v = mb ? 'bottom' : String((handPick && handPick.verb) || 'discard').toLowerCase(); wrap.dataset.pick = v; wrap.style.setProperty('--pickstamp', JSON.stringify(v === 'bottom' ? 'BOTTOM' : v.split(/\s+/)[0].toUpperCase())); } bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
   if (mb) {
     const n = state.mulls, cnt = bottomSel.size, serum = state.serumPending;
     bar.replaceChildren(
@@ -130,7 +130,7 @@ function drawCards(n, silent) {
 }
 
 // v0.99.35 the Opening hand prompt waits until the hand has been dealt; animApply ends it when the last card lands (a safety timer ends it regardless)
-function dealingStart() { if (!animOn('move') || reducedMotion()) return; document.body.classList.add('dealing'); clearTimeout(dealingStart.t); dealingStart.t = setTimeout(() => document.body.classList.remove('dealing'), 3200); }
+function dealingStart() { if (!animOn('move') || reducedMotion()) return; document.body.classList.add('dealing'); clearTimeout(dealingStart.t); dealingStart.t = setTimeout(() => document.body.classList.remove('dealing'), 5000); }
 function startGame() {
   dealingStart();
   lifePrev = { you: null, opp: null }; lastStepShown = null;
@@ -150,7 +150,8 @@ function startGame() {
     const rec = resolve(name);
     for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.sideboard.push(c); }
   }
-  shuffleLib({ quiet: true });
+  shuffleLib({ delay: 120 });   // v0.99.36 CR 103.2: the deck is shuffled at the start of the game, on screen, and then the seven are dealt
+  state.dealDelay = 120 + riffleDuration();
   drawCards(7, true);
   state.phase = 'mull';
   state.onPlay = $('#chkPlay').checked;
@@ -164,8 +165,9 @@ function doMulligan() {
   dealingStart();
   if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
-  state.library.push(...state.hand.splice(0));
-  shuffleLib({ quiet: true });
+  state.library.push(...state.hand.splice(0));   // CR 103.5: the whole hand goes back into the library ...
+  shuffleLib({ delay: 450 });   // ... which is shuffled (on screen, once the old hand has landed on it) ...
+  state.dealDelay = 450 + riffleDuration();   // ... then a new seven is dealt (London mulligan, CR 103.5)
   const free = !!state.cmdMode && !state.freeMullUsed;   // CR 103.5c: in a multiplayer game such as Commander the first mulligan is free
   if (free) state.freeMullUsed = true; else state.mulls++;
   drawCards(7, true);
@@ -344,9 +346,19 @@ function startTurn() {
   flushTriggers();
 }
 
+// v0.99.36 CR 508.1d: a creature that "attacks each combat if able" must be among the attackers you declare. You still declare (the Declare attackers window,
+// with it already chosen and locked, and you may add others); no way of moving on (Next, clicking a later step, Next turn) may pass the declare-attackers step without it.
+function requiredAttackGate(target) {
+  if (!state || state.phase !== 'play' || state.combat.declared) return false;
+  const atk = STEPS.findIndex(s => s.id === 'attack'); if (atk < 0 || state.step > atk || target <= atk && state.step !== atk) return false;
+  if (!mandatoryAttackers().length) return false;
+  if (state.step < atk) { snap(); for (let j = state.step + 1; j <= atk && !state.discarding && !state.pendingTriggers.length; j++) enterStep(j, j !== atk); render(); flushTriggers(); if (state.step !== atk) return true; }
+  openCombatHelper(); return true;
+}
 function jumpToStep(i) {
   if (stackLocked()) { if (i > state.step) stackToast(); return; }
   if (isBlocked() || i <= state.step) { if (state && state.phasePause && i > state.step) toast('Continue first', 'Finish the pause at this step (press Next) before skipping ahead.'); return; }
+  if (requiredAttackGate(i)) return;
   snap();
   for (let j = state.step + 1; j <= i && !state.discarding && !(j > state.step + 1 && state.pendingTriggers.length); j++) enterStep(j, j !== i);
   render();
@@ -358,7 +370,7 @@ function nextPhase() {
   if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
-  if (STEPS[state.step].id === 'attack' && !state.combat.declared && declareMandatoryAttackers()) return;
+  if (requiredAttackGate(state.step + 1)) return;
   if (STEPS[state.step].id === 'attack' && !state.combat.declared && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
   if (state.step >= CLEANUP) { nextTurn(); return; }
   jumpToStep(state.step + 1);
@@ -369,6 +381,7 @@ function nextTurn() {
   if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
+  if (requiredAttackGate(CLEANUP)) return;
   snap();
   if (state.step < CLEANUP) { for (let j = state.step + 1; j <= CLEANUP && !state.discarding && !state.pendingTriggers.length; j++) enterStep(j, true); }
   if (state.pendingTriggers.length) { render(); flushTriggers(); return; }

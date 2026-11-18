@@ -290,7 +290,7 @@ function modalText(md, idxs) {
 }
 function mergeGeneric(cost) { let n = 0; const rest = []; for (const m of String(cost || '').match(/\{[^}]+\}/g) || []) { if (/^\{\d+\}$/.test(m)) n += +m.slice(1, -1); else rest.push(m); } return (n ? `{${n}}` : '') + rest.join(''); }
 function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : md.escalate ? md.escalate.repeat(Math.max(0, idxs.length - 1)) : ''; }
-function openModeChoice(name, md, cb, baseCost) {
+function openModeChoice(name, md, cb, baseCost, onCancel) {
   const chosen = new Set();
   const m = modal(`${name}: choose ${md.spree ? 'additional costs' : md.min === md.max ? md.max === 1 ? 'one mode' : md.max + ' modes' : md.label}`, { width: 640, sticky: true });
   const info = h('div', { class: 'psub' });
@@ -318,7 +318,7 @@ function openModeChoice(name, md, cb, baseCost) {
   m.body.prepend(info);
   m.body.append(total, teach('rulesHints') ? h('div', { class: 'muted small', text: 'Modes are chosen as you cast the spell, before you pay. You cannot pick the same mode twice, and the chosen modes happen in the order they are printed.' }) : null);
   ok.addEventListener('click', () => { m.close(); cb(md.repeat ? Object.entries(counts).flatMap(([i, k]) => Array(k).fill(+i)).sort((a, b) => a - b) : [...chosen].sort((a, b) => a - b)); });
-  m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }), ok);
+  m.foot.append(h('button', { text: 'Cancel', onclick: () => { m.close(); if (onCancel) onCancel(); } }), ok);
   refresh();
 }
 
@@ -359,23 +359,25 @@ function openAlwaysYield() {
   draw(); m.foot.append(h('button', { text: 'Clear all', onclick: () => { if (state) state.ay = {}; draw(); } }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
 }
 function openTriggerBatch(batch) {
-  const m = modal(batch.length > 1 ? `${batch.length} triggered abilities` : 'Triggered ability', { width: 640, sticky: true, noClose: true });
+  // v0.99.36 CR 603.3: a triggered ability goes on the stack by itself the next time a player would receive priority; nobody confirms it. The only choices are
+  // the ORDER of abilities that trigger at the same time (603.3b) and their modes and targets (603.3c-d); "may" is decided when it resolves (603.5).
+  // So this window opens only to order two or more abilities (or when a single one's choice was cancelled, to decline an ability the app wrongly detected).
+  let m = null; const win = () => m || (m = modal(remaining.length > 1 ? `${remaining.length} triggered abilities: choose the order` : 'Triggered ability', { width: 640, sticky: true, noClose: true }));
   const remaining = [...batch], placed = [];
-  const body = m.body;
   const finish = () => {
-    m.close();
+    if (m) m.close();
     if (placed.length) { render(); askAlwaysYield(placed, () => { render(); if (placed.every(x => x._auto)) ayResolveAuto(); else openStack(); }); }
     else { render(); resolvePendingTrigger(); }
   };
   const put = t => {
     const md = parseModal(t.effect);
-    if (md) { openModeChoice(t.cardName, md, idxs => putWith(t, modalText(md, idxs))); return; }
+    if (md) { openModeChoice(t.cardName, md, idxs => putWith(t, modalText(md, idxs)), undefined, () => draw()); return; }
     putWith(t, t.effect);
   };
   const putWith = (t, text) => {
     const specs = t.special ? [] : parseTargetSpecs(text);
     if (specs.length) {   // a trigger's targets are chosen as it goes on the stack
-      chooseTargets(t.cardName, specs, picked => { if (t._ayRefresh) { t._ayRefresh.targets = picked.map(x => ({ ...x })); t._ayRefresh.sig = legalSig(specs, t.cardId); log(`Always yield: ${t.cardName}'s remembered targets were updated`); } pushWith(t, text, picked); }, { srcId: t.cardId, auto: true, onCancel: () => {} }); return;
+      chooseTargets(t.cardName, specs, picked => { if (t._ayRefresh) { t._ayRefresh.targets = picked.map(x => ({ ...x })); t._ayRefresh.sig = legalSig(specs, t.cardId); log(`Always yield: ${t.cardName}'s remembered targets were updated`); } pushWith(t, text, picked); }, { srcId: t.cardId, auto: true, onCancel: () => draw() }); return;
     }
     pushWith(t, text, null);
   };
@@ -391,7 +393,8 @@ function openTriggerBatch(batch) {
   };
   const skip = t => { remaining.splice(remaining.indexOf(t), 1); log(`${t.cardName}: trigger ${t.optional ? 'declined' : 'did not apply'}`); if (!remaining.length) finish(); else draw(); };
   const draw = () => {
-    body.replaceChildren(...[
+    if (!remaining.length) return;
+    win().body.replaceChildren(...[
       teach('stackGuidance') ? h('div', { class: 'psub', text: remaining.length > 1 ? 'Several abilities triggered at once. You choose the order they go on the stack. The LAST one you put on the stack resolves FIRST.' : 'A triggered ability goes on the stack, then resolves like a spell. Read it: if it says "you may", or has a condition, decide whether it applies.' }) : null,
       ...remaining.map(t => h('div', { class: 'trig' },
         h('div', { class: 'trig-src', text: t.cardName }),
@@ -410,6 +413,7 @@ function openTriggerBatch(batch) {
     else if (e.sig && e.sig !== legalSig(specs, t.cardId)) { t._ayRefresh = e; log(`Always yield: ${t.cardName} has a different set of possible targets than when you set it, so you choose again`); }   // a new (or missing) possible target: ask again
     else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
   }
+  if (remaining.length === 1) { put(remaining[0]); return; }   // one ability: straight onto the stack (asking only for its modes / targets)
   if (remaining.length) draw();
 }
 const NUMW = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };

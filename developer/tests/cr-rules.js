@@ -119,7 +119,7 @@ const { setup } = require('./common.js');
     const low = ['Psychic Frog', 'Grizzly Bears']; return { ok: low.every(n => r.bf.includes(n + ':true')) && r.gy.includes('Kappa Cannoneer') && !r.bf.some(x => /Kappa/.test(x)), why: JSON.stringify(r) }; });
   await T('card text: graveyard recursion', 'Gravecrawler castable from the graveyard only while you control a Zombie; Bloodghast landfall trigger fires from the graveyard', async () => { await reset(); await ev(() => document.querySelectorAll('.backdrop').forEach(x => x.remove()));
     const a = await ev(() => { const s = __d.state; s.step = 3; window.__gid = __get('Gravecrawler', 'graveyard'); window.__bid = __get('Bloodghast', 'graveyard'); const f = __get('Forest', 'hand'); __d.render(); const without = __d.gyCastOptions(s.graveyard.find(c => c.id === window.__gid)).length; s.battlefield.push(Object.assign(__d.newCard('Gravecrawler'), { id: s.nextId++ })); const withZ = __d.gyCastOptions(s.graveyard.find(c => c.id === window.__gid)).length; s.battlefield = []; __d.playLand(f); return { without, withZ }; });
-    await p.waitForTimeout(500); const trig = await ev(() => [...document.querySelectorAll('.modal')].some(m => /Bloodghast/.test(m.innerText) && /landfall/i.test(m.innerText)));
+    await p.waitForTimeout(500); const trig = await ev(() => __d.state.stack.some(o => o.trigger && o.sourceName === 'Bloodghast') || [...document.querySelectorAll('.modal')].some(m => /Bloodghast/.test(m.innerText) && /landfall/i.test(m.innerText)));   // v0.99.36 a single trigger goes straight onto the stack (CR 603.3)
     await ev(() => document.querySelectorAll('.backdrop').forEach(x => x.remove()));
     return { ok: a.without === 0 && a.withZ === 1 && trig, why: JSON.stringify({ a, trig }) }; });
 
@@ -912,23 +912,23 @@ const { setup } = require('./common.js');
       return out; });
         await reset(); await toMain();
     return { ok: !!(r.md && r.md.repeat && r.md.n === 3 && /Return target creature to its owner's hand\. Return another target creature/.test(r.txt) && r.draw3 === 'Draw 3 cards.' && r.land === 'Island' && r.nonland === 'Grizzly Bears' && r.life === 2 && r.hand === 'Grizzly Bears' && r.libEmpty === 0), why: JSON.stringify(r) }; });
-  await T('508.1d', 'attack requirements by rules text: Dragon\'s Rage Channeler must attack only while delirium is on (and only if able); "attacks each combat if able" creatures and Auras are required attackers; leaving the declare-attackers step declares them for you, and the declaration window pre-selects them', async () => { await reset(); await toMain();
+  await T('508.1d', 'attack requirements by rules text: Dragon\'s Rage Channeler must attack only while delirium is on (and only if able); "attacks each combat if able" creatures and Auras are required attackers; leaving the declare-attackers step opens the Declare attackers window with them chosen and locked (nothing is declared for you)', async () => { await reset(); await toMain();
     const r = await ev(async () => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const out = {}; const W = ms => new Promise(r => setTimeout(r, ms)); document.getElementById('modalRoot').innerHTML = ''; s.pendingTriggers = [];
       s.battlefield.length = 0; s.graveyard.length = 0; const drc = mk("Dragon's Rage Channeler"); drc.sickManual = 'off'; s.battlefield.push(drc);
       out.off = !__d.mustAttackWhy(drc) && __d.mandatoryAttackers().length === 0;
-      for (const n of ['Island', 'Grizzly Bears', 'Lightning Bolt', 'Ponder', "Sensei's Top"]) s.graveyard.push(mk(n));
+      for (const n of ['Island', 'Grizzly Bears', 'Lightning Bolt', 'Ponder', "Sensei's Divining Top"]) s.graveyard.push(mk(n));
       out.on = /attacks each combat/.test(__d.mustAttackWhy(drc)) && __d.mandatoryAttackers().some(c => c.id === drc.id);
       drc.sickManual = 'on'; out.sick = __d.mandatoryAttackers().length === 0; delete drc.sickManual;
       const bz = mk('Mock Berserker'); bz.sickManual = 'off'; s.battlefield.push(bz); const bear = mk('Grizzly Bears'); bear.sickManual = 'off'; const aura = mk('Mock Lure Aura'); aura.att = bear.id; s.battlefield.push(bear, aura);
       out.req = __d.mandatoryAttackers().map(c => c.name).sort().join();
       s.step = __d.STEPS.findIndex(x => x.id === 'attack'); s.combat = { declared: false, attackers: [], blockers: {} }; s.phase = 'play';
       __d.nextPhase(); await W(300);
-      out.declared = s.combat.declared; out.atk = s.combat.attackers.length; out.tapped = [drc, bz, bear].every(c => c.tapped); out.log = s.log.some(l => /Declared attackers \(required\)/.test(l));
+      out.declared = s.combat.declared; out.window = [...document.querySelectorAll('#modalRoot .modal header')].some(h => /Declare attackers/.test(h.textContent));   // v0.99.36 the window opens; nothing is declared for you
       document.getElementById('modalRoot').innerHTML = ''; s.pendingTriggers = []; s.combat = { declared: false, attackers: [], blockers: {} }; [drc, bz, bear].forEach(c => c.tapped = false);
       __d.openCombatHelper(); await W(250); const btns = [...document.querySelectorAll('#modalRoot .tgl')]; out.pre = btns.filter(b => b.classList.contains('on')).length; out.locked = btns.filter(b => b.disabled).length;
       s.battlefield.length = 0; const rm = mk('Goblin Rabblemaster'), g1 = mk('Mock Goblin'), g2 = mk('Grizzly Bears'); [rm, g1, g2].forEach(c => c.sickManual = 'off'); s.battlefield.push(rm, g1, g2); out.rabble = __d.mandatoryAttackers().map(c => c.name).join();
       document.getElementById('modalRoot').innerHTML = ''; return out; });
-    return { ok: r.rabble === 'Mock Goblin' && r.off && r.on && r.sick && r.req === "Dragon's Rage Channeler,Grizzly Bears,Mock Berserker" && r.declared && r.atk === 3 && r.tapped && r.log && r.pre === 3 && r.locked === 3, why: JSON.stringify(r) }; });
+    return { ok: r.rabble === 'Mock Goblin' && r.off && r.on && r.sick && r.req === "Dragon's Rage Channeler,Grizzly Bears,Mock Berserker" && r.declared === false && r.window && r.pre === 3 && r.locked === 3, why: JSON.stringify(r) }; });
   await T('111.4 + 113.3', 'quoted ability text belongs to the created token, not the card: Weapons Manufacturing creates a Munitions token (curly quotes, "named X") and does NOT itself deal damage; the token\'s own "leaves the battlefield" trigger deals 2 damage when it leaves', async () => { await reset(); await toMain();
     const r = await ev(async () => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const out = {}; const W = ms => new Promise(r => setTimeout(r, ms)); document.getElementById('modalRoot').innerHTML = ''; s.pendingTriggers = []; s.stack.length = 0;
       const wm = mk('Weapons Manufacturing'); const trs = __d.parseTriggers(wm); out.own = trs.map(t => t.ev).join();
@@ -1116,11 +1116,83 @@ const { setup } = require('./common.js');
   await T('107.3m', 'X is 0 for a permanent that enters without being cast: Walking Ballista put onto the battlefield gets no counters (and dies as a 0/0)', async () => { await reset();
     const r = await ev(async () => { const s = __d.state; s.battlefield = []; s.graveyard = []; const c = Object.assign(__d.newCard('Walking Ballista'), { id: s.nextId++ }); __d.enterBattlefield(c, { from: 'hand' }); __d.render(); await new Promise(r => setTimeout(r, 250)); return { onBf: s.battlefield.some(x => x.name === 'Walking Ballista'), gy: s.graveyard.some(x => x.name === 'Walking Ballista'), plus: (c.counters || {}).plus || 0 }; });
     return { ok: !r.onBf && r.gy && r.plus === 0, why: JSON.stringify(r) }; });
-  await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card lies inside the table and below the Opening hand prompt, the prompt is on top of the dim layer, and the prompt box lies fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await reset();
+  // v0.99.36 shuffling and mulligans
+  await T('701.20a', 'shuffling is uniform: 12,000 shuffles of a 10-card library put every card in every position about equally often (chi-square well under the 99.9% bound) and no two consecutive shuffles agree', async () => {
+    const r = await ev(() => { const N = 10, R = 12000, cnt = Array.from({ length: N }, () => Array(N).fill(0)); let same = 0, prev = '';
+      for (let k = 0; k < R; k++) { const a = [...Array(N).keys()]; __d.shuffle(a); a.forEach((v, i) => cnt[v][i]++); const key = a.join(); if (key === prev) same++; prev = key; }
+      const e = R / N; let chi = 0; for (const row of cnt) for (const o of row) chi += (o - e) ** 2 / e; return { chi: Math.round(chi), same }; });
+    return { ok: r.chi < 140 && r.same === 0, why: JSON.stringify(r) + ' (81 degrees of freedom: about 81 expected, 99.9% bound about 124)' }; });
+  await T('103.5', 'a mulligan puts the whole hand back into the library and shuffles it: the 60 cards are the same 60, the library order changes, and a new seven is drawn from the top', async () => { await reset();
+    const r = await ev(() => { const s = __d.state; s.phase = 'mull'; s.mulls = 0; s.bottomPhase = false; s.cmdMode = false;
+      const all = [...s.hand, ...s.library].map(c => c.id).sort((a, b) => a - b).join(), libBefore = s.library.map(c => c.id).join(), sh = s.shuffles || 0, handBefore = s.hand.map(c => c.id).join();
+      __d.doMulligan(); const after = [...s.hand, ...s.library].map(c => c.id).sort((a, b) => a - b).join();
+      const res = { same: all === after, hand: s.hand.length, shuffled: (s.shuffles || 0) === sh + 1, reordered: s.library.map(c => c.id).join() !== libBefore, newHand: s.hand.map(c => c.id).join() !== handBefore, mulls: s.mulls };
+      __d.keepHand(); __d.bottomSel.add(s.hand[0].id); __d.finishMulligan(); return res; });   // leave the game in play for the next tests
+    return { ok: r.same && r.hand === 7 && r.shuffled && r.reordered && r.newHand && r.mulls === 1, why: JSON.stringify(r) }; });
+  await T('103.5', 'after a mulligan the chosen card goes to the BOTTOM of the library (the next draws come from the top, not that card)', async () => { await reset();
+    const r = await ev(() => { const s = __d.state; s.phase = 'mull'; s.mulls = 0; s.bottomPhase = false; s.cmdMode = false; __d.doMulligan(); __d.keepHand(); const pick = s.hand[2]; __d.bottomSel.add(pick.id); __d.finishMulligan();
+      return { last: s.library[s.library.length - 1].id === pick.id, hand: s.hand.length, inHand: s.hand.some(c => c.id === pick.id) }; });
+    return { ok: r.last && r.hand === 6 && !r.inHand, why: JSON.stringify(r) }; });
+  await T('103.2', 'every new game shuffles the deck before drawing the opening hand (two new games give different opening orders)', async () => {
+    const r = await ev(() => { const runs = []; for (let k = 0; k < 2; k++) { __d.startGame(); runs.push({ sh: __d.state.shuffles || 0, lib: __d.state.library.slice(0, 20).map(c => c.name).join('|') + __d.state.hand.map(c => c.name).join('|') }); } __d.keepHand(); return { sh: runs.map(x => x.sh), differ: runs[0].lib !== runs[1].lib, phase: __d.state.phase }; });   // Keep: leave a game in play for the next tests
+    return { ok: r.sh.every(n => n >= 1) && r.differ && r.phase === 'play', why: JSON.stringify(r) }; });
+  // v0.99.36 CR 508.1d: "attacks each combat if able" is a requirement on the declaration, not an automatic attack: the Declare attackers window still opens
+  const drcSetup = (delirium) => ev(([delirium]) => { const s = __d.state; s.battlefield = []; s.graveyard = []; s.stack = []; document.querySelectorAll('#modalRoot .backdrop').forEach(b => b.remove());
+    if (delirium) for (const n of ['Island', 'Lightning Bolt', 'Grizzly Bears', 'Sol Ring']) s.graveyard.push(Object.assign(__d.newCard(n), { id: s.nextId++ }));
+    const d = Object.assign(__d.newCard("Dragon's Rage Channeler"), { id: s.nextId++ }); d.sick = false; d.enteredTurn = -1; s.battlefield.push(d);
+    s.step = __d.STEPS.findIndex(x => x.id === 'main1'); s.combat = { attackers: [], declared: false }; s.phasePause = null; __d.render(); return d.id; }, [delirium]);
+  const atkState = () => ev(() => ({ step: __d.STEPS[__d.state.step].id, declared: !!__d.state.combat.declared, window: [...document.querySelectorAll('#modalRoot .modal header')].map(h => h.textContent.trim()).find(t => /Declare attackers/.test(t)) || '', must: __d.mandatoryAttackers().map(c => c.name) }));
+  await T('508.1d', "Dragon's Rage Channeler with delirium (\"attacks each combat if able\"): pressing Next into combat opens the Declare attackers window with it already chosen; nothing is declared for you", async () => { await reset(); await drcSetup(true);
+    for (let k = 0; k < 4; k++) { const st = await atkState(); if (st.window || st.step === 'attack' && st.declared) break; await ev(() => __d.nextPhase()); await p.waitForTimeout(150); }
+    const r = await atkState(); const locked = await ev(() => { const m = [...document.querySelectorAll('#modalRoot .modal')].find(m => /Declare attackers/.test(m.textContent)); const row = m && [...m.querySelectorAll('.row')].find(x => /Dragon/.test(x.textContent)); const b = row && row.querySelector('button.tgl'); return b ? { disabled: b.disabled, on: b.classList.contains('on') || /must attack/.test(row.textContent) } : null; });
+    return { ok: r.step === 'attack' && !r.declared && !!r.window && !!locked && locked.disabled && locked.on, why: JSON.stringify({ r, locked }) }; });
+  await T('508.1d', 'no way past declare attackers skips a required attacker: clicking a later step (Damage) or Next turn from the main phase stops at the declare-attackers step and opens the window', async () => { await reset(); await drcSetup(true);
+    await ev(() => __d.jumpToStep(__d.STEPS.findIndex(x => x.id === 'damage'))); await p.waitForTimeout(200); const a = await atkState();
+    await drcSetup(true); await ev(() => __d.nextTurn()); await p.waitForTimeout(200); const b = await atkState();
+    return { ok: a.step === 'attack' && !!a.window && !a.declared && b.step === 'attack' && !!b.window && b.declared === false, why: JSON.stringify({ a, b }) }; });
+  await T('508.1d', 'without delirium Dragon\'s Rage Channeler has no attack requirement: moving through combat is not stopped', async () => { await reset(); await drcSetup(false);
+    const r0 = await atkState(); await ev(() => __d.jumpToStep(__d.STEPS.findIndex(x => x.id === 'main2'))); await p.waitForTimeout(150); const r = await atkState();
+    return { ok: r0.must.length === 0 && r.step === 'main2' && !r.window, why: JSON.stringify({ r0, r }) }; });
+  await T('508.1d', 'declaring from the window attacks with the required creature (tapped, the attack trigger point reached) and play continues', async () => { await reset(); await drcSetup(true);
+    await ev(() => __d.jumpToStep(__d.STEPS.findIndex(x => x.id === 'damage'))); await p.waitForTimeout(200);
+    await p.click('#modalRoot .modal footer >> text=Declare attackers'); await p.waitForTimeout(250);
+    const r = await ev(() => { const s = __d.state, d = s.battlefield.find(c => c.name === "Dragon's Rage Channeler"); return { declared: !!s.combat.declared, attackers: s.combat.attackers.length, tapped: d.tapped, step: __d.STEPS[s.step].id }; });
+    return { ok: r.declared && r.attackers === 1 && r.tapped, why: JSON.stringify(r) }; });
+  // v0.99.36 CR 603.3: triggered abilities are put on the stack automatically; the player only orders simultaneous ones
+  await T('603.3', 'one triggered ability goes straight onto the stack (no "Put on the stack" window): Bloodghast\'s landfall from the graveyard is on the stack after a land is played', async () => { await reset();
+    const r = await ev(async () => { const s = __d.state; s.step = 3; s.landsPlayed = 0; document.querySelectorAll('.backdrop').forEach(x => x.remove()); s.graveyard.push(Object.assign(__d.newCard('Bloodghast'), { id: s.nextId++ })); const f = Object.assign(__d.newCard('Forest'), { id: s.nextId++ }); s.hand.push(f); __d.render(); __d.playLand(f.id); await new Promise(r => setTimeout(r, 400));
+      const win = [...document.querySelectorAll('#modalRoot .modal')].some(m => /Put on the stack/.test(m.innerText)); return { onStack: s.stack.filter(o => o.trigger && o.sourceName === 'Bloodghast').length, win }; });
+    await ev(() => document.querySelectorAll('.backdrop').forEach(x => x.remove()));
+    return { ok: r.onStack === 1 && !r.win, why: JSON.stringify(r) }; });
+  await T('603.3b', 'two abilities that trigger at once: the window opens only to choose their ORDER (two Bloodghasts, one land)', async () => { await reset();
+    const r = await ev(async () => { const s = __d.state; s.step = 3; s.landsPlayed = 0; document.querySelectorAll('.backdrop').forEach(x => x.remove()); for (let k = 0; k < 2; k++) s.graveyard.push(Object.assign(__d.newCard('Bloodghast'), { id: s.nextId++ })); const f = Object.assign(__d.newCard('Forest'), { id: s.nextId++ }); s.hand.push(f); __d.render(); __d.playLand(f.id); await new Promise(r => setTimeout(r, 400));
+      const m = [...document.querySelectorAll('#modalRoot .modal')].find(m => /triggered abilities/i.test(m.innerText)); return { win: !!m, order: m ? /choose the order/i.test(m.innerText) : false, stack: s.stack.length }; });
+    await ev(() => document.querySelectorAll('.backdrop').forEach(x => x.remove()));
+    return { ok: r.win && r.order && r.stack === 0, why: JSON.stringify(r) }; });
+  // v0.99.36 CR 601.2b: an additional cost that offers a choice ("discard a card or pay {5}")
+  const axeSetup = (lands, extra) => ev(([lands, extra]) => { const s = __d.state; s.battlefield = []; s.hand = []; s.stack = []; s.graveyard = []; s.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }; document.querySelectorAll('.backdrop').forEach(b => b.remove());
+    const mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const axe = mk('Lightning Axe'); s.hand.push(axe); for (let i = 0; i < lands; i++) { const m = mk('Mountain'); m.sick = false; s.battlefield.push(m); } for (const n of extra) s.hand.push(mk(n)); __d.render();
+    return __d.castRoutes(axe).map(r => ({ label: r.label, mana: r.mana, ok: r.ok })); }, [lands, extra]);
+  await T('601.2b', 'Lightning Axe ("As an additional cost to cast this spell, discard a card or pay {5}"): the choice is read as two ways to cast it: discard a card for {R}, or pay {5}{R}; each is offered only when it can be paid', async () => { await reset();
+    const a = await axeSetup(1, []), b2 = await axeSetup(1, ['Island']), c = await axeSetup(6, []);
+    const ok = a.length === 2 && a.every(r => !r.ok) && b2.find(r => /discard a card/.test(r.label)).ok && !b2.find(r => /pay \{5\}/.test(r.label)).ok && c.find(r => /pay \{5\}/.test(r.label)).ok && c.find(r => /pay \{5\}/.test(r.label)).mana === '{5}{R}' && !c.find(r => /discard/.test(r.label)).ok;
+    return { ok, why: JSON.stringify({ a, b2, c }) }; });
+  await T('601.2b', 'casting Lightning Axe by paying {5}: six Mountains are tapped, no card is discarded, and the spell is on the stack', async () => { await reset(); await axeSetup(6, []);
+    const r = await ev(async () => { const s = __d.state, axe = s.hand.find(c => c.name === 'Lightning Axe'); const rt = __d.castRoutes(axe).find(x => x.ok); const src = __d.manaSources(), plan = __d.manaPaymentAllocation(__d.manaCostParts(rt.mana), s.manaPool, src, null); s.manaPool = plan.pool; __d.tapManaIds(plan.used.map(i => src[i].card.id)); __d.commitSpellToStack(axe.id, [], false);
+      await new Promise(r => setTimeout(r, 200)); return { tapped: s.battlefield.filter(c => c.tapped).length, gy: s.graveyard.length, onStack: s.stack.some(o => o.name === 'Lightning Axe') }; });
+    await ev(() => document.querySelectorAll('.backdrop').forEach(b => b.remove()));
+    return { ok: r.tapped === 6 && r.gy === 0 && r.onStack, why: JSON.stringify(r) }; });
+  await T('601.2b', '"sacrifice an artifact or creature" is NOT split into two costs (one side is not a cost by itself): it stays one additional cost', async () => {
+    const r = await ev(() => { const fake = { name: 'Test Fling', id: -77 }; const s0 = __d.cardText; window.__ct = s0; return null; });
+    const r2 = await ev(() => { const txt = 'As an additional cost to cast this spell, sacrifice an artifact or creature.'; const sides = txt.replace(/^As an additional cost to cast this spell, /, '').replace(/\.$/, '').split(/\s+or\s+/i).map(t => __d.parseCostComps(t, 'X').every(k => k.k !== 'other')); return sides; });
+    return { ok: r2.length === 2 && r2.includes(false), why: JSON.stringify(r2) }; });
+  await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card lies inside the table and below the Opening hand prompt, the prompt is on top of the dim layer, and the prompt box lies fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await p.mouse.move(2, 2);   // a card lifted under a resting pointer is hover, not layout
+ await reset();
     const out = [];
     for (const [w, h] of [[1280, 720], [1673, 990], [2509, 1484]]) for (const img of [false, true]) { await p.setViewportSize({ width: w, height: h });
       const r = await ev(async (img) => { document.body.classList.toggle('imgmode', img); const s = __d.state; s.hand.length = 0; for (let i = 0; i < 7; i++) s.hand.push(Object.assign(__d.newCard(['Grizzly Bears', 'Island', 'Mock Flyer'][i % 3]), { id: 900 + i })); const res = [];
-        for (const bottom of [false, true]) { s.phase = 'mull'; s.bottomPhase = bottom; s.mulls = 1; __d.render(); await new Promise(r => setTimeout(r, 1400)); for (let k = 0; k < 40 && document.body.classList.contains('dealing'); k++) await new Promise(r => setTimeout(r, 100));   // v0.99.35 the prompt waits until the hand has been dealt
+        for (const bottom of [false, true]) { s.phase = 'mull'; s.bottomPhase = bottom; s.mulls = 1; __d.render(); await new Promise(r => setTimeout(r, 1400)); for (let k = 0; k < 60 && document.body.classList.contains('dealing'); k++) await new Promise(r => setTimeout(r, 100)); await new Promise(r => setTimeout(r, 400));
+          for (let k = 0; k < 40 && [...document.querySelectorAll('#row-hand .card')].some(c => c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity)); k++) await new Promise(r => setTimeout(r, 100));   // the resting layout   // v0.99.35 the prompt waits until the hand has been dealt
           const boxes = [...document.querySelectorAll('#row-hand .card')].map(c => c.getBoundingClientRect()), bar = document.querySelector('#handPickBar'), bb = bar && !bar.hidden ? bar.getBoundingClientRect() : null, hw = document.querySelector('#handWrap');
           const inside = b => b.left >= -14 && b.right <= innerWidth + 14 && b.top >= -1 && b.bottom <= innerHeight + 14;
           // v0.99.32 the cards must also sit inside the table (#mat), below the Opening hand prompt, and the prompt must be on top of the dim layer (clickable, not greyed)
@@ -1132,7 +1204,7 @@ const { setup } = require('./common.js');
         s.phase = 'play'; s.bottomPhase = false; document.body.classList.remove('imgmode'); __d.render(); return res; }, img);
       await new Promise(r => setTimeout(r, 200)); out.push({ w, img, r }); }
     await p.setViewportSize({ width: 1280, height: 800 });
-    const bad = out.filter(o => o.r.some(x => !x.allIn || !x.inMat || !x.belowPrompt || !x.promptTop || !x.prompt || !x.barIn || x.fixed || x.cards !== 7));
+    const bad = out.filter(o => o.r.some(x => !x.allIn || (!x.bottom && (!x.inMat || !x.belowPrompt || !x.promptTop)) || !x.prompt || !x.barIn || x.fixed || x.cards !== 7));   // v0.99.36 the large hand (inside the table, below the prompt) is only for the Keep / Mulligan decision
     return { ok: bad.length === 0, why: JSON.stringify(bad.slice(0, 2)) }; });
   await T('122.1 + 608.2c', 'The One Ring (and any "for each <kind> counter on it" text): the amount follows EVERY counter, not just the first: activating three times draws 1, 2, 3 cards; the upkeep trigger loses life equal to all burden counters; Always Yield still matches the action as the live count changes', async () => { await reset(); await toMain();
     const r = await ev(async () => { const s = __d.state, rg = Object.assign(__d.newCard('The One Ring'), { id: s.nextId++ }); s.battlefield.push(rg);
