@@ -133,3 +133,30 @@ function declareMandatoryAttackers() {   // the player leaves the declare-attack
   toast('Required attackers', `${req.map(c => c.name).join(', ')} must attack: the rules require it whenever it is able to (CR 508.1d). It was declared for you.`);
   fireTrigger('attack', { cards: req }); render(); flushTriggers(); return true;
 }
+
+// ---- Protection (CR 702.16b): a permanent with protection from a quality can't be the target of spells or abilities from sources with that quality.
+// Read from printed "Protection from red" and from active "has protection from all colors as long as ..." statics. Only your own spells and abilities choose targets in a goldfish game.
+function protQuals(c) {
+  const out = new Set(); if (!c) return out;
+  for (const line of String(cardText(c)).replace(/\([^)]*\)/g, '').split('\n')) {
+    if (/\b(?:as long as|if|until|when|whenever|gets?|has|have|gains?)\b/i.test(line)) continue;
+    for (const m of line.matchAll(/\bprotection from ([a-z ,]+?)(?=[.;]|,\s*(?:protection|[A-Z])|$)/gi)) for (const q of m[1].split(/\s*,\s*|\s+and\s+/)) if (q.trim()) out.add(q.trim().toLowerCase());
+  }
+  try { for (const e of parseStaticCard(c)) if (e.kind === 'cs' && e.prot && e.prot.length && csActive(e)) for (const q of e.prot) out.add(q); } catch (er) { /* ignore */ }
+  return out;
+}
+function protBlocks(quals, src) {
+  if (!quals.size || !src) return false;
+  let cols = new Set(); try { cols = cardColorSet(src); } catch (e) { /* ignore */ }
+  const tl = String(permTypeLine(src) || (cardInfo(src.name) || {}).t || '').toLowerCase(), cn = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+  for (const q of quals) {
+    if (q === 'everything') return true;
+    if (q === 'all colors' || q === 'each color') { if (cols.size) return true; continue; }
+    if (q === 'monocolored') { if (cols.size === 1) return true; continue; }
+    if (q === 'multicolored') { if (cols.size > 1) return true; continue; }
+    if (q === 'colorless') { if (!cols.size) return true; continue; }
+    if (cn[q] && cols.has(cn[q])) return true;
+    const t = q.replace(/s$/, ''); if (t && new RegExp('\\b' + t + '\\b').test(tl)) return true;
+  }
+  return false;
+}

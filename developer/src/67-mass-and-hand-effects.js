@@ -129,7 +129,7 @@ function handRefillOptions(tx, obj) {
 }
 // ---- the card itself moves: "Return ~ to its owner's hand." "Put this artifact on top of its owner's library." (Rancor, Sensei's Divining Top)
 function selfMoveOptions(tx, obj) {
-  if (!state || !obj || !obj.sourceId) return null; const sents = MASS_SENTS(tx); const src = obj.sourceName || 'Ability'; const self = '(?:~|this [a-z]+|it|that card|' + String(src).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')';
+  if (!state || !obj || !obj.sourceId) return null; const sents = MASS_SENTS(tx); if (!sents.length) return null; const src = obj.sourceName || 'Ability'; const self = '(?:~|this [a-z]+|it|that card|' + String(src).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')';
   const move = (to) => () => { const f = findCard(obj.sourceId); if (!f) { log(`${src} is not in a zone it can move from`); return; } snap(); if (f.card.token) { moveCard(f.card.id, 'graveyard'); return; } if (to === 'hand') moveCard(f.card.id, 'hand'); else { moveCard(f.card.id, 'library'); } log(`${src}: ${to === 'hand' ? 'returned to its owner\'s hand' : 'put on top of its owner\'s library'}`); render(); };
   let m;
   if ((m = new RegExp('^return ' + self + ' to its owner\'s hand$', 'i').exec(sents[0].replace(/\.$/, '')))) return [{ full: sents.length === 1, label: `Return ${src} to its owner's hand`, fn: move('hand') }, ...massRest(sents, 1, obj)];
@@ -182,6 +182,7 @@ function exiledReturnOptions(tx, obj) {
 // The sentence before is the one that gets replaced. When the condition holds the replacement is read in its place, otherwise the sentence is dropped. A condition the app cannot
 // evaluate leaves the text alone, so it is reported as not understood instead of being skipped. recognizeOnly (for the reading panel): drop it if the condition is understood, change nothing else.
 function condSyntaxOk(c) {
+  if (IND_COND_KEY(String(c).toLowerCase().replace(/\.$/, ''))) return true;
   return /^you control (?:\w+) or more .+$/i.test(c) || /^(?:there are )?(?:\w+) or more .+ (?:are )?in your graveyard$/i.test(c) || /^you have (?:\w+) or (?:more|fewer) cards in (?:your )?hand$/i.test(c) || /^(?:your life total is|you have) (?:\w+) or (?:less|more|greater|fewer)(?: life)?$/i.test(c) || /^you control (?:an?|no) .+$/i.test(c);
 }
 function applyCondInstead(tx, recognizeOnly) {
@@ -194,7 +195,7 @@ function applyCondInstead(tx, recognizeOnly) {
     else if ((m = /^If (.+?), (.+?) instead\.?$/i.exec(s))) { cond = m[1]; eff = m[2]; }
     else continue;
     const known = recognizeOnly ? (condSyntaxOk(cond) || (state && evalCond(cond) !== null)) : (state ? evalCond(cond) : null);
-    if (known === null || known === undefined) continue;
+    if (known === null || known === undefined || i < 2) continue;   // nothing before it to replace: leave the sentence for the normal reader
     if (recognizeOnly) { if (known) drop.add(i); continue; }
     drop.add(i);
     if (known && i >= 2 && !drop.has(i - 2)) {

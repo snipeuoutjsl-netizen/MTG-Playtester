@@ -269,8 +269,15 @@ function resolve(name) {
   return c || null;
 }
 // v0.95.0 What a permanent says, as a card record: a token's own rules text, or the card's. Used by everything that reads abilities.
-function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: ov.grant.concat(c.gained || []).join('\n'), ovr: true }); } return base; }
-function cardText(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
+// CR 207.2c: an ability word is only a label (italic text) with no rules meaning. "Metalcraft — ~ gets +2/+2 as long as you control three or more artifacts" is just that sentence,
+// so the engine reads every line without the label and the condition inside the sentence does the work. (The card still shows its printed text.)
+const AW_RE = /^(?:Addendum|Adamant|Alliance|Battalion|Bloodrush|Channel|Chroma|Cohort|Constellation|Converge|Corrupted|Coven|Delirium|Descend \d+|Domain|Eerie|Enrage|Fateful hour|Ferocious|Formidable|Grandeur|Hellbent|Heroic|Inspired|Join forces|Kinship|Landfall|Lieutenant|Magecraft|Metalcraft|Morbid|Pack tactics|Paradox|Parley|Radiance|Raid|Rally|Revolt|Secret council|Spell mastery|Strive|Survival|Sweep|Tempting offer|Threshold|Undergrowth|Valiant|Void|Will of the council)\s*\u2014\s*/gim;
+const stripAW = tx => String(tx == null ? '' : tx).replace(AW_RE, '');
+const AW_CACHE = new WeakMap();
+function awInfo(base) { if (!base || !base.tx || !AW_RE.test(base.tx)) { AW_RE.lastIndex = 0; return base; } AW_RE.lastIndex = 0; let r = AW_CACHE.get(base); if (!r || r.__src !== base.tx) { r = Object.assign({}, base, { tx: stripAW(base.tx), __src: base.tx }); AW_CACHE.set(base, r); } return r; }
+function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
+function cardText(c) { return stripAW(cardTextRaw(c)); }
+function cardTextRaw(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
 function isTransformCard(c) { const p = faceParent(c); return !!(p && p.fc && p.fc.length > 1 && !p.mdfc && !p.kind); }   // a transform card (not a modal double-faced one)
@@ -2746,7 +2753,7 @@ function suspendCastFree(id, done, label) {
       if (done) done();
       if (!state.pendingTriggers.length) openStack();
     };
-    if (specs.length) chooseTargets(c.name, specs, put, { srcId: null, onCancel: () => fail('no target was chosen') }); else put(null);
+    if (specs.length) chooseTargets(c.name, specs, put, { srcId: null, srcCard: c, onCancel: () => fail('no target was chosen') }); else put(null);
   };
   if (md) openModeChoice(c.name, md, go, '0'); else go(undefined);
 }
@@ -3167,6 +3174,7 @@ function permMatchesSpec(c, sp, ctx) {
     if (md === 'other' && ctx && ctx.srcId === c.id) return false;
   }
   if (hasKw(c, 'shroud')) return false;
+  if (ctx && (ctx.srcCard || ctx.srcId != null) && ctx.srcId !== c.id) { const sc = ctx.srcCard || (findCard(ctx.srcId) || {}).card; if (sc && sc.id !== c.id && protBlocks(protQuals(c), sc)) return false; }   // CR 702.16b protection: it can't be targeted by sources with the quality
   return true;
 }
 function legalTargets(sp, ctx) {
@@ -6400,8 +6408,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.16';
+const APP_VERSION = '0.99.17';
 const CHANGELOG = [
+  { v: '0.99.17', title: 'Metalcraft cards now work, ability words are just labels, protection', notes: ['FIXED: Metalcraft cards were shown as "count it yourself". An ability word (Metalcraft, Threshold, Delirium, Revolt, Morbid, Landfall and the rest) is only a label with no rules meaning (CR 207.2c), so the app now reads each line without it and the condition inside the sentence does the work: "Metalcraft \u2014 ~ gets +2/+2 as long as you control three or more artifacts" is a live +2/+2, and "Metalcraft \u2014 deals 4 damage instead if you control three or more artifacts" replaces the plain damage while Metalcraft is on.', 'CHANGED: the top-bar game-state checks (Metalcraft, Threshold, Delirium, Revolt, Morbid) are now the one source of truth for those conditions, so a card and its icon can never disagree.', 'NEW: protection (CR 702.16b). A permanent with protection from a colour (printed, or granted such as Etched Champion\'s "protection from all colors as long as you control three or more artifacts") cannot be chosen as a target by your own spells and abilities of that colour.', 'FIXED: a conditional "instead" sentence with nothing before it could stop a card from being read at all.']},
   { v: '0.99.16', title: 'Metalcraft and other conditional "instead" lines', notes: ['FIXED: a line such as "Metalcraft \u2014 Galvanic Blast deals 4 damage instead if you control three or more artifacts" was not understood. The app now reads any "X instead if [condition]" or "If [condition], X instead" sentence (CR 614.1a), for Metalcraft, Threshold, Delirium and the other ability words (CR 207.2c): when the condition is true it replaces the sentence before it, keeping that sentence\'s targets, and when false it is left out. A condition the app cannot check is still reported as not understood.', 'NEW: "seven or more cards are in your graveyard" (the printed Threshold wording) is understood as a condition.']},
   { v: '0.99.15', title: 'Tapped land pile lies sideways', notes: ['CHANGED: the Tapped pile now shows its lands turned sideways, overlapping left to right so each land\'s name stays readable along its edge, instead of dimmed upright cards. Hover a land to bring it to the front.']},
   { v: '0.99.14', title: 'Incubate, and a clearer attack window', notes: ['NEW: Incubate N (CR 701.53) creates an Incubator token with N +1/+1 counters. Its "{2}: Transform this artifact" turns it into a 0/0 Phyrexian artifact creature that keeps its counters (CR 701.28, 111.10).', 'CHANGED: in the Declare attackers window, "Attack with all" and "Clear" now sit below the list of creatures, and the combat windows are slightly see-through so you can still read the board.']},
@@ -9209,9 +9218,11 @@ function compileCardOne(c) {
   for (const raw of String(info.tx || '').replace(/,\n/g, ', ').replace(/\n(?=\s*[\u2022\u2023])/g, ' ').split('\n')) {
     const text = raw.trim(); if (!text) continue;
     if (text === '//') { faceIx++; isSpell = /\b(Instant|Sorcery)\b/.test(faceTypes[faceIx] || ''); continue; }
-    const stripped = text.replace(/\([^)]*\)/g, '').trim();
+    const stripped = stripAW(text.replace(/\([^)]*\)/g, '').trim());   // CR 207.2c: the label is not read
     if (!stripped) { push(text, 'reminder', 'info', 'Reminder text: it only explains the rules.'); continue; }
     const norml = stripped.replace(nameRe, '~').replace(/\u2019/g, "'");
+    { const im = /^(.*\S) instead if (.+?)\.?$/i.exec(stripped) || /^If (.+?), (.+?) instead\.?$/i.exec(stripped);   // CR 614.1a: a conditional "instead" replaces the sentence before it while its condition holds
+      if (im && lines.length) { const cnd = /^If /i.test(stripped) ? im[1] : im[2]; if (condSyntaxOk(cnd) || (state && evalCond(cnd) !== null)) { push(text, 'spell', 'ok', `Conditional "instead" (rule 614.1a): while "${cnd}" is true, this replaces the sentence before it; otherwise it is left out. The app checks the condition when the effect is read.`); continue; } } }
     let m;
     // loyalty ability
     if (/^[+−–-]?(?:\d+|X):|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
@@ -11515,12 +11526,22 @@ function csCount(phrase, g) {
   const f = typeof countForEach === 'function' ? countForEach(t) : null; return f;
 }
 function csCmp(n, op, k) { return /less|fewer/.test(op) ? n <= k : n >= k; }
+// The conditions the top-bar game-state icons already track, by the words a card uses for them.
+function IND_COND_KEY(t) {
+  if (/^you control (?:three|3) or more artifacts$/.test(t)) return 'metalcraft';
+  if (/^(?:there are )?(?:seven|7) or more cards (?:are )?in your graveyard$|^you have (?:seven|7) or more cards in your graveyard$/.test(t)) return 'threshold';
+  if (/^(?:there are )?(?:four|4) or more card types among cards in your graveyard$/.test(t)) return 'delirium';
+  if (/^a permanent you controlled left the battlefield this turn$/.test(t)) return 'revolt';
+  if (/^a creature died this turn$/.test(t)) return 'morbid';
+  return null;
+}
 function evalCond(text, g) {
   if (!state) return null;
   let t = String(text || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim().replace(/\.$/, '').toLowerCase(), m;
   if (!t) return null;
   { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
+  { const ik = IND_COND_KEY(t); if (ik) { const g = gameStates().find(x => x.key === ik); return g ? !!g.on : null; } }   // the top-bar game-state checks are the one source of truth (Metalcraft, Threshold, Delirium, Revolt, Morbid ...)
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
   if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
   if ((m = t.match(/^(?:there are )?(\w+) or more (.+?) (?:are )?in your graveyard$/)) && !/^there are/.test(t)) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }   // "seven or more cards are in your graveyard" (threshold)
@@ -11552,11 +11573,12 @@ function evalCond(text, g) {
 }
 // Parse the effect half: "~ gets +2/+2 and has flying" -> { p, t, kws, cant, other }
 function csEffect(eff) {
-  const out = { p: 0, t: 0, kws: [], cant: null, other: [] };
+  const out = { p: 0, t: 0, kws: [], cant: null, other: [], prot: [] };
   const body = eff.replace(/^(?:~|it|this \w+)\s+/i, '');
   for (const part of body.split(/,\s*(?:and\s+)?|\s+and\s+(?=gets?\b|has\b|have\b|can't\b)/i)) {
     const x = part.trim(); let q; if (!x) continue;
     if ((q = x.match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { out.p += +q[1]; out.t += +q[2]; }
+    else if ((q = x.match(/^(?:has|have) protection from (.+)$/i))) out.prot.push(q[1].toLowerCase());   // CR 702.16: protection from all colors / a colour / everything
     else if ((q = x.match(/^(?:has|have) (.+)$/i))) { for (const k of q[1].toLowerCase().split(/\s*(?:,|\band\b)\s*/)) { const w = k.trim(); if (GRANTABLE.includes(w)) out.kws.push(w); else if (w) out.other.push(w); } }
     else if (/^attacks each (?:combat|turn) if able$/i.test(x)) out.kws.push('mustattack');   // CR 508.1d requirement, e.g. Dragon's Rage Channeler's delirium
     else if ((q = x.match(/^can't (attack(?: or block)?|block)$/i))) out.cant = { attack: /attack/i.test(q[1]), block: /block/i.test(q[1]) };
@@ -11572,8 +11594,8 @@ function parseCondStatic(line, g) {
   else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for every (\w+) (.+)$/i))) { eff = m[1]; per = { every: CS_NUM(m[2]), thing: m[3] }; if (isNaN(per.every)) per = { every: 1, thing: m[2] + ' ' + m[3] }; }
   else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for each (.+)$/i))) { eff = m[1]; per = { every: 1, thing: m[2] }; }   // CR 613.4c: "gets +1/+1 for each other Rat you control"
   else return null;
-  const e = csEffect(eff); if (!(e.p || e.t || e.kws.length || e.cant)) return null;
-  return { line: L, kind: 'cs', g, cond, per, p: e.p, t: e.t, kws: e.kws, cant: e.cant, other: e.other };
+  const e = csEffect(eff); if (!(e.p || e.t || e.kws.length || e.cant || e.prot.length)) return null;
+  return { line: L, kind: 'cs', g, cond, per, p: e.p, t: e.t, kws: e.kws, cant: e.cant, other: e.other, prot: e.prot };
 }
 // Is it on right now? true / false / null (not understood). The numbers for a "for every N things" static come back as `mult`.
 function csState(e) {
@@ -11896,7 +11918,7 @@ function handRefillOptions(tx, obj) {
 }
 // ---- the card itself moves: "Return ~ to its owner's hand." "Put this artifact on top of its owner's library." (Rancor, Sensei's Divining Top)
 function selfMoveOptions(tx, obj) {
-  if (!state || !obj || !obj.sourceId) return null; const sents = MASS_SENTS(tx); const src = obj.sourceName || 'Ability'; const self = '(?:~|this [a-z]+|it|that card|' + String(src).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')';
+  if (!state || !obj || !obj.sourceId) return null; const sents = MASS_SENTS(tx); if (!sents.length) return null; const src = obj.sourceName || 'Ability'; const self = '(?:~|this [a-z]+|it|that card|' + String(src).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')';
   const move = (to) => () => { const f = findCard(obj.sourceId); if (!f) { log(`${src} is not in a zone it can move from`); return; } snap(); if (f.card.token) { moveCard(f.card.id, 'graveyard'); return; } if (to === 'hand') moveCard(f.card.id, 'hand'); else { moveCard(f.card.id, 'library'); } log(`${src}: ${to === 'hand' ? 'returned to its owner\'s hand' : 'put on top of its owner\'s library'}`); render(); };
   let m;
   if ((m = new RegExp('^return ' + self + ' to its owner\'s hand$', 'i').exec(sents[0].replace(/\.$/, '')))) return [{ full: sents.length === 1, label: `Return ${src} to its owner's hand`, fn: move('hand') }, ...massRest(sents, 1, obj)];
@@ -11949,6 +11971,7 @@ function exiledReturnOptions(tx, obj) {
 // The sentence before is the one that gets replaced. When the condition holds the replacement is read in its place, otherwise the sentence is dropped. A condition the app cannot
 // evaluate leaves the text alone, so it is reported as not understood instead of being skipped. recognizeOnly (for the reading panel): drop it if the condition is understood, change nothing else.
 function condSyntaxOk(c) {
+  if (IND_COND_KEY(String(c).toLowerCase().replace(/\.$/, ''))) return true;
   return /^you control (?:\w+) or more .+$/i.test(c) || /^(?:there are )?(?:\w+) or more .+ (?:are )?in your graveyard$/i.test(c) || /^you have (?:\w+) or (?:more|fewer) cards in (?:your )?hand$/i.test(c) || /^(?:your life total is|you have) (?:\w+) or (?:less|more|greater|fewer)(?: life)?$/i.test(c) || /^you control (?:an?|no) .+$/i.test(c);
 }
 function applyCondInstead(tx, recognizeOnly) {
@@ -11961,7 +11984,7 @@ function applyCondInstead(tx, recognizeOnly) {
     else if ((m = /^If (.+?), (.+?) instead\.?$/i.exec(s))) { cond = m[1]; eff = m[2]; }
     else continue;
     const known = recognizeOnly ? (condSyntaxOk(cond) || (state && evalCond(cond) !== null)) : (state ? evalCond(cond) : null);
-    if (known === null || known === undefined) continue;
+    if (known === null || known === undefined || i < 2) continue;   // nothing before it to replace: leave the sentence for the normal reader
     if (recognizeOnly) { if (known) drop.add(i); continue; }
     drop.add(i);
     if (known && i >= 2 && !drop.has(i - 2)) {
@@ -12224,6 +12247,33 @@ function declareMandatoryAttackers() {   // the player leaves the declare-attack
   log(`Declared attackers (required): ${req.map(c => c.name).join(', ')} — ${[...new Set(req.map(c => mustAttackWhy(c)))].join('; ')}`);
   toast('Required attackers', `${req.map(c => c.name).join(', ')} must attack: the rules require it whenever it is able to (CR 508.1d). It was declared for you.`);
   fireTrigger('attack', { cards: req }); render(); flushTriggers(); return true;
+}
+
+// ---- Protection (CR 702.16b): a permanent with protection from a quality can't be the target of spells or abilities from sources with that quality.
+// Read from printed "Protection from red" and from active "has protection from all colors as long as ..." statics. Only your own spells and abilities choose targets in a goldfish game.
+function protQuals(c) {
+  const out = new Set(); if (!c) return out;
+  for (const line of String(cardText(c)).replace(/\([^)]*\)/g, '').split('\n')) {
+    if (/\b(?:as long as|if|until|when|whenever|gets?|has|have|gains?)\b/i.test(line)) continue;
+    for (const m of line.matchAll(/\bprotection from ([a-z ,]+?)(?=[.;]|,\s*(?:protection|[A-Z])|$)/gi)) for (const q of m[1].split(/\s*,\s*|\s+and\s+/)) if (q.trim()) out.add(q.trim().toLowerCase());
+  }
+  try { for (const e of parseStaticCard(c)) if (e.kind === 'cs' && e.prot && e.prot.length && csActive(e)) for (const q of e.prot) out.add(q); } catch (er) { /* ignore */ }
+  return out;
+}
+function protBlocks(quals, src) {
+  if (!quals.size || !src) return false;
+  let cols = new Set(); try { cols = cardColorSet(src); } catch (e) { /* ignore */ }
+  const tl = String(permTypeLine(src) || (cardInfo(src.name) || {}).t || '').toLowerCase(), cn = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+  for (const q of quals) {
+    if (q === 'everything') return true;
+    if (q === 'all colors' || q === 'each color') { if (cols.size) return true; continue; }
+    if (q === 'monocolored') { if (cols.size === 1) return true; continue; }
+    if (q === 'multicolored') { if (cols.size > 1) return true; continue; }
+    if (q === 'colorless') { if (!cols.size) return true; continue; }
+    if (cn[q] && cols.has(cn[q])) return true;
+    const t = q.replace(/s$/, ''); if (t && new RegExp('\\b' + t + '\\b').test(tl)) return true;
+  }
+  return false;
 }
 // v0.99.9 Token sync (CR 111): the Oracle file does not carry every token, so the first start (and every card-data load) also pulls ALL official
 // token and emblem objects from Scryfall's search API and keeps them offline beside the cards. The engine then knows every token a deck might make.

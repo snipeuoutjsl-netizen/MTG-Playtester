@@ -188,8 +188,15 @@ function resolve(name) {
   return c || null;
 }
 // v0.95.0 What a permanent says, as a card record: a token's own rules text, or the card's. Used by everything that reads abilities.
-function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: ov.grant.concat(c.gained || []).join('\n'), ovr: true }); } return base; }
-function cardText(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
+// CR 207.2c: an ability word is only a label (italic text) with no rules meaning. "Metalcraft — ~ gets +2/+2 as long as you control three or more artifacts" is just that sentence,
+// so the engine reads every line without the label and the condition inside the sentence does the work. (The card still shows its printed text.)
+const AW_RE = /^(?:Addendum|Adamant|Alliance|Battalion|Bloodrush|Channel|Chroma|Cohort|Constellation|Converge|Corrupted|Coven|Delirium|Descend \d+|Domain|Eerie|Enrage|Fateful hour|Ferocious|Formidable|Grandeur|Hellbent|Heroic|Inspired|Join forces|Kinship|Landfall|Lieutenant|Magecraft|Metalcraft|Morbid|Pack tactics|Paradox|Parley|Radiance|Raid|Rally|Revolt|Secret council|Spell mastery|Strive|Survival|Sweep|Tempting offer|Threshold|Undergrowth|Valiant|Void|Will of the council)\s*\u2014\s*/gim;
+const stripAW = tx => String(tx == null ? '' : tx).replace(AW_RE, '');
+const AW_CACHE = new WeakMap();
+function awInfo(base) { if (!base || !base.tx || !AW_RE.test(base.tx)) { AW_RE.lastIndex = 0; return base; } AW_RE.lastIndex = 0; let r = AW_CACHE.get(base); if (!r || r.__src !== base.tx) { r = Object.assign({}, base, { tx: stripAW(base.tx), __src: base.tx }); AW_CACHE.set(base, r); } return r; }
+function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
+function cardText(c) { return stripAW(cardTextRaw(c)); }
+function cardTextRaw(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
 function isTransformCard(c) { const p = faceParent(c); return !!(p && p.fc && p.fc.length > 1 && !p.mdfc && !p.kind); }   // a transform card (not a modal double-faced one)
