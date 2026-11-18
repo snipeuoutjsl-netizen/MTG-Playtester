@@ -33,26 +33,32 @@
     <button id="btnTokens" title="Tokens your deck can make" hidden>Tokens (<span id="cnt-tokens">0</span>)</button>
     <button id="btnStack" title="Open the stack"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg><span class="lbl">Stack</span></button>
   </div>
-  <span class="status"><span id="imgStatus" class="chip"></span><span id="dbStatus" class="chip"></span></span>
-  <button id="btnVersion" class="verbadge" title="What's new"></button>
-  <div class="utility-wrap">
-    <button id="btnTools" class="iconbtn" title="Tools and settings" aria-label="Tools and settings" aria-expanded="false">⚙</button>
-    <div id="utilityMenu" class="utility-menu" hidden>
-      <div class="utility-title">Tools &amp; Settings</div>
-      <button id="btnDeckEdit">Import / edit deck</button>
-      <button id="btnCards">Card data</button>
-      <button id="btnImages">Images</button>
-      <button id="btnUpdate" hidden>Update app</button>
+  <div class="utility-wrap game-wrap">
+    <button id="btnGameTools" class="iconbtn" title="Game tools: effects, deck stats, tokens, dice, multiplayer" aria-label="Game tools" aria-expanded="false">&#9776;</button>
+    <div id="gameMenu" class="utility-menu" hidden>
+      <div class="utility-title">Game tools</div>
       <button id="btnFxMenu">Active effects</button>
       <button id="btnCostFx">Cost effects</button>
       <button id="btnStats">Deck stats</button>
       <button id="btnYield">Always yield</button>
       <button id="btnTokenGloss">Token glossary &amp; art</button>
-      <button id="btnMulti">Multiplayer (LAN)</button>
       <button id="btnDiceCoin">Dice &amp; coin</button>
+      <button id="btnMulti">Multiplayer (LAN)</button>
+    </div>
+  </div>
+  <span class="status"><span id="imgStatus" class="chip"></span><span id="dbStatus" class="chip"></span></span>
+  <button id="btnVersion" class="verbadge" title="What's new"></button>
+  <div class="utility-wrap">
+    <button id="btnTools" class="iconbtn" title="Settings and updates" aria-label="Settings and updates" aria-expanded="false">⚙</button>
+    <div id="utilityMenu" class="utility-menu" hidden>
+      <div class="utility-title">Settings &amp; updates</div>
+      <button id="btnSettings">Settings</button>
+      <button id="btnUpdate" hidden>Update app</button>
+      <button id="btnDeckEdit">Import / edit deck</button>
+      <button id="btnCards">Card data</button>
+      <button id="btnImages">Images</button>
       <button id="btnReading">How the app reads cards</button>
       <button id="btnWelcome">Welcome tour</button>
-      <button id="btnSettings">Settings</button>
     </div>
   </div>
   <input type="file" id="fileCards" hidden>

@@ -187,7 +187,7 @@ function resolve(name) {
 }
 // v0.95.0 What a permanent says, as a card record: a token's own rules text, or the card's. Used by everything that reads abilities.
 function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; return cardInfo(c.name); }
-function cardText(c) { if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); const b = i && i.tx ? i.tx : ''; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
+function cardText(c) { if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
 function isTransformCard(c) { const p = faceParent(c); return !!(p && p.fc && p.fc.length > 1 && !p.mdfc && !p.kind); }   // a transform card (not a modal double-faced one)

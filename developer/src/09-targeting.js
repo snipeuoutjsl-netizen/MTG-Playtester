@@ -31,6 +31,8 @@ function parseTargetSpecs(text) {
     else if (/\bspells?\b/.test(p)) {
       sp.kind = 'spell'; sp.types = (p.match(/\b(?:instant|sorcery|creature|artifact|enchantment|planeswalker|land)\b/g) || []); sp.mods = (p.match(/\bnon\w+/g) || []); sp.label = 'target ' + p;
       // v0.94.5 "target spell or nonland permanent an opponent controls" (Sink into Stupor): the target may be a spell on the stack OR a permanent
+      { const pa = t.slice(m.index, m.index + 140).split(/[.;]/)[0], mvm = pa.match(/\bmana value (?:of )?(\d+|x)(?: or (less|greater|more))?/i); if (mvm && /^\d+$/.test(mvm[1])) sp.mvf = { n: +mvm[1], op: mvm[2] ? (mvm[2].toLowerCase() === 'less' ? 'le' : 'ge') : 'eq' };   // "Counter target spell with mana value 1" (Spell Snare)
+        const cw = p.match(/\b(white|blue|black|red|green|colorless|multicolored)\b/); if (cw) sp.colorWord = cw[1]; }
       if (/\bspells?\b.*\bor\b.*\bpermanents?\b/.test(p)) { sp.alsoPerm = true; sp.types = []; }
       if (/\b(?:an opponent controls|you don't control|your opponents? controls?|opponents? control)\b/.test(p)) sp.ctrl = 'opp'; else if (/\byou control\b/.test(p)) sp.ctrl = 'you';
     }
@@ -112,7 +114,9 @@ function legalTargets(sp, ctx) {
       if (sp.kind === 'spell') {
         const tl = x.opp ? (x.oppType || '') : (frontType(x) || '');
         if (sp.types.length && tl && !sp.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl))) continue;
-        if (sp.mods.includes('noncreature') && /\bCreature\b/.test(tl)) continue;
+        if (tl && sp.mods.some(m => m.length > 3 && new RegExp('\\b' + m.slice(3) + '\\b', 'i').test(tl))) continue;   // nonland / nonartifact / noncreature ... spells
+        if (sp.mvf && cardInfo(x.name)) { const mv = spellMV(x); if (!(sp.mvf.op === 'le' ? mv <= sp.mvf.n : sp.mvf.op === 'ge' ? mv >= sp.mvf.n : mv === sp.mvf.n)) continue; }
+        if (sp.colorWord && cardInfo(x.name) && !colorWordOk(sp.colorWord, cardColorSet(x))) continue;
       }
       if (sp.kind === 'spell' && sp.ctrl === 'opp' && !x.opp) continue;
       if (sp.kind === 'spell' && sp.ctrl === 'you' && x.opp) continue;
@@ -268,7 +272,7 @@ function counterStackObject(id, by, dest) {   // dest: where a countered spell g
   if(!state) return; const i=state.stack.findIndex(x=>x.id===id); if(i<0) return;
   { const sc=state.stack[i]; if(!sc.ability && !sc.opp && /(?:this spell|this card) can'?t be countered/i.test((cardText(sc)||'').replace(/\u2019/g,"'"))) { log(`${by?by+': ':''}${sc.name} can't be countered, so it stays on the stack`); toast("Can't be countered", `${sc.name} says it can't be countered, so the counterspell does nothing to it (rule 101.2).`); return; } }
   snap();
-  const [c]=state.stack.splice(i,1); if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
+  const [c]=state.stack.splice(i,1); delete c.splicedTx; if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
   if(c.opp){ log(`${by?by+': ':''}Opponent's ${c.name} was countered`); toast(`Opponent's ${c.name} countered`,'It leaves the stack without resolving.'); }
   else if(c.ability){ log(`${by?by+': ':''}${c.sourceName||c.name}: ability was countered — it does not resolve`); toast('Ability countered','It leaves the stack without resolving. The permanent that made it is unaffected.'); }
   else { const where = dest === 'hand' ? (state.hand.push(c), "its owner's hand") : dest === 'top' ? (state.library.unshift(c), 'the top of its owner\'s library') : dest === 'exile' ? (state.exile.push(c), 'exile') : gyPush(c,'stack'); delete c.target; delete c.targets; delete c.modes; delete c.modeTexts; log(`${by?by+': ':''}${c.name} was countered → ${where}`); restoreHalf(c); toast(`${c.name} countered`, `A countered spell does not resolve (no effects, no entering the battlefield) and goes to its owner's ${where}.`); }
@@ -300,7 +304,7 @@ function resolveTopOfStack() {
   if(c.opp){ log(`Opponent's ${c.name} resolves — apply its effects at the table`); toast(`Opponent's ${c.name} resolves`,'Its effects are not tracked here. Adjust your board, life or cards by hand.'); render(); return; }
   if(c.targets&&c.targets.length){
     const alive=c.targets.filter(targetStillLegal);
-    if(!alive.length){
+    if(!alive.length && !c.mutating){
       log(`${c.ability?c.sourceName+' ability':c.name} fizzles: all its targets (${c.targets.map(t=>t.name).join(', ')}) are gone`);
       toast('Fizzled','Every target is illegal now, so it does nothing (rule 608.2b).');
       if(!c.ability){ gyPush(c,'stack'); restoreHalf(c); delete c.targets; delete c.target; }
@@ -310,6 +314,7 @@ function resolveTopOfStack() {
   }
   let eff=null; if(!isPermanentCard(c)||c.ability) sfx('resolve'); if(!c.opp&&!c.ability&&!isPermanentCard(c)) spotlight(c,'resolve',null);
   if(c.ability){ log(`Resolved ability of ${c.sourceName}`); eff=c; }
+  else if (isPermanentCard(c) && c.mutating && mutateMerge(c)) { /* merged into its target: no new permanent enters (CR 702.140c) */ }
   else if (isPermanentCard(c)) {
     enterBattlefield(c,{from:'stack',logMsg:`Resolved ${c.name} → battlefield`,afterPlace:()=>{
     if(c.warped){ delete c.warped; c.warpExile=state.turn; addFx({kind:'delayed',when:'end',action:'exile',targetId:c.id,targetName:c.name,text:`Exile ${c.name} (warp).`,srcName:c.name}); log(`${c.name}: warped, it will be exiled at the beginning of the next end step; you may cast it from exile on a later turn`); }
@@ -325,7 +330,7 @@ function resolveTopOfStack() {
   } else {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
     // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
-    { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts;
+    { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts; delete c.splicedTx;
       let stx=baseTx.replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }

@@ -199,6 +199,7 @@ function additionalCosts(c) {
     } else if ((m = line.match(/^Kicker\s+((?:\{[^}]+\})+)\s*$/i))) optional.push({ label: 'Kicker', mana: m[1], comps: [], kicker: true });
     else if ((m = line.match(/^Kicker—(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); optional.push({ label: 'Kicker — ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), kicker: true }); }
   }
+  for (const o of spliceOffers(c)) optional.push(o);   // v0.98.3 Splice (CR 702.47)
   return { req, optional };
 }
 // Every way this card can be cast right now: { label, mana, comps, alt, ok, why, detail }
@@ -339,11 +340,13 @@ function applyCostInfo(c, ci) {
     if (ci.alt === 'dash') c.dashed = true;
     if (ci.casualty) c.casualtyPaid = true;
     if (ci.replicate) c.replicateN = ci.replicate;
+    if (ci.splice && ci.splice.length) spliceApply(c, ci.splice);
     if (ci.squad) { c.squadN = ci.squad; log(`${c.name}: squad cost paid ${ci.squad} time${ci.squad === 1 ? '' : 's'}`); }
     if (ci.offspring) { c.offspringPaid = true; log(`${c.name}: offspring cost paid`); }
     if (ci.alt === 'impending') c.impended = true;
     if (ci.alt === 'overload') c.overloaded = true;
     if (ci.alt === 'bestow') c.bestowed = true;
+    if (ci.alt === 'mutate') c.mutating = true;
     if (ci.evoked) { c.evoked = true; log(`${c.name}: cast for its evoke cost`); }
     else if (ci.alt) log(`${c.name}: cast using an alternative cost (${ci.label})`);
     if (ci.kicked && ci.kicked.some(l => /^(?:Kicker|Multikicker)/i.test(l))) { c.kicked = true; log(`${c.name}: kicked`); }
@@ -408,7 +411,7 @@ function runCast(c, reopen, modes, route, kicks) {
   gatherCosts(c, comps, picks => {
     let manaE = mana; if (route.alt && route.alt.reduceBySac) { const sp = picks.find(p => p.comp.emerge); const sc = sp && findCard(sp.ids[0]); const mv = sc && !sc.card.token ? (cardInfo(sc.card.name) || {}).cmc || 0 : 0; manaE = reduceGenericBy(mana, mv); log(`${c.name}: emerge, ${sc ? sc.card.name : 'the sacrificed creature'} has mana value ${mv}, so the cost is reduced by ${mv}`); }
     runReducers(c, manaE, reducerKinds(c), (mana2, rpicks) => {
-      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke') };
+      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke'), splice: kicks.filter(k => k.splice).map(k => k.splice) };
       const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }
@@ -799,7 +802,7 @@ function castSpell0(id,reopen=true,modes) {
   if(md && modes===undefined){ openModeChoice(f.card.name, md, idxs=>castSpell(id,reopen,idxs), effectiveCost(f.card).cost); return; }
   { const ft=frontType(f.card), castText=md&&modes?modalText(md,modes):cardText(f.card);
     const castText2=f.card.preAlt==='overload'?overloadText(castText):castText;
-    const specs=f.card.preAlt==='bestow'?parseTargetSpecs('Bestow: attach to target creature.'):(!ft||/\b(?:Instant|Sorcery)\b/.test(ft))?parseTargetSpecs(castText2):[];
+    const specs=f.card.preAlt==='bestow'?parseTargetSpecs('Bestow: attach to target creature.'):f.card.preAlt==='mutate'?parseTargetSpecs('Mutate: merge with target nonhuman creature you control.'):(!ft||/\b(?:Instant|Sorcery)\b/.test(ft))?parseTargetSpecs(castText2):[];
     if(specs.length){
       if(targetChosenFor!==id){
         chooseTargets(f.card.name,specs,picked=>{ const g=findCard(id); if(!g||g.zone!=='hand') return;
