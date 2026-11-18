@@ -20,6 +20,7 @@ function enterBattlefield(c, o = {}) {
   if (cageBlocksEnter(c, o.from)) { const g = globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i); log(`${g.g.name}: ${c.name} can't enter the battlefield from your ${o.from}; it stays there`); toast("It can't enter", `${g.g.name}: creature cards in graveyards and libraries can't enter the battlefield.`); if (o.from === 'graveyard' && !state.graveyard.includes(c)) state.graveyard.push(c); else if (o.from === 'library' && !state.library.includes(c)) state.library.unshift(c); return c; }
   { const pr = priestExiles(c, o.from); if (pr) { log(`${pr.name}: ${c.name} would enter without being cast, so it is exiled instead`); toast('Exiled instead', `${pr.name}: a nontoken creature that would enter and wasn't cast is exiled instead.`); for (const z of ['hand', 'library', 'graveyard']) { const k = state[z].indexOf(c); if (k >= 0) state[z].splice(k, 1); } state.exile.push(c); render(); return c; } }
   c.counters = c.counters || { plus: 0, minus: 0 };
+  c.echoDue = true;   // CR 702.30a echo: it came under your control since your last upkeep
   sfx(!c.token && isLandName(c.name) ? 'land' : 'enter');
   if (o.logMsg) log(o.logMsg);
   const et = o.tapped !== undefined ? { tapped: !!o.tapped, why: o.why || '' } : (c.token ? { tapped: false, why: '' } : etbTapped(c));
@@ -32,7 +33,7 @@ function enterBattlefield(c, o = {}) {
   if (isAuraCard(c) && !c.att && o.from !== 'effect') queueTrigger({ kind: 'attach', cardId: c.id });
   if (!c.token) { const tx0 = (cardText(c) || '').replace(/\u2019/g, "'"); let cm;
     if ((cm = tx0.match(/^If .+ would enter the battlefield, you may discard an? ([a-z]+) card instead\./im))) queueTrigger({ kind: 'discardInstead', cardId: c.id, what: cm[1] });
-    else if ((cm = tx0.match(/^As .+ enters the battlefield, choose an? ([^.\n]+)\./im)) && !/\bfrom among\b/i.test(cm[1])) queueTrigger({ kind: 'choose', cardId: c.id, what: cm[1].trim().toLowerCase() }); }
+    else if ((cm = tx0.match(/^As .+? enters(?: the battlefield)?(?: tapped)?, choose an? ([^.\n]+)\./im)) && !/\bfrom among\b/i.test(cm[1])) queueTrigger({ kind: 'choose', cardId: c.id, what: cm[1].trim().toLowerCase() }); }
   memNote('entered', c);
   if (o.afterPlace) o.afterPlace(c);
   landEntryTriggers(c, o.from !== 'hand');   // a land you played can be taken back; one put there by an effect cannot
@@ -49,6 +50,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   c._hostOf = state.battlefield.filter(x => x.att === c.id).map(x => x.id);   // what was attached to it, for "whenever equipped creature dies"
   detachFrom(c);
   for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'mutating', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  c.lki = { plus: counterCount(c, 'plus'), minus: counterCount(c, 'minus') };   // last known information (CR 603.10a): persist and undying look at the counters it HAD
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)

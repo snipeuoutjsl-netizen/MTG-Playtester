@@ -1771,3 +1771,25 @@ body.a11y-focus :focus-visible { outline: 3px solid #ffd84d !important; outline-
 .modetab { border: 0; border-radius: 999px; padding: 6px 18px; background: transparent; }
 .modetab.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 .modechip { border-radius: 999px; padding: 4px 12px; border-color: var(--gold, #e3b95c); color: var(--gold, #e3b95c); }
+
+/* Commander mode: four piles share the rail, top to bottom Deck, Commander, Graveyard, Exile */
+#piles:has(#pile-command:not([hidden])) { grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 3px; }
+
+/* v0.99.31 hand Key: always at the far right of the hand bar, opens an opaque window */
+#handWrap .zlabel { display: flex; align-items: center; gap: 8px; }
+#handWrap .zlabel .zgrow { flex: 1 1 auto; }
+#handLegend { display: none !important; position: absolute; right: 8px; left: auto; bottom: calc(100% + 8px); width: min(460px, 92vw); max-width: none; flex-direction: column; flex-wrap: nowrap; gap: 10px; padding: 14px 16px; border-radius: 14px; background: #0c1220 !important; border: 1px solid var(--line); box-shadow: 0 14px 40px rgba(0,0,0,.7); pointer-events: auto; font-size: 13px; line-height: 1.4; color: var(--text); z-index: 80; text-align: left; letter-spacing: 0; text-transform: none; }
+#handLegend.open { display: flex !important; }
+#handLegend.hidden { display: flex !important; }
+#handLegend:not(.open), #handLegend.hidden:not(.open) { display: none !important; }
+#handLegend h4 { margin: 0 0 2px; font-size: 14px; }
+#handLegend .kr { display: flex; gap: 12px; align-items: flex-start; }
+#handLegend .kr b { color: #fff; }
+#handLegend .sw { flex: 0 0 28px; height: 38px; border-radius: 6px; background: rgba(255,255,255,.06); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+#handLegend .sw.ready { box-shadow: 0 0 0 2px rgba(70,220,120,.95); }
+#handLegend .sw.mana { box-shadow: 0 0 0 2px rgba(235,80,80,.9); }
+#handLegend .sw.timing { box-shadow: 0 0 0 2px rgba(235,178,70,.9); }
+#handLegend .sw.inst { box-shadow: 0 0 0 2px rgba(70,160,220,.9); color: #f3d36b; }
+#handLegend .sw.sel { box-shadow: 0 0 0 2px #fff; }
+#handWrap { position: relative; }
+@media (max-width: 800px) { .handlegend { display: none; } #handLegend.open { display: flex !important; } }

@@ -101,10 +101,11 @@ function frontType(c) {
   const bc = c && (c.becomes || selfBecomes(c));
   if (bc && t) {   // v0.96.12 CR 613.1d: a type-changing effect adds its card types and subtypes to the printed ones
     const [a, b] = t.split('\u2014').map(x => x.trim()), cap = w => w[0].toUpperCase() + w.slice(1), have = new Set(a.toLowerCase().split(/\s+/)), add = bc.types.filter(w => !have.has(w)).map(cap);
-    const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];
+    const subs = bc.onlySubs ? (bc.subs || []).map(cap) : [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];   // "loses all other creature types" (assimilate)
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
   if (c && t && (c.ovr || (state && state.battlefield.length))) t = ovrTypeLine(c, t);
+  if (c && t && !/\bCreature\b/.test(t) && stationPT(c)) t = t.replace(/^((?:(?:Legendary|Snow|Tribal) )*)Artifact/, '$1Artifact Creature');   // CR 721.2 it is an artifact creature while it has the counters
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
@@ -128,7 +129,10 @@ function fireTrigger(ev, ctx = {}) {
   if (!state || !teach('triggerPrompts')) return;
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount }); };
+  // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
+  const extraTimes = src => { let n = 0; if (!src || !state || !/\bCreature\b/.test(permTypeLine(src))) return 0; for (const g of state.battlefield) { if (g.id === src.id || !g.chosen) continue; if (!/If a triggered ability of another creature you control of the chosen type triggers, it triggers an additional time/i.test(cardText(g) || '')) continue; if (permTypeInfo(src).subs.has(String(g.chosen).toLowerCase()) || permTypeInfo(src).changeling) n++; } return n; };
+  const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount }); };
+  const add = (src, t, why) => { const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -156,7 +160,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'dies') {
     const d = ctx.card;
     if (d.blitzBody) { delete d.blitzBody; state.pendingTriggers.push({ kind: 'ability', cardId: d.id, cardName: d.name, text: 'Blitz (keyword, CR 702.152): when this creature dies, draw a card.', effect: 'Draw a card.', special: null, optional: false, why: `${d.name} was cast for its blitz cost and died.` }); }
-    for (const t of parseTriggers(d)) if (t.ev === 'dies-self') add(d, t, `${d.name} was put into a graveyard from the battlefield (it died).`);
+    for (const t of parseTriggers(d)) if (t.ev === 'dies-self' && (!t.test || t.test(d))) add(d, t, `${d.name} was put into a graveyard from the battlefield (it died).`);
     for (const t of parseTriggers(d)) if (t.ev === 'dies-other' && t.selfToo) add(d, t, `${d.name} died (it triggers on its own death as well as on another creature's).`);
     for (const c of bf) if (c.id !== d.id) for (const t of parseTriggers(c)) if (t.ev === 'dies-other' && filterMatches(t.filter, d)) add(c, t, `${d.name} died and matches this ability's condition.`);
     for (const id of (d._hostOf || [])) { const a = findCard(id); if (a) for (const t of parseTriggers(a.card)) if (t.ev === 'host-dies') add(a.card, t, `${d.name} (the creature ${a.card.name} was attached to) died.`); }   // Skullclamp: "Whenever equipped creature dies"
@@ -605,7 +609,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;

@@ -54,8 +54,9 @@ function openHandSortMenu(ev) {
 
 function setupDrop() {
   document.addEventListener('dragover', e => { if (dragHand == null) return; if (e.target.closest && e.target.closest('#handWrap')) { e.preventDefault(); showHandMarker(handSlotAt(e.clientX)); } else clearHandMarker(); });
-  $('#btnHandKey').addEventListener('click', e => { e.stopPropagation(); $('#handLegend').classList.toggle('open'); });
-  document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !e.target.closest('#handLegend')) l.classList.remove('open'); });
+  $('#btnHandKey').addEventListener('click', e => { e.stopPropagation(); const o = $('#handLegend').classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', o); });
+  document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !e.target.closest('#handLegend') && !e.target.closest('#btnHandKey')) l.classList.remove('open'); });
+  document.addEventListener('keydown', e => { const l = $('#handLegend'); if (e.key === 'Escape' && l && l.classList.contains('open')) { l.classList.remove('open'); $('#btnHandKey').setAttribute('aria-expanded', 'false'); } });
   // v0.96.13 the small Hand label (count, Key) can be dragged anywhere over the table; its place is remembered, double-click puts it back. (Sorting is done by dragging cards in the hand.)
   { const lab = $('#handWrap > .zlabel'); if (lab) {
     const KEY = 'mtgpt.handBarPos', wrap = $('#handWrap');

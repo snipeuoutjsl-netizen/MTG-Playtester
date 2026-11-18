@@ -278,7 +278,7 @@ const stripAW = tx => String(tx == null ? '' : tx).replace(AW_RE, '');
 const AW_CACHE = new WeakMap();
 function awInfo(base) { if (!base || !base.tx || !AW_RE.test(base.tx)) { AW_RE.lastIndex = 0; return base; } AW_RE.lastIndex = 0; let r = AW_CACHE.get(base); if (!r || r.__src !== base.tx) { r = Object.assign({}, base, { tx: stripAW(base.tx), __src: base.tx }); AW_CACHE.set(base, r); } return r; }
 function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
-function cardText(c) { return stripAW(cardTextRaw(c)); }
+function cardText(c) { return stationText(c, stripAW(cardTextRaw(c))); }
 function cardTextRaw(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
@@ -558,6 +558,7 @@ function permTypeInfo(c) {   // lowercase type words and subtypes of a permanent
   types.add('permanent');
   const subs = new Set(); for (const w of (parts[1] || '').split(/\s+/)) if (w) subs.add(w.toLowerCase());
   for (const w of (c.addSubs || [])) subs.add(w);
+  if (c.chosen && /\bis the chosen type in addition to its other types\b/i.test(cardText(c) || '')) subs.add(String(c.chosen).toLowerCase());   // Roaming Throne: it IS the type it chose
   return { types, subs, legendary: types.has('legendary'), basic: types.has('basic'), changeling: kwLine(cardText(c), 'changeling') };
 }
 let inColorEval = false;
@@ -827,6 +828,7 @@ function cdaValues(c) {
 function ptCalc(c) {
   let pt = c.token ? (c.tk && c.tk.pt) : (cardInfo(c.name) || {}).pt;
   { const bc = c.becomes || selfBecomes(c); if (bc && bc.pt) pt = bc.pt; if (c.basePT) pt = c.basePT; { const ov = ovrOf(c); if (ov && ov.pt) pt = ov.pt; } }   // CR 613.4b: an effect that sets base power and toughness
+  { const sp = stationPT(c); if (sp) pt = sp; }   // CR 721.2 a Spacecraft with enough charge counters has the P/T of its highest reached STATION line
   const parts = String(pt || '').split('/');
   const out = { p: 0, t: 0, unknown: false, dynamic: false, modified: false, why: [] };
   const sides = [parts[0], parts[1]];
@@ -1210,10 +1212,11 @@ function frontType(c) {
   const bc = c && (c.becomes || selfBecomes(c));
   if (bc && t) {   // v0.96.12 CR 613.1d: a type-changing effect adds its card types and subtypes to the printed ones
     const [a, b] = t.split('\u2014').map(x => x.trim()), cap = w => w[0].toUpperCase() + w.slice(1), have = new Set(a.toLowerCase().split(/\s+/)), add = bc.types.filter(w => !have.has(w)).map(cap);
-    const subs = [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];
+    const subs = bc.onlySubs ? (bc.subs || []).map(cap) : [...new Set([...(b ? b.split(/\s+/) : []), ...(bc.subs || []).map(cap)])];   // "loses all other creature types" (assimilate)
     t = [a, ...add].join(' ') + (subs.length ? ' \u2014 ' + subs.join(' ') : '');
   }
   if (c && t && (c.ovr || (state && state.battlefield.length))) t = ovrTypeLine(c, t);
+  if (c && t && !/\bCreature\b/.test(t) && stationPT(c)) t = t.replace(/^((?:(?:Legendary|Snow|Tribal) )*)Artifact/, '$1Artifact Creature');   // CR 721.2 it is an artifact creature while it has the counters
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
@@ -1237,7 +1240,10 @@ function fireTrigger(ev, ctx = {}) {
   if (!state || !teach('triggerPrompts')) return;
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount }); };
+  // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
+  const extraTimes = src => { let n = 0; if (!src || !state || !/\bCreature\b/.test(permTypeLine(src))) return 0; for (const g of state.battlefield) { if (g.id === src.id || !g.chosen) continue; if (!/If a triggered ability of another creature you control of the chosen type triggers, it triggers an additional time/i.test(cardText(g) || '')) continue; if (permTypeInfo(src).subs.has(String(g.chosen).toLowerCase()) || permTypeInfo(src).changeling) n++; } return n; };
+  const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount }); };
+  const add = (src, t, why) => { const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -1265,7 +1271,7 @@ function fireTrigger(ev, ctx = {}) {
   } else if (ev === 'dies') {
     const d = ctx.card;
     if (d.blitzBody) { delete d.blitzBody; state.pendingTriggers.push({ kind: 'ability', cardId: d.id, cardName: d.name, text: 'Blitz (keyword, CR 702.152): when this creature dies, draw a card.', effect: 'Draw a card.', special: null, optional: false, why: `${d.name} was cast for its blitz cost and died.` }); }
-    for (const t of parseTriggers(d)) if (t.ev === 'dies-self') add(d, t, `${d.name} was put into a graveyard from the battlefield (it died).`);
+    for (const t of parseTriggers(d)) if (t.ev === 'dies-self' && (!t.test || t.test(d))) add(d, t, `${d.name} was put into a graveyard from the battlefield (it died).`);
     for (const t of parseTriggers(d)) if (t.ev === 'dies-other' && t.selfToo) add(d, t, `${d.name} died (it triggers on its own death as well as on another creature's).`);
     for (const c of bf) if (c.id !== d.id) for (const t of parseTriggers(c)) if (t.ev === 'dies-other' && filterMatches(t.filter, d)) add(c, t, `${d.name} died and matches this ability's condition.`);
     for (const id of (d._hostOf || [])) { const a = findCard(id); if (a) for (const t of parseTriggers(a.card)) if (t.ev === 'host-dies') add(a.card, t, `${d.name} (the creature ${a.card.name} was attached to) died.`); }   // Skullclamp: "Whenever equipped creature dies"
@@ -1714,7 +1720,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -2053,6 +2059,7 @@ function enterBattlefield(c, o = {}) {
   if (cageBlocksEnter(c, o.from)) { const g = globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i); log(`${g.g.name}: ${c.name} can't enter the battlefield from your ${o.from}; it stays there`); toast("It can't enter", `${g.g.name}: creature cards in graveyards and libraries can't enter the battlefield.`); if (o.from === 'graveyard' && !state.graveyard.includes(c)) state.graveyard.push(c); else if (o.from === 'library' && !state.library.includes(c)) state.library.unshift(c); return c; }
   { const pr = priestExiles(c, o.from); if (pr) { log(`${pr.name}: ${c.name} would enter without being cast, so it is exiled instead`); toast('Exiled instead', `${pr.name}: a nontoken creature that would enter and wasn't cast is exiled instead.`); for (const z of ['hand', 'library', 'graveyard']) { const k = state[z].indexOf(c); if (k >= 0) state[z].splice(k, 1); } state.exile.push(c); render(); return c; } }
   c.counters = c.counters || { plus: 0, minus: 0 };
+  c.echoDue = true;   // CR 702.30a echo: it came under your control since your last upkeep
   sfx(!c.token && isLandName(c.name) ? 'land' : 'enter');
   if (o.logMsg) log(o.logMsg);
   const et = o.tapped !== undefined ? { tapped: !!o.tapped, why: o.why || '' } : (c.token ? { tapped: false, why: '' } : etbTapped(c));
@@ -2065,7 +2072,7 @@ function enterBattlefield(c, o = {}) {
   if (isAuraCard(c) && !c.att && o.from !== 'effect') queueTrigger({ kind: 'attach', cardId: c.id });
   if (!c.token) { const tx0 = (cardText(c) || '').replace(/\u2019/g, "'"); let cm;
     if ((cm = tx0.match(/^If .+ would enter the battlefield, you may discard an? ([a-z]+) card instead\./im))) queueTrigger({ kind: 'discardInstead', cardId: c.id, what: cm[1] });
-    else if ((cm = tx0.match(/^As .+ enters the battlefield, choose an? ([^.\n]+)\./im)) && !/\bfrom among\b/i.test(cm[1])) queueTrigger({ kind: 'choose', cardId: c.id, what: cm[1].trim().toLowerCase() }); }
+    else if ((cm = tx0.match(/^As .+? enters(?: the battlefield)?(?: tapped)?, choose an? ([^.\n]+)\./im)) && !/\bfrom among\b/i.test(cm[1])) queueTrigger({ kind: 'choose', cardId: c.id, what: cm[1].trim().toLowerCase() }); }
   memNote('entered', c);
   if (o.afterPlace) o.afterPlace(c);
   landEntryTriggers(c, o.from !== 'hand');   // a land you played can be taken back; one put there by an effect cannot
@@ -2082,6 +2089,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   c._hostOf = state.battlefield.filter(x => x.att === c.id).map(x => x.id);   // what was attached to it, for "whenever equipped creature dies"
   detachFrom(c);
   for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'mutating', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  c.lki = { plus: counterCount(c, 'plus'), minus: counterCount(c, 'minus') };   // last known information (CR 603.10a): persist and undying look at the counters it HAD
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
@@ -2979,6 +2987,7 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }
   if(modes){ const md=spellModal(c); if(md){ c.modes=modes; c.modeTexts=modes.map(i=>md.modes[i].text); log(`${c.name}: chosen ${md.spree?'extras':'modes'}: ${c.modeTexts.join(' | ')}`); } }
+  noteUncounterableMana(c, manaIds);
   { const pool0 = Object.values(state.manaPool || {}).reduce((s, v) => s + (v || 0), 0); withCtx(c,()=>tapManaIds(manaIds)); const pool1 = Object.values(state.manaPool || {}).reduce((s, v) => s + (v || 0), 0); c.manaSpent = manaIds.length > 0 || pool1 < pool0; }   // CR 601.2h: was any mana spent on it?
   if(ci) applyCostInfo(c,ci);
   noteCast(c); state.stack.push(c); state.priority={active:true,passed:false}; if(gyLeft) fireTrigger('gyleave',{card:c,to:'stack'});
@@ -3384,7 +3393,7 @@ function applyGraveReturn(c, stx) {
 // "Countered": the top object of the stack is removed without resolving (you are playtesting against a real opponent).
 function counterStackObject(id, by, dest) {   // dest: where a countered spell goes instead of its graveyard (CR 701.6 + Remand / Memory Lapse / Dissipate text)
   if(!state) return; const i=state.stack.findIndex(x=>x.id===id); if(i<0) return;
-  { const sc=state.stack[i]; if(!sc.ability && !sc.opp && /(?:this spell|this card) can'?t be countered/i.test((cardText(sc)||'').replace(/\u2019/g,"'"))) { log(`${by?by+': ':''}${sc.name} can't be countered, so it stays on the stack`); toast("Can't be countered", `${sc.name} says it can't be countered, so the counterspell does nothing to it (rule 101.2).`); return; } }
+  { const sc=state.stack[i], why=cantBeCounteredWhy(sc); if(why) { log(`${by?by+': ':''}${sc.name} can't be countered (${why}), so it stays on the stack`); toast("Can't be countered", `${sc.name} can't be countered: ${why}. The counter effect does nothing to it (rule 101.2).`); return; } }
   snap();
   const [c]=state.stack.splice(i,1); delete c.splicedTx; if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
   if(c.opp){ log(`${by?by+': ':''}Opponent's ${c.name} was countered`); toast(`Opponent's ${c.name} countered`,'It leaves the stack without resolving.'); }
@@ -4864,7 +4873,7 @@ function buildStack(m, panel){
     ].filter(Boolean));
     m.foot.replaceChildren(...(state.stack.length?[
       h('button',{text:'Pass priority',onclick:()=>{m.close();passPriority();}}),
-      h('button',{class:'danger',text:'Countered',title:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}}),
+      (()=>{const cw=cantBeCounteredWhy(top);return h('button',{class:'danger',text:cw?"Can't be countered":'Countered',disabled:!!cw,title:cw?`${top.name} can't be countered: ${cw}`:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}});})(),
       h('button',{class:'primary',text:'Resolve top',title:`Resolve ${top.opp?"opponent's ":''}${top.name}`,onclick:()=>{resolveTopOfStack();draw();}})
     ]:(panel?[]:[h('button',{text:'Close',onclick:()=>m.close()})])));
   };
@@ -4948,7 +4957,8 @@ function landManaAbilities(c) {
     else if (/^Add one mana of any color$/i.test(first)) ab.any = true;
     else continue;
     for (const sn of sents.slice(1)) { let q;
-      if ((q = sn.match(/^Spend this mana only (?:to|on) (.*?)\.?$/i))) ab.only = c.chosen ? q[1].replace(/the chosen type/i, 'the ' + c.chosen.toLowerCase() + ' type') : q[1];
+      if ((q = sn.match(/^Spend this mana only (?:to|on) (.*?)\.?$/i))) { let lim = q[1]; if (/,? and that spell can'?t be countered$/i.test(lim)) { ab.noCounter = true; lim = lim.replace(/,? and that spell can'?t be countered$/i, ''); }   // Cavern of Souls
+        ab.only = c.chosen ? lim.replace(/the chosen type/i, 'the ' + c.chosen.toLowerCase() + ' type') : lim; }
       else if ((q = sn.match(/^~ deals (\d+) damage to you\.?$/i))) ab.dmg += +q[1];
       else if ((q = sn.match(/^If a card is exiled with ~, add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.altExiled = [...q[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);   // imprint-style: "If a card is exiled with this land, add {C}{C} instead"
       else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; 
@@ -5480,6 +5490,7 @@ function renderPileTop(zone) {
   el.replaceChildren();
   if (!arr.length) return;
   const c = arr[arr.length - 1];
+  el.onmouseenter = () => { const a = state && state[zone]; if (a && a.length) showPreview(a[a.length - 1]); };   // hover a pile: its top card (the commander, for the command zone) in the large card display
   if (layoutOn('gyFan')) {   // v0.78: graveyard AND exile, spread only while hovered
     arr.slice(-3, -1).forEach((b, i, a) => { const k = a.length - i;   // k = 2 (deepest) or 1
       const bi = cardArt(b);
@@ -5597,10 +5608,17 @@ function fitBattlefieldCards() {
 }
 
 function layoutHand() {
-  const row = $('#row-hand'), cards = [...row.children];
+  const row = $('#row-hand'), cards = [...row.children], hw = $('#handWrap');
   for (const c of cards) c.style.marginLeft = '';
+  // Opening hand / mulligan: size the cards so the WHOLE hand fits on screen (width and height), whatever the window size
+  if (document.body.classList.contains('mullpick') || document.body.classList.contains('mullhand')) {
+    const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 1);
+    const aw = Math.max(hw.parentElement ? hw.parentElement.clientWidth : innerWidth, 300) - 70;
+    const cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
+    hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
+  } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); }
   if (cards.length < 2) return;
-  const avail = $('#handWrap').clientWidth - 30, cw = cards[0].offsetWidth;
+  const avail = $('#handWrap').clientWidth - 70, cw = cards[0].offsetWidth;
   if (!cw) return;
   const need = cards.length * cw + (cards.length - 1) * 8;
   if (need <= avail) return;
@@ -5655,7 +5673,7 @@ function renderInner() {
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
   { const n = has ? state.library.length : 0; const ls = $('#libstack'); ls.dataset.thick = n > 40 ? 3 : n > 15 ? 2 : n > 0 ? 1 : 0; ls.title = teach('libraryMenu') ? 'Click for draw, look, scry, surveil, mill, search' : ''; }
   $('#cnt-hand').textContent = has ? `(${state.hand.length})` : '';
-  $('#handLegend')?.classList.toggle('hidden', !teach('playability'));
+  $('#btnHandKey')?.classList.toggle('hidden', !teach('playability'));
   for (const z of ['graveyard', 'exile', 'command']) renderPileTop(z);
   try { commanderRender(); } catch (e) { /* commander UI only */ }
   $('#libstack').classList.toggle('empty', !has || !state.library.length);
@@ -5966,6 +5984,7 @@ function activatedAbilitiesFor(c){
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }
+    if(/^Station\b(?!\s*\d)/i.test(line)){ res.push({cost:'Station',effect:'Tap another untapped creature you control: put charge counters equal to its power on ~. Activate only as a sorcery.',ix:res.length,station:true}); continue; }   // CR 702.184a
     { const cr=line.match(/^Crew (\d+)\b/i);   // Crew (CR 702.122a): "Tap any number of untapped creatures you control with total power N or more: this permanent becomes an artifact creature until end of turn."
       if(cr){ res.push({cost:'Crew '+cr[1],effect:'~ becomes an artifact creature until end of turn.',ix:res.length,crew:+cr[1]}); continue; } }
     { const ol=line.match(/^Outlast\s+((?:\{[^}]+\})+)\s*(?:\(.*\))?$/i);   // Outlast (CR 702.107a): "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."
@@ -5983,6 +6002,7 @@ function activatedAbilityFor(c){ return activatedAbilitiesFor(c)[0]||null; }
 function abilityReady(c, ab) {   // can this particular ability be activated right now? returns '' or a reason string for the outline tooltip
   if (ab.tap && (c.tapped || isSick(c))) return 'tap';
   if (ab.crew && crewPower(c) < ab.crew) return 'cost';
+  if (ab.station && !stationCands(c).length) return 'cost';
   if (ab.removeN) { const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {}); if ((cc[ab.removeKind] || 0) < ab.removeN) return 'counters'; }
   if (ab.life && state.life < ab.life) return 'life';
   if (ab.comps && ab.comps.length && compsFeasible(ab.comps, c.id)) return 'cost';
@@ -6031,6 +6051,7 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
     render(); openStack();
   };
   if(ab.crew){ crewPick(f.card, ab.crew, ()=>go(null,null,[])); return; }
+  if(ab.station){ stationPick(f.card, n=>{ ab.effect=`Put ${n} charge counter${n===1?'':'s'} on ~. Activate only as a sorcery.`; go(null,null,[]); }); return; }
   const payThen=target=>{
     { const why=compsFeasible(ab.comps||[],f.card.id); if(why){ toast('Cannot pay the cost',why); return; } }
     gatherCosts({id:f.card.id,name:f.card.name,ability:true},ab.comps||[],picks=>{
@@ -6498,8 +6519,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.30';
+const APP_VERSION = '0.99.31';
 const CHANGELOG = [
+  { v: '0.99.31', title: 'Echo, persist, undying, Spacecraft, creature-type choices, uncounterable spells', notes: ['NEW (rules): Echo (702.30) asks for the echo cost at your next upkeep or sacrifices the permanent; Persist (702.79) and Undying (702.93) return the creature with a -1/-1 or +1/+1 counter only if it had none of that kind when it died (last known information); "Sacrifice it unless you ..." (Glint Hawk style) is a choice between doing the cost and losing the permanent.', 'NEW: Spacecraft and Station (702.184, 721): Station taps another creature and adds charge counters equal to its power; at each STATION N+ threshold the card gains the lines under it, and at the highest one with a power/toughness it is an artifact creature (Borg Cube: 6/6 at 12). Assimilate (701.72) is read from the Borg Cube text.', 'FIXED (engine): "As this creature enters, choose a creature type" (Roaming Throne) was not recognised because it does not say "the battlefield". The picker now lists creature types on the battlefield first, then in your deck, and a typed answer must be a real creature type. Roaming Throne is the chosen type too and makes triggers of other creatures of that type trigger an additional time.', 'NEW (engine): "Can\'t be countered" is one check for every counter effect: the spell\'s own text, statics such as "Green spells you control can\'t be countered", and mana such as Cavern of Souls ("and that spell can\'t be countered"). The Countered button then reads "Can\'t be countered".', 'Opening hand now always fits the window. Hand Key sits at the far right of the hand bar and opens an opaque window. Commander mode piles run Deck, Commander, Graveyard, Exile; hovering any pile shows its top card (your commander for the command zone).'] },
   { v: '0.99.30', title: 'Commander decks have their own tab', notes: ['Click the deck name: the deck screen now has a Decks | Commander switch. Commander mode is chosen there; Commander decks (a Commander section in the list) are only listed in Commander mode and normal decks only in normal mode. In Commander mode a gold Commander mode chip shows beside On the play; click it to go back to the deck screen.','Saving or importing a deck of the other kind switches to its mode so you can see it. Importing in Commander mode starts with a Commander heading ready.'] },
   { v: '0.99.29', title: 'Commander mode (goldfish)', notes: ['Put your commander under a Commander heading in the deck list (or mark it *CMDR*). A Commander switch appears beside On the play.','Rules enforced: 40 life, 99-card library, a command zone pile, casting it from there costs {2} more per previous cast, a free first mulligan, and the choice to put it back into the command zone when it would go to the graveyard, exile, hand or library (CR 903.9). Commander combat damage to your opponent is tracked (21 is lethal).','A deck check at the start of a game reports the card count, singleton and colour identity problems.'] },
   { v: '0.99.28', title: 'Accessibility tab, mulligan fix, centred pop-ups', notes: ['Mulligan hand fixed: it stays inside the table layout (the fixed-position version could land off-screen on some windows). A test now checks it at several window sizes.','Pop-ups now all open at the same place, the centre of the window; only the stack and resolving panels keep their own spots, and the mulligan steps sit above the hand.','The One Ring and other "for each counter" text: Always Yield now still recognises the action while the live count changes.','⚙ → Settings → Accessibility: interface size (100–175%), high contrast, calm motion (no animation, tilt, fan or scrolling text), larger click targets, strong keyboard focus, and screen-reader announcements of the game log. More options are planned (colour-blind markers, full keyboard play, a text view of each zone).'] },
@@ -8209,13 +8231,27 @@ function openChoose(cardId, kind) {
   const f = findCard(cardId); if (!f || f.zone !== 'battlefield') return; const c = f.card;
   const m = modal(`${c.name}: choose a ${kind}`, { width: 560, sticky: true, noClose: true });
   m.body.append(h('div', { class: 'psub', text: `As ${c.name} enters the battlefield you choose a ${kind}. The choice is remembered on the card.` }));
-  const pool = choicePool(kind), fixed = pool.length <= 8;
+  const pool = choicePool(kind), fixed = pool.length <= 8, isType = /creature type/.test(kind);
   const done = v => { m.close(); snap(); c.chosen = v; log(`${c.name}: chose ${v}`); render(); if (state.pendingTriggers.length) resolvePendingTrigger(); };
+  const inPlay = [], inDeck = [], seen = new Set();   // creature types: first the ones on the battlefield, then the ones in your deck, then anything typed
+  const subsOf = t => (String(t || '').split(' // ')[0].split('\u2014')[1] || '').trim().split(/\s+/).filter(Boolean);
+  if (isType) {
+    const poolLc = new Map(pool.map(x => [x.toLowerCase(), x]));
+    for (const p of state.battlefield) for (const w of permTypeInfo(p).subs) { const nm = poolLc.get(w) || (w === '*' ? null : w[0].toUpperCase() + w.slice(1)); if (nm && poolLc.has(nm.toLowerCase()) && !seen.has(nm)) { seen.add(nm); inPlay.push(nm); } }
+    for (const z of ['library', 'hand', 'graveyard', 'exile']) for (const p of state[z]) { const info = cardInfo(p.name); if (!info || !/\bCreature\b|\bKindred\b|\bTribal\b/.test((info.t || '').split(' // ')[0])) continue; for (const w of subsOf(info.t)) if (poolLc.has(w.toLowerCase()) && !seen.has(poolLc.get(w.toLowerCase()))) { const nm = poolLc.get(w.toLowerCase()); seen.add(nm); inDeck.push(nm); } }
+    inPlay.sort(); inDeck.sort();
+  }
   if (fixed) { const row = h('div', { class: 'mana-choice' }); for (const v of pool) row.append(h('button', { class: 'mana-choice-btn', text: v, onclick: () => done(v) })); m.body.append(row); }
   else {
-    const inp = h('input', { type: 'text', placeholder: `Type a ${kind}…`, style: 'width:100%;margin:6px 0' }), list = h('div', { class: 'fetchgrid' });
-    const draw = () => { list.replaceChildren(); const q = inp.value.trim().toLowerCase(); const hits = pool.filter(n => !q || n.toLowerCase().includes(q)).slice(0, 14); for (const n of hits) list.append(h('div', { class: 'frow on', onclick: () => done(n) }, h('span', { class: 'nm', text: n }))); if (!hits.length) list.append(h('div', { class: 'muted', text: 'No match. Press Enter to use exactly what you typed.' })); };
-    inp.addEventListener('input', draw); inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim()) done(inp.value.trim()); }); draw(); m.body.append(inp, list); setTimeout(() => inp.focus(), 50);
+    const inp = h('input', { type: 'text', placeholder: `Type a ${kind}…`, style: 'width:100%;margin:6px 0', 'aria-label': `Type a ${kind}` }), list = h('div', { class: 'fetchgrid' }), msg = h('div', { class: 'muted small', text: '' });
+    const grp = (title, arr) => { if (!arr.length) return; m.body.append(h('div', { class: 'psub', style: 'margin-top:8px', text: title })); const row = h('div', { class: 'mana-choice' }); for (const v of arr.slice(0, 24)) row.append(h('button', { class: 'mana-choice-btn', text: v, onclick: () => done(v) })); m.body.append(row); };
+    if (isType) { grp('On the battlefield', inPlay); grp('In your deck', inDeck.filter(x => !inPlay.includes(x))); }
+    const draw = () => { list.replaceChildren(); const q = inp.value.trim().toLowerCase(); if (isType && !q) { list.append(h('div', { class: 'muted', text: 'Not listed above? Type any creature type.' })); return; } const hits = pool.filter(n => !q || n.toLowerCase().includes(q)).sort((x, y) => (x.toLowerCase().startsWith(q) ? 0 : 1) - (y.toLowerCase().startsWith(q) ? 0 : 1)).slice(0, 14); for (const n of hits) list.append(h('div', { class: 'frow on', onclick: () => done(n) }, h('span', { class: 'nm', text: n }))); if (!hits.length) list.append(h('div', { class: 'muted', text: isType ? 'No creature type like that. Check the spelling.' : 'No match. Press Enter to use exactly what you typed.' })); };
+    inp.addEventListener('input', draw);
+    inp.addEventListener('keydown', e => { if (e.key !== 'Enter' || !inp.value.trim()) return; const q = inp.value.trim().toLowerCase(); if (!isType) { done(inp.value.trim()); return; }
+      const ex = pool.find(n => n.toLowerCase() === q) || pool.find(n => singularWord(n) === singularWord(q)) || pool.filter(n => n.toLowerCase().startsWith(q))[0];   // CR 205.3m: only real creature types are legal choices
+      if (ex) done(ex); else msg.textContent = `"${inp.value.trim()}" is not a creature type.`; });
+    draw(); m.body.append(inp, msg, list); setTimeout(() => inp.focus(), 50);
   }
 }
 // Phyrexian Revoker / Pithing Needle: activated abilities of sources with the chosen name can't be activated (Needle: unless they are mana abilities).
@@ -8601,7 +8637,7 @@ function drawStackStage() {
   el.replaceChildren(stepsEl(0), h('div', { class: 'ss-row' }, shown.map(face)), orderEl, ssOn, items.length > shown.length ? h('div', { class: 'ss-more', text: `+${items.length - shown.length} more below` }) : null, h('div', { class: 'ss-btns' },
       h('button', { text: 'Pass priority', title: 'Do not respond: the top object will resolve', onclick: () => passPriority() }),
       (!items[0].ability && !items[0].opp && !isPermanentCard(items[0])) ? h('button', { text: 'Copy', title: 'A copy of this spell goes on the stack (Twincast, Fork, Reverberate…). It is not cast, so it does not count for Storm.', onclick: () => { snap(); makeSpellCopies(items[0].id, 1, 'Copy effect'); render(); } }) : null,
-      h('button', { class: 'danger', text: 'Countered', title: 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }),
+      (() => { const cw = cantBeCounteredWhy(items[0]); return h('button', { class: 'danger', text: cw ? "Can't be countered" : 'Countered', disabled: !!cw, title: cw ? items[0].name + " can't be countered: " + cw : 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }); })(),
       h('button', { class: 'primary', text: items[0].opp ? 'Resolve (opponent)' : 'Resolve top', title: 'Resolve ' + (items[0].ability ? (items[0].sourceName || items[0].name) : items[0].name), onclick: () => resolveTopOfStack() })),
     h('div', { class: 'ss-hint', text: 'Drag a card or permanent onto the stack to respond' }));
 }
@@ -9108,8 +9144,9 @@ function openHandSortMenu(ev) {
 
 function setupDrop() {
   document.addEventListener('dragover', e => { if (dragHand == null) return; if (e.target.closest && e.target.closest('#handWrap')) { e.preventDefault(); showHandMarker(handSlotAt(e.clientX)); } else clearHandMarker(); });
-  $('#btnHandKey').addEventListener('click', e => { e.stopPropagation(); $('#handLegend').classList.toggle('open'); });
-  document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !e.target.closest('#handLegend')) l.classList.remove('open'); });
+  $('#btnHandKey').addEventListener('click', e => { e.stopPropagation(); const o = $('#handLegend').classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', o); });
+  document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !e.target.closest('#handLegend') && !e.target.closest('#btnHandKey')) l.classList.remove('open'); });
+  document.addEventListener('keydown', e => { const l = $('#handLegend'); if (e.key === 'Escape' && l && l.classList.contains('open')) { l.classList.remove('open'); $('#btnHandKey').setAttribute('aria-expanded', 'false'); } });
   // v0.96.13 the small Hand label (count, Key) can be dragged anywhere over the table; its place is remembered, double-click puts it back. (Sorting is done by dragging cards in the hand.)
   { const lab = $('#handWrap > .zlabel'); if (lab) {
     const KEY = 'mtgpt.handBarPos', wrap = $('#handWrap');
@@ -9264,7 +9301,7 @@ const STATIC_PATTERNS = [
   [/enters(?: the battlefield)? with (?:an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) [a-z-]+ counters? on it/i, 'Enters with counters: the app puts them on as it enters (counter-kind is tracked and shown on the card).'],
   [/you may play (?:an|one|two|three|\d+) additional lands? on each of your turns/i, 'Extra land drops: the app counts land plays against 1 + the additional plays your permanents allow.'],
   [/^(?:~|this \w+) doesn'?t untap during your untap step\.?$|nonbasic lands don'?t untap during their controllers' untap steps/i, "Doesn't untap: the app leaves it tapped during your untap step."],
-  [/^As ~ enters the battlefield, choose an? (?!.*\bfrom among\b)/i, 'Choice as it enters: a window asks for your choice (creature type, card name, colour…) and the app remembers it on the card (shown on the tile).'],
+  [/^As ~ enters(?: the battlefield)?, choose an? (?!.*\bfrom among\b)/i, 'Choice as it enters: a window asks for your choice (creature type, card name, colour…) and the app remembers it on the card (shown on the tile).'],
   [/^If ~ would enter the battlefield, you may discard an? \w+ card instead/i, 'Replacement effect: when it would enter, a window asks you to discard or sends it to the graveyard (rule 614.1).'],
   [/counters? would be put on .*(?:that many plus (?:one|two|\d+)|twice that many)|would put one or more counters on .*twice that many/i, 'Replacement effect: whenever counters are put on a matching permanent (including as it enters) the app adds the extra counters and logs it. Manual +/- counter buttons are not changed.'],
   [/^Activated abilities of sources with the chosen name can't be activated/i, 'Ability lock: the app refuses to activate abilities of sources with the chosen name.'],
@@ -9871,7 +9908,7 @@ const RULES_TABLE = [
   ['701.69', 'Heal', 'action', 'named'],
   ['701.70', 'Recruit', 'action', 'named'],
   ['701.71', 'Empower Jace', 'action', 'none'],
-  ['701.72', 'Assimilate', 'action', 'none'],
+  ['701.72', 'Assimilate', 'action', 'tested'],
   ['702.2', 'Deathtouch', 'ability', 'named'],
   ['702.3', 'Defender', 'ability', 'named'],
   ['702.4', 'Double Strike', 'ability', 'named'],
@@ -9900,7 +9937,7 @@ const RULES_TABLE = [
   ['702.27', 'Buyback', 'ability', 'named'],
   ['702.28', 'Shadow', 'ability', 'named'],
   ['702.29', 'Cycling', 'ability', 'named'],
-  ['702.30', 'Echo', 'ability', 'named'],
+  ['702.30', 'Echo', 'ability', 'tested'],
   ['702.31', 'Horsemanship', 'ability', 'none'],
   ['702.32', 'Fading', 'ability', 'tested'],
   ['702.33', 'Kicker', 'ability', 'named'],
@@ -9949,7 +9986,7 @@ const RULES_TABLE = [
   ['702.76', 'Prowl', 'ability', 'tested'],
   ['702.77', 'Reinforce', 'ability', 'none'],
   ['702.78', 'Conspire', 'ability', 'none'],
-  ['702.79', 'Persist', 'ability', 'named'],
+  ['702.79', 'Persist', 'ability', 'tested'],
   ['702.80', 'Wither', 'ability', 'none'],
   ['702.81', 'Retrace', 'ability', 'named'],
   ['702.82', 'Devour', 'ability', 'tested'],
@@ -9963,7 +10000,7 @@ const RULES_TABLE = [
   ['702.90', 'Infect', 'ability', 'named'],
   ['702.91', 'Battle Cry', 'ability', 'tested'],
   ['702.92', 'Living Weapon', 'ability', 'named'],
-  ['702.93', 'Undying', 'ability', 'named'],
+  ['702.93', 'Undying', 'ability', 'tested'],
   ['702.94', 'Miracle', 'ability', 'tested'],
   ['702.95', 'Soulbond', 'ability', 'none'],
   ['702.96', 'Overload', 'ability', 'tested'],
@@ -10054,7 +10091,7 @@ const RULES_TABLE = [
   ['702.181', 'Mobilize', 'ability', 'tested'],
   ['702.182', 'Job Select', 'ability', 'none'],
   ['702.183', 'Tiered', 'ability', 'none'],
-  ['702.184', 'Station', 'ability', 'none'],
+  ['702.184', 'Station', 'ability', 'tested'],
   ['702.185', 'Warp', 'ability', 'tested'],
   ['702.186', '∞ (Infinity)', 'ability', 'none'],
   ['702.187', 'Mayhem', 'ability', 'none'],
@@ -12639,6 +12676,143 @@ function commanderRender() {
   const pile = document.getElementById('pile-command'); if (pile) pile.hidden = !(state && state.cmdMode);
   const cb = document.getElementById('cmdWrap'); if (cb) cb.hidden = !(FEATURES.commander && gameMode() === 'commander');
   if (state && state.cmdMode) { const el = document.getElementById('pile-command'); if (el) { const tax = state.command.length ? (state.command[0].cmdCasts || 0) * 2 : 0; el.title = state.command.length ? `Command zone: click to cast your commander${tax ? ` (+{${tax}} commander tax)` : ''}` : 'Your commander is not in the command zone'; } setTimeout(commanderSBA, 0); }
+}
+// ---- v0.99.29 keywords that bring a permanent back, make it pay to stay, or make you pay or lose it: Echo, Persist, Undying, and "Sacrifice ~ unless you ..." (rules text, any card)
+// CR 702.30a Echo [cost]: "At the beginning of your upkeep, if this permanent came under your control since the beginning of your last upkeep, sacrifice it unless you pay its echo cost."
+// CR 702.79a Persist: "When this permanent is put into a graveyard from the battlefield, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it."
+// CR 702.93a Undying: the same with +1/+1 counters.      Both look at the permanent as it last existed on the battlefield (CR 603.10a): `c.lki` holds the counters it had.
+KW_TRIGGERS.push(
+  { cr: '702.30', kw: 'echo', ev: 'step:upkeep', cond: 'Echo: at the beginning of your upkeep, if it came under your control since your last upkeep', text: 'At the beginning of your upkeep, if this permanent came under your control since the beginning of your last upkeep, sacrifice it unless you pay its echo cost.', test: c => !!c.echoDue },
+  { cr: '702.79', kw: 'persist', ev: 'dies-self', cond: 'Persist: when this creature dies, if it had no -1/-1 counters on it', text: 'When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner\'s control with a -1/-1 counter on it.', test: c => ((c.lki || {}).minus || 0) === 0 },
+  { cr: '702.93', kw: 'undying', ev: 'dies-self', cond: 'Undying: when this creature dies, if it had no +1/+1 counters on it', text: 'When this creature dies, if it had no +1/+1 counters on it, return it to the battlefield under its owner\'s control with a +1/+1 counter on it.', test: c => ((c.lki || {}).plus || 0) === 0 }
+);
+KW_EFFECTS['echo'] = obj => {
+  const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') return [];
+  const name = obj.sourceName, cost = String(obj.arg || '').replace(/\.$/, '').trim(), keep = () => { const g = findCard(obj.sourceId); if (g) delete g.card.echoDue; };
+  if (!f.card.echoDue) return [{ full: true, label: `${name} has been under your control since your last upkeep: echo does nothing`, fn: () => {} }];
+  const out = [];
+  if (/^(?:\{[^}]+\})+$/.test(cost)) out.push({ full: true, label: `Pay ${cost}: keep ${name}`, fn: () => { payManaThen(f.card, cost, `Echo ${cost}`, () => { keep(); log(`${name}: echo paid (${cost}), it stays`); }); } });
+  else out.push({ full: true, label: `I paid the echo cost (${cost}) by hand: keep ${name}`, fn: () => { keep(); log(`${name}: echo paid by hand (${cost}), it stays`); } });
+  out.push({ full: true, label: `Don't pay: sacrifice ${name}`, fn: () => { keep(); sacrificeIt(obj, 'echo not paid'); } });
+  return out;
+};
+const returnWithCounter = kind => obj => {
+  const name = obj.sourceName, sign = kind === 'minus' ? '-1/-1' : '+1/+1', where = () => state.graveyard.findIndex(x => x.id === obj.sourceId);
+  if (where() < 0) return [{ full: true, label: `${name} is no longer in the graveyard: it cannot return`, fn: () => log(`${name}: ${kind === 'minus' ? 'persist' : 'undying'} does nothing, the card is not in the graveyard any more`) }];
+  return [{ full: true, label: `Return ${name} to the battlefield with a ${sign} counter on it`, fn: () => {
+    const i = where(); if (i < 0) return; const [c] = state.graveyard.splice(i, 1);
+    enterBattlefield(c, { from: 'graveyard', logMsg: `${name}: returned to the battlefield with a ${sign} counter (${kind === 'minus' ? 'persist' : 'undying'})`, afterPlace: x => { x.counters = x.counters || { plus: 0, minus: 0 }; x.counters[kind] = (x.counters[kind] || 0) + 1; } });
+    render(); flushTriggers(); } }];
+};
+KW_EFFECTS['persist'] = returnWithCounter('minus');
+KW_EFFECTS['undying'] = returnWithCounter('plus');
+
+// ---- "Sacrifice ~ unless you <cost>." (Glint Hawk: "sacrifice it unless you return an artifact you control to its owner's hand")
+// The ability is a choice: do the cost (the app helps you pick the cards and does it) or let the permanent be sacrificed. Costs read: return, discard, pay {mana}, pay N life, sacrifice, tap.
+const SU_NUM = w => ({ a: 1, an: 1, one: 1, two: 2, three: 3, four: 4 }[String(w).toLowerCase()] || parseInt(w, 10) || 1);
+const SU_TYPES = /^(?:artifact|creature|land|enchantment|planeswalker|permanent|nonland permanent|nonland|token|artifact creature|basic land|untapped (?:artifact|creature|land|permanent))$/i;
+function sacUnlessOptions(tx, obj) {
+  if (!state || !obj) return null; const src = obj.sourceName || 'Ability'; if (obj.sourceId == null) return null;
+  const sents = MASS_SENTS(tx).map(s => s.replace(/\.$/, '').replace(selfNameRe(src), '~')); if (sents.length !== 1) return null;
+  const m = /^sacrifice (?:~|it|this [a-z]+) unless you (.+)$/i.exec(sents[0]); if (!m) return null;
+  const cost = m[1].trim(); if (obj.sourceId === -1) return [{ full: true, label: `sacrifice it unless you ${cost}` }];
+  const sac = () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { log(`${src}: not paid, so it is sacrificed`); moveCard(f.card.id, 'graveyard'); } else log(`${src}: already gone`); };
+  const no = { full: true, label: `Don't: sacrifice ${src}`, fn: sac };
+  const pickPerm = (title, intro, n, filt, then) => { const cands = state.battlefield.filter(c => c.id !== obj.sourceId && filt(c)); if (cands.length < n) { toast('Cannot', `You do not control enough ${title.toLowerCase()} for this.`); return; } pickCardsModal(`${src}: ${title}`, intro, cands, n, then); };
+  let q, yes = null;
+  if ((q = /^return (an?|one|two|three|\d+) ([a-z ]+?)(?: you control)? to (?:its owner's|their owners'|your) hands?$/i.exec(cost)) && SU_TYPES.test(q[2])) {
+    const n = SU_NUM(q[1]), w = q[2].toLowerCase().replace(/^untapped /, '');
+    yes = { full: true, label: `Return ${n === 1 ? 'a' : n} ${q[2]}${n === 1 ? '' : 's'} you control to hand: keep ${src}`, fn: () => pickPerm(q[2], `Choose ${n} ${q[2]}${n === 1 ? '' : 's'} you control to return to its owner's hand. ${src} is sacrificed if you don't.`, n, c => w.split(' ').every(x => x === 'nonland' ? !isLandName(c.name) : pcPermIsCard(c, x === 'permanent' ? (permTypeInfo(c).types.values().next().value || x) : x) || x === 'permanent'), ids => { for (const id of ids) moveCard(id, 'hand'); log(`${src}: returned ${ids.length} permanent${ids.length === 1 ? '' : 's'} to hand, so it stays`); render(); }) };
+  } else if ((q = /^discard (an?|one|two|three|\d+) cards?$/i.exec(cost))) {
+    const n = SU_NUM(q[1]); yes = { full: true, label: `Discard ${n} card${n === 1 ? '' : 's'}: keep ${src}`, fn: () => pickFromHand({ n, title: src, verb: 'discard', note: `Discard ${n} or ${src} is sacrificed.`, ok: () => true, choose: true, cancel: true, done: ids => { for (const id of ids) moveCard(id, 'graveyard'); log(`${src}: discarded ${ids.length}, so it stays`); render(); } }) };
+  } else if ((q = /^pay ((?:\{[^}]+\})+)$/i.exec(cost))) {
+    yes = { full: true, label: `Pay ${q[1]}: keep ${src}`, fn: () => { const f = findCard(obj.sourceId); payManaThen(f ? f.card : null, q[1], `${src}: ${q[1]}`, () => log(`${src}: paid ${q[1]}, so it stays`)); } };
+  } else if ((q = /^pay (\d+) life$/i.exec(cost))) {
+    yes = { full: true, label: `Pay ${q[1]} life: keep ${src}`, fn: () => { if (state.life < +q[1]) { toast('Not enough life', `You cannot pay ${q[1]} life.`); return; } changeLife(-q[1], true); log(`${src}: paid ${q[1]} life, so it stays`); } };
+  } else if ((q = /^sacrifice (an?|one|two|\d+) (?:other |another )?([a-z ]+)$/i.exec(cost)) && SU_TYPES.test(q[2])) {
+    const n = SU_NUM(q[1]); yes = { full: true, label: `Sacrifice ${n === 1 ? 'a' : n} ${q[2]}: keep ${src}`, fn: () => pickPerm(q[2], `Choose ${n} ${q[2]} to sacrifice. ${src} is sacrificed if you don't.`, n, c => pcPermIsCard(c, q[2].split(' ').pop()), ids => { for (const id of ids) moveCard(id, 'graveyard'); log(`${src}: sacrificed ${ids.length} permanent${ids.length === 1 ? '' : 's'}, so it stays`); render(); }) };
+  } else if ((q = /^tap (an?|one|two|\d+) untapped ([a-z ]+?)(?: you control)?$/i.exec(cost)) && SU_TYPES.test(q[2])) {
+    const n = SU_NUM(q[1]); yes = { full: true, label: `Tap ${n === 1 ? 'an' : n} untapped ${q[2]}: keep ${src}`, fn: () => pickPerm(q[2], `Choose ${n} untapped ${q[2]} you control to tap. ${src} is sacrificed if you don't.`, n, c => !c.tapped && pcPermIsCard(c, q[2].split(' ').pop()), ids => { for (const id of ids) toggleTap(id); log(`${src}: tapped ${ids.length}, so it stays`); render(); }) };
+  }
+  if (!yes) yes = { full: true, label: `I did it by hand (${cost}): keep ${src}`, fn: () => log(`${src}: "${cost}" done by hand, so it stays`) };
+  return [yes, no];
+}
+// ---- Spacecraft and Station (CR 702.184, 721)
+// Station: "Tap another untapped creature you control: Put charge counters equal to its power on this Spacecraft. Station only as a sorcery."
+// STATION N+ lines (CR 721.2): while it has N or more charge counters it has the abilities printed under that symbol; the highest reached one with a power/toughness makes it an artifact creature with that P/T.
+const STATION_RE = /^STATION\s+(\d+)\+?\s*$/i;
+function stationSections(c) {
+  if (!c) return null; let raw; try { raw = stripAW(cardTextRaw(c)); } catch (e) { return null; }
+  const lines = String(raw || '').split('\n'); const first = lines.findIndex(l => STATION_RE.test(l.trim())); if (first < 0) return null;
+  const secs = []; let cur = null; for (let i = first; i < lines.length; i++) { const l = lines[i].trim(); const m = STATION_RE.exec(l); if (m) { cur = { n: +m[1], lines: [], pt: '' }; secs.push(cur); } else if (cur) { if (/^\d+\/\d+$/.test(l)) cur.pt = l; else if (l) cur.lines.push(l); } }
+  return { base: lines.slice(0, first), secs };
+}
+const stationCharge = c => counterCount(c, 'charge');
+function stationText(c, txt) {   // only the lines whose threshold is reached count as the card's text
+  if (!c || !/\bSTATION\s+\d/i.test(txt || '')) return txt; const st = stationSections(Object.assign({}, c, { gained: [], splicedTx: '' })); if (!st) return txt;
+  const n = stationCharge(c), out = st.base.slice(); for (const s of st.secs) if (n >= s.n) out.push(...s.lines);
+  return out.join('\n') + (c.gained && c.gained.length ? '\n' + c.gained.join('\n') : '');
+}
+function stationPT(c) { if (!c || c.token || !state) return ''; const t = ((cardInfo(c.name) || {}).t || ''); if (!/\bSpacecraft\b/.test(t)) return ''; const st = stationSections(c); if (!st) return ''; const n = stationCharge(c); let pt = ''; for (const s of st.secs) if (n >= s.n && s.pt) pt = s.pt; return pt; }
+const stationCands = sp => state.battlefield.filter(x => x.id !== sp.id && !x.tapped && permTypeInfo(x).types.has('creature'));
+function stationPick(sp, cb) {
+  const cands = stationCands(sp); if (!cands.length) { toast('Cannot station', 'You need another untapped creature you control to tap.'); return; }
+  openPickCards({ title: `${sp.name}: Station`, note: 'Tap another untapped creature you control. The Spacecraft gets charge counters equal to its power. Summoning-sick creatures can do this.', cards: cands, min: 1, max: 1,
+    done: picked => { const x = picked[0], n = Math.max(0, powerOf(x).n); snap(); x.tapped = true; log(`${sp.name}: stationed by tapping ${x.name} (power ${n})`); cb(n); } });
+}
+// ---- "Can't be countered" (CR 101.2, 701.6a, 614): one engine-level check used by every counter effect and by the stack buttons.
+// Sources: (1) the spell's own text, "This spell can't be countered" (and "... can't be countered by spells or abilities");
+// (2) a static ability of a permanent you control: "Spells you control can't be countered", "Creature spells you cast can't be countered", "Green spells you control ...", "Creature spells you cast of the chosen type ..." (Allosaurus Shepherd, Cavern-style statics);
+// (3) mana: Cavern of Souls mana says "... and that spell can't be countered", so a spell paid for with it (c.noCounterMana) can't be countered.
+// Returns '' when the object can be countered, otherwise a short reason.
+function noteUncounterableMana(spell, manaIds) {
+  if (!spell || spell.ability) return; delete spell.noCounterMana;
+  for (const id of (manaIds || [])) { const f = findCard(id); if (!f || f.zone !== 'battlefield') continue; let ab = []; try { ab = landManaAbilities(f.card) || []; } catch (e) { ab = []; }
+    for (const a of ab) if (a.noCounter && spendOnlyOk(a.only, spell)) { spell.noCounterMana = f.card.name; log(`${spell.name}: paid with mana from ${f.card.name}, so it can't be countered`); return; } }
+}
+function spellTypeWords(sc) { const t = (sc.token ? '' : ((cardInfo(sc.name) || {}).t || '')).split(' // ')[0]; const [a, b] = t.split('—'); return { types: new Set(String(a || '').toLowerCase().split(/\s+/).filter(Boolean)), subs: new Set(String(b || '').toLowerCase().split(/\s+/).filter(Boolean)), changeling: /\bchangeling\b/i.test((cardInfo(sc.name) || {}).tx || '') }; }
+function cantBeCounteredWhy(sc) {
+  if (!state || !sc || sc.ability || sc.opp) return '';
+  if (sc.noCounterMana) return `it was cast with mana from ${sc.noCounterMana}`;
+  const own = String(cardText(sc) || '').replace(/[’]/g, "'").replace(selfNameRe(sc.name), '~');
+  if (/(?:this spell|this card|~) can'?t be countered(?: by spells or abilities)?\b/i.test(own) && !/^[^.]*\bspells? you (?:control|cast)\b/im.test(own)) return `${sc.name} says it can't be countered`;
+  const tw = spellTypeWords(sc), cols = (cardInfo(sc.name) || {}).col || [], CN = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
+  for (const g of state.battlefield) {
+    for (const ln of String(cardText(g) || '').replace(/[’]/g, "'").split('\n')) {
+      const m = /^(?:(.+?) spells?|Spells?) you (?:control|cast)(?: of the chosen type)? can'?t be countered\.?$/i.exec(ln.trim()); if (!m) continue;
+      const chosen = /of the chosen type/i.test(ln), filt = (m[1] || '').toLowerCase().trim();
+      if (chosen && !(g.chosen && (tw.subs.has(String(g.chosen).toLowerCase()) || tw.changeling))) continue;
+      let ok = true; for (const w of filt.split(/\s+/).filter(Boolean)) { if (w === 'and' || w === 'or') continue; const neg = /^non/.test(w) ? w.slice(3) : null;
+        const has = x => tw.types.has(x) || tw.subs.has(x) || cols.some(c => CN[c] === x); ok = ok && (neg ? !has(neg) : has(w)); }
+      if (ok) return `${g.name}: ${ln.trim().replace(/\.$/, '')}`;
+    }
+  }
+  return '';
+}
+// ---- Assimilate (CR 701.72; card text of Borg Cube): "Assimilate a creature card exiled with it. If you can't, exile up to one target creature."
+// Reminder text on the card: "To assimilate a card, put it onto the battlefield under your control with a +1/+1 counter. It's a Borg artifact creature and loses all other creature types."
+// A permanent remembers the cards exiled with it (c.exiledWith); the first sentence uses that list, the second fills it.
+function assimilateOptions(tx, obj) {
+  if (!state || !obj) return null; const src = obj.sourceName || 'Ability';
+  const sents = MASS_SENTS(tx).map(s => s.replace(/\.$/, '').replace(selfNameRe(src), '~').trim());
+  if (!sents.length || !/^assimilate an? creature card exiled with (?:~|it|this \w+)$/i.test(sents[0])) return null;
+  const orElse = sents[1] && /^if you can'?t, exile up to one target creature$/i.test(sents[1]); if (sents.length > (orElse ? 2 : 1)) return null;
+  if (obj.sourceId === -1) return [{ full: true, label: 'assimilate a creature card exiled with it' + (orElse ? ', otherwise exile up to one target creature' : '') }];
+  const f = findCard(obj.sourceId), mine = f && f.card.exiledWith ? f.card.exiledWith.filter(e => state.exile.some(x => x.id === e.id)) : [];
+  const out = [];
+  for (const e of mine) { const card = state.exile.find(x => x.id === e.id); if (!card || !/\bCreature\b/.test(((cardInfo(card.name) || {}).t || '').split(' // ')[0])) continue;
+    out.push({ full: true, label: `Assimilate ${card.name}: put it onto the battlefield under your control with a +1/+1 counter (a Borg artifact creature)`, fn: () => {
+      const i = state.exile.findIndex(x => x.id === card.id); if (i < 0) return; const [c] = state.exile.splice(i, 1); f.card.exiledWith = f.card.exiledWith.filter(x => x.id !== c.id);
+      enterBattlefield(c, { from: 'exile', logMsg: `${src}: assimilated ${c.name} (+1/+1 counter, a Borg artifact creature)`, afterPlace: x => { x.counters = x.counters || { plus: 0, minus: 0 }; x.counters.plus = (x.counters.plus || 0) + 1; x.becomes = { pt: ((cardInfo(x.name) || {}).pt) || '0/0', types: ['artifact', 'creature'], subs: ['borg'], onlySubs: true, kws: [] }; x.addSubs = []; x.borg = true; } });
+      render(); flushTriggers(); } }); }
+  if (!out.length && orElse) {   // "If you can't": nothing exiled with it that can be assimilated
+    const cands = state.battlefield.filter(c => c.id !== obj.sourceId && permTypeInfo(c).types.has('creature'));
+    out.push({ full: true, label: 'No creature card is exiled with it: exile up to one target creature', fn: () => {
+      if (!cands.length) { log(`${src}: no target creature to exile`); return; }
+      openPickCards({ title: `${src}: exile up to one target creature`, note: 'Choose a creature, or none. It is exiled and remembered as exiled with this permanent, so a later assimilate can use it.', cards: cands, min: 0, max: 1, done: picked => { const t = picked[0]; if (!t) { log(`${src}: no creature exiled`); return; } const nm = t.name, tok = t.token, id = t.id; moveCard(id, 'exile'); const g = findCard(obj.sourceId); if (g && !tok) { g.card.exiledWith = (g.card.exiledWith || []).concat([{ id, name: nm }]); } log(`${src}: exiled ${nm}${tok ? ' (a token ceases to exist)' : ' (exiled with ' + src + ')'}`); render(); } }); } });
+  }
+  if (!out.length) out.push({ full: true, label: 'Nothing to assimilate and no creature to exile', fn: () => log(`${src}: nothing happened`) });
+  return out;
 }
 init();
 

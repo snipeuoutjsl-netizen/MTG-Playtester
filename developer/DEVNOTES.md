@@ -302,3 +302,11 @@ The public README is in README.md. This file is the developer history, newest fi
 
 **v0.22.0** Teaching switches. Every teaching aid is its own switch; Now/Next phase window; in-app updater.
 
+
+## v0.99.31 notes
+- `76-return-keywords.js` echo/persist/undying/"sacrifice unless"; `c.lki` (counters at death) is saved in `leaveBattlefield` before they reset; `c.echoDue` is set on every enter.
+- `77-spacecraft.js` Station: counters kind `charge`; `stationText` filters the card text by threshold, `stationPT` gives the P/T and makes it an artifact creature (hooked in `ptCalc` and `frontType`).
+- `78-uncounterable.js` `cantBeCounteredWhy(spell)` is the ONE check; never test "can't be countered" text anywhere else. Cavern mana: `noteUncounterableMana` at cast commit.
+- `79-assimilate.js` `c.exiledWith` links exiled cards to the exiling permanent.
+- Card text must come from Oracle/the user, never assumed. Scryfall was not reachable from the workspace in this session (proxy 403 even after the user allowlisted it); ask the user for text.
+- Lesson: hand-bar Key and handLegend are one opaque dialog (`#handLegend.open`); mulligan hand size is set in `layoutHand` from the available width and height.
