@@ -10,7 +10,7 @@ function landManaAbilities(c) {
   const key = norm(c.name) + '|' + tx.length + '|' + tx.slice(-40);
   if (LAND_AB_CACHE.has(key)) return LAND_AB_CACHE.get(key);
   const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const t = tx.replace(/\([^)]*\)/g, ' ').replace(selfNameRe(c.name), '~');   // v0.96.6: "this land" / "this artifact" as well as the printed name
+  const t = tx.replace(/\([^)]*\)/g, ' ').replace(selfNameRe(selfNm(c)), '~');   // v0.96.6: "this land" / "this artifact" as well as the printed name
   const out = []; let becomes = 0, bm;
   if ((bm = t.match(/Whenever ~ becomes tapped, it deals (\d+) damage to you/i))) becomes = +bm[1];
   for (const line of t.split('\n')) {
@@ -82,7 +82,7 @@ function applyLandCost(c, k) {
 function etbCounters(c) {
   if (!c || c.token) return;
   const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let tx = cardText(c).replace(selfNameRe(c.name), '~');
+  let tx = cardText(c).replace(selfNameRe(selfNm(c)), '~');
   { const its = kwItems(tx); const mi = its.map(x => x.match(/^modular (\d+)$/i)).find(Boolean); if (mi) tx += `\n~ enters with ${mi[1]} +1/+1 counters on it.`;
     const vn = its.map(x => x.match(/^vanishing (\d+)$/i)).find(Boolean); if (vn) tx += `\n~ enters with ${vn[1]} time counters on it.`;   // CR 702.63a
     const fd = its.map(x => x.match(/^fading (\d+)$/i)).find(Boolean); if (fd) tx += `\n~ enters with ${fd[1]} fade counters on it.`; }   // CR 702.32a   // v0.96.1 modular (CR 702.43a)
@@ -108,7 +108,7 @@ function checkNoCounterTriggers() {
   if (!state) return;
   for (const c of state.battlefield) {
     if (c.token) continue; const tx = cardText(c); if (!tx || !/has no [a-z+\/-]+ counters on it/i.test(tx)) continue;
-    const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), t = tx.replace(selfNameRe(c.name), '~');
+    const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), t = tx.replace(selfNameRe(selfNm(c)), '~');
     const m = t.match(/^(When(?:ever)? ~ has no ([a-z+\/-]+) counters on it),\s*(.*)$/im); if (!m) continue;
     const key = m[2].toLowerCase() === '+1/+1' ? 'plus' : m[2].toLowerCase(), cc = typeof c.counters === 'number' ? { plus: c.counters } : (c.counters || {});
     if ((cc[key] || 0) > 0) { c._noCtr = false; continue; }

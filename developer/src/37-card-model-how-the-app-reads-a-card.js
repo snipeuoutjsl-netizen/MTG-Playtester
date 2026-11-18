@@ -270,18 +270,25 @@ function compileCard(c) {
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
 const DEP_HANDLED = [/^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+// A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
+// Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
+const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
+function verbGaps(sentence, labels) {
+  const s = String(sentence || '').replace(/\([^)]*\)/g, ' '); if (labels === null) { try { labels = recognizedEffects(sentence).join(' | '); } catch (e) { return []; } if (!labels) return []; }
+  return VERB_CHECKS.filter(([v, l]) => v.test(s) && !l.test(labels)).map(([v]) => v.source);
+}
 function uncoveredClauses(effectText) {
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
-  if (sents.length < 2) return [];
   try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; } catch (e) { /* ignore */ }
   const missed = [];
   sents.forEach((x, i) => {
     if (/^(?:Flashback|Kicker|Multikicker|Buyback|Cycling|Escape|Jump-start|Retrace|Entwine|Storm|Foretell|Suspend)\b/i.test(x)) return;
     if (/^(?:Activate|Cast this spell|This ability|You can't|Spend only|Play this|Cast only|Cast it|This spell can't be countered)\b/i.test(x)) return;
     if (i > 0 && DEP_SENT.test(x)) { if (!DEP_HANDLED.some(r => r.test(x))) missed.push(x); return; }
-    let ok = false; try { ok = recognizedEffects(x).length > 0; } catch (e) { /* ignore */ }
-    if (!ok) missed.push(x);
+    if (sents.length < 2 && !verbGaps(x, null).length) return;   // one understood sentence: nothing more to check
+    let ok = false, labs = []; try { labs = recognizedEffects(x); ok = labs.length > 0; } catch (e) { /* ignore */ }
+    if (!ok) missed.push(x); else if (labs.length && verbGaps(x, labs.join(' | ')).length) missed.push(x);   // understood in part: some action in the sentence has no matching effect
   });
   return missed;
 }

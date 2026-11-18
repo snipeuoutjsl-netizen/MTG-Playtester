@@ -5,6 +5,8 @@ const TRIG_CACHE = new Map();
 const MAIN_STEPS = [[/\b(?:precombat|first) main phase\b/, 'main1'], [/\b(?:postcombat|second) main phase\b/, 'main2'], [/\bupkeep\b/, 'upkeep'], [/\bdraw step\b/, 'draw'], [/\bend step\b/, 'end']];
 // Legendary cards such as "Phlage, Titan of Fire's Fury" refer to themselves by the part before the comma ("When Phlage enters..."),
 // so a self-reference matches either the full name or that short name (rule 201.4 / Oracle wording).
+// A token's name ("Rat", "Pest") is a creature type its own rules text uses for OTHER creatures ("each other Rat you control"), never a reference to itself, so tokens match only "this creature" and friends.
+const selfNm = c => c && c.token ? '\u0000' : (c ? c.name : '');
 function selfNameRe(full) {
   const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : '';
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
@@ -24,7 +26,7 @@ function parseTriggers(c) {
   const key = c.token ? 'tok:' + norm(c.name) + '|' + info.tx : info.ovr ? 'ovr:' + norm(c.name) + '|' + info.tx : norm(c.name);
   if (TRIG_CACHE.has(key)) return TRIG_CACHE.get(key);
   const out = [];
-  const nameRe = selfNameRe(info.name);
+  const nameRe = selfNameRe(c.token ? "\u0000" : info.name);
   for (const raw of info.tx.replace(/\n(?=\s*[\u2022\u2023])/g, ' ').split('\n')) {
     const line = raw.trim();
     const lm = line.match(/^(?:([A-Z][A-Za-z' ]+) — )?((?:When|Whenever|At)\b.*)$/s);
@@ -558,7 +560,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -720,7 +722,7 @@ function effectOptionsBase(tx, obj) {
       log(`${own} became a copy of ${t.name}`); checkNoCounterTriggers(); render(); if (state.pendingTriggers.length) flushTriggers(); } }); } }];
   if (obj.sourceId && (mm = tx.match(/\bgains? \"([^\"]+(?:\"[^\"]*\"[^\"]*)?)\"\s*\.?\s*$/i)) && /^[^"]* gains? "/.test(tx.replace(new RegExp((obj.sourceName||'~').replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'),'~'))) { const gl = mm[1]; opts.push({ label: `${src} gains "${gl}"`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { snap(); f.card.gained = (f.card.gained || []).concat([gl]); log(`${src} gains "${gl}"`); render(); } } }); return [opts[opts.length - 1]]; }
   // v0.65 graveyard-based effects
-  if (/\bshuffles? (?:your|their) graveyard into (?:your|their) library\b/i.test(tx)) opts.push({ label: 'Shuffle your graveyard into your library', fn: () => { snap(); state.library.push(...state.graveyard.splice(0)); shuffleLibrary(); log(`${src}: graveyard shuffled into the library`); render(); } });
+  if (/\bshuffles? (?:your|their) graveyard into (?:your|their) library\b/i.test(tx)) opts.push({ label: 'Shuffle your graveyard into your library', fn: () => { snap(); state.library.push(...state.graveyard.splice(0)); shuffleLib(); log(`${src}: graveyard shuffled into the library`); render(); } });
   if (obj.sourceId && /\byou may put it onto the battlefield\b/i.test(txs)) opts.push({ label: `Put ${src} onto the battlefield`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'graveyard') { snap(); state.graveyard.splice(f.idx, 1); enterBattlefield(f.card, { from: 'graveyard', logMsg: `${src}: put onto the battlefield from the graveyard` }); render(); flushTriggers(); } else toast('Not in graveyard', `${src} is no longer in your graveyard.`); } });
   if (obj.sourceId && (mm = txs.match(/you may exile an? ([a-z]+) creature card other than ~ from your graveyard\. If you do, return ~ to the battlefield/i))) { const col = mm[1].toLowerCase(); opts.push({ label: `Exile a ${col} creature card from your graveyard to return ${src}`, fn: () => { const f = findCard(obj.sourceId); if (!f || f.zone !== 'graveyard') { toast('Not in graveyard', `${src} is no longer in your graveyard.`); return; } const cards = state.graveyard.filter(x => x.id !== f.card.id && descMatchesCard(col + ' creature', x.name)); if (!cards.length) { toast('Nothing to exile', `You need another ${col} creature card in your graveyard.`); return; } openPickCards({ title: `${src}: exile a ${col} creature card`, note: `Exile one to return ${src} to the battlefield.`, cards, max: 1, done: picked => { if (!picked.length) return; snap(); const x = picked[0], i = state.graveyard.findIndex(g => g.id === x.id); if (i >= 0) state.exile.push(...state.graveyard.splice(i, 1)); const f2 = findCard(obj.sourceId); if (f2 && f2.zone === 'graveyard') { state.graveyard.splice(f2.idx, 1); enterBattlefield(f2.card, { from: 'graveyard', logMsg: `${src}: exiled ${x.name} and returned to the battlefield` }); } render(); flushTriggers(); } }); } }); }
   // v0.63 generic effects
@@ -764,7 +766,7 @@ function openAbilityEffect(obj, done) {
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
     const e = ayGet(obj.sourceName, tx);
-    if (e && e.auto && e.label) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
+    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
       if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
   }
   // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.
@@ -827,7 +829,8 @@ function openAbilityEffect(obj, done) {
     h('div', { class: 'psub', text: tx || 'This ability has no text.' }),
     delayed ? h('div', { class: 'psub', text: 'A delayed triggered ability was created. In a real game the next turn is your opponent’s, so you draw during THEIR upkeep. In this goldfish game there is no opponent turn, so you draw at the start of your own next upkeep, before your draw step.' }) : null,
     opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
-    box);
+    box,
+    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'The app does NOT apply these lines. Do them by hand, then tick them off:' }), ...miss.map(x => h('label', { class: 'chk' }, h('input', { type: 'checkbox' }), ' ', x))) : null; })());
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); log(`Resolved: ${obj.name}`); if (done) done(); } }));
 }
 function openCascade(obj, done) {

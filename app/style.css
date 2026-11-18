@@ -1674,3 +1674,5 @@ body[data-uitheme="pixmush"] { --bar-a: #3a2540; --bar-b: #2a1b33; --hand-a: #2a
 body[data-uitheme="pixcat"] { --bar-a: #1d2a56; --bar-b: #141d40; --hand-a: #141d40; --hand-b: #0e1630; --bg: #0b1129; --panel: #18234a; --panel-2: #26336a; --line: #3a4a86; --text: #f4f1ff; --muted: #9fb0e0; --accent: #f2a65a; --accent-text: #2a1604; --gold: #ffe08a; }
 body[data-uitheme="pixfrog"] { --bar-a: #17564a; --bar-b: #0f3a34; --hand-a: #0f3a34; --hand-b: #0b2622; --bg: #081c19; --panel: #0f3a34; --panel-2: #17564a; --line: #2a8a6a; --text: #eafff0; --muted: #9bd4b8; --accent: #59c85a; --accent-text: #08210f; --gold: #ffd45c; }
 body[data-uitheme="pixmusic"] { --bar-a: #33205f; --bar-b: #211443; --hand-a: #211443; --hand-b: #140d2b; --bg: #0f0924; --panel: #211443; --panel-2: #33205f; --line: #5a3d94; --text: #f4f1ff; --muted: #b4a6e0; --accent: #ff7ac8; --accent-text: #2a0720; --gold: #46d6c0; }
+.gapbox { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--gold, #e3b95c); border-radius: 8px; background: rgba(227,185,92,.08); }
+.gapbox .chk { display: block; margin-top: 4px; }

@@ -78,6 +78,7 @@ function parseCondStatic(line, g) {
   if ((m = L.match(/^as long as (.+?), ((?:~|it|this \w+) .+)$/i))) { cond = m[1]; eff = m[2]; }
   else if ((m = L.match(/^((?:~|this \w+) (?:gets?|has|have|can't) .+?) as long as (.+)$/i))) { eff = m[1]; cond = m[2]; }
   else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for every (\w+) (.+)$/i))) { eff = m[1]; per = { every: CS_NUM(m[2]), thing: m[3] }; if (isNaN(per.every)) per = { every: 1, thing: m[2] + ' ' + m[3] }; }
+  else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for each (.+)$/i))) { eff = m[1]; per = { every: 1, thing: m[2] }; }   // CR 613.4c: "gets +1/+1 for each other Rat you control"
   else return null;
   const e = csEffect(eff); if (!(e.p || e.t || e.kws.length || e.cant)) return null;
   return { line: L, kind: 'cs', g, cond, per, p: e.p, t: e.t, kws: e.kws, cant: e.cant, other: e.other };

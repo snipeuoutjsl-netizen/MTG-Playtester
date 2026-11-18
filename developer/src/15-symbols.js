@@ -23,7 +23,7 @@ function symbols(str) {
 function etbTapped(c) {
   const none = { tapped: false, why: '' };
   if (!c || c.token) return none;
-  const tx = cardText(c).replace(selfNameRe(c.name), '~');
+  const tx = cardText(c).replace(selfNameRe(selfNm(c)), '~');
   const key = norm(c.name);
   if (!tx) return /triome/i.test(c.name) ? { tapped: true, why: 'enters tapped' } : none;
   if (shockLife(c) > 0) return none;       // shocklands ask the player

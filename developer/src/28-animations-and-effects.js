@@ -16,6 +16,7 @@ const ANIM_DEFS = [
   ['life', 'Life effects', 'Rolling life numbers, a colour flash, a shake on big hits and floating +/- numbers'],
   ['turn', 'Turn banner & phase flash', 'A banner at the start of each turn and a flash when the phase changes'],
   ['fan', 'Hand fan', 'Cards in your hand sit in a gentle arc and lift when you hover them'],
+  ['shuffle', 'Shuffle animation', 'A quick riffle shuffle over your library whenever it is shuffled (search effects, fetch lands, the Shuffle button)'],
   ['cardDrag', 'Physical card drag', 'Click and hold a card and it follows your mouse. Drop it on a zone it can go to; if it cannot be played or moved there it flies back to where it came from'],
   ['hand3d', '3D hand tilt', 'Cards in your hand tilt toward the mouse in 3D as you hover them, like the big card preview'],
   ['handFloat', 'Floating hand', 'The cards in your hand hover up and down a small amount, each at its own pace, with a soft drop shadow'],

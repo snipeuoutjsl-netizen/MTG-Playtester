@@ -143,7 +143,7 @@ function fetchLand(fetchId, targetId, opts) {
       msg += ` → fetched ${t.name}${t.tapped ? ' (tapped)' : ''}`;
     }
   } else msg += ', found nothing';
-  shuffle(state.library);
+  shuffleLib();
   log(msg + '; shuffled');
   render();
   flushTriggers();

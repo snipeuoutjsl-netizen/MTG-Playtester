@@ -32,7 +32,7 @@ function parseCharChange(rest) {
   if (resetSubs && !out.subs) out.subs = [];
   const bp = /base power and toughness (\d+)\/(\d+)/i.exec(r); if (bp) out.pt = bp[1] + '/' + bp[2];
   for (const lm of r.matchAll(/\bloses? ((?:[a-z]+(?: strike)?(?:, | and |,? and )?)+?)(?= and |$|,)/gi)) for (const k of GRANTABLE) if (new RegExp('\\b' + k + '\\b', 'i').test(lm[1]) && !/\ball\b/i.test(lm[1])) out.loseKws.push(k);
-  if (!(out.lose || out.subs || out.types || out.addTypes || out.colors || out.loseKws.length)) return null;
+  if (!(out.lose || out.pt || out.subs || out.types || out.addTypes || out.colors || out.loseKws.length)) return null;
   return out;
 }
 const AURA_OVR_CACHE = new Map();
