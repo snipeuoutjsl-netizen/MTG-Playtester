@@ -72,3 +72,29 @@ function ifYouDoOptions(tx, obj) {
   } };
   const out = [full]; if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
 }
+
+// ---- "Create a ... token. You may attach this Equipment to that token." (CR 701.3, 301.5, 303.4): the second sentence acts on what the first one made.
+// An unattached Equipment gives nothing (it only affects the creature it is attached to), so the attach is a choice the player makes right after the token appears.
+const ATTACH_AFTER_RE = /^you may attach (?:this|~|it)(?: (?:equipment|aura|permanent|artifact))? to (?:that|the|it|one of them|that token|that creature|the token)(?: token| creature)?$/i;
+function attachAfterCreateOptions(tx, obj) {
+  if (!state || !obj || !obj.sourceId) return null;
+  const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim().replace(/[.!?]$/, '')).filter(Boolean);
+  const j = sents.findIndex((x, i) => i > 0 && ATTACH_AFTER_RE.test(x.replace(selfNameRe(obj.sourceName || ''), '~'))); if (j < 1) return null;
+  const A = sents.slice(0, j).join('. ') + '.', rest = sents.slice(j + 1).join('. ');
+  const aO = effectOptionsBase(A, obj).filter(o => typeof o.fn === 'function' && !o.hidden); if (aO.length !== 1) return null;
+  const a = aO[0], src = obj.sourceName || 'Ability';
+  const full = { full: true, label: `${a.label}; then you may attach ${src} to it`, fn: () => {
+    const before = new Set(state.battlefield.map(c => c.id)); a.fn();
+    afterSettled(() => {
+      const made = state.battlefield.filter(c => !before.has(c.id)); if (!made.length) { log(`${src}: nothing was created, so there is nothing to attach to`); return; }
+      const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { log(`${src} is no longer on the battlefield, so it cannot be attached`); return; }
+      const attach = t => { if (attachTo(f.card.id, t.id, src)) log(`${src} is attached to ${t.name} (it now gives its bonus to that creature)`); render(); flushTriggers(); };
+      const m = modal(`${src}: attach it?`, { width: 480, sticky: true, noClose: true });
+      m.body.append(h('div', { class: 'psub', text: `${src} stays unattached unless you attach it now, and an unattached Equipment gives nothing. No player may act between the token appearing and this choice.` }));
+      for (const t of made) m.body.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: `${t.name} (${ptText(t)})` }), h('button', { class: 'primary', text: 'Attach to this', onclick: () => { m.close(); attach(t); } })));
+      m.foot.append(h('button', { text: "Don't attach", onclick: () => { m.close(); log(`${src}: you chose not to attach it`); render(); } }));
+    });
+  } };
+  const out = [full]; if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
+}
