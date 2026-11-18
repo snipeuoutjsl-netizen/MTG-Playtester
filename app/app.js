@@ -3947,8 +3947,9 @@ function startGame() {
 }
 
 function doMulligan() {
+  // CR 103.5: a player may keep taking mulligans; after the seventh there is nothing left to keep, so that is the last one offered
+  if (!state || state.phase !== 'mull' || state.mulls >= 7) return;
   dealingStart();
-  if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
   state.library.push(...state.hand.splice(0));   // CR 103.5: the whole hand goes back into the library ...
   shuffleLib({ delay: 450 });   // ... which is shuffled (on screen, once the old hand has landed on it) ...
@@ -5993,7 +5994,7 @@ function renderOverlay() {
           h('button', { class: 'primary', text: 'Keep', onclick: keepHand }),
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
           state.hand.some(mulliganHandSwap) ? h('button', { text: `Use Serum Powder — exile hand, draw ${state.hand.length}`, onclick: serumPowder }) : null,   // v0.96.25 only offered when a card in the hand allows it (CR 103.5b)
-          h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : (state.cmdMode && !state.freeMullUsed ? 'Free mulligan (draw 7)' : `Mulligan to ${7 - state.mulls - 1}`), disabled: state.mulls >= 6, onclick: doMulligan })),
+          h('button', { text: state.mulls >= 7 ? 'Cannot mulligan' : (state.cmdMode && !state.freeMullUsed ? 'Free mulligan (draw 7)' : `Mulligan to ${7 - state.mulls - 1}`), disabled: state.mulls >= 7, onclick: doMulligan })),
         state.hand.some(mulliganHandSwap) ? h('div', { class: 'phint', text: 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.' }) : null);   // v0.99.34 no "Your hand is shown below" line
     } else {
       ov.hidden = true; ov.replaceChildren(); return;   // v0.90.7 chosen in the hand bar instead
@@ -6535,7 +6536,7 @@ function openWelcome(onDone) {
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('The deck button at the top left lists your saved decks and switches between them.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
+      P('The deck button at the top left opens your deck bookcase. Click a deck box to take it off the shelf and see its colours, mana curve and key cards, with ', B('Use this deck'), ', Edit, Sideboard and art buttons; double-click a box to use it straight away.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
@@ -6545,9 +6546,9 @@ function openWelcome(onDone) {
       ...(FEATURES.multiplayer ? [P('To play a friend on the same network open ', B('☰ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.')] : []),
       P('For coin flips and die rolls open ', B('☰ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
     ['5. Settings', [P('The ', B('⚙ gear'), ' holds settings and updates (Settings, Update app, Import / edit deck, Card data, Images, help). The ', B('☰ Game tools'), ' button beside it holds the in-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin).'), P('Open ', B('⚙ → Settings'), '. The tabs are:'),
-      h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, foil, cursor, card sizes, turn-flow bar opacity and card sleeves.'), h('li', null, B('Accessibility'), ' – interface size, high contrast, calm motion, larger click targets, strong keyboard focus and screen-reader log announcements.'), h('li', null, B('Board'), ' – board layout, playmat and the frame around it.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
+      h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, card sizes, turn-flow bar opacity, foil, card sleeves and the cursor.'), h('li', null, B('Accessibility'), ' – interface size, high contrast, calm motion, larger click targets, strong keyboard focus and screen-reader log announcements.'), h('li', null, B('Board layout'), ' – lanes, zone rail, piles and the board effects.'), h('li', null, B('Playmat & frame'), ' – playmat picture, colour and motion, and the frame around the board.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, grouped by when you meet them, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
     ['6. Themes, playmats and sleeves', [P('Under ', B('Settings → Look & feel'), ' the ', B('One-click set'), ' picker changes everything at once: interface theme, card sleeve, playmat, board frame and (if ticked) a matching song. Or choose each part yourself.'),
-      P('Pick a built-in playmat under ', B('Settings → Board'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
+      P('Pick a built-in playmat under ', B('Settings → Playmat & frame'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
     ['7. What the icons and colours mean', [P('Cards in your hand glow to tell you what you can do: ', B('Playable'), ' (green), ', B('Can\'t pay'), ' (not enough or wrong mana), ', B('Wrong timing'), ' (sorcery-speed card outside your main phase), ', B('Instant speed'), ' (can be cast in response), and ', B('Selected'), '.'),
       P('The row of small icons at the top shows game states (monarch, initiative, storm count, energy, poison and more); they light up when active, and you can click them to change them. Tapped cards are turned sideways, summoning-sick creatures are dimmed, and a count badge like ', B('×4'), ' means identical cards are piled together (click it to spread them out).'),
       P('Round icons on a creature are keywords it has right now. ', B('Card outline key'), ' in the \u2630 Game tools menu explains the glow colours. The Stack panel shows what is waiting to resolve.')]],
@@ -6591,8 +6592,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.39';
+const APP_VERSION = '0.99.40';
 const CHANGELOG = [
+  { v: '0.99.40', title: 'Deck bookcase, tidier Settings, mulligan to zero, Spacecraft text', notes: ['NEW: the deck screen is a bookcase. Deck boxes stand on wooden shelves; hovering slides one forward, and a click takes it off the shelf into the middle of the window, where you can turn it with the mouse and see its colours, mana curve and key cards next to Use this deck, Edit list, Sideboard, Box art and Card art & printings. Escape or Put it back returns it; a double-click still picks a deck at once.', 'Settings reorganised: Playmat & frame has its own tab, the teaching aids are grouped (Turn flow, Casting & the stack, On the cards, Help & the log) in two columns, the rows are tighter, and search now finds a single switch inside a group. A duplicate "Replacement effect notes" switch was removed. Every option and every accessibility setting is still there; the columns drop to one when the text is large.', 'FIXED: a window opened during the opening hand (Settings, for example) was drawn underneath the large hand cards.', 'RULES (CR 103.5): a mulligan always puts the whole hand back, shuffles and draws a new seven; you may now mulligan all the way to zero cards (it used to stop at one).', 'FIXED (rules): keyword costs written "Keyword\u2014Cost." (Cumulative upkeep\u2014Pay 1 life., and similar) were not read because the line ends in a period.', 'FIXED (rules): Spacecraft now read their real Oracle text ("10+ | Flying" lines, with the power and toughness box at the threshold the reminder text names), so they are only creatures, and only get those abilities, once they have enough charge counters.', 'Tests: the invented test cards are now kept in the repository, and all 237 rules checks pass.'] },
   { v: '0.99.39', title: 'Tribal Flames and "where X is" counting fixed; Card art grid tidied', notes: ['FIXED (rules): Tribal Flames and other Domain cards dealt 0 damage. "X is the number of basic land types among lands you control" is now counted (with Leyline of the Guildpact or Prismatic Omen out, each land you control has all five types, so one land gives 5; with no lands it is 0).','FIXED: a "where X is the number of ..." that the app cannot count is never taken as 0 any more. The line is left for you to do by hand (and shown as not understood) instead of quietly doing nothing. "The number of cards in your graveyard" now counts the graveyard (it used to give 0).','Card art & printings: the buttons fit inside each card (Printing\u2026 on its own row), and every card lines up.'] },
   { v: '0.99.38', title: 'Damage targeting fix', notes: ['FIXED (rules): spells and abilities that deal damage to "target creature or planeswalker" (Strangle, Burning Hands, Broadside Barrage and about 60 others) were offered as damage to the opponent. A player is not a legal target for them (rules 115.1 and 601.2c), so that option is gone. "Any target", "target creature or player" and "target player or planeswalker" still offer it.'] },
   { v: '0.99.37', title: 'Choose printings (alternate art) and buy the deck', notes: ['Card art & printings (Deck view, or Deck boxes \u2192 art): every card has a Printing\u2026 button that lists all of the card\u2019s real printings from Scryfall with their pictures. Pick one and that art is used for the card in this deck, on the table, in your hand and in the preview. Use the default art goes back. Your own pictures still work as before.','Buy this deck (Deck view): opens TCGplayer Mass Entry in your browser with the deck filled in, using the exact printing you chose for each card (other cards are left to TCGplayer). Nothing is bought until you check out there. Copy list with set codes puts the list on the clipboard for any other store (Card Kingdom, Mana Pool, a local store).'] },
@@ -7772,24 +7774,79 @@ function deckArtName(deckName, deck) {
   return deck.main[0] ? deck.main[0].name : '';
 }
 function artStyle(im) { return im && im.front ? `background-image:url("${im.front}")` : ''; }
-function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide) {
-  const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
+// v0.99.40 The deck screen is a bookcase: boxes stand on wooden shelves at an angle (front and spine both show). Hover slides a box forward;
+// clicking pulls it off the shelf into the middle of the window, where it can be turned with the mouse and played, edited or sideboarded.
+// Double-click (or Enter twice) still picks a deck straight away.
+function deckBoxModel(deckName, deck, cols, im) {
   const a = DECKBOX_COL[cols[0] || ''], b = DECKBOX_COL[cols[1] || cols[0] || ''];
-  const dbx = h('div', { class: 'dbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
+  return h('div', { class: 'dbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
     h('div', { class: 'dbx-face front' },
       h('div', { class: 'dbx-art' + (im ? '' : ' none'), style: artStyle(im) }, im ? null : h('span', { text: (deckName.trim()[0] || '?').toUpperCase() })),
       h('div', { class: 'dbx-gloss' }),
       h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }))))),
     h('div', { class: 'dbx-face side' }, h('span', { text: deckName })),
     h('div', { class: 'dbx-face top' }));
-  const stage = h('div', { class: 'dbx-stage', title: isCur ? `${deckName} (current deck)` : `Use ${deckName}`, onclick: onPick }, dbx);
-  stage.addEventListener('mousemove', e => { const r = stage.getBoundingClientRect(); dbx.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); dbx.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
-  stage.addEventListener('mouseleave', () => { dbx.style.removeProperty('--rx'); dbx.style.removeProperty('--ry'); });
-  return h('div', { class: 'dbx-tile' + (isCur ? ' on' : '') }, stage, h('div', { class: 'dbx-shadow' }),
-    h('div', { class: 'dbx-btns' }, h('button', { text: 'Art…', title: 'Choose which card’s art is on this box', onclick: e => { e.stopPropagation(); onArt(); } }), h('button', { text: 'Edit', onclick: e => { e.stopPropagation(); onEdit(); } }),
-      onSide ? h('button', { class: dk.sb ? 'sbon' : '', text: 'Sideboard' + (deck.side.length ? ` (${sum(deck.side)})` : ''), title: 'Swap cards between your main deck and sideboard. The original list can always be restored.', onclick: e => { e.stopPropagation(); onSide(); } }) : null),
-    h('div', { class: 'dbx-btns' }, h('button', { class: 'cartbtn', text: 'Import custom card art…', title: 'Use your own pictures for the cards in this deck', onclick: e => { e.stopPropagation(); onCustom(); } })),
-    isCur ? h('div', { class: 'dbx-cur', text: 'In use' }) : null);
+}
+const tiltWith = (zone, box) => {
+  zone.addEventListener('mousemove', e => { const r = zone.getBoundingClientRect(); box.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); box.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
+  zone.addEventListener('mouseleave', () => { box.style.removeProperty('--rx'); box.style.removeProperty('--ry'); });
+};
+// A short summary of what is in the box: card types, colours and the most-played non-land cards.
+function deckSummary(deck) {
+  const types = { Creature: 0, Instant: 0, Sorcery: 0, Artifact: 0, Enchantment: 0, Planeswalker: 0, Land: 0 }, curve = [0, 0, 0, 0, 0, 0, 0];
+  for (const { qty, name } of deck.main) { const i = cardInfo(name); const t = (i && i.t) || ''; const k = Object.keys(types).find(x => new RegExp('\\b' + x + '\\b').test(t)); if (k) types[k] += qty; if (i && !/\bLand\b/.test(t)) curve[Math.min(6, Math.round(mvOf(i)) || 0)] += qty; }
+  const top = deck.main.filter(x => !isLandName(x.name)).slice().sort((x, y) => y.qty - x.qty).slice(0, 6);
+  return { types, curve, top };
+}
+function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
+  const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
+  const dbx = deckBoxModel(deckName, deck, cols, im);
+  const stage = h('div', { class: 'dbx-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: isCur ? `${deckName} (current deck) — click to take it off the shelf, double-click to use it` : `${deckName} — click to take it off the shelf, double-click to use it` }, dbx);
+  let clickT = 0;
+  stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
+  stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
+  stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
+  tiltWith(stage, dbx);
+  const tile = h('div', { class: 'dbx-tile' + (isCur ? ' on' : '') }, stage, h('div', { class: 'dbx-shadow' }), h('div', { class: 'dbx-name', text: deckName }), isCur ? h('div', { class: 'dbx-cur', text: 'In use' }) : null);
+  return tile;
+}
+// Take a box off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
+function pullDeckBox(m, tile, d) {
+  if (m.el.querySelector('.dbx-pull')) return;
+  const src = tile.querySelector('.dbx'), mr = m.el.getBoundingClientRect(), sr = src.getBoundingClientRect();
+  const big = deckBoxModel(d.deckName, d.deck, d.cols, d.im); big.classList.add('big');
+  const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big); tiltWith(turn, big);
+  const sm = deckSummary(d.deck), maxC = Math.max(1, ...sm.curve);
+  const btn = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => { putBack(true); fn(); } });
+  const info = h('div', { class: 'dbx-info' },
+    h('h3', { text: d.deckName }), h('div', { class: 'muted small', text: `${sum(d.deck.main)} cards${d.deck.side.length ? ` · sideboard ${sum(d.deck.side)}` : ''}${d.dk.sb ? ' · sideboarded list in use' : ''}${d.isCur ? ' · the deck in use' : ''}` }),
+    h('div', { class: 'dbx-pips' }, d.cols.length ? d.cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}`, title: c })) : h('span', { class: 'muted small', text: 'Colourless' })),
+    h('div', { class: 'dbx-types' }, Object.entries(sm.types).filter(e => e[1]).map(([k, n]) => h('span', { text: `${n} ${n === 1 ? k : k === 'Sorcery' ? 'Sorceries' : k + 's'}` }))),
+    h('div', { class: 'dbx-curve', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i}${i === 6 ? '+' : ''}`).join(', ') }, sm.curve.map((n, i) => h('div', { class: 'dbx-cbar' }, h('i', { style: `height:${Math.round(100 * n / maxC)}%` }), h('b', { text: n || '' }), h('span', { text: i === 6 ? '6+' : String(i) })))),
+    sm.top.length ? h('div', { class: 'dbx-top' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { text: `${x.qty} × ${x.name}` }))) : null,
+    h('div', { class: 'dbx-acts' },
+      btn(d.isCur ? 'Keep using this deck' : 'Use this deck', d.onPick, 'primary'),
+      btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
+      btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
+      h('button', { text: 'Put it back', onclick: () => putBack() })));
+  const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, info));
+  ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
+  m.el.append(ov); tile.classList.add('out');
+  const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
+  const fly = (rev) => { const br = big.getBoundingClientRect(); const dx = sr.left + sr.width / 2 - (br.left + br.width / 2), dy = sr.top + sr.height / 2 - (br.top + br.height / 2), k = sr.width / br.width;
+    const from = { transform: `translate(${dx}px, ${dy}px) scale(${k})` }, to = { transform: 'none' };
+    return wa(turn, rev ? [to, from] : [from, to], { duration: 460, easing: 'cubic-bezier(.2,.8,.25,1)' }); };
+  if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: 140, easing: 'ease-out', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
+  const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); putBack(); } };
+  document.addEventListener('keydown', esc, true);
+  setTimeout(() => { const f = info.querySelector('button.primary'); if (f) f.focus(); }, 30);
+  let gone = false;
+  function putBack(now) {
+    if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
+    const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
+    if (now || !motion || !tile.isConnected) { done(); return; }
+    info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 400, fill: 'forwards' });
+  }
 }
 // v0.90.2 Sideboarding lives on the deck screen. The saved decklist is never changed: swaps are stored as a separate "sideboarded" list that the
 // game uses, and "Restore original" simply deletes it.
@@ -7826,7 +7883,7 @@ function openSideboarding(deckName, after) {
   draw();
 }
 function openDeckPicker() {
-  const m = modal('Your decks', { width: 940 });
+  const m = modal('Your decks', { width: 940 }); m.el.classList.add('dbx-modal');
   const draw = () => {
     const decks = loadDecks(), mode = gameMode(), names = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
     const pick = md => { if (md === gameMode()) return; setGameMode(md); const first = decksInMode(loadDecks(), md).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); prepareImages(); render(); draw(); };
@@ -7838,7 +7895,8 @@ function openDeckPicker() {
         () => openDeckArtPicker(n, draw),
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
         () => openCustomArt(n, draw),
-        () => openSideboarding(n, draw))))
+        () => openSideboarding(n, draw),
+        (tile, d) => pullDeckBox(m, tile, d))))
       : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();
@@ -8945,8 +9003,8 @@ async function loadSleeve() {
   applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
-const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, foil cards, cursor, card sizes and sleeves'], board: ['🧩', 'Board layout, playmat and the frame around it'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board layout'], ['mat', 'Playmat & frame'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged: lanes, zone rail, piles and board effects'], mat: ['🖼', 'Playmat picture, colour and motion, and the frame around the board'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['MTG Playtester is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -9059,7 +9117,6 @@ function openSettings() {
     ['gapBadges','Warning badge on cards with rules the app cannot apply','A small \u26a0 on a permanent when part of its rules text is only a reminder (hover it to see which lines)'],
     ['gapNotes','Log rules the app cannot apply','When a card enters, logs any of its rules the app only reminds you of'],
     ['dredgePrompts','Dredge prompt','When you would draw and have a dredge card in your graveyard, asks whether to dredge instead (the dredge rule itself is always correct)'],
-    ['replaceNotes','Replacement effect notes','Logs how a replacement effect changed an event, for example Hardened Scales adding a counter'],
     ['libraryPreview','Library card previews','Large card preview while hovering library lists'],
     ['combatHelper','Combat teaching helper','Attack and block guidance during combat, and the reminder when you skip attacking'],
     ['summoningSick','Summoning sickness indicator','Faint red glow and tooltip on creatures that cannot attack or use {T} abilities yet (the rule itself is always enforced)'],
@@ -9067,18 +9124,24 @@ function openSettings() {
     ['rulesHints','Rules hints','Explanations when an action is blocked'],
     ['keywordTips','Keyword explanations','Underlined keywords and keyword chips with hover explanations']
   ];
+  // v0.99.40 the aids are grouped by when you meet them, two columns wide
+  const TEACH_GROUPS=[['Turn flow',['phaseBar','phasePopups','phasePauses','autoStart','preGame','vaultPrompt','combatHelper']],
+    ['Casting & the stack',['stackGuidance','costGuidance','autoResolve','triggerPrompts','dredgePrompts','replaceNotes']],
+    ['On the cards',['playability','summoningSick','keywordIcons','keywordTips','stateIcons','durationHints','gapBadges']],
+    ['Help & the log',['rulesHints','gapNotes','libraryPreview','libraryMenu']]];
+  { const seen=new Set(TEACH_GROUPS.flatMap(g=>g[1])); const rest=teachDefs.map(d=>d[0]).filter(k=>!seen.has(k)); if(rest.length) TEACH_GROUPS.push(['More',rest]); }
   const drawTeaching=()=>{teachBox.replaceChildren(
     h('div',{class:'setrow'},h('button',{text:'Turn all on',onclick:()=>{for(const [k] of teachDefs)settings.teaching[k]=true;saveSettings();render();drawTeaching();}}),h('button',{text:'Turn all off',onclick:()=>{for(const [k] of teachDefs)settings.teaching[k]=false;saveSettings();render();drawTeaching();}})),
-    ...teachDefs.map(([k,label,desc])=>{
+    ...TEACH_GROUPS.flatMap(([g,keys])=>[h('div',{class:'subhead',text:g}),h('div',{class:'setgrid'},keys.map(k=>teachDefs.find(d=>d[0]===k)).filter(Boolean).map(([k,label,desc])=>{
     const cb=h('input',{type:'checkbox'});cb.checked=settings.teaching[k]!==false;
     cb.addEventListener('change',()=>{settings.teaching[k]=cb.checked;saveSettings();render();});
     return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc})));
-  }))};
+  }))]))};
   drawTeaching();
   const animBox=h('div');
   const drawAnim=()=>{ animBox.replaceChildren(
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.anim.on!==false; cb.addEventListener('change',()=>{settings.anim.on=cb.checked;saveSettings();render();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Animations & effects'}),h('span',{class:'muted small',text:'Master switch. They only decorate: nothing here changes the game itself. Also off if your system asks for reduced motion.'}))); })(),
-    ...ANIM_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.anim[k]!==false; cb.addEventListener('change',()=>{settings.anim[k]=cb.checked;saveSettings();render();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); }),
+    h('div',{class:'setgrid'},ANIM_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.anim[k]!==false; cb.addEventListener('change',()=>{settings.anim[k]=cb.checked;saveSettings();render();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })),
     (()=>{ const mk=(label,key,min,max,step,fmt,desc)=>{ const val=h('span',{class:'val',text:fmt(settings.anim[key])}); const r=h('input',{type:'range',min,max,step,value:settings.anim[key]}); r.addEventListener('input',()=>{settings.anim[key]=parseFloat(r.value);val.textContent=fmt(settings.anim[key]);saveSettings();if(key==='fanAmt')applyFan();}); return h('div',{class:'setrow'},h('label',{text:label}),r,val,h('span',{class:'muted small',text:desc})); };
       return h('div',{class:'animsl'},h('div',{class:'fhead',text:'Fine tuning'}),
         mk('Animation speed','speed',0.4,2.5,0.1,v=>v+'×','Higher = faster. Applies to every animation'),
@@ -9104,17 +9167,16 @@ function openSettings() {
         mk('original', 'Original', 'the arrangement from before v0.74. Switch back any time; the table changes immediately'),
         h('div', { class: 'fhead', text: 'Parts of the updated layout' }),
         h('div', { class: 'small muted', style: 'margin:-2px 0 6px', text: layMode() ? 'Each part has its own switch.' : 'These apply only when Updated is selected.' }),
-        ...LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
+        h('div', { class: 'setgrid' }, LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
           cb.addEventListener('change', () => { settings.lay = { ...(settings.lay || {}), [k]: cb.checked }; saveSettings(); applyLayout(); render(); });
-          return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); }),
-        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes, the playmat and the optional board effects (zone depth, combat lane, stacking identical tokens…) are under Graphics and Playmat & frame.' }));
+          return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })),
+        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat picture and the frame have their own tab.' }));
     }; draw(); P.layout.append(box); }
   const foilBox=h('div');
   const drawFoil=()=>{ const sel=h('select'); for(const [v,l] of [['off','Off'],['some','Some cards (about 1 in 5)'],['all','Every card']]) sel.append(h('option',{value:v,text:l})); sel.value=settings.foil||'off';
     sel.addEventListener('change',()=>{settings.foil=sel.value;saveSettings();render();});
     const r=h('input',{type:'range',min:0.2,max:1,step:0.05}); r.value=settings.foilStr===undefined?0.6:settings.foilStr; r.addEventListener('input',()=>{settings.foilStr=+r.value;saveSettings();});
     foilBox.replaceChildren(h('div',{class:'setrow'},h('label',{text:'Foil effect'}),sel,h('span',{class:'muted small',text:'A rainbow holographic sheen that slowly sweeps over the card and follows your mouse'})),h('div',{class:'setrow'},h('label',{text:'Foil strength'}),r)); }; drawFoil();
-  P.gfx.append(h('div',{class:'fhead',text:'Interface theme'}),themeBox,h('div',{class:'fhead',text:'Foil cards'}),foilBox);
   const curBox=h('div');
   const drawCursor=()=>{
     const sel=h('select'); for(const [v,l] of CURSOR_STYLES) sel.append(h('option',{value:v,text:l})); sel.value=settings.cursor||'default';
@@ -9130,7 +9192,6 @@ function openSettings() {
     curBox.replaceChildren(h('div',{class:'setrow'},h('label',{text:'Cursor'}),sel,sz),
       settings.cursor==='custom'?h('div',{class:'setrow'},h('label',{text:'My image'}),h('button',{text:settings.cursorImg?'Change image':'Choose image',onclick:()=>file.click()}),file,h('label',{text:'Click point'}),hot,h('span',{class:'muted small',text:'Any picture; it is shrunk to a cursor. Transparent PNGs look best.'})):null);
   }; drawCursor();
-  P.gfx.append(h('div',{class:'fhead',text:'Mouse cursor'}),curBox);
   const soundBox=h('div');
   const drawSound=()=>{ soundBox.replaceChildren(
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
@@ -9139,20 +9200,25 @@ function openSettings() {
     (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),...Object.entries(LOFI_SONGS).map(([k,v])=>h('option',{value:k,text:v.label}))); sel.value=musicStyleId(); sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=!LOFI_SONGS[sel.value];}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:!LOFI_SONGS[settings.sound.musicStyle]},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Kick, snare and hats in the low-fi and hip-hop songs. Turn off for just keys, bass and crackle.'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.musicVol; r.addEventListener('input',()=>{settings.sound.musicVol=+r.value;saveSettings();musicSettingsChanged();}); return h('div',{class:'setrow'},h('label',{text:'Music volume'}),r); })(),
-    ...SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); })
+    h('div',{class:'setgrid'},SOUND_DEFS.map(([k,label,desc])=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound[k]!==false; cb.addEventListener('change',()=>{settings.sound[k]=cb.checked;saveSettings();if(cb.checked)sfx(k);}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:label}),h('span',{class:'muted small',text:desc}))); }))
   ); }; drawSound();
   P.snd.append(h('div',{class:'fhead',text:'Sound'}),soundBox);
   P.legal.append(h('div',{class:'fhead',text:'Legal notice'}), ...LEGAL_SECTIONS.flatMap(([t, ps]) => [h('div',{class:'legalhead',text:t}), ...ps.map(x => h('div',{class:'psub legalp',text:x}))]));
   P.tutor.append(h('div',{class:'fhead',text:'Teaching aids'}),h('div',{class:'small muted',text:'Every aid is its own switch. Mix and match; none depends on another.'}),teachBox);
   P.gfx.append(
+    h('div',{class:'fhead',text:'Interface theme'}),themeBox,
     h('div',{class:'fhead',text:'Card size'}),
     slider('Battlefield cards', 'bfs', 0.6, 1.6, 0.05, pct),
     slider('Hand cards', 'hs', 0.6, 1.6, 0.05, pct),
     slider('Turn-flow bar opacity', 'stripOpacity', 0.15, 1, 0.05, pct),
-    h('div',{class:'fhead',text:'Card sleeves'}), sleeveBox);
+    h('div',{class:'fhead',text:'Foil cards'}),foilBox,
+    h('div',{class:'fhead',text:'Card sleeves'}), sleeveBox,
+    h('div',{class:'fhead',text:'Mouse cursor'}),curBox);
   P.board.append(
     P.layout,
-    ...LAYOUT_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = layoutOn(k); cb.addEventListener('change', () => { settings.layout[k] = cb.checked; saveSettings(); render(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); }),
+    h('div', { class: 'fhead', text: 'Board effects' }),
+    h('div', { class: 'setgrid' }, LAYOUT_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = layoutOn(k); cb.addEventListener('change', () => { settings.layout[k] = cb.checked; saveSettings(); render(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })));
+  P.mat.append(
     h('div', { class: 'fhead', text: 'Playmat' }),
     matBox,
     slider('Zone panel opacity', 'zonea', 0, 0.7, 0.02, pct),
@@ -9162,13 +9228,19 @@ function openSettings() {
   // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
   const tabbar = h('div', { class: 'setnav' }), stage = h('div', { class: 'setmain' });
   const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings' });
+  // v0.99.40 search looks inside every group: each setting row is matched on its own, and a heading or group stays only while something under it matches
+  const LEAF = '.setrow, .teachopt, .legalp, .artgal';
   const applyFilter = q => {
     q = q.trim().toLowerCase();
     for (const k of Object.keys(P)) { if (k === 'layout') continue;
-      const kids = [...P[k].children]; for (const el of kids) el.hidden = false;
+      for (const el of P[k].querySelectorAll('[data-fhid]')) { el.hidden = false; delete el.dataset.fhid; }
       if (!q) continue;
-      for (const el of kids) if (!el.classList.contains('fhead')) el.hidden = !el.textContent.toLowerCase().includes(q);
-      kids.forEach((el, i) => { if (!el.classList.contains('fhead')) return; let any = false; for (let n = i + 1; n < kids.length && !kids[n].classList.contains('fhead'); n++) if (!kids[n].hidden) any = true; el.hidden = !any; });
+      const hide = el => { if (!el.hidden) { el.hidden = true; el.dataset.fhid = '1'; } };
+      const leaves = [...P[k].querySelectorAll(LEAF)].filter(el => !el.parentElement.closest(LEAF));
+      for (const el of leaves) if (!el.textContent.toLowerCase().includes(q)) hide(el);
+      const shown = el => [...el.querySelectorAll(LEAF)].some(x => !x.hidden && !x.closest('[hidden]'));
+      for (const el of [...P[k].querySelectorAll('div, label')].reverse()) { if (el.matches(LEAF) || el.closest(LEAF) || el.matches('.fhead, .subhead')) continue; if (!shown(el)) hide(el); }
+      for (const hd of P[k].querySelectorAll('.fhead, .subhead')) { let any = false; for (let n = hd.nextElementSibling; n && !n.matches(hd.matches('.fhead') ? '.fhead' : '.fhead, .subhead'); n = n.nextElementSibling) if (!n.hidden && (n.matches(LEAF) || shown(n))) { any = true; break; } if (!any) hide(hd); }
     }
   };
   const showTab = k => {
@@ -9182,7 +9254,7 @@ function openSettings() {
     if (!q.trim()) { showTab(settingsTab); search.focus(); return; }
     applyFilter(q);
     const out = [];
-    for (const [k, label] of SET_TABS) { if (![...P[k].children].some(el => !el.hidden && !el.classList.contains('fhead'))) continue; out.push(h('div', { class: 'settitle' }, h('h3', { text: label })), P[k]); }
+    for (const [k, label] of SET_TABS) { if (![...P[k].querySelectorAll(LEAF)].some(el => !el.hidden && !el.closest('[hidden]'))) continue; out.push(h('div', { class: 'settitle' }, h('h3', { text: label })), P[k]); }
     stage.replaceChildren(...(out.length ? out : [h('div', { class: 'muted', style: 'padding:18px 4px', text: 'No setting matches \u201c' + q + '\u201d.' })])); stage.scrollTop = 0;
   });
   tabbar.append(search);
@@ -10226,7 +10298,9 @@ function crKeyword(name) { return RULES_BY_NAME.get(String(name || '').toLowerCa
 // checked as it triggers), and the printed effect. KW_EFFECTS turns a resolving keyword trigger into the options in the effect window.
 // Keyword ACTIONS written inside card text ("Bolster 2", "Adapt 3", "Connive", "Discover 4") are read by kwActionOptions.
 const kwPow = c => { const r = ptCalc(c); return r.p; };
-const kwItems = tx => { const out = []; for (const line of String(tx || '').replace(/\([^)]*\)/g, ' ').split('\n')) { if (/[.:]/.test(line.replace(/\d+\.\d/g, ''))) continue; for (const it of line.split(/[,;]/)) { const s = it.trim(); if (s) out.push(s); } } return out; };
+// CR 702.1 + Oracle style: a keyword whose cost is not mana is written "Keyword\u2014Cost." with no spaces round the dash (Cumulative upkeep\u2014Pay 1 life., Echo\u2014Discard a card.),
+// so that line is one keyword item even though it ends in a period. An ability word (CR 207.2c) is written with spaces ("Landfall \u2014 Whenever ...") and is not a keyword.
+const kwItems = tx => { const out = []; for (const line of String(tx || '').replace(/\([^)]*\)/g, ' ').split('\n')) { const dash = line.trim().match(/^([A-Z][a-z]+(?: [a-z]+){0,2})\u2014(\S.*?)\.?$/); if (dash) { out.push(dash[1] + '\u2014' + dash[2]); continue; } if (/[.:]/.test(line.replace(/\d+\.\d/g, ''))) continue; for (const it of line.split(/[,;]/)) { const s = it.trim(); if (s) out.push(s); } } return out; };
 const KW_TRIGGERS = [
   { cr: '702.83', kw: 'exalted', ev: 'attack-any', cond: 'Exalted: whenever a creature you control attacks alone', text: 'Whenever a creature you control attacks alone, that creature gets +1/+1 until end of turn.', test: (c, atk) => atk.length === 1 },
   { cr: '702.91', kw: 'battle cry', ev: 'attack-self', cond: 'Battle cry: whenever this creature attacks', text: 'Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn.' },
@@ -12865,16 +12939,25 @@ function sacUnlessOptions(tx, obj) {
 // ---- Spacecraft and Station (CR 702.184, 721)
 // Station: "Tap another untapped creature you control: Put charge counters equal to its power on this Spacecraft. Station only as a sorcery."
 // STATION N+ lines (CR 721.2): while it has N or more charge counters it has the abilities printed under that symbol; the highest reached one with a power/toughness makes it an artifact creature with that P/T.
-const STATION_RE = /^STATION\s+(\d+)\+?\s*$/i;
+// Oracle text (Scryfall) writes each station symbol as "N+ | ability" with the Spacecraft's power/toughness in the card's P/T box, and the reminder
+// "It's an artifact creature at N+." names the threshold that box belongs to; an older form wrote "STATION N+" on its own line with the P/T under it. Both are read.
+// Lines that follow a station line without a threshold of their own belong to that station box (CR 721.2a).
+const STATION_RE = /^STATION\s+(\d+)\+?\s*$/i, STATION_BAR = /^(\d+)\+\s*\|\s*(.*)$/;
 function stationSections(c) {
   if (!c) return null; let raw; try { raw = stripAW(cardTextRaw(c)); } catch (e) { return null; }
-  const lines = String(raw || '').split('\n'); const first = lines.findIndex(l => STATION_RE.test(l.trim())); if (first < 0) return null;
-  const secs = []; let cur = null; for (let i = first; i < lines.length; i++) { const l = lines[i].trim(); const m = STATION_RE.exec(l); if (m) { cur = { n: +m[1], lines: [], pt: '' }; secs.push(cur); } else if (cur) { if (/^\d+\/\d+$/.test(l)) cur.pt = l; else if (l) cur.lines.push(l); } }
+  const lines = String(raw || '').split('\n'); const isSec = l => STATION_RE.test(l.trim()) || STATION_BAR.test(l.trim());
+  const first = lines.findIndex(isSec); if (first < 0) return null;
+  const secs = []; let cur = null; for (let i = first; i < lines.length; i++) { const l = lines[i].trim(); const m = STATION_RE.exec(l), b = STATION_BAR.exec(l);
+    if (m) { cur = { n: +m[1], lines: [], pt: '' }; secs.push(cur); }
+    else if (b) { cur = { n: +b[1], lines: b[2] ? [b[2]] : [], pt: '' }; secs.push(cur); }
+    else if (cur) { if (/^\d+\/\d+$/.test(l)) cur.pt = l; else if (l) cur.lines.push(l); } }
+  if (secs.length && !secs.some(x => x.pt)) {   // the P/T box: the printed power/toughness goes with the threshold the reminder names, else the highest one
+    const info = cardInfo(c.name) || {}; if (info.pt) { let rt = raw; try { rt = cardTextRaw(c); } catch (e) {} const at = String(rt).match(/artifact creature at (\d+)\+/i); const sec = (at && secs.find(x => x.n === +at[1])) || secs[secs.length - 1]; sec.pt = info.pt; } }
   return { base: lines.slice(0, first), secs };
 }
 const stationCharge = c => counterCount(c, 'charge');
 function stationText(c, txt) {   // only the lines whose threshold is reached count as the card's text
-  if (!c || !/\bSTATION\s+\d/i.test(txt || '')) return txt; const st = stationSections(Object.assign({}, c, { gained: [], splicedTx: '' })); if (!st) return txt;
+  if (!c || !/\bSTATION\s+\d|^\d+\+\s*\|/im.test(txt || '')) return txt; const st = stationSections(Object.assign({}, c, { gained: [], splicedTx: '' })); if (!st) return txt;
   const n = stationCharge(c), out = st.base.slice(); for (const s of st.secs) if (n >= s.n) out.push(...s.lines);
   return out.join('\n') + (c.gained && c.gained.length ? '\n' + c.gained.join('\n') : '');
 }

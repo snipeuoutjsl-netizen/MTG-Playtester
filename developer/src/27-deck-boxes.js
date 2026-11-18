@@ -12,24 +12,79 @@ function deckArtName(deckName, deck) {
   return deck.main[0] ? deck.main[0].name : '';
 }
 function artStyle(im) { return im && im.front ? `background-image:url("${im.front}")` : ''; }
-function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide) {
-  const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
+// v0.99.40 The deck screen is a bookcase: boxes stand on wooden shelves at an angle (front and spine both show). Hover slides a box forward;
+// clicking pulls it off the shelf into the middle of the window, where it can be turned with the mouse and played, edited or sideboarded.
+// Double-click (or Enter twice) still picks a deck straight away.
+function deckBoxModel(deckName, deck, cols, im) {
   const a = DECKBOX_COL[cols[0] || ''], b = DECKBOX_COL[cols[1] || cols[0] || ''];
-  const dbx = h('div', { class: 'dbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
+  return h('div', { class: 'dbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
     h('div', { class: 'dbx-face front' },
       h('div', { class: 'dbx-art' + (im ? '' : ' none'), style: artStyle(im) }, im ? null : h('span', { text: (deckName.trim()[0] || '?').toUpperCase() })),
       h('div', { class: 'dbx-gloss' }),
       h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }))))),
     h('div', { class: 'dbx-face side' }, h('span', { text: deckName })),
     h('div', { class: 'dbx-face top' }));
-  const stage = h('div', { class: 'dbx-stage', title: isCur ? `${deckName} (current deck)` : `Use ${deckName}`, onclick: onPick }, dbx);
-  stage.addEventListener('mousemove', e => { const r = stage.getBoundingClientRect(); dbx.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); dbx.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
-  stage.addEventListener('mouseleave', () => { dbx.style.removeProperty('--rx'); dbx.style.removeProperty('--ry'); });
-  return h('div', { class: 'dbx-tile' + (isCur ? ' on' : '') }, stage, h('div', { class: 'dbx-shadow' }),
-    h('div', { class: 'dbx-btns' }, h('button', { text: 'Art…', title: 'Choose which card’s art is on this box', onclick: e => { e.stopPropagation(); onArt(); } }), h('button', { text: 'Edit', onclick: e => { e.stopPropagation(); onEdit(); } }),
-      onSide ? h('button', { class: dk.sb ? 'sbon' : '', text: 'Sideboard' + (deck.side.length ? ` (${sum(deck.side)})` : ''), title: 'Swap cards between your main deck and sideboard. The original list can always be restored.', onclick: e => { e.stopPropagation(); onSide(); } }) : null),
-    h('div', { class: 'dbx-btns' }, h('button', { class: 'cartbtn', text: 'Import custom card art…', title: 'Use your own pictures for the cards in this deck', onclick: e => { e.stopPropagation(); onCustom(); } })),
-    isCur ? h('div', { class: 'dbx-cur', text: 'In use' }) : null);
+}
+const tiltWith = (zone, box) => {
+  zone.addEventListener('mousemove', e => { const r = zone.getBoundingClientRect(); box.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); box.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
+  zone.addEventListener('mouseleave', () => { box.style.removeProperty('--rx'); box.style.removeProperty('--ry'); });
+};
+// A short summary of what is in the box: card types, colours and the most-played non-land cards.
+function deckSummary(deck) {
+  const types = { Creature: 0, Instant: 0, Sorcery: 0, Artifact: 0, Enchantment: 0, Planeswalker: 0, Land: 0 }, curve = [0, 0, 0, 0, 0, 0, 0];
+  for (const { qty, name } of deck.main) { const i = cardInfo(name); const t = (i && i.t) || ''; const k = Object.keys(types).find(x => new RegExp('\\b' + x + '\\b').test(t)); if (k) types[k] += qty; if (i && !/\bLand\b/.test(t)) curve[Math.min(6, Math.round(mvOf(i)) || 0)] += qty; }
+  const top = deck.main.filter(x => !isLandName(x.name)).slice().sort((x, y) => y.qty - x.qty).slice(0, 6);
+  return { types, curve, top };
+}
+function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
+  const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
+  const dbx = deckBoxModel(deckName, deck, cols, im);
+  const stage = h('div', { class: 'dbx-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: isCur ? `${deckName} (current deck) — click to take it off the shelf, double-click to use it` : `${deckName} — click to take it off the shelf, double-click to use it` }, dbx);
+  let clickT = 0;
+  stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
+  stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
+  stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
+  tiltWith(stage, dbx);
+  const tile = h('div', { class: 'dbx-tile' + (isCur ? ' on' : '') }, stage, h('div', { class: 'dbx-shadow' }), h('div', { class: 'dbx-name', text: deckName }), isCur ? h('div', { class: 'dbx-cur', text: 'In use' }) : null);
+  return tile;
+}
+// Take a box off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
+function pullDeckBox(m, tile, d) {
+  if (m.el.querySelector('.dbx-pull')) return;
+  const src = tile.querySelector('.dbx'), mr = m.el.getBoundingClientRect(), sr = src.getBoundingClientRect();
+  const big = deckBoxModel(d.deckName, d.deck, d.cols, d.im); big.classList.add('big');
+  const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big); tiltWith(turn, big);
+  const sm = deckSummary(d.deck), maxC = Math.max(1, ...sm.curve);
+  const btn = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => { putBack(true); fn(); } });
+  const info = h('div', { class: 'dbx-info' },
+    h('h3', { text: d.deckName }), h('div', { class: 'muted small', text: `${sum(d.deck.main)} cards${d.deck.side.length ? ` · sideboard ${sum(d.deck.side)}` : ''}${d.dk.sb ? ' · sideboarded list in use' : ''}${d.isCur ? ' · the deck in use' : ''}` }),
+    h('div', { class: 'dbx-pips' }, d.cols.length ? d.cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}`, title: c })) : h('span', { class: 'muted small', text: 'Colourless' })),
+    h('div', { class: 'dbx-types' }, Object.entries(sm.types).filter(e => e[1]).map(([k, n]) => h('span', { text: `${n} ${n === 1 ? k : k === 'Sorcery' ? 'Sorceries' : k + 's'}` }))),
+    h('div', { class: 'dbx-curve', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i}${i === 6 ? '+' : ''}`).join(', ') }, sm.curve.map((n, i) => h('div', { class: 'dbx-cbar' }, h('i', { style: `height:${Math.round(100 * n / maxC)}%` }), h('b', { text: n || '' }), h('span', { text: i === 6 ? '6+' : String(i) })))),
+    sm.top.length ? h('div', { class: 'dbx-top' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { text: `${x.qty} × ${x.name}` }))) : null,
+    h('div', { class: 'dbx-acts' },
+      btn(d.isCur ? 'Keep using this deck' : 'Use this deck', d.onPick, 'primary'),
+      btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
+      btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
+      h('button', { text: 'Put it back', onclick: () => putBack() })));
+  const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, info));
+  ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
+  m.el.append(ov); tile.classList.add('out');
+  const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
+  const fly = (rev) => { const br = big.getBoundingClientRect(); const dx = sr.left + sr.width / 2 - (br.left + br.width / 2), dy = sr.top + sr.height / 2 - (br.top + br.height / 2), k = sr.width / br.width;
+    const from = { transform: `translate(${dx}px, ${dy}px) scale(${k})` }, to = { transform: 'none' };
+    return wa(turn, rev ? [to, from] : [from, to], { duration: 460, easing: 'cubic-bezier(.2,.8,.25,1)' }); };
+  if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: 140, easing: 'ease-out', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
+  const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); putBack(); } };
+  document.addEventListener('keydown', esc, true);
+  setTimeout(() => { const f = info.querySelector('button.primary'); if (f) f.focus(); }, 30);
+  let gone = false;
+  function putBack(now) {
+    if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
+    const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
+    if (now || !motion || !tile.isConnected) { done(); return; }
+    info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 400, fill: 'forwards' });
+  }
 }
 // v0.90.2 Sideboarding lives on the deck screen. The saved decklist is never changed: swaps are stored as a separate "sideboarded" list that the
 // game uses, and "Restore original" simply deletes it.
@@ -66,7 +121,7 @@ function openSideboarding(deckName, after) {
   draw();
 }
 function openDeckPicker() {
-  const m = modal('Your decks', { width: 940 });
+  const m = modal('Your decks', { width: 940 }); m.el.classList.add('dbx-modal');
   const draw = () => {
     const decks = loadDecks(), mode = gameMode(), names = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
     const pick = md => { if (md === gameMode()) return; setGameMode(md); const first = decksInMode(loadDecks(), md).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); prepareImages(); render(); draw(); };
@@ -78,7 +133,8 @@ function openDeckPicker() {
         () => openDeckArtPicker(n, draw),
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
         () => openCustomArt(n, draw),
-        () => openSideboarding(n, draw))))
+        () => openSideboarding(n, draw),
+        (tile, d) => pullDeckBox(m, tile, d))))
       : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();

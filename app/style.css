@@ -1263,7 +1263,7 @@ body.responding #btnDraw, body.responding #btnUntap, body.responding #btnNextPha
 /* v0.87 decorated battlefield border */
 
 /* ---- v0.89 settings window: sidebar of tabs, content on the right, switch-style toggles */
-.modal.settingsModal { width: min(860px, 96vw) !important; }
+.modal.settingsModal { width: min(940px, 96vw) !important; }
 .settingsModal .mbody { padding: 0; overflow: hidden; }
 .setshell { display: grid; grid-template-columns: 190px 1fr; height: min(70vh, 640px); }
 .setnav { display: flex; flex-direction: column; gap: 3px; padding: 12px 10px; background: var(--panel-2); border-right: 1px solid var(--line); overflow-y: auto; }
@@ -1798,6 +1798,8 @@ body.a11y-focus :focus-visible { outline: 3px solid #ffd84d !important; outline-
 /* v0.99.32 Opening hand: the prompt must look active, not dimmed. The dim layer (body::after, z 39) used to sit above #overlay (inside #mat, which isolates its own stacking).
    Lift the table above the dim while the opening-hand step is shown (the battlefield is empty then and #overlay covers it); the hand (z 60) and modals (z 50) stay above. */
 body.mullhand #mat { z-index: 40; }
+/* v0.99.40 a full window (Settings, deck view, ...) opened during the opening hand sits above the hand, not under it */
+body.mullhand:has(#modalRoot .backdrop:not(.dock):not(.resolve)) #handWrap, body.mullpick:has(#modalRoot .backdrop:not(.dock):not(.resolve)) #handWrap { z-index: 38; }
 body.mullhand #overlay { background: rgba(5, 10, 18, .62); backdrop-filter: none; }
 body.mullhand #overlay .pcard { border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(227,185,92,.35), 0 0 34px rgba(227,185,92,.28), 0 18px 60px rgba(0,0,0,.7); }
 body.mullhand #overlay .pcard .ptitle { color: var(--text); }
@@ -1852,3 +1854,59 @@ body.dragging-card #stackStage:not([hidden]) { box-shadow: 0 0 0 200vmax rgba(4,
 .modal .cart-btns button:first-child { grid-column: 1 / -1; }
 .modal .cart-btns button:only-child { grid-column: 1 / -1; }
 .modal .cart-btns button:nth-child(2):last-child { grid-column: 1 / -1; }
+/* v0.99.40 Settings: tighter rows, grouped two-column switches (one column when the window or text is large) */
+.setmain .setrow { padding: 6px 2px; flex-wrap: wrap; row-gap: 4px; }
+.setmain .setrow > label:first-child { width: 170px; }
+.setmain .setrow > .muted.small { flex: 1 1 220px; line-height: 1.35; }
+.setmain .fhead { margin: 16px 0 4px; }
+.setmain .subhead { margin: 12px 2px 2px; font-size: 12.5px; font-weight: 700; color: var(--text); }
+.setgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 12px; }
+.setgrid .teachopt { border-bottom: 0; padding: 6px 8px; }
+.setmain .teachopt .small { display: block; margin-top: 2px; line-height: 1.35; }
+.setmain .artgal { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+body.a11y-targets .setgrid .teachopt { min-height: 44px; }
+.setmain [hidden] { display: none !important; }
+/* v0.99.40 Deck bookcase: boxes stand on wooden shelves; hover slides one forward, click takes it off the shelf */
+.dbx-modal { position: relative; }
+.dbx-modal .mbody { background: linear-gradient(180deg, #2a1c12, #1d130c); border-radius: 0 0 4px 4px; }
+.dbx-shelf { display: flex; flex-wrap: wrap; gap: 0; padding: 14px 18px 4px; row-gap: 26px;
+  background: repeating-linear-gradient(90deg, rgba(0,0,0,.18) 0 2px, transparent 2px 46px), linear-gradient(180deg, #23170e, #1a110a); border-radius: 8px; box-shadow: inset 0 0 40px rgba(0,0,0,.7); }
+.dbx-shelf .dbx-tile { width: 168px; padding: 4px 0 30px; border-radius: 0; background: none; }
+.dbx-shelf .dbx-tile::after { content: ''; position: absolute; left: -1px; right: -1px; bottom: 0; height: 22px; pointer-events: none;
+  background: linear-gradient(180deg, #8a5a32 0, #6e4524 4px, #563419 12px, #3a220f 22px); box-shadow: 0 8px 12px rgba(0,0,0,.55); }
+.dbx-shelf .dbx-tile::before { content: ''; position: absolute; left: 0; right: 0; bottom: 22px; height: 26px; pointer-events: none; background: linear-gradient(0deg, rgba(0,0,0,.45), transparent); }
+.dbx-shelf .dbx-stage { width: 168px; height: 226px; align-items: flex-end; padding-bottom: 6px; perspective: 900px; outline: none; }
+.dbx-shelf .dbx { transform: translateZ(0) rotateX(calc(-6deg + var(--ry, 0) * -6deg)) rotateY(calc(-34deg + var(--rx, 0) * 16deg)); transition: transform .32s cubic-bezier(.2,.8,.25,1), filter .3s; transform-origin: 50% 100%; filter: brightness(.9); }
+.dbx-shelf .dbx-stage:hover .dbx, .dbx-shelf .dbx-stage:focus-visible .dbx { transform: translateZ(46px) translateY(-10px) rotateX(calc(-4deg + var(--ry, 0) * -8deg)) rotateY(calc(-14deg + var(--rx, 0) * 22deg)); filter: brightness(1.08); transition-duration: .22s; }
+.dbx-shelf .dbx-stage:focus-visible .dbx-face.front { box-shadow: inset 0 0 0 3px #ffd84d, 0 0 0 3px #ffd84d; }
+.dbx-shelf .dbx-shadow { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); margin: 0; width: 130px; height: 14px; z-index: 0; }
+.dbx-name { position: absolute; bottom: 3px; left: 8px; right: 8px; z-index: 1; text-align: center; font: 700 10.5px/16px var(--font, system-ui); color: #f3dfb8; text-shadow: 0 1px 1px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .03em; }
+.dbx-shelf .dbx-cur { top: 2px; right: 6px; background: rgba(20,12,6,.8); z-index: 2; }
+.dbx-tile.out .dbx-stage .dbx { visibility: hidden; }
+.dbx-tile.out .dbx-shadow { opacity: 0; }
+.dbx-pull { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(10,7,4,.94); border-radius: inherit; }
+.dbx-pull-in { display: flex; align-items: center; gap: 34px; padding: 20px; max-width: 100%; }
+.dbx-turn { perspective: 1100px; width: 300px; height: 400px; display: flex; align-items: center; justify-content: center; flex: none; }
+.dbx.big { width: 220px; height: 312px; transform: rotateX(calc(-6deg + var(--ry, 0) * -14deg)) rotateY(calc(-24deg + var(--rx, 0) * 40deg)); transition: transform .25s ease-out; }
+.dbx.big .dbx-face.front { transform: translateZ(27px); }
+.dbx.big .dbx-face.side { right: -27px; width: 54px; }
+.dbx.big .dbx-face.side span { font-size: 17px; max-height: 280px; }
+.dbx.big .dbx-face.top { top: -27px; height: 54px; }
+.dbx.big .dbx-art { left: 10px; right: 10px; top: 10px; }
+.dbx.big .dbx-label { top: 172px; left: 10px; right: 10px; bottom: 12px; }
+.dbx.big .dbx-label b { font-size: 18px; }
+.dbx.big .dbx-label span { font-size: 13px; }
+.dbx-info { width: 330px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; color: var(--text); }
+.dbx-info h3 { margin: 0; font-size: 20px; }
+.dbx-pips { display: flex; gap: 5px; } .dbx-pips .dbx-pip { width: 14px; height: 14px; }
+.dbx-types { display: flex; flex-wrap: wrap; gap: 4px 6px; } .dbx-types span { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.07); border: 1px solid var(--line); }
+.dbx-curve { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; height: 74px; align-items: end; }
+.dbx-cbar { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+.dbx-cbar i { display: block; width: 100%; min-height: 2px; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, var(--gold, #e3b95c), #9a6b2a); margin-bottom: 15px; }
+.dbx-cbar b { position: absolute; top: -2px; font-size: 10px; font-weight: 600; }
+.dbx-cbar span { position: absolute; bottom: 0; font-size: 10.5px; color: var(--muted); }
+.dbx-top { font-size: 12.5px; line-height: 1.5; } .dbx-top .fhead { margin: 4px 0 2px; }
+.dbx-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; } .dbx-acts .primary { flex: 1 0 100%; }
+@media (max-width: 860px) { .dbx-pull-in { flex-direction: column; gap: 6px; } .dbx-turn { height: 330px; } .dbx-info { width: min(330px, 90vw); max-height: 40vh; } }
+body.a11y-calm .dbx-shelf .dbx, body.a11y-calm .dbx.big { transition: none; }
+.dbx-modal .mbody { min-height: min(470px, 70vh); }
