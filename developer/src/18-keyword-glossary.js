@@ -394,11 +394,19 @@ function renderInner() {
     const lane = layoutOn('combatLane') && atk.size > 0;
     const brows = battlefieldRows(state.battlefield);
     for (const z of ['creatures', 'noncreature', 'lands']) for (const g of brows[z]) {
+      if (g.pile && g.cards.length > 1) {   // v0.99.12 land pile: a cascade where every land's name strip stays readable (the deck-view layout)
+        const n = g.cards.length, tapped = g.cards[0].tapped, f = n <= 8 ? 1 : Math.max(.35, 7 / (n - 1));
+        const el = h('div', { class: 'landpile' + (tapped ? ' tappile' : ''), style: `--n:${n};--f:${f}`, title: `${n} lands: ${g.cap}` });
+        g.cards.forEach((c, i) => { counts[z]++; const e = cardEl(c, 'battlefield'); e.style.setProperty('--i', String(i)); e.style.zIndex = String(i + 1); if (layoutOn('dimIdle') && c.tapped) e.classList.add('idle'); el.append(e); });
+        el.append(h('span', { class: 'pilecount', text: '\u00d7' + n }), h('span', { class: 'pilecap', text: g.cap }));
+        rows[z].append(el); continue;
+      }
       const open = g.key && expandedGroups.has(g.key);
       const mixed = z === 'lands' && layV('mix') && g.cards.length > 1 && !open, tapN = g.cards.filter(x => x.tapped).length;
       const shown = g.cards.length > 1 && !open ? [mixed ? ([...g.cards].reverse().find(x => !x.tapped) || g.cards[g.cards.length - 1]) : g.cards[g.cards.length - 1]] : g.cards;
       shown.forEach((c, i) => {
         counts[z]++; const e = cardEl(c, 'battlefield');
+        if (g.bundle) e.classList.add('bundle', 'bt' + g.bundle);
         if (g.cards.length > 1 && !open) { e.classList.add('stackgrp'); counts[z] += g.cards.length - 1; e.dataset.stack = String(g.cards.length); e.style.setProperty('--sg', String(Math.min(3, g.cards.length - 1)));
           { const nl = Math.min(4, g.cards.length - 1), im0 = cardArt(c), im1 = im0;
             for (let k = nl; k >= 1; k--) e.prepend(h('div', { class: 'sgl', style: `--k:${k};--n:${nl}` }, im1 ? h('img', { src: im1.front, alt: '', draggable: 'false' }) : h('div', { class: 'mini' }, h('b', { text: c.name })))); }

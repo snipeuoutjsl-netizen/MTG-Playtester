@@ -15,7 +15,7 @@ const LAY_DEFS = [
   ['lanes', 'Two lanes', 'Creatures get one wide lane across the top and are centred in it; lands and other permanents share one band below, lands on the left.'],
   ['rail', 'Slim zone rail', 'Library, graveyard and exile become three card-sized slots on a slim rail at the edge. Click one to open it; hover for a list.'],
   ['side', 'Slimmer right column', 'The enlarged card preview, the stack and the log share a narrower right column (286px instead of 330px), so the board is wider.'],
-  ['mix', 'One pile per land name', 'Tapped and untapped copies of a land share one pile. The pile shows how many are tapped, and clicking it taps an untapped one (or untaps one if all are tapped).']
+  ['mix', 'Land piles by mana colour', 'Untapped lands that make the same colours share a pile, all tapped lands share one pile, and a land with an activated ability only piles with exact copies. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
 ];
 const layMode = () => settings.layoutMode !== 'original';
 const layV = k => layMode() && !(settings.lay && settings.lay[k] === false);
@@ -34,15 +34,43 @@ function stackableCard(c) {
   if (state.battlefield.some(x => x.att === c.id)) return false;
   return (c.token || permZone(c) === 'lands');
 }
+// v0.99.12 Land piles and token bundles.
+// Lands: untapped lands pile by the mana colours they make (every Forest and Llanowar Wastes-type land that makes only {G} share a pile), all tapped lands share one pile,
+// and a land with an activated ability (fetch, manland, Wasteland...) only piles with exact copies of itself until it is tapped. A pile is a cascade like the deck view: every land keeps its name strip visible.
+// Tokens: identical tokens bundle in fives; two fives make a ten, five tens a fifty, two fifties a hundred, and so on, so a huge number of tokens is one obvious stack with a count.
+const TOKEN_LADDER = [1000, 500, 100, 50, 10, 5];
+function tokenBundles(n) { const out = []; let left = n; for (const sz of TOKEN_LADDER) while (left >= sz) { out.push(sz); left -= sz; } return { bundles: out, loose: left }; }
+function landHasActivated(c) { try { return activatedAbilitiesFor(c).length > 0; } catch (e) { return false; } }
+function landPileKey(c) {
+  const extra = [JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
+  if (c.tapped) return { key: 'lands#tapped~' + extra, cap: 'Tapped' };
+  if (landHasActivated(c)) return { key: 'lands#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+  let cols = []; try { cols = landManaColors(c).slice().sort(); } catch (e) { cols = []; }
+  const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
+  return { key: 'lands#cols:' + cols.join('') + '~' + extra, cap: cols.length ? cols.join(' ') : 'No mana' };
+}
 // Rows of the battlefield with identical cards folded into one (v0.67).
 function battlefieldRows(cards) {
   const out = { creatures: [], noncreature: [], lands: [] };
   const on = layoutOn('stackCards'), groups = new Map();
   for (const c of cards) {
     const z = permZone(c);
-    if (on && stackableCard(c)) { const k = z + '#' + (z === 'lands' && layV('mix') ? groupKeyMix(c) : groupKey(c)); let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [] }; groups.set(k, g); out[z].push(g); } g.cards.push(c); }
-    else out[z].push({ key: null, zone: z, cards: [c] });
+    if (on && stackableCard(c)) {
+      let k, cap = '';
+      if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else k = z + '#' + groupKey(c);
+      let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: z === 'lands' && layV('mix'), cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
+    } else out[z].push({ key: null, zone: z, cards: [c] });
   }
+  for (const z of ['creatures', 'noncreature']) {   // token bundles (fives, tens, fifties...)
+    const list = out[z]; out[z] = [];
+    for (const g of list) {
+      if (!g.key || g.cards.length < 5 || expandedGroups.has(g.key)) { out[z].push(g); continue; }
+      const { bundles, loose } = tokenBundles(g.cards.length); let at = 0;
+      for (const sz of bundles) { out[z].push({ key: g.key, zone: z, cards: g.cards.slice(at, at + sz), bundle: sz }); at += sz; }
+      for (; at < g.cards.length; at++) out[z].push({ key: null, zone: z, cards: [g.cards[at]] });
+    }
+  }
+  for (const g of out.lands) if (g.pile && g.cards.length > 1) g.cards.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   return out;
 }
 // The stack floats in the middle of the table (v0.70.2) so you can see exactly what is on it. While you drag a card or permanent, it becomes a drop
