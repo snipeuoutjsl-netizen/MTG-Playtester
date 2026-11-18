@@ -112,7 +112,7 @@ function openZone(zone) {
     width: 680,
     onClose: () => {
       if (zone === 'library' && shuffleChk.checked) {
-        snap(); shuffle(state.library); log('Searched library and shuffled'); render();
+        snap(); shuffleLib(); log('Searched library and shuffled'); render();
       }
     }
   });

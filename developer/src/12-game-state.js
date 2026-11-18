@@ -140,7 +140,7 @@ function startGame() {
     const rec = resolve(name);
     for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.sideboard.push(c); }
   }
-  shuffle(state.library);
+  shuffleLib({ quiet: true });
   drawCards(7, true);
   state.phase = 'mull';
   state.onPlay = $('#chkPlay').checked;
@@ -154,7 +154,7 @@ function doMulligan() {
   if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
   state.library.push(...state.hand.splice(0));
-  shuffle(state.library);
+  shuffleLib({ quiet: true });
   state.mulls++;
   drawCards(7, true);
   log(`Mulligan #${state.mulls}`);
@@ -464,7 +464,7 @@ function shuffleLibrary() {
   if (!state) return;
   if (stackLocked()) { stackToast(); return; }
   snap();
-  shuffle(state.library);
+  shuffleLib();
   log('Shuffled library');
   render();
 }

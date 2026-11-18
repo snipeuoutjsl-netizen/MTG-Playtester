@@ -2,7 +2,7 @@
 const SET_DEFAULT = {
   bfs: 1, hs: 1, stripOpacity: 0.86, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c', frameC: '#fff1c9',
   layout: { zoneDepth: true, stackCards: true, dimIdle: true, boardStrip: true, combatLane: true, gyFan: true }, layoutMode: 'updated', lay: {}, matMotion: 'off', matSpeed: 1, sleevePreset: '', matPreset: '', uiTheme: 'default',
-  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
+  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, shuffle: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
   sound: { on: true, vol: 0.5, music: true, musicStyle: 'ambient', musicBeat: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
   teaching: { master: true, playability: true, phasePopups: true, phasePauses: true, stackGuidance: true,
     triggerPrompts: true, gapNotes: true, gapBadges: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,

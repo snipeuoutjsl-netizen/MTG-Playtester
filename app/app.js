@@ -576,7 +576,7 @@ function parseStaticCard(g) {
   {
     const info = rulesInfo(g); if (!info || !info.tx) return list;   // v0.95.0 tokens are read like cards (their rules text is on the token itself)
     const nm = g.name.split(' // ')[0];
-    const tx = info.tx.replace(/,\n/g, ', ').replace(/’/g, "'").replace(selfNameRe(nm.replace(/’/g, "'")), '~').replace(/\([^)]*\)/g, '');
+    const tx = info.tx.replace(/,\n/g, ', ').replace(/’/g, "'").replace(selfNameRe(g.token ? '\u0000' : nm.replace(/’/g, "'")), '~').replace(/\([^)]*\)/g, '');
     for (const raw of tx.split('\n')) {
       { const l0 = raw.trim().replace(/\.$/, ''), hadD = /^delirium\s*[\u2014-]/i.test(l0), l1 = l0.replace(/^delirium\s*[\u2014-]\s*/i, ''), dm = l1.match(/^(?:as long as there are (\w+) or more card types among cards in your graveyard,\s*)?~\s+(.+)$/i);
         if (dm && !dm[1] && !hadD) { /* not a delirium line */ } else
@@ -1082,6 +1082,8 @@ const TRIG_CACHE = new Map();
 const MAIN_STEPS = [[/\b(?:precombat|first) main phase\b/, 'main1'], [/\b(?:postcombat|second) main phase\b/, 'main2'], [/\bupkeep\b/, 'upkeep'], [/\bdraw step\b/, 'draw'], [/\bend step\b/, 'end']];
 // Legendary cards such as "Phlage, Titan of Fire's Fury" refer to themselves by the part before the comma ("When Phlage enters..."),
 // so a self-reference matches either the full name or that short name (rule 201.4 / Oracle wording).
+// A token's name ("Rat", "Pest") is a creature type its own rules text uses for OTHER creatures ("each other Rat you control"), never a reference to itself, so tokens match only "this creature" and friends.
+const selfNm = c => c && c.token ? '\u0000' : (c ? c.name : '');
 function selfNameRe(full) {
   const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : '';
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
@@ -1101,7 +1103,7 @@ function parseTriggers(c) {
   const key = c.token ? 'tok:' + norm(c.name) + '|' + info.tx : info.ovr ? 'ovr:' + norm(c.name) + '|' + info.tx : norm(c.name);
   if (TRIG_CACHE.has(key)) return TRIG_CACHE.get(key);
   const out = [];
-  const nameRe = selfNameRe(info.name);
+  const nameRe = selfNameRe(c.token ? "\u0000" : info.name);
   for (const raw of info.tx.replace(/\n(?=\s*[\u2022\u2023])/g, ' ').split('\n')) {
     const line = raw.trim();
     const lm = line.match(/^(?:([A-Z][A-Za-z' ]+) — )?((?:When|Whenever|At)\b.*)$/s);
@@ -1635,7 +1637,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -1797,7 +1799,7 @@ function effectOptionsBase(tx, obj) {
       log(`${own} became a copy of ${t.name}`); checkNoCounterTriggers(); render(); if (state.pendingTriggers.length) flushTriggers(); } }); } }];
   if (obj.sourceId && (mm = tx.match(/\bgains? \"([^\"]+(?:\"[^\"]*\"[^\"]*)?)\"\s*\.?\s*$/i)) && /^[^"]* gains? "/.test(tx.replace(new RegExp((obj.sourceName||'~').replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'),'~'))) { const gl = mm[1]; opts.push({ label: `${src} gains "${gl}"`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { snap(); f.card.gained = (f.card.gained || []).concat([gl]); log(`${src} gains "${gl}"`); render(); } } }); return [opts[opts.length - 1]]; }
   // v0.65 graveyard-based effects
-  if (/\bshuffles? (?:your|their) graveyard into (?:your|their) library\b/i.test(tx)) opts.push({ label: 'Shuffle your graveyard into your library', fn: () => { snap(); state.library.push(...state.graveyard.splice(0)); shuffleLibrary(); log(`${src}: graveyard shuffled into the library`); render(); } });
+  if (/\bshuffles? (?:your|their) graveyard into (?:your|their) library\b/i.test(tx)) opts.push({ label: 'Shuffle your graveyard into your library', fn: () => { snap(); state.library.push(...state.graveyard.splice(0)); shuffleLib(); log(`${src}: graveyard shuffled into the library`); render(); } });
   if (obj.sourceId && /\byou may put it onto the battlefield\b/i.test(txs)) opts.push({ label: `Put ${src} onto the battlefield`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'graveyard') { snap(); state.graveyard.splice(f.idx, 1); enterBattlefield(f.card, { from: 'graveyard', logMsg: `${src}: put onto the battlefield from the graveyard` }); render(); flushTriggers(); } else toast('Not in graveyard', `${src} is no longer in your graveyard.`); } });
   if (obj.sourceId && (mm = txs.match(/you may exile an? ([a-z]+) creature card other than ~ from your graveyard\. If you do, return ~ to the battlefield/i))) { const col = mm[1].toLowerCase(); opts.push({ label: `Exile a ${col} creature card from your graveyard to return ${src}`, fn: () => { const f = findCard(obj.sourceId); if (!f || f.zone !== 'graveyard') { toast('Not in graveyard', `${src} is no longer in your graveyard.`); return; } const cards = state.graveyard.filter(x => x.id !== f.card.id && descMatchesCard(col + ' creature', x.name)); if (!cards.length) { toast('Nothing to exile', `You need another ${col} creature card in your graveyard.`); return; } openPickCards({ title: `${src}: exile a ${col} creature card`, note: `Exile one to return ${src} to the battlefield.`, cards, max: 1, done: picked => { if (!picked.length) return; snap(); const x = picked[0], i = state.graveyard.findIndex(g => g.id === x.id); if (i >= 0) state.exile.push(...state.graveyard.splice(i, 1)); const f2 = findCard(obj.sourceId); if (f2 && f2.zone === 'graveyard') { state.graveyard.splice(f2.idx, 1); enterBattlefield(f2.card, { from: 'graveyard', logMsg: `${src}: exiled ${x.name} and returned to the battlefield` }); } render(); flushTriggers(); } }); } }); }
   // v0.63 generic effects
@@ -1841,7 +1843,7 @@ function openAbilityEffect(obj, done) {
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
     const e = ayGet(obj.sourceName, tx);
-    if (e && e.auto && e.label) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
+    if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = effectOptions(tx, obj).filter(o => !o.hidden); } catch (er) { os = []; } const o = os.find(x => x.label === e.label && typeof x.fn === 'function');
       if (o) { log(`${obj.sourceName}: always yield \u2014 ${o.label}`); toast(`${obj.sourceName} resolves`, o.label); o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; } }
   }
   // v0.86: when exactly one effect applies and nothing is left to decide, apply it straight away and only ask when there is a real choice.
@@ -1904,7 +1906,8 @@ function openAbilityEffect(obj, done) {
     h('div', { class: 'psub', text: tx || 'This ability has no text.' }),
     delayed ? h('div', { class: 'psub', text: 'A delayed triggered ability was created. In a real game the next turn is your opponent’s, so you draw during THEIR upkeep. In this goldfish game there is no opponent turn, so you draw at the start of your own next upkeep, before your draw step.' }) : null,
     opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
-    box);
+    box,
+    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'The app does NOT apply these lines. Do them by hand, then tick them off:' }), ...miss.map(x => h('label', { class: 'chk' }, h('input', { type: 'checkbox' }), ' ', x))) : null; })());
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); log(`Resolved: ${obj.name}`); if (done) done(); } }));
 }
 function openCascade(obj, done) {
@@ -3801,7 +3804,7 @@ function startGame() {
     const rec = resolve(name);
     for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.sideboard.push(c); }
   }
-  shuffle(state.library);
+  shuffleLib({ quiet: true });
   drawCards(7, true);
   state.phase = 'mull';
   state.onPlay = $('#chkPlay').checked;
@@ -3815,7 +3818,7 @@ function doMulligan() {
   if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
   state.library.push(...state.hand.splice(0));
-  shuffle(state.library);
+  shuffleLib({ quiet: true });
   state.mulls++;
   drawCards(7, true);
   log(`Mulligan #${state.mulls}`);
@@ -4125,7 +4128,7 @@ function shuffleLibrary() {
   if (!state) return;
   if (stackLocked()) { stackToast(); return; }
   snap();
-  shuffle(state.library);
+  shuffleLib();
   log('Shuffled library');
   render();
 }
@@ -4615,7 +4618,7 @@ function symbols(str) {
 function etbTapped(c) {
   const none = { tapped: false, why: '' };
   if (!c || c.token) return none;
-  const tx = cardText(c).replace(selfNameRe(c.name), '~');
+  const tx = cardText(c).replace(selfNameRe(selfNm(c)), '~');
   const key = norm(c.name);
   if (!tx) return /triome/i.test(c.name) ? { tapped: true, why: 'enters tapped' } : none;
   if (shockLife(c) > 0) return none;       // shocklands ask the player
@@ -4775,7 +4778,7 @@ function landManaAbilities(c) {
   const key = norm(c.name) + '|' + tx.length + '|' + tx.slice(-40);
   if (LAND_AB_CACHE.has(key)) return LAND_AB_CACHE.get(key);
   const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const t = tx.replace(/\([^)]*\)/g, ' ').replace(selfNameRe(c.name), '~');   // v0.96.6: "this land" / "this artifact" as well as the printed name
+  const t = tx.replace(/\([^)]*\)/g, ' ').replace(selfNameRe(selfNm(c)), '~');   // v0.96.6: "this land" / "this artifact" as well as the printed name
   const out = []; let becomes = 0, bm;
   if ((bm = t.match(/Whenever ~ becomes tapped, it deals (\d+) damage to you/i))) becomes = +bm[1];
   for (const line of t.split('\n')) {
@@ -4847,7 +4850,7 @@ function applyLandCost(c, k) {
 function etbCounters(c) {
   if (!c || c.token) return;
   const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let tx = cardText(c).replace(selfNameRe(c.name), '~');
+  let tx = cardText(c).replace(selfNameRe(selfNm(c)), '~');
   { const its = kwItems(tx); const mi = its.map(x => x.match(/^modular (\d+)$/i)).find(Boolean); if (mi) tx += `\n~ enters with ${mi[1]} +1/+1 counters on it.`;
     const vn = its.map(x => x.match(/^vanishing (\d+)$/i)).find(Boolean); if (vn) tx += `\n~ enters with ${vn[1]} time counters on it.`;   // CR 702.63a
     const fd = its.map(x => x.match(/^fading (\d+)$/i)).find(Boolean); if (fd) tx += `\n~ enters with ${fd[1]} fade counters on it.`; }   // CR 702.32a   // v0.96.1 modular (CR 702.43a)
@@ -4873,7 +4876,7 @@ function checkNoCounterTriggers() {
   if (!state) return;
   for (const c of state.battlefield) {
     if (c.token) continue; const tx = cardText(c); if (!tx || !/has no [a-z+\/-]+ counters on it/i.test(tx)) continue;
-    const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), t = tx.replace(selfNameRe(c.name), '~');
+    const nm = c.name.split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), t = tx.replace(selfNameRe(selfNm(c)), '~');
     const m = t.match(/^(When(?:ever)? ~ has no ([a-z+\/-]+) counters on it),\s*(.*)$/im); if (!m) continue;
     const key = m[2].toLowerCase() === '+1/+1' ? 'plus' : m[2].toLowerCase(), cc = typeof c.counters === 'number' ? { plus: c.counters } : (c.counters || {});
     if ((cc[key] || 0) > 0) { c._noCtr = false; continue; }
@@ -6018,7 +6021,7 @@ function openZone(zone) {
     width: 680,
     onClose: () => {
       if (zone === 'library' && shuffleChk.checked) {
-        snap(); shuffle(state.library); log('Searched library and shuffled'); render();
+        snap(); shuffleLib(); log('Searched library and shuffled'); render();
       }
     }
   });
@@ -6303,8 +6306,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.0';
+const APP_VERSION = '0.99.1';
 const CHANGELOG = [
+  { v: '0.99.1', title: 'No more silently skipped lines; Ponder; shuffle animation; themed pointers', notes: ['FIXED (engine): a card line the app only half understood could be dropped without a word. Ponder is the example: only "Draw a card" was read, so the look-and-reorder was skipped and the draw was applied automatically. Now (1) every sentence is checked action by action (look, shuffle, scry, mill, draw, discard, exile, destroy, sacrifice, create, search, put on top/bottom...) and any action the reader did not produce is flagged; (2) an effect with a flagged line is never auto-applied or Always-yielded; (3) the resolve window lists every line the app does NOT apply, with tick boxes, so nothing is skipped silently.', 'NEW: "Look at the top N cards of your library, then put them back in any order. You may shuffle." (Ponder and anything worded like it): you get an ordering window with up/down arrows and a shuffle tick box, then the rest of the effect (draw a card) happens.', 'NEW: "Shuffle it into its owner\'s library" (Blightsteel-style) and "Shuffle your hand and graveyard into your library" (Timetwister-style).', 'NEW: a riffle-shuffle animation over your library every time it is shuffled (search effects, fetch lands, the Shuffle button, Ponder). Turn it off under Settings > Motion & effects > Shuffle animation. Every shuffle now goes through one place, so none can be missed.', 'FIXED: a token whose name is also a creature type (Rat, Pest...) read its own name as "this creature" in rules text such as "for each other Rat you control", so Rat tokens never grew. "Gets +N/+N for each ..." is now read for any countable thing. Aura tokens that set base power and toughness (Cursed Role) now apply.', 'Every one-click set now switches the mouse pointer too: ink quill (Parchment), little galaxy (Pixel cosmos), crescent moon (Midnight), water drop (Abyss), leaf (Forest), neon arrow (Neon), gilded arrow (Obsidian). The pointers are also in Settings > Look & feel > Mouse cursor.'] },
   { v: '0.99.0', title: 'Mana-spent conditions on cast triggers; Dark Matter Manipulator verified', notes: ['NEW: "Whenever you cast a spell, if no mana was spent to cast it, ..." and "if mana was spent to cast that spell" (CR 601.2h, 603.4). The app now records whether any mana was spent when you cast a spell (lands, rocks or floating mana); spells cast for free (cascade, discover, free-cast effects, alternative costs paid without mana) count as no mana spent. The condition is checked as the spell is cast, as the rules require.', 'Checked against its real text: Dark Matter Manipulator (mill three on entering; +2/+0 for every seven cards in your graveyard, counted live in steps of seven). It was already handled by the conditional-static reader and is now covered by a rules test.'] },
   { v: '0.98.9', title: 'Matching mouse pointers for the pixel sets', notes: ['The Pixel mushroom, cats, frog and music sets now switch your mouse pointer too, to a small pixel sprite of the same theme (mushroom, cat, frog, music note) with a white-outlined hover picture.', 'Eight new pointers under Settings > Look & feel > Mouse cursor: the four sprites, plus a pixel arrow in each set colour (mushroom red, cat orange, frog green, music pink).'] },
   { v: '0.98.8', title: 'Four new pixel-art sets: mushroom, cats, frog, music', notes: ['New one-click sets under Settings > Look & feel: Pixel mushroom, Pixel cats, Pixel frog and Pixel music. Each brings its own hand-drawn pixel sleeve, a matching playmat (Settings > Board), interface colours and a song (golden hour, jazz-hop, rainy window and arcade chill). All art is original and drawn in code, so it works offline.', 'The sleeve, playmat and interface theme can also be picked on their own.'] },
@@ -7034,7 +7038,7 @@ function fetchLand(fetchId, targetId, opts) {
       msg += ` → fetched ${t.name}${t.tapped ? ' (tapped)' : ''}`;
     }
   } else msg += ', found nothing';
-  shuffle(state.library);
+  shuffleLib();
   log(msg + '; shuffled');
   render();
   flushTriggers();
@@ -7283,7 +7287,7 @@ function cursorSvg(style, hover) {   // returns { body, hx, hy } on a 32×32 can
   if (style === 'sword') return { hx: 3, hy: 3, body: `${hover ? '<line x1="3" y1="3" x2="19" y2="19" stroke="rgba(150,210,255,.55)" stroke-width="8" stroke-linecap="round"/>' : ''}<line x1="3" y1="3" x2="19" y2="19" stroke="#1b2026" stroke-width="5.4" stroke-linecap="round"/><line x1="3.6" y1="3.6" x2="19" y2="19" stroke="${hover ? '#ffffff' : '#dfe6ee'}" stroke-width="3" stroke-linecap="round"/><line x1="15" y1="24" x2="24" y2="15" stroke="#1b2026" stroke-width="5" stroke-linecap="round"/><line x1="15" y1="24" x2="24" y2="15" stroke="#e3b95c" stroke-width="3" stroke-linecap="round"/><line x1="21.5" y1="21.5" x2="27" y2="27" stroke="#2a1a0a" stroke-width="5" stroke-linecap="round"/><line x1="21.5" y1="21.5" x2="27" y2="27" stroke="#7a4e22" stroke-width="3" stroke-linecap="round"/><circle cx="28.5" cy="28.5" r="2.2" fill="#e3b95c"/>` };
   const m = /^orb-([WUBRG])$/.exec(style);
   if (m) { const [c1, c2] = MANA_ORB[m[1]], r = hover ? 9.5 : 7.5; return { hx: 16, hy: 16, body: `<defs><radialGradient id="g${m[1]}" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></radialGradient></defs>${hover ? `<circle cx="16" cy="16" r="13.5" fill="${c2}" opacity=".35"/>` : ''}<circle cx="16" cy="16" r="${r}" fill="url(#g${m[1]})" stroke="rgba(0,0,0,.65)" stroke-width="1.6"/><circle cx="13.5" cy="13" r="2" fill="rgba(255,255,255,.6)"/>` }; }
-  { const pc = typeof pixCursor === 'function' && pixCursor(style, hover); if (pc) return pc; }
+  { const pc = (typeof pixCursor === 'function' && pixCursor(style, hover)) || (typeof themeCursor === 'function' && themeCursor(style, hover)); if (pc) return pc; }
   return null;
 }
 let cursorStyleEl = null;
@@ -7651,6 +7655,7 @@ const ANIM_DEFS = [
   ['life', 'Life effects', 'Rolling life numbers, a colour flash, a shake on big hits and floating +/- numbers'],
   ['turn', 'Turn banner & phase flash', 'A banner at the start of each turn and a flash when the phase changes'],
   ['fan', 'Hand fan', 'Cards in your hand sit in a gentle arc and lift when you hover them'],
+  ['shuffle', 'Shuffle animation', 'A quick riffle shuffle over your library whenever it is shuffled (search effects, fetch lands, the Shuffle button)'],
   ['cardDrag', 'Physical card drag', 'Click and hold a card and it follows your mouse. Drop it on a zone it can go to; if it cannot be played or moved there it flies back to where it came from'],
   ['hand3d', '3D hand tilt', 'Cards in your hand tilt toward the mouse in 3D as you hover them, like the big card preview'],
   ['handFloat', 'Floating hand', 'The cards in your hand hover up and down a small amount, each at its own pace, with a soft drop shadow'],
@@ -8078,7 +8083,7 @@ function searchEffect(tx, src, obj) {
   const max = m[2] ? wordN(m[2]) : wordN(m[1]);
   const desc = m[3].replace(/^cards?\s*/i, '').trim() || m[3];
   const full = (sentence.match(/for [^,.]*?cards?\b[^,.]*/i) || [m[3]])[0];
-  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}`, fn: () => {
+  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}${/shuffle/i.test(tx) ? ', then shuffle' : ''}`, fn: () => {
     if (!state.library.length) { toast('Library is empty', 'There is nothing to search.'); return; }
     openPickCards({ title: `${src}: search your library`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'}: ${full.replace(/^for /i, '')}. Highlighted cards match the description; you may also choose nothing (you can't be forced to find a card). ${/shuffle/i.test(sentence) || /shuffle/i.test(tx) ? 'Your library is shuffled afterwards.' : ''}`,
       cards: state.library.slice(), max, isOk: c => descMatchesCard(full.replace(/^for (?:up to \w+ |an? |one |two |three |any number of )?/i, ''), c.name), nothing: 'Find nothing',
@@ -8089,7 +8094,7 @@ function searchEffect(tx, src, obj) {
           else if (dest === 'exile') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); if (freeCast) x.freeCastTurn = state.turn; state.exile.push(x); } }   // CR 701.23 search, 406 exile; "until end of turn, you may cast … without paying" (CR 118.9)
           else if (dest === 'top') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); state.library.unshift(x); } }
           else { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); enterBattlefield(x, { from: 'library', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped }); if (tapped) x.tapped = true; } } }
-        if (/shuffle/i.test(tx)) shuffle(state.library);
+        if (/shuffle/i.test(tx)) shuffleLib();
         if (dest === 'top' && picked.length) { const [x] = picked; const i = state.library.findIndex(y => y.id === x.id); if (i > 0) { const [y] = state.library.splice(i, 1); state.library.unshift(y); } }
         log(`${src}: searched the library${names.length ? ' and found ' + names.join(', ') + (dest === 'hand' ? ' (to hand)' : ' (' + dest + ')') : ' and found nothing'}${/shuffle/i.test(tx) ? '; shuffled' : ''}`); render(); flushTriggers(); } });
   } };
@@ -8409,7 +8414,7 @@ function sagaSacrifice(id) {
 const SET_DEFAULT = {
   bfs: 1, hs: 1, stripOpacity: 0.86, zonea: 0.22, dim: 0.35, theme: 'green', custom: false, fit: 'cover', frame: 'none', frameAnim: true, frameGlow: 0.7, frameA: '#ff7a2f', frameB: '#ffd45c', frameC: '#fff1c9',
   layout: { zoneDepth: true, stackCards: true, dimIdle: true, boardStrip: true, combatLane: true, gyFan: true }, layoutMode: 'updated', lay: {}, matMotion: 'off', matSpeed: 1, sleevePreset: '', matPreset: '', uiTheme: 'default',
-  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
+  anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, shuffle: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
   sound: { on: true, vol: 0.5, music: true, musicStyle: 'ambient', musicBeat: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
   teaching: { master: true, playability: true, phasePopups: true, phasePauses: true, stackGuidance: true,
     triggerPrompts: true, gapNotes: true, gapBadges: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
@@ -9223,18 +9228,25 @@ function compileCard(c) {
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
 const DEP_HANDLED = [/^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+// A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
+// Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
+const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
+function verbGaps(sentence, labels) {
+  const s = String(sentence || '').replace(/\([^)]*\)/g, ' '); if (labels === null) { try { labels = recognizedEffects(sentence).join(' | '); } catch (e) { return []; } if (!labels) return []; }
+  return VERB_CHECKS.filter(([v, l]) => v.test(s) && !l.test(labels)).map(([v]) => v.source);
+}
 function uncoveredClauses(effectText) {
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
-  if (sents.length < 2) return [];
   try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; } catch (e) { /* ignore */ }
   const missed = [];
   sents.forEach((x, i) => {
     if (/^(?:Flashback|Kicker|Multikicker|Buyback|Cycling|Escape|Jump-start|Retrace|Entwine|Storm|Foretell|Suspend)\b/i.test(x)) return;
     if (/^(?:Activate|Cast this spell|This ability|You can't|Spend only|Play this|Cast only|Cast it|This spell can't be countered)\b/i.test(x)) return;
     if (i > 0 && DEP_SENT.test(x)) { if (!DEP_HANDLED.some(r => r.test(x))) missed.push(x); return; }
-    let ok = false; try { ok = recognizedEffects(x).length > 0; } catch (e) { /* ignore */ }
-    if (!ok) missed.push(x);
+    if (sents.length < 2 && !verbGaps(x, null).length) return;   // one understood sentence: nothing more to check
+    let ok = false, labs = []; try { labs = recognizedEffects(x); ok = labs.length > 0; } catch (e) { /* ignore */ }
+    if (!ok) missed.push(x); else if (labs.length && verbGaps(x, labs.join(' | ')).length) missed.push(x);   // understood in part: some action in the sentence has no matching effect
   });
   return missed;
 }
@@ -11259,7 +11271,7 @@ function parseCharChange(rest) {
   if (resetSubs && !out.subs) out.subs = [];
   const bp = /base power and toughness (\d+)\/(\d+)/i.exec(r); if (bp) out.pt = bp[1] + '/' + bp[2];
   for (const lm of r.matchAll(/\bloses? ((?:[a-z]+(?: strike)?(?:, | and |,? and )?)+?)(?= and |$|,)/gi)) for (const k of GRANTABLE) if (new RegExp('\\b' + k + '\\b', 'i').test(lm[1]) && !/\ball\b/i.test(lm[1])) out.loseKws.push(k);
-  if (!(out.lose || out.subs || out.types || out.addTypes || out.colors || out.loseKws.length)) return null;
+  if (!(out.lose || out.pt || out.subs || out.types || out.addTypes || out.colors || out.loseKws.length)) return null;
   return out;
 }
 const AURA_OVR_CACHE = new Map();
@@ -11400,6 +11412,7 @@ function parseCondStatic(line, g) {
   if ((m = L.match(/^as long as (.+?), ((?:~|it|this \w+) .+)$/i))) { cond = m[1]; eff = m[2]; }
   else if ((m = L.match(/^((?:~|this \w+) (?:gets?|has|have|can't) .+?) as long as (.+)$/i))) { eff = m[1]; cond = m[2]; }
   else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for every (\w+) (.+)$/i))) { eff = m[1]; per = { every: CS_NUM(m[2]), thing: m[3] }; if (isNaN(per.every)) per = { every: 1, thing: m[2] + ' ' + m[3] }; }
+  else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for each (.+)$/i))) { eff = m[1]; per = { every: 1, thing: m[2] }; }   // CR 613.4c: "gets +1/+1 for each other Rat you control"
   else return null;
   const e = csEffect(eff); if (!(e.p || e.t || e.kws.length || e.cant)) return null;
   return { line: L, kind: 'cs', g, cond, per, p: e.p, t: e.t, kws: e.kws, cant: e.cant, other: e.other };
@@ -11501,6 +11514,99 @@ function pixCursor(style, hover) {
 }
 CURSOR_STYLES.push(['pix-mush', 'Pixel mushroom'], ['pix-cat', 'Pixel cat'], ['pix-frog', 'Pixel frog'], ['pix-music', 'Pixel music note'], ['pixarrow-mush', 'Pixel arrow — mushroom red'], ['pixarrow-cat', 'Pixel arrow — cat orange'], ['pixarrow-frog', 'Pixel arrow — frog green'], ['pixarrow-music', 'Pixel arrow — music pink']);
 for (const [id, cur] of [['pixmush', 'pix-mush'], ['pixcat', 'pix-cat'], ['pixfrog', 'pix-frog'], ['pixmusic', 'pix-music']]) UI_SETS.find(x => x.id === id).cursor = cur;
+// v0.99.1 Matching pointers for the older sets (drawn as small vector pictures): ink quill (Parchment), little galaxy (Pixel cosmos), crescent moon (Midnight), water drop (Abyss), leaf (Forest), neon arrow (Neon).
+function themeCursor(style, hover) {
+  const g = hover ? '<circle cx="16" cy="16" r="15" fill="rgba(255,255,255,.18)"/>' : '';
+  if (style === 'quill') return { hx: 3, hy: 29, body: `${hover ? '<circle cx="4" cy="28" r="6" fill="rgba(40,70,160,.35)"/>' : ''}<path d="M29 3 C19 3 10 11 6 23 L4 29 L10 26 C21 22 28 14 29 3 Z" fill="${hover ? '#fff6d8' : '#f1e4c0'}" stroke="#3a2a14" stroke-width="1.6" stroke-linejoin="round"/><path d="M5 28 L25 8" stroke="#3a2a14" stroke-width="1.4" fill="none"/><path d="M12 22 L17 24 M15 18 L20 20 M18 14 L23 16" stroke="#8a6a3a" stroke-width="1" fill="none"/><circle cx="4" cy="29" r="${hover ? 2.6 : 1.8}" fill="#1c2a6b"/>` };
+  if (style === 'galaxy') return { hx: 16, hy: 16, body: `${g}<defs><radialGradient id="gx" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffe08a"/><stop offset=".35" stop-color="#ff7ac8"/><stop offset="1" stop-color="#2a1b4d"/></radialGradient></defs><circle cx="16" cy="16" r="${hover ? 12.5 : 11}" fill="url(#gx)" opacity=".85"/><path d="M16 16 C16 9 23 8 25 13 C27 19 20 24 14 23 C9 22 7 16 10 12" fill="none" stroke="#46d6c0" stroke-width="2" stroke-linecap="round"/><path d="M16 16 C16 23 9 24 7 19 C5 13 12 8 18 9 C23 10 25 16 22 20" fill="none" stroke="#bff7ea" stroke-width="1.4" stroke-linecap="round" opacity=".8"/><circle cx="16" cy="16" r="2.2" fill="#fff4c4"/><circle cx="5" cy="6" r="1" fill="#fff"/><circle cx="27" cy="26" r="1" fill="#fff"/><circle cx="26" cy="5" r=".8" fill="#46d6c0"/>` };
+  if (style === 'moon') return { hx: 16, hy: 16, body: `${g}<path d="M21 4 A12.5 12.5 0 1 0 28 22 A10 10 0 1 1 21 4 Z" fill="${hover ? '#fff1b0' : '#ffe08a'}" stroke="#4a3a10" stroke-width="1.4"/><path d="M25 6 l1 2.4 2.6.2 -2 1.7 .7 2.5 -2.3-1.4 -2.3 1.4 .7-2.5 -2-1.7 2.6-.2z" fill="#fff" stroke="#4a3a10" stroke-width=".6" transform="translate(-3 0) scale(.8)"/>` };
+  if (style === 'droplet') return { hx: 16, hy: 16, body: `${g}<defs><linearGradient id="dp" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${hover ? '#bfe9ff' : '#8ec5ff'}"/><stop offset="1" stop-color="#1f6fc4"/></linearGradient></defs><path d="M16 3 C16 3 7 14 7 20 a9 9 0 0 0 18 0 C25 14 16 3 16 3 Z" fill="url(#dp)" stroke="#0e3a6b" stroke-width="1.4"/><path d="M12 19 a4.5 4.5 0 0 0 3 4.6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity=".8"/>` };
+  if (style === 'leaf') return { hx: 16, hy: 16, body: `${g}<path d="M5 27 C5 12 16 4 28 5 C28 17 20 27 5 27 Z" fill="${hover ? '#a8e87a' : '#6fc24a'}" stroke="#1f4a1c" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 27 C12 20 18 14 25 8" fill="none" stroke="#1f4a1c" stroke-width="1.3"/><path d="M12 21 L11 15 M16 17 L16 11 M19 14 L23 14" stroke="#2f7a30" stroke-width="1" fill="none"/>` };
+  if (style === 'neon') return { hx: 4, hy: 3, body: `<path d="M4 3 L4 24 L10 18.5 L14.5 28 L18 26.5 L13.5 17.5 L21 17 Z" fill="none" stroke="${hover ? '#ff7ac8' : '#46d6c0'}" stroke-width="${hover ? 6 : 5}" stroke-linejoin="round" opacity=".35"/><path d="M4 3 L4 24 L10 18.5 L14.5 28 L18 26.5 L13.5 17.5 L21 17 Z" fill="#120b2b" stroke="${hover ? '#ff7ac8' : '#46d6c0'}" stroke-width="1.8" stroke-linejoin="round"/>` };
+  return null;
+}
+CURSOR_STYLES.push(['quill', 'Ink quill'], ['galaxy', 'Little galaxy'], ['moon', 'Crescent moon'], ['droplet', 'Water drop'], ['leaf', 'Leaf'], ['neon', 'Neon arrow']);
+for (const [id, cur] of [['default', 'moon'], ['obsidian', 'gold'], ['abyss', 'droplet'], ['forest', 'leaf'], ['neon', 'neon'], ['parchment', 'quill'], ['light', 'default'], ['cosmos', 'galaxy']]) UI_SETS.find(x => x.id === id).cursor = cur;
+// v0.99.1 One place that shuffles your library (CR 701.20): it randomises state.library, counts the shuffle, and plays a riffle animation over the library pile.
+// "Shuffle ... into your library" effects (Blightsteel Colossus, Timetwister-style hand and graveyard shuffles) are read from the rules text here too (CR 701.20a, 400.3).
+function shuffleLib(o = {}) {
+  if (!state) return;
+  shuffle(state.library); state.shuffles = (state.shuffles || 0) + 1;
+  if (!o.quiet) { try { riffleAnimation(); } catch (e) {} }
+}
+function riffleAnimation() {
+  if (!animOn('shuffle') || typeof document === 'undefined') return;
+  const el = document.querySelector('#libstack'); if (!el) return; const r = el.getBoundingClientRect(); if (!r.width) return;
+  const back = el.querySelector('.cardback'), cs = back ? getComputedStyle(back) : null, w = Math.max(40, r.width * 0.78), hgt = Math.max(56, r.height * 0.82);
+  const layer = h('div', { style: 'position:fixed;left:0;top:0;width:0;height:0;z-index:9000;pointer-events:none' }); document.body.append(layer);
+  const mk = i => { const d = h('div', { class: 'cardback shufcard', style: `position:absolute;left:${r.left + (r.width - w) / 2}px;top:${r.top + (r.height - hgt) / 2}px;width:${w}px;height:${hgt}px;margin:0;` }); if (cs) { d.style.backgroundImage = cs.backgroundImage; d.style.backgroundSize = cs.backgroundSize; d.style.backgroundPosition = cs.backgroundPosition; } layer.append(d); return d; };
+  const n = 8, cards = []; for (let i = 0; i < n; i++) cards.push(mk(i)); const sp = aspd(), T = ms => ms / sp;
+  // Each riffle: the pile splits into two halves, which slide apart, lean in and interleave back into one pile. Three riffles, then a final square-up.
+  const half = w * 0.42, rounds = 3, per = 340; let t = 0; const anims = [];
+  cards.forEach((d, i) => {
+    const left = i % 2 === 0, k = Math.floor(i / 2), dir = left ? -1 : 1, kf = [{ transform: 'translate(0,0) rotate(0deg)' }]; let off = 0;
+    for (let rd = 0; rd < rounds; rd++) {
+      kf.push({ transform: `translate(${dir * half}px, ${-k * 2}px) rotate(${dir * -5}deg)`, offset: (rd * per + per * 0.4) / (rounds * per + 160) });
+      kf.push({ transform: `translate(${dir * half * 0.35}px, ${-(n / 2 - k) * 5 - (left ? 0 : 3)}px) rotate(${dir * -9}deg)`, offset: (rd * per + per * 0.72) / (rounds * per + 160) });
+      kf.push({ transform: `translate(0px, ${-(i) * 1.2}px) rotate(0deg)`, offset: ((rd + 1) * per) / (rounds * per + 160) });
+    }
+    kf.push({ transform: 'translate(0,0) rotate(0deg)', offset: 1 });
+    anims.push(d.animate(kf, { duration: T(rounds * per + 160), easing: 'ease-in-out', fill: 'forwards' }));
+  });
+  setTimeout(() => layer.remove(), T(rounds * per + 260));
+}
+// "Shuffle it / this card / ~ into its owner's library", "Shuffle your hand into your library", "Shuffle your hand and graveyard into your library".
+function shuffleIntoOptions(tx, obj) {
+  if (!state) return null; const T = String(tx || '').replace(/’/g, "'").replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); const src = (obj && obj.sourceName) || 'Ability';
+  let m;
+  if ((m = /^(?:then )?shuffle (?:(your|their) )?((?:hand|graveyard)(?:(?:, | and )(?:your )?(?:hand|graveyard))*) into (?:your|their) library\.?$/i.exec(T))) {
+    const zones = [/hand/i.test(m[2]) ? 'hand' : null, /graveyard/i.test(m[2]) ? 'graveyard' : null].filter(Boolean);
+    return [{ label: `Shuffle your ${zones.join(' and ')} into your library`, fn: () => { snap(); let n = 0; for (const z of zones) { const cards = state[z].splice(0); n += cards.length; for (const c of cards) { if (c.token) continue; state.library.push(c); } } shuffleLib(); log(`${src}: ${zones.join(' and ')} (${n} card${n === 1 ? '' : 's'}) shuffled into the library`); render(); } }];
+  }
+  if ((m = /^shuffle (?:it|this card|that card|~|this \w+) into (?:its owner's|your|their) library\.?$/i.exec(T)) && obj && obj.sourceId) {
+    return [{ label: `Shuffle ${src} into its owner's library`, fn: () => { const f = findCard(obj.sourceId); if (!f) { log(`${src} is not in a zone it can be shuffled from`); return; } snap(); if (f.card.token) { moveCard(f.card.id, 'graveyard'); return; } moveCard(f.card.id, 'library'); shuffleLib(); log(`${src}: shuffled into the library`); render(); } }];
+  }
+  return null;
+}
+// v0.99.1 "Look at the top N cards of your library, then put them back in any order. You may shuffle. Draw a card." (CR 401.4, 701.20). Read by the rules text:
+// a look-and-reorder sentence, an optional "You may shuffle" sentence, and whatever else the effect says afterwards (read by the usual effect reader).
+const REORDER_RE = /^look at the top (a|one|two|three|four|five|six|seven|\d+) cards? of your library(?:,? then|\.|, and|;)?\s*(?:then )?put (?:them|those cards|it|that card) back (?:on top of your library )?in any order\.?$/i;
+function openReorderTop(n, src, mayShuffle, onDone) {
+  if (!state) return; const k = Math.min(n, state.library.length);
+  if (!k) { log(`${src}: your library is empty, so there is nothing to look at`); if (onDone) onDone(); return; }
+  const cards = state.library.slice(0, k), order = cards.map((c, i) => i); let shuf = false;
+  const m = modal(`${src}: look at the top ${k === 1 ? 'card' : k + ' cards'}`, { width: 520, sticky: true, noClose: true });
+  const confirm = h('button', { class: 'primary', text: 'Put them back' });
+  function draw() {
+    m.body.replaceChildren(h('div', { class: 'psub', text: 'Put them back in any order. The first card in the list will be on top.' }));
+    order.forEach((ci, pos) => {
+      const c = cards[ci], info = cardInfo(c.name);
+      const row = h('div', { class: 'row' }, h('span', { class: 'muted small', text: pos === 0 ? 'Top' : String(pos + 1) }), h('span', { class: 'nm' }, c.name, ' ', info && info.mc ? symbols(info.mc) : ''), h('span', { class: 'muted small', text: info ? info.t.split(' // ')[0] : '' }),
+        h('button', { text: '▲', disabled: pos === 0 || shuf, onclick: () => { [order[pos - 1], order[pos]] = [order[pos], order[pos - 1]]; draw(); } }),
+        h('button', { text: '▼', disabled: pos === order.length - 1 || shuf, onclick: () => { [order[pos + 1], order[pos]] = [order[pos], order[pos + 1]]; draw(); } }));
+      row.addEventListener('mouseenter', () => showPreview(c)); m.body.append(row);
+    });
+    if (mayShuffle) { const cb = h('input', { type: 'checkbox', checked: shuf, onchange: e => { shuf = e.target.checked; draw(); } }); m.body.append(h('label', { class: 'chk' }, cb, ' Then shuffle your library (the order above no longer matters)')); }
+  }
+  confirm.addEventListener('click', () => {
+    snap(); state.library.splice(0, k, ...order.map(i => cards[i]));
+    if (shuf) { shuffleLib(); log(`${src}: looked at the top ${k}, put them back, then shuffled`); } else log(`${src}: looked at the top ${k} and put them back in the order: ${order.map(i => cards[i].name).join(', ')}`);
+    m.close(); render(); if (onDone) onDone();
+  });
+  m.foot.append(confirm); draw(); showPreview(cards[0]);
+}
+function lookReorderOptions(tx, obj) {
+  if (!state) return null;
+  const clean = String(tx || '').replace(/’/g, "'").replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean); if (!sents.length) return null;
+  let i = 0, n = null;
+  const a = REORDER_RE.exec(sents[0]); if (a) { n = numOf(a[1]); i = 1; }
+  else { const b = /^look at the top (a|one|two|three|four|five|six|seven|\d+) cards? of your library\.?$/i.exec(sents[0]); if (b && sents[1] && /^put (?:them|those cards|it|that card) back (?:on top of your library )?in any order\.?$/i.test(sents[1])) { n = numOf(b[1]); i = 2; } }
+  if (n === null) return null;
+  let mayShuffle = false; if (sents[i] && /^you may shuffle(?: your library)?\.?$/i.test(sents[i])) { mayShuffle = true; i++; }
+  const rest = sents.slice(i).join(' '), src = (obj && obj.sourceName) || 'Ability';
+  const restOpts = rest ? effectOptionsBase(rest, obj).filter(o => typeof o.fn === 'function' && !o.hidden) : [];
+  return [{ full: true, label: `Look at the top ${n === 1 ? 'card' : n + ' cards'}, put them back in any order${mayShuffle ? ', you may shuffle' : ''}${rest ? ', then ' + (restOpts[0] ? restOpts[0].label.toLowerCase() : rest) : ''}`, fn: () => openReorderTop(n, src, mayShuffle, () => { for (const o of restOpts.slice(0, 1)) o.fn(); }) }];
+}
 init();
 
 })();

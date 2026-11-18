@@ -495,7 +495,7 @@ function parseStaticCard(g) {
   {
     const info = rulesInfo(g); if (!info || !info.tx) return list;   // v0.95.0 tokens are read like cards (their rules text is on the token itself)
     const nm = g.name.split(' // ')[0];
-    const tx = info.tx.replace(/,\n/g, ', ').replace(/’/g, "'").replace(selfNameRe(nm.replace(/’/g, "'")), '~').replace(/\([^)]*\)/g, '');
+    const tx = info.tx.replace(/,\n/g, ', ').replace(/’/g, "'").replace(selfNameRe(g.token ? '\u0000' : nm.replace(/’/g, "'")), '~').replace(/\([^)]*\)/g, '');
     for (const raw of tx.split('\n')) {
       { const l0 = raw.trim().replace(/\.$/, ''), hadD = /^delirium\s*[\u2014-]/i.test(l0), l1 = l0.replace(/^delirium\s*[\u2014-]\s*/i, ''), dm = l1.match(/^(?:as long as there are (\w+) or more card types among cards in your graveyard,\s*)?~\s+(.+)$/i);
         if (dm && !dm[1] && !hadD) { /* not a delirium line */ } else
