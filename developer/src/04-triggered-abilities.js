@@ -10,6 +10,13 @@ function selfNameRe(full) {
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
   return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle|token)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
+// Prowess (CR 702.108a): "Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn." Read from the keyword line only (a card that
+// merely MENTIONS prowess does not have it); each instance triggers separately (702.108c); prowess given by another effect is handled where spells are cast.
+const PROWESS_TRIG = { ev: 'cast', cond: 'Prowess: whenever you cast a noncreature spell', effect: 'This creature gets +1/+1 until end of turn.', line: 'Prowess (keyword): whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.', filter: 'noncreature spell', optional: false, special: null, kw: 'prowess' };
+function prowessCount(text) {
+  let n = 0; for (const line of String(text || '').replace(/\([^)]*\)/g, '').split('\n')) { const l = line.trim(); if (!l || /[.:;]/.test(l)) continue; for (const p of l.split(/,\s*|\s+and\s+/)) if (p.trim().toLowerCase() === 'prowess') n++; }
+  return n;
+}
 function parseTriggers(c) {
   if (!c) return [];
   const info = rulesInfo(c);
@@ -75,7 +82,7 @@ function parseTriggers(c) {
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
   }
   if (/\bcascade\b/i.test(info.tx)) out.push({ ev: 'cast-self', cond: 'When you cast this spell', effect: 'Cascade: exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order.', line: 'Cascade (keyword): exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it free.', filter: '', optional: true, special: 'cascade' });
-  if (/\bprowess\b/i.test(info.tx)) out.push({ ev: 'cast', cond: 'Prowess: whenever you cast a noncreature spell', effect: 'This creature gets +1/+1 until end of turn.', line: 'Prowess (keyword): whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.', filter: 'noncreature spell', optional: false, special: 'prowess' });
+  { const n = prowessCount(info.tx); for (let k = 0; k < n; k++) out.push({ ...PROWESS_TRIG }); }   // CR 702.108: each instance triggers separately
   for (const kt of kwTriggersFor(info)) out.push(kt);   // v0.96.1 keyword triggers (exalted, evolve, renown ...)
   TRIG_CACHE.set(key, out);
   return out;
@@ -125,6 +132,7 @@ function fireTrigger(ev, ctx = {}) {
     for (const t of parseTriggers(sp)) if (t.ev === 'cast-self') add(sp, t, `You cast ${sp.name}. "When you cast this spell" abilities trigger immediately and go on the stack above the spell, so they resolve first.`);
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast-any' && castAnyOk(t.castAny, sp, c)) { const n0 = state.pendingTriggers.length; add(c, t, `${sp.name} was cast with mana value ${spellMV(sp)}${t.castAny.counters ? ', equal to the number of ' + t.castAny.counters + ' counters on ' + c.name : ''}.`); if (state.pendingTriggers.length > n0) Object.assign(state.pendingTriggers[state.pendingTriggers.length - 1], { special: 'counterCast', spellId: sp.id }); }
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
+    for (const c of state.battlefield) if (prowessCount(cardText(c)) === 0 && hasKw(c, 'prowess') && filterMatches(PROWESS_TRIG.filter, sp)) add(c, PROWESS_TRIG, `You cast ${sp.name}, a noncreature spell, and ${c.name} has prowess (given by another effect).`);
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
     for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self' && (!t.test || t.test(a, atk))) add(a, t, `${a.name} was declared as an attacker.`);

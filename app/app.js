@@ -696,7 +696,7 @@ function hasKw(c, kw) {
   if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
-const GRANTABLE = ['flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
+const GRANTABLE = ['prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
 // Keywords a creature has only because of other permanents' static abilities (shown in the preview).
 function grantedKeywords(c) {
   const out = [];
@@ -1087,6 +1087,13 @@ function selfNameRe(full) {
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
   return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle|token)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
+// Prowess (CR 702.108a): "Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn." Read from the keyword line only (a card that
+// merely MENTIONS prowess does not have it); each instance triggers separately (702.108c); prowess given by another effect is handled where spells are cast.
+const PROWESS_TRIG = { ev: 'cast', cond: 'Prowess: whenever you cast a noncreature spell', effect: 'This creature gets +1/+1 until end of turn.', line: 'Prowess (keyword): whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.', filter: 'noncreature spell', optional: false, special: null, kw: 'prowess' };
+function prowessCount(text) {
+  let n = 0; for (const line of String(text || '').replace(/\([^)]*\)/g, '').split('\n')) { const l = line.trim(); if (!l || /[.:;]/.test(l)) continue; for (const p of l.split(/,\s*|\s+and\s+/)) if (p.trim().toLowerCase() === 'prowess') n++; }
+  return n;
+}
 function parseTriggers(c) {
   if (!c) return [];
   const info = rulesInfo(c);
@@ -1152,7 +1159,7 @@ function parseTriggers(c) {
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
   }
   if (/\bcascade\b/i.test(info.tx)) out.push({ ev: 'cast-self', cond: 'When you cast this spell', effect: 'Cascade: exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order.', line: 'Cascade (keyword): exile cards from the top of your library until you exile a nonland card with lesser mana value. You may cast it free.', filter: '', optional: true, special: 'cascade' });
-  if (/\bprowess\b/i.test(info.tx)) out.push({ ev: 'cast', cond: 'Prowess: whenever you cast a noncreature spell', effect: 'This creature gets +1/+1 until end of turn.', line: 'Prowess (keyword): whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.', filter: 'noncreature spell', optional: false, special: 'prowess' });
+  { const n = prowessCount(info.tx); for (let k = 0; k < n; k++) out.push({ ...PROWESS_TRIG }); }   // CR 702.108: each instance triggers separately
   for (const kt of kwTriggersFor(info)) out.push(kt);   // v0.96.1 keyword triggers (exalted, evolve, renown ...)
   TRIG_CACHE.set(key, out);
   return out;
@@ -1202,6 +1209,7 @@ function fireTrigger(ev, ctx = {}) {
     for (const t of parseTriggers(sp)) if (t.ev === 'cast-self') add(sp, t, `You cast ${sp.name}. "When you cast this spell" abilities trigger immediately and go on the stack above the spell, so they resolve first.`);
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast-any' && castAnyOk(t.castAny, sp, c)) { const n0 = state.pendingTriggers.length; add(c, t, `${sp.name} was cast with mana value ${spellMV(sp)}${t.castAny.counters ? ', equal to the number of ' + t.castAny.counters + ' counters on ' + c.name : ''}.`); if (state.pendingTriggers.length > n0) Object.assign(state.pendingTriggers[state.pendingTriggers.length - 1], { special: 'counterCast', spellId: sp.id }); }
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
+    for (const c of state.battlefield) if (prowessCount(cardText(c)) === 0 && hasKw(c, 'prowess') && filterMatches(PROWESS_TRIG.filter, sp)) add(c, PROWESS_TRIG, `You cast ${sp.name}, a noncreature spell, and ${c.name} has prowess (given by another effect).`);
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
     for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self' && (!t.test || t.test(a, atk))) add(a, t, `${a.name} was declared as an attacker.`);
@@ -6292,8 +6300,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.98.5';
+const APP_VERSION = '0.98.6';
 const CHANGELOG = [
+  { v: '0.98.6', title: 'Prowess fixed and checked against CR 702.108', notes: ['FIXED: prowess was tagged as a special case, so Always yield and automatic resolving skipped it. It is now an ordinary triggered ability ("whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn"), so Always yield is offered and works.', 'FIXED: any card that merely mentioned the word prowess in its rules text could be treated as having it. Prowess is now read from the keyword line only, or from an effect that gives it.', 'Each instance triggers separately (CR 702.108c), prowess given by another permanent works, and it triggers only on your noncreature spells. Tested end to end: trigger, Always yield, stacking pumps and ending at the cleanup step.'] },
   { v: '0.98.5', title: 'Conditional statics, and the app now knows what it is missing', notes: ['New rules-text reader for conditional and scaling static abilities (CR 611.3, 613.4c): "gets +2/+2 as long as there are three or more land cards in your graveyard", "gets +2/+0 for every seven cards in your graveyard", "as long as it\'s your turn, this creature has first strike". It understands graveyard / hand / battlefield counts by card type or subtype, life totals, hand size, counters on it, tapped / attacking, spells cast this turn and "or more / or fewer / no" wording, joined with "and" / "or". Nothing is keyed to card names.', 'Honest gaps: wording the reader cannot evaluate is never guessed. The line is marked as only a reminder in How the app reads cards, a \u26a0 badge appears on the permanent (hover it to see the lines), the log says so when the card enters, and a conditional power/toughness is shown with a ?. Both aids can be switched off in Settings.'] },
   { v: '0.98.4', title: 'Fix: "when this dies / is put into a graveyard" triggers, and loses-all-abilities effects', notes: ['FIXED: abilities like "When ~ dies" and "When ~ is put into a graveyard from the battlefield" (Flagstones of Trokair) were being dropped, because the check that a card is in the right zone ran after the card had already reached the graveyard. Leaves-the-battlefield abilities now look back as the rules say (CR 603.10a). A test now sends cards to the graveyard by every route (destroy, sacrifice, move, leave) and checks the trigger appears.', 'New: effects that change what a permanent is (CR 613): "loses all abilities", "becomes a blue Frog with base power and toughness 1/1" (Turn to Frog), "loses flying", and Auras such as Kenrith\'s Transformation, Darksteel Mutation, Imprisoned in the Moon and Song of the Dryads (a land that becomes a Forest taps for G and loses its other abilities, CR 305.7). Triggers, keywords, type line, colour, power/toughness and mana follow the new characteristics, and temporary effects end on their own.'] },
   { v: '0.98.3', title: 'Mutate, Splice, spell target filters and a tidier gear menu', notes: ['Mutate (CR 702.140): cast a creature for its mutate cost, target a non-Human creature, and choose over or under. The merged permanent is one creature with every card\'s abilities, keeps its counters and auras, fires "whenever this creature mutates" triggers, and all its cards leave the battlefield together. If the target is gone it resolves as a normal creature spell.', 'Splice onto Arcane (CR 702.47): when you cast an Arcane spell, splice cards in your hand are offered as optional extra costs. The spell gains their effects and they stay in your hand.', 'Counter and other spell-targeting text now honours "with mana value N (or less/greater)", "nonland" style words and colour words when choosing targets on the stack.', 'The gear menu is now only Settings, Update, Import / edit deck, Card data, Images and help. In-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin, Multiplayer) moved to a new Game tools button (the ☰ beside the gear).'] },
