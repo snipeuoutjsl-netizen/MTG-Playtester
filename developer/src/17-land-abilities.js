@@ -87,7 +87,7 @@ function etbCounters(c) {
   { const its = kwItems(tx); const mi = its.map(x => x.match(/^modular (\d+)$/i)).find(Boolean); if (mi) tx += `\n~ enters with ${mi[1]} +1/+1 counters on it.`;
     const vn = its.map(x => x.match(/^vanishing (\d+)$/i)).find(Boolean); if (vn) tx += `\n~ enters with ${vn[1]} time counters on it.`;   // CR 702.63a
     const fd = its.map(x => x.match(/^fading (\d+)$/i)).find(Boolean); if (fd) tx += `\n~ enters with ${fd[1]} fade counters on it.`; }   // CR 702.32a   // v0.96.1 modular (CR 702.43a)
-  const m = tx.match(/\benters(?: the battlefield)? with (an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);
+  const m = tx.match(/\benters(?: the battlefield)? with (twice )?(an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);   // v0.99.32 also "twice X"
   if (!m) return;
   // v0.84 "...counter on it for each <type> card exiled with it" (Murktide Regent): one per matching card exiled while casting it (delve), not a flat one.
   const fe = tx.match(/\bcounters? on it for each ([^.]+?)(?:\.|$)/im);
@@ -96,13 +96,13 @@ function etbCounters(c) {
     const em = /^(.+?) cards? exiled with it$/i.exec(fe[1].trim());
     if (em) { const phrase = em[1].replace(/\s+and\s+/g, ' or '); n = (c.exiledWith || []).filter(e => filterMatches(phrase, { name: e.name })).length; log(`${c.name}: ${n} ${em[1]} card${n === 1 ? '' : 's'} exiled with it while casting it: enters with ${n} counter${n === 1 ? '' : 's'}`); if (!n) return; }
     else { log(`${c.name}: enters with counters "for each ${fe[1]}": count them yourself and add the counters by hand`); toast('Add counters by hand', `${c.name} gets one counter for each ${fe[1]}. The app cannot count that, so add them from the card menu.`); return; }
-  } else n = /^x$/i.test(m[1]) ? (+c.xValue || 0) : /^\d+$/.test(m[1]) ? +m[1] : (TOKEN_NUMW[m[1].toLowerCase()] || 1);
+  } else n = (m[1] ? 2 : 1) * (/^x$/i.test(m[2]) ? (+c.xValue || 0) : /^\d+$/.test(m[2]) ? +m[2] : (TOKEN_NUMW[m[2].toLowerCase()] || 1));   // CR 107.3m: X is 0 unless it was cast with X chosen
   if (!n) return;
-  let kind = m[2].toLowerCase(); if (kind === 'loyalty') return;
+  let kind = m[3].toLowerCase(); if (kind === 'loyalty') return;
   const key = kind === '+1/+1' ? 'plus' : /^[−-]1/.test(kind) ? 'minus' : kind;
   if (typeof c.counters === 'number') c.counters = { plus: c.counters, minus: 0 };
   c.counters = c.counters || { plus: 0, minus: 0 };
-  const adj = adjustCounterAdd(c, key, n, false); c.counters[key] = (c.counters[key] || 0) + adj; log(`${c.name} entered with ${adj} ${kind} counter${adj === 1 ? '' : 's'}`);
+  const adj = adjustCounterAdd(c, key, n, false); c.counters[key] = (c.counters[key] || 0) + adj; log(`${c.name} entered with ${adj} ${kind} counter${adj === 1 ? '' : 's'}${/^x$/i.test(m[2]) ? ` (X = ${+c.xValue || 0})` : ''}`);
 }
 // State-triggered "When ~ has no <kind> counters on it, ..." (Dark Depths): queued once each time the last counter goes away.
 function checkNoCounterTriggers() {

@@ -17,6 +17,7 @@ function csCountZone(arr, thing) {
 }
 // Count "things": "land cards in your graveyard", "creatures you control", "other artifacts you control", "cards in your hand", "Elves you control".
 function csCount(phrase, g) {
+  if (!state) return 0;   // v0.99.32 the card reader also runs with no game (deck scan, How the app reads cards): there is nothing to look at yet
   const t = String(phrase).toLowerCase().replace(/’/g, "'").trim();
   let m;
   if ((m = t.match(/^(.*?)\s*in your graveyard$/))) return csCountZone(state.graveyard, m[1]);

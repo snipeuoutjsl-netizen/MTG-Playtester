@@ -330,10 +330,7 @@ function resolveTopOfStack() {
     if(c.impended) impendingEnter(c);
     if(c.blitzed||c.dashed) altKwResolved(c);
     if(c.evoked){ delete c.evoked; queueTrigger({kind:'ability',cardId:c.id,cardName:c.name,text:'Evoke: when this enters, sacrifice it.',effect:'Sacrifice ~.',special:'sacSelf',optional:false,why:'You cast it for its evoke cost, so it is sacrificed when it enters. Its other enters-the-battlefield abilities still trigger; you choose the order they go on the stack.'}); }
-    if(c.xValue!==undefined){
-      const cm=cardText(c).match(/enters(?: the battlefield)? with (twice )?X (\+1\/\+1|[a-z\-]+) counters?/i);
-      if(cm){ const n=(cm[1]?2:1)*c.xValue; if(cm[2]==='+1/+1'){ c.counters.plus=(c.counters.plus||0)+n; log(`${c.name} entered with ${n} +1/+1 counter${n===1?'':'s'} (X = ${c.xValue})`); } else log(`${c.name} should have ${n} ${cm[2]} counters (X = ${c.xValue}); add them by hand`); }
-    }
+    // v0.99.32 "enters with X counters" is applied once, by etbCounters (with replacement effects such as Hardened Scales). This block added them a second time: Walking Ballista cast for X = 3 got 6 counters.
     }});
   } else {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;

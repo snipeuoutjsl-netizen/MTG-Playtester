@@ -72,6 +72,7 @@ function log(msg) {
 }
 
 function findCard(id) {
+  if (!state) return null;   // v0.99.32 the card reader also runs with no game (deck scan, How the app reads cards): there is nothing to look at yet
   for (const z of ZONES) {
     const i = state[z].findIndex(c => c.id === id);
     if (i >= 0) return { zone: z, idx: i, card: state[z][i] };

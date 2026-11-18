@@ -1094,6 +1094,28 @@ const { setup } = require('./common.js');
   await T('UI 605', 'the tap toggle (double-click / T) never sacrifices a Spawn by accident: it only taps it; paying a cost or the ability menu sacrifices it', async () => { await reset(); await spawnSetup([], 1);
     const r = await ev(() => { const s = __d.state, sp = s.battlefield.find(c => c.token); __d.toggleTap(sp.id); return { still: s.battlefield.includes(sp), tapped: sp.tapped, pool: s.manaPool.C || 0 }; });
     return { ok: r.still && r.pool === 0, why: JSON.stringify(r) }; });
+  await T('613.4b', 'Karn, the Great Creator +1 (Oracle wording): a noncreature artifact becomes an artifact creature with P/T equal to its mana value; the set P/T counts as a change from the printed card, so the P/T box is shown on a card picture too (it was hidden because the set value was taken as printed)', async () => { await reset();
+    const r = await ev(async () => { const s = __d.state; s.battlefield = []; const tx = 'Until your next turn, up to one target noncreature artifact becomes an artifact creature with power and toughness each equal to its mana value.'; const out = [];
+      for (const n of ['Sol Ring', 'Grim Monolith']) { const c = Object.assign(__d.newCard(n), { id: s.nextId++ }); c.sick = false; s.battlefield.push(c); __d.effectOptions(tx, { sourceName: 'Karn, the Great Creator', sourceId: -1, targets: [{ kind: 'perm', id: c.id, name: c.name }] })[0].fn(); }
+      __d.render(); await new Promise(r => setTimeout(r, 200));
+      for (const c of s.battlefield) { const pt = __d.ptCalc(c), el = document.querySelector(`.card[data-id="${c.id}"] .cpt`); out.push({ n: c.name, pt: pt.p + '/' + pt.t, modified: pt.modified, shown: !!(el && el.classList.contains('ptshow')), zone: __d.permZone(c) }); }
+      return out; });
+    return { ok: r.length === 2 && r[0].pt === '1/1' && r[1].pt === '2/2' && r.every(x => x.modified && x.shown && x.zone === 'creatures'), why: JSON.stringify(r) }; });
+  // v0.99.32 X counters were added twice (once by etbCounters, once more at resolution)
+  const castX = (n, x, extra) => ev(async ([n, x, extra]) => { const s = __d.state; s.battlefield = []; s.stack = []; s.hand = []; s.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 30 };
+    for (const e of extra || []) { const k = Object.assign(__d.newCard(e), { id: s.nextId++ }); s.battlefield.push(k); }
+    const c = Object.assign(__d.newCard(n), { id: s.nextId++ }); s.hand.push(c); const before = 30; __d.commitSpellToStack(c.id, [], false, x); __d.resolveTopOfStack(); await new Promise(r => setTimeout(r, 250)); document.querySelectorAll('.backdrop').forEach(b => b.remove());
+    const bf = s.battlefield.find(y => y.name === n); return { plus: bf ? (bf.counters || {}).plus || 0 : null, pt: bf ? __d.ptCalc(bf).p + '/' + __d.ptCalc(bf).t : null }; }, [n, x, extra]);
+  await T('107.3', '{X}{X}: X is the number chosen, not the mana spent. Walking Ballista cast with X = 3 (6 mana) enters with exactly 3 +1/+1 counters; Hangarback Walker with X = 2 enters with 2', async () => { await reset();
+    const a = await castX('Walking Ballista', 3), b = await castX('Hangarback Walker', 2); return { ok: a.plus === 3 && a.pt === '3/3' && b.plus === 2, why: JSON.stringify({ a, b }) }; });
+  await T('107.3c', 'the cost of an {X}{X} spell with X = 3 is 6 generic mana: five floating mana cannot pay it, six can', async () => { await reset();
+    const r = await ev(() => { const s = __d.state, parts = __d.manaCostParts('{6}'); const five = __d.manaPaymentAllocation(parts, { C: 5 }, [], null).ok, six = __d.manaPaymentAllocation(parts, { C: 6 }, [], null).ok; return { five, six }; });
+    return { ok: r.five === false && r.six === true, why: JSON.stringify(r) }; });
+  await T('614.1 + 107.3', 'X counters go through counter replacement effects once: Walking Ballista X = 3 with Hardened Scales enters with 4 counters (3 + 1), not 7 or 8', async () => { await reset();
+    const a = await castX('Walking Ballista', 3, ['Hardened Scales']); return { ok: a.plus === 4, why: JSON.stringify(a) }; });
+  await T('107.3m', 'X is 0 for a permanent that enters without being cast: Walking Ballista put onto the battlefield gets no counters (and dies as a 0/0)', async () => { await reset();
+    const r = await ev(async () => { const s = __d.state; s.battlefield = []; s.graveyard = []; const c = Object.assign(__d.newCard('Walking Ballista'), { id: s.nextId++ }); __d.enterBattlefield(c, { from: 'hand' }); __d.render(); await new Promise(r => setTimeout(r, 250)); return { onBf: s.battlefield.some(x => x.name === 'Walking Ballista'), gy: s.graveyard.some(x => x.name === 'Walking Ballista'), plus: (c.counters || {}).plus || 0 }; });
+    return { ok: !r.onBf && r.gy && r.plus === 0, why: JSON.stringify(r) }; });
   await T('UI mulligan', 'mulligan hand stays on screen: at several window sizes (and in picture mode) every hand card lies inside the table and below the Opening hand prompt, the prompt is on top of the dim layer, and the prompt box lies fully inside the window in both the opening-hand step and the put-on-the-bottom step; the hand zone has no fixed positioning', async () => { await reset();
     const out = [];
     for (const [w, h] of [[1280, 720], [1673, 990], [2509, 1484]]) for (const img of [false, true]) { await p.setViewportSize({ width: w, height: h });
