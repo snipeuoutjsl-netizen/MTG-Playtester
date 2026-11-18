@@ -1120,7 +1120,7 @@ const { setup } = require('./common.js');
     const out = [];
     for (const [w, h] of [[1280, 720], [1673, 990], [2509, 1484]]) for (const img of [false, true]) { await p.setViewportSize({ width: w, height: h });
       const r = await ev(async (img) => { document.body.classList.toggle('imgmode', img); const s = __d.state; s.hand.length = 0; for (let i = 0; i < 7; i++) s.hand.push(Object.assign(__d.newCard(['Grizzly Bears', 'Island', 'Mock Flyer'][i % 3]), { id: 900 + i })); const res = [];
-        for (const bottom of [false, true]) { s.phase = 'mull'; s.bottomPhase = bottom; s.mulls = 1; __d.render(); await new Promise(r => setTimeout(r, 1400));
+        for (const bottom of [false, true]) { s.phase = 'mull'; s.bottomPhase = bottom; s.mulls = 1; __d.render(); await new Promise(r => setTimeout(r, 1400)); for (let k = 0; k < 40 && document.body.classList.contains('dealing'); k++) await new Promise(r => setTimeout(r, 100));   // v0.99.35 the prompt waits until the hand has been dealt
           const boxes = [...document.querySelectorAll('#row-hand .card')].map(c => c.getBoundingClientRect()), bar = document.querySelector('#handPickBar'), bb = bar && !bar.hidden ? bar.getBoundingClientRect() : null, hw = document.querySelector('#handWrap');
           const inside = b => b.left >= -14 && b.right <= innerWidth + 14 && b.top >= -1 && b.bottom <= innerHeight + 14;
           // v0.99.32 the cards must also sit inside the table (#mat), below the Opening hand prompt, and the prompt must be on top of the dim layer (clickable, not greyed)

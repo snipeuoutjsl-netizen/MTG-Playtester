@@ -3797,6 +3797,7 @@ function drawHandPickBar() {
   const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
   const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
   { const oh = !!state && state.phase === 'mull' && !state.bottomPhase, wasOh = document.body.classList.contains('mullhand'); document.body.classList.toggle('mullhand', oh); if (oh !== wasOh) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the opening hand is shown large too
+  { const op = !!state && (state.phase === 'mull' || state.phase === 'pregame'), wasOp = document.body.classList.contains('opening'); document.body.classList.toggle('opening', op); if (!op && wasOp) openingSize = null; if (op !== wasOp) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.35 one state from the deal to the first turn: the hand keeps one size throughout
   { const was = document.body.classList.contains('mullpick'); document.body.classList.toggle('mullpick', mb); if (was !== mb) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the mulligan step brings the hand up, larger and centred
   document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
   const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
@@ -3903,7 +3904,10 @@ function drawCards(n, silent) {
   return drawn;
 }
 
+// v0.99.35 the Opening hand prompt waits until the hand has been dealt; animApply ends it when the last card lands (a safety timer ends it regardless)
+function dealingStart() { if (!animOn('move') || reducedMotion()) return; document.body.classList.add('dealing'); clearTimeout(dealingStart.t); dealingStart.t = setTimeout(() => document.body.classList.remove('dealing'), 3200); }
 function startGame() {
+  dealingStart();
   lifePrev = { you: null, opp: null }; lastStepShown = null;
   const deck = getCurrentDeck();
   if (!deck || !deck.main.length) { alert('Import a deck first (Import / edit deck).'); return; }
@@ -3932,6 +3936,7 @@ function startGame() {
 }
 
 function doMulligan() {
+  dealingStart();
   if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
   state.library.push(...state.hand.splice(0));
@@ -5625,29 +5630,36 @@ function fitBattlefieldCards() {
   }
 }
 
+let openingSize = null;   // v0.99.35 { key, cw }: the locked hand size for the current opening sequence
 function layoutHand() {
   const row = $('#row-hand'), cards = [...row.children], hw = $('#handWrap');
   for (const c of cards) c.style.marginLeft = '';
   // Opening hand / mulligan: size the cards so the WHOLE hand fits on screen (width and height), whatever the window size
-  if (document.body.classList.contains('mullpick') || document.body.classList.contains('mullhand')) {
-    const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 1);
+  if (document.body.classList.contains('opening')) {
+    // v0.99.35 One card size for the whole opening (deal, mulligans, put-on-the-bottom, pre-game actions), so the hand never jumps between steps.
+    // Sized for at least seven cards, so bottoming cards does not change it; it shrinks only when something would otherwise not fit (a small window, an eighth card from Draw 1, a tall prompt).
+    const img = document.body.classList.contains('imgmode'), ratio = img ? 1.4 : 0.785, n = Math.max(cards.length, 7);
+    const key = innerWidth + 'x' + innerHeight + (img ? 'i' : 't') + ':' + n;
+    // Start from the size worked out for seven cards in this window and shrink only while something does not fit (measured before the frame is drawn, ignoring cards still being dealt);
+    // the result is kept for the rest of the opening, so a later step never makes the hand jump back up.
     const aw = Math.max(hw.parentElement ? hw.parentElement.clientWidth : innerWidth, 300) - 70;
     let cw = Math.floor(Math.max(90, Math.min(176, aw / (1 + (n - 1) * 0.62), (innerHeight * 0.3) / ratio)));
-    // v0.99.32 The arithmetic above ignores the fan's tilt and float, so the outer cards could spill past the table (seen in picture mode at 1280 and 1673 wide).
-    // Measure the real (transformed) card boxes against the table and shrink until every card sits inside it with a small margin.
-    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 12;
+    if (openingSize && openingSize.win === key.split(':')[0]) cw = Math.min(cw, openingSize.cw);   // one size for the whole sequence: once a step needed it smaller, later steps keep it (a new window size starts over)
+    { const sig = state ? state.phase + (state.bottomPhase ? '/b' : '') : '';   // the first frame of a new step is still mid-switch (old bar, new box): use the current size and measure on the next frame
+      if (openingSize && openingSize.sig !== sig) { openingSize.sig = sig; hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px'); spreadHand(row, cards); requestAnimationFrame(scheduleLayout); return; } }
+    // Measure the real (fanned) card boxes against the table and the prompt; cards still flying in from the deal are skipped (they are not where they will rest).
+    const box = ($('#mat') || $('#stage') || document.body).getBoundingClientRect(), pad = 6;   // a selected card in the put-on-the-bottom step shifts a pixel or two: that must not resize the hand
+    const settled = c => { if (c.matches(':hover')) return false; try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };
     for (let g = 0; g < 14; g++) {
       hw.style.setProperty('--cw', cw + 'px'); hw.style.setProperty('--ch', Math.round(cw * ratio) + 'px');
       spreadHand(row, cards);
-      const pc = $('#overlay:not([hidden]) .pcard'), top = pc ? pc.getBoundingClientRect().bottom + 10 : -Infinity;   // and never cover the Opening hand prompt
-      const settled = c => { try { return !c.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity); } catch (e) { return true; } };   // a card still flying in from the deal is not where it will rest; the endless float is
-      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - pad || r.top < top; });
+      { const rr = row.getBoundingClientRect(), st = $('#stage'); if (st && rr.height) st.style.setProperty('--openhand', Math.max(0, Math.round(box.bottom - rr.top)) + 'px'); }   // prompts are centred in the space above the hand
+      const pc = $('#overlay:not([hidden]) .pcard'), pr = pc && pc.getBoundingClientRect(), top = pc && pc.offsetHeight ? (pr.top + pr.bottom) / 2 + pc.offsetHeight / 2 + 10 : -Infinity;   // the prompt's real size (it is drawn scaled down while it fades in)
+      const out = cards.filter(settled).some(c => { const r = c.getBoundingClientRect(); return r.left < box.left + pad || r.right > box.right - pad || r.bottom > box.bottom - 2 || r.top < top; });   // the bottom only has to stay inside the table: the fan's tilt there does not shrink with the cards
       if (!out || cw <= 90) break;
       cw = Math.max(90, Math.floor(cw * 0.93));
     }
-    if (cards.some(c => !c.getAnimations || !c.getAnimations({ subtree: true }).every(a => a.playState !== 'running' || (a.effect && a.effect.getTiming().iterations === Infinity)))) {
-      clearTimeout(layoutHand.again); layoutHand.again = setTimeout(scheduleLayout, 350);   // check the fit again once the deal has landed
-    }
+    openingSize = { key, win: key.split(':')[0], cw, sig: state ? state.phase + (state.bottomPhase ? '/b' : '') : '' };
     return;
   } else { hw.style.removeProperty('--cw'); hw.style.removeProperty('--ch'); }
   spreadHand(row, cards);
@@ -5684,6 +5696,7 @@ function layoutPass() {
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
   try { fitBattlefieldCards(); } catch (e) { /* layout only */ }
   try { layoutHand(); } catch (e) { /* layout only */ }
+  try { fitStackStage(); } catch (e) { /* layout only */ }
   try { placeBoardStrip(); } catch (e) { /* layout only */ }
   try { const lg = $('#log'); if (lg) lg.scrollTop = lg.scrollHeight; } catch (e) { /* layout only */ }   // reading scrollHeight forces a re-measure: once per frame, not once per redraw
   try { animApply(); } catch (e) { console.error(e); }
@@ -5941,11 +5954,11 @@ function renderOverlay() {
       h('div',{class:'psub',text:'Some cards can begin the game in a special way. Resolve them now, before turn one.'}),
       candidates.length
         ? h('div',{class:'prelist'},candidates.map(c=>h('div',{class:'prerow'},
-            h('div',{class:'pre-info'},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c)})),
+            h('div',{class:'pre-info',title:openingLine(c)},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c).split(/(?<=\.)\s+/)[0]})),
             h('button',{class:'primary',text:'Start on battlefield',onclick:()=>pregameAction(c.id,'battlefield')}))))
         : null,
       state.hand.some(c=>openingReveal(c)) ? h('div',{class:'prelist'},state.hand.filter(c=>openingReveal(c)).map(c=>h('div',{class:'prerow'},
-            h('div',{class:'pre-info'},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c)})),
+            h('div',{class:'pre-info',title:openingLine(c)},h('div',{class:'pre-name',text:c.name}),h('div',{class:'pre-desc',text:openingLine(c).split(/(?<=\.)\s+/)[0]})),
             h('button',{class:'primary',text:c.revealedOpening?'Revealed \u2713':'Reveal',disabled:!!c.revealedOpening,onclick:()=>pregameAction(c.id,'reveal')})))) : null,
       (!candidates.length && !state.hand.some(c=>openingReveal(c))) ? h('div',{class:'pre-none',text:'Nothing in your hand can begin the game in a special way.'}) : null,
       h('div',{class:'phint'},h('span',{class:'phint-i',text:'i'}),h('span',{text:'This pause is on purpose: opening-hand abilities happen before the first turn begins.'})),
@@ -6560,8 +6573,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.34';
+const APP_VERSION = '0.99.35';
 const CHANGELOG = [
+  { v: '0.99.35', title: 'A smoother opening hand; the stack shown on top of the table', notes: ['Opening hand: your seven cards are dealt one at a time from the library, and the Opening hand box appears once the last card has landed. After a mulligan the old hand goes back to the library first, then the new one is dealt.','The hand keeps one size from the deal, through mulligans and choosing cards for the bottom, to the Pre-game actions screen, and only goes back to normal size when your first turn begins. On a small window it takes the size that fits every step instead of changing between them.','Pre-game actions shows the first sentence of each card (the full text is in its tooltip), so the screen stays compact.','Stack: the stack panel in the middle of the table is now solid and always on top. Your board is dimmed behind it, your cards and permanents stay usable so you can respond, and the panel shrinks to fit above your hand, so no card or zone covers it or its buttons.'] },
   { v: '0.99.34', title: 'UI check: top bar on wide screens, tidier start of game', notes: ['FIXED: on wide windows (over 1700 pixels) the top bar labels (Undo, Shuffle, Draw, Untap all, Token, Stack) were squeezed into small square buttons, overlapped each other and covered the next button, so a click could hit the wrong one. They now get their full width.','The Pre-game actions screen only appears when a card in your opening hand can actually do something before the game (Leylines, opening-hand reveals...). It no longer stops every game just to say there is nothing to do.','The Opening hand box no longer says "Your hand is shown below."','Pop-ups opened during the opening hand (for example Deck view) now fit above your hand and scroll, instead of running off the top of the window.','The "Download card data?" prompt closes by itself once card data has been loaded from a file.'] },
   { v: '0.99.33', title: 'X counters fixed, animated artifacts show their P/T, no floating Hand bar', notes: ['FIXED (rules): "enters with X +1/+1 counters" was applied twice. Walking Ballista cast with X = 3 (paying 6 mana for {X}{X}) now enters with 3 counters, not 6; Hangarback Walker and every other X creature likewise. X counters still go through Hardened Scales and similar effects once, and a permanent that enters without being cast has X = 0 (rule 107.3m). "Twice X" is read too.','FIXED: when an effect sets a creature\u2019s power and toughness (Karn, the Great Creator making an artifact a creature, a land that becomes a creature, "base power and toughness N/N"), the P/T box now shows on card pictures. The new value was treated as the printed one, so with images on nothing was shown (rule 613.4b). Hover the box to see which effect set it.','The floating Hand bar over your hand is gone. The Card outline key (what the green, red and gold outlines mean) is now in the \u2630 Game tools menu and opens in a normal window.','FIXED: How the app reads cards no longer fails on 837 cards (Magma Sliver, Flashback and others) when no game is running.'] },
   { v: '0.99.32', title: 'Sacrifice-for-mana sources pay like lands; clearer opening hand', notes: ['FIXED (rules): mana abilities whose cost is a sacrifice (Eldrazi Spawn and Scion, Treasure, Gold, Lotus Petal and any card worded the same way) now count as mana sources (rule 605.1a). Your hand shows spells as playable when those sources can pay, and paying a cost uses them automatically: lands and other mana sources first, then the sacrifice sources, which are sacrificed as you pay (no stack, rule 605.3b). "Dies" and "leaves" abilities trigger as usual.','A sacrifice-only mana ability (no {T}) works while the creature is summoning sick or tapped (rule 302.6). A double-click or the tap toggle never sacrifices it by accident: use the ability menu, or simply cast the spell.','FIXED (rules): a {C} symbol in a cost is paid only with colourless mana (rule 107.4c). Before, any land could pay it.','The payment window marks sources that will be sacrificed, and How the app reads cards explains sacrifice mana abilities.','Opening hand: the hand is sized to fit inside the table (and below the Opening hand box) at every window size, measured with the cards fanned out. The Opening hand box is no longer dimmed: it sits above the dark layer with a gold outline so it is clearly the thing to click.'] },
@@ -7992,6 +8006,9 @@ function animApply() {
   const prev = animPrev; animPrev = null; if (!prev || !state || !animOn('move')) return;
   const now = [...document.querySelectorAll(CARD_SEL)], seen = new Set(), lib = centerOf('#libstack'), jobs = [];
   let newHand = 0;
+  // v0.99.35 the opening hand is dealt one card at a time; after a mulligan the old hand goes back to the library first
+  const opening = document.body.classList.contains('opening'), nowIds = new Set(now.map(e => e.dataset.id)), returning = [...prev.cards.keys()].some(id => !nowIds.has(id) && (findCard(+id) || {}).zone === 'library');
+  const dealBase = opening && returning ? 420 : 0, dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
   for (const el of now) {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
     let p = prev.cards.get(id); const ff = flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
@@ -8002,8 +8019,9 @@ function animApply() {
       const sc = el.offsetWidth && p.w ? p.w / el.offsetWidth : 1, scale = Math.abs(sc - 1) > .08 ? sc : 1;
       jobs.push(() => wa(el, [{ translate: `${dx}px ${dy}px`, scale: String(scale), transform: p.t, zIndex: staged ? 9000 : 'auto' }, { translate: '0px 0px', scale: '1', transform: t, zIndex: staged ? 9000 : 'auto' }], { duration: staged ? 640 : dist > 220 ? 460 : dist > 40 ? 340 : 220, easing: staged ? 'cubic-bezier(.3,.7,.2,1)' : 'cubic-bezier(.25,.8,.25,1)' }));
     } else if (el.closest('#row-hand') && lib) {
-      const dx = lib.x - cx, dy = lib.y - cy, delay = Math.min(newHand++, 8) * 80;
-      jobs.push(() => wa(el, [{ translate: `${dx}px ${dy}px`, scale: '.4', rotate: '-10deg', opacity: 0.2 }, { translate: '0px 0px', scale: '1', rotate: '0deg', opacity: 1 }], { duration: 480, delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+      const dx = lib.x - cx, dy = lib.y - cy, k = newHand++, delay = dealBase + Math.min(k, 8) * dealStep;
+      jobs.push(() => { const an = wa(el, [{ translate: `${dx}px ${dy}px`, scale: '.4', rotate: '-10deg', opacity: opening ? 0 : 0.2 }, ...(opening ? [{ opacity: 1, offset: 0.12 }] : []), { translate: '0px 0px', scale: '1', rotate: '0deg', opacity: 1 }], { duration: dealDur, delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+        if (opening && an) setTimeout(() => { try { sfx('draw'); } catch (e) { /* sound only */ } }, delay); });
     } else {
       jobs.push(() => { wa(el, [{ transform: `${t === 'none' ? '' : t} scale(.55) translateY(-26px)`, opacity: 0, filter: 'brightness(2.2)' }, { transform: `${t === 'none' ? '' : t} scale(1.06)`, opacity: 1, filter: 'brightness(1.5)', offset: 0.6 }, { transform: t === 'none' ? 'none' : t, opacity: 1, filter: 'brightness(1)' }], { duration: 380, easing: 'ease-out' });
         const col = (SPOT_COL[spotKey(el)] || SPOT_COL['']); sparks(cx, cy, col[0], 7, 46, 520); });
@@ -8012,6 +8030,11 @@ function animApply() {
   const gone = [...prev.cards.keys()].filter(id => !seen.has(id));
   if (jobs.length + gone.length > 45) return;
   jobs.forEach(j => j());
+  if (opening && newHand) {   // hold the Opening hand prompt back until the last card has landed, then check the fit once more
+    const total = dealBase + (Math.min(newHand, 9) - 1) * dealStep + dealDur;
+    document.body.classList.add('dealing'); clearTimeout(animApply.dealT);
+    animApply.dealT = setTimeout(() => { document.body.classList.remove('dealing'); scheduleLayout(); }, total);
+  }
   for (const id of gone) {
     const p = prev.cards.get(id), node = prev.nodes.get(id); if (!node) continue;
     const f = findCard(+id); let dest = null;
@@ -8631,6 +8654,17 @@ function pickSource() {
   if (!handPick) return { id: 'res', name: 'Maximum hand size', pseudo: true, ability: false, text: `At the cleanup step you discard down to ${staticFx().maxHand} cards.` };
   if (t && cardInfo(t)) return { id: 'res', name: t, ability: false, kindTxt: /cost/i.test(handPick.note || '') ? 'Cost of' : 'Effect of' };
   return { id: 'res', name: t || 'Choice', pseudo: true, ability: false, text: handPick.note || '' };
+}
+// v0.99.35 shrink the stack stage (scale) until it sits inside the table and above the hand: the hand used to cover its buttons
+function fitStackStage() {
+  const el = $('#stackStage'); if (!el || el.hidden) return;
+  el.style.setProperty('--ss', '1');
+  const mat = $('#mat'), mr = mat ? mat.getBoundingClientRect() : null; if (!mr) return;
+  const hand = [...document.querySelectorAll('#row-hand .card')].filter(c => !c.matches(':hover')).map(c => c.getBoundingClientRect()).filter(r => r.height);
+  const bottom = Math.min(mr.bottom - 8, hand.length ? Math.min(...hand.map(r => r.top)) - 10 : Infinity), top = mr.top + 8;
+  const r = el.getBoundingClientRect(), cy = (r.top + r.bottom) / 2, half = r.height / 2;
+  const s = Math.min(1, (cy - top) / half, (bottom - cy) / half);
+  if (s < 1) el.style.setProperty('--ss', String(Math.max(0.55, Math.floor(s * 100) / 100)));
 }
 function drawStackStage() {
   const el = $('#stackStage'); if (!el) return;

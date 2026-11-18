@@ -100,6 +100,17 @@ function pickSource() {
   if (t && cardInfo(t)) return { id: 'res', name: t, ability: false, kindTxt: /cost/i.test(handPick.note || '') ? 'Cost of' : 'Effect of' };
   return { id: 'res', name: t || 'Choice', pseudo: true, ability: false, text: handPick.note || '' };
 }
+// v0.99.35 shrink the stack stage (scale) until it sits inside the table and above the hand: the hand used to cover its buttons
+function fitStackStage() {
+  const el = $('#stackStage'); if (!el || el.hidden) return;
+  el.style.setProperty('--ss', '1');
+  const mat = $('#mat'), mr = mat ? mat.getBoundingClientRect() : null; if (!mr) return;
+  const hand = [...document.querySelectorAll('#row-hand .card')].filter(c => !c.matches(':hover')).map(c => c.getBoundingClientRect()).filter(r => r.height);
+  const bottom = Math.min(mr.bottom - 8, hand.length ? Math.min(...hand.map(r => r.top)) - 10 : Infinity), top = mr.top + 8;
+  const r = el.getBoundingClientRect(), cy = (r.top + r.bottom) / 2, half = r.height / 2;
+  const s = Math.min(1, (cy - top) / half, (bottom - cy) / half);
+  if (s < 1) el.style.setProperty('--ss', String(Math.max(0.55, Math.floor(s * 100) / 100)));
+}
 function drawStackStage() {
   const el = $('#stackStage'); if (!el) return;
   const resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied

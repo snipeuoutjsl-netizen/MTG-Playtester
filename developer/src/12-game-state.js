@@ -22,6 +22,7 @@ function drawHandPickBar() {
   const mb = !!state && state.phase === 'mull' && state.bottomPhase;   // v0.90.7 the mulligan "put on the bottom" step uses the same bar
   const on = (!!state && state.phase === 'play' && state.discarding > 0) || mb;
   { const oh = !!state && state.phase === 'mull' && !state.bottomPhase, wasOh = document.body.classList.contains('mullhand'); document.body.classList.toggle('mullhand', oh); if (oh !== wasOh) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the opening hand is shown large too
+  { const op = !!state && (state.phase === 'mull' || state.phase === 'pregame'), wasOp = document.body.classList.contains('opening'); document.body.classList.toggle('opening', op); if (!op && wasOp) openingSize = null; if (op !== wasOp) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.35 one state from the deal to the first turn: the hand keeps one size throughout
   { const was = document.body.classList.contains('mullpick'); document.body.classList.toggle('mullpick', mb); if (was !== mb) requestAnimationFrame(() => { try { layoutHand(); } catch (e) { /* layout only */ } }); }   // v0.99.25 the mulligan step brings the hand up, larger and centred
   document.body.classList.toggle('picking-hand', on && !!handPick && !mb);   // v0.90.5 an open effect window steps aside while you choose cards
   const centre = on && !mb && layoutOn('pickCentre'); wrap.classList.toggle('picking', on); bar.hidden = !on || centre || !!(handPick && handPick.res); if (!on || centre || (handPick && handPick.res)) { bar.replaceChildren(); return; }
@@ -128,7 +129,10 @@ function drawCards(n, silent) {
   return drawn;
 }
 
+// v0.99.35 the Opening hand prompt waits until the hand has been dealt; animApply ends it when the last card lands (a safety timer ends it regardless)
+function dealingStart() { if (!animOn('move') || reducedMotion()) return; document.body.classList.add('dealing'); clearTimeout(dealingStart.t); dealingStart.t = setTimeout(() => document.body.classList.remove('dealing'), 3200); }
 function startGame() {
+  dealingStart();
   lifePrev = { you: null, opp: null }; lastStepShown = null;
   const deck = getCurrentDeck();
   if (!deck || !deck.main.length) { alert('Import a deck first (Import / edit deck).'); return; }
@@ -157,6 +161,7 @@ function startGame() {
 }
 
 function doMulligan() {
+  dealingStart();
   if (!state || state.phase !== 'mull' || state.mulls >= 6) return;
   snap();
   state.library.push(...state.hand.splice(0));
