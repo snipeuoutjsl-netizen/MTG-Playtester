@@ -123,6 +123,7 @@ function compileCardOne(c) {
       push(text, 'loyalty', eff.length ? 'ok' : 'part', eff.length ? `Loyalty ability: the cost is tracked and the app can apply: ${eff.join('; ')}.` : 'Loyalty ability: the loyalty cost is tracked; apply its effect by hand.');
       continue;
     }
+    if (/^Suspend \d+\s*[\u2014\u2013-]\s*(?:\{[^}]+\})+/i.test(stripped)) { push(text, 'keyword', 'ok', 'Suspend (702.62): right-click the card in your hand and choose Suspend; it is exiled with time counters, one comes off each upkeep, and the last one casts it for free.'); continue; }
     // cost lines (v0.46)
     if ((m = stripped.match(/^(Evoke|Kicker|Delve|Convoke|Improvise|Cycling|Warp|Flashback|Affinity for\b)/i))) {
       const w = m[1].toLowerCase();
@@ -131,7 +132,7 @@ function compileCardOne(c) {
         delve: 'Delve: a window lets you exile graveyard cards; each pays {1} of the generic cost.', convoke: 'Convoke: a window lets you tap creatures; each pays {1} or one mana of its colour.',
         improvise: 'Improvise: a window lets you tap artifacts; each pays {1}.', cycling: 'Cycling: right-click the card in your hand and choose Cycle. The app pays the cost, discards the card and puts "draw a card" on the stack.',
         'affinity for': 'Affinity: the cost is reduced automatically by the permanents you control.' };
-      push(text, 'keyword', w === 'kicker' ? 'part' : 'ok', NOTE[w] || ''); continue;
+      { const kOk = w !== 'kicker' || !/was kicked/i.test(applyKickedInstead(String(info.tx || ''), false)); if (w === 'kicker' && kOk) NOTE.kicker = 'Kicker: an optional extra cost offered when you cast it and remembered as "kicked". Its "if this spell was kicked" effects are applied when it resolves.'; push(text, 'keyword', kOk ? 'ok' : 'part', NOTE[w] || ''); } continue;
     }
     if ((m = stripped.match(/^As an additional cost to cast this spell, (.+?)\.?$/i))) {
       const cs = parseCostComps(m[1].replace(/^you may /i, ''), short), unk = cs.filter(k => k.k === 'other');
@@ -269,7 +270,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 // A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
 // Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
 const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
@@ -285,10 +286,11 @@ function uncoveredClauses(effectText) {
   sents.forEach((x, i) => {
     if (/^(?:Flashback|Kicker|Multikicker|Buyback|Cycling|Escape|Jump-start|Retrace|Entwine|Storm|Foretell|Suspend)\b/i.test(x)) return;
     if (/^(?:Activate|Cast this spell|This ability|You can't|Spend only|Play this|Cast only|Cast it|This spell can't be countered)\b/i.test(x)) return;
+    if (i > 0 && DEP_HANDLED.some(r => r.test(x))) return;
     if (i > 0 && DEP_SENT.test(x)) { if (!DEP_HANDLED.some(r => r.test(x))) missed.push(x); return; }
     if (sents.length < 2 && !verbGaps(x, null).length) return;   // one understood sentence: nothing more to check
     let ok = false, labs = []; try { labs = recognizedEffects(x); ok = labs.length > 0; } catch (e) { /* ignore */ }
-    if (!ok) missed.push(x); else if (labs.length && verbGaps(x, labs.join(' | ')).length) missed.push(x);   // understood in part: some action in the sentence has no matching effect
+    if (!ok) missed.push(x); else if (labs.length && !labs.every(l => /^applies to the target/.test(l)) && verbGaps(x, labs.join(' | ')).length) missed.push(x);   // understood in part: some action in the sentence has no matching effect
   });
   return missed;
 }

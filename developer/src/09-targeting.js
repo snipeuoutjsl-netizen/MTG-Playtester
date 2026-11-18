@@ -190,7 +190,8 @@ function targetedOptions(tx, obj) {
   const src = obj.sourceName || '~', opts = [];
   let si = 0;
   const live = t => t.kind === 'perm' ? (findCard(t.id) || {}).card : t.kind === 'gy' ? (findCard(t.id) || {}).card : null;
-  for (const sentence of String(tx).replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/)) {
+  const SENTS = String(tx).replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/);
+  for (let sIdx = 0; sIdx < SENTS.length; sIdx++) { const sentence = SENTS[sIdx];
     const ls = parseTargetSpecs(sentence); if (!ls.length) continue;
     const T = ls.map((_, k) => ts.filter(t => t.spec === si + k)); si += ls.length;
     const first = T[0] || []; if (!first.length) continue;
@@ -199,8 +200,10 @@ function targetedOptions(tx, obj) {
     const each = (fnFor, label, oppFn) => { for (const t of first) { const c = live(t); opts.push({ label: label(t), fn: () => { if (t.kind === 'opp') { log(`${src}: ${label(t)} (your opponent's ${/graveyard/.test(t.id) ? 'graveyard' : 'permanent'}: apply it at the table)`); if (oppFn) oppFn(t); render(); return; } fnFor(t, c); } }); } };
     if ((mm = s.match(/\bdeals? (\d+) damage/i))) { const n = +mm[1]; each((t, c) => { if (t.kind === 'player') { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); } else if (c) dealDamageTo(c, n, src); }, t => `Deal ${n} damage to ${t.name}`); }
     else if (/\battach\b/i.test(s) && obj.sourceId) each((t, c) => { if (c) attachTo(obj.sourceId, c.id, src); }, t => `Attach ${src} to ${t.name}`);
-    else if (/\bdestroy\b/i.test(s)) each((t, c) => { if (c) destroyPerm(c, src); }, t => `Destroy ${t.name}`);
-    else if (/\bexile\b/i.test(s) && !/\bexile it\b/i.test(s)) { const until = !!obj.sourceId && /\buntil\b[^.]*\bleaves the battlefield/i.test(s); each((t, c) => { if (c) { moveCard(c.id, 'exile'); if (until) addFx({ kind: 'exileUntil', cardId: c.id, cardName: c.name, srcId: obj.sourceId, srcName: src }); } }, t => `Exile ${t.name}${until ? ' until ' + src + ' leaves the battlefield' : ''}`, until ? (t => addFx({ kind: 'note', until: 'srcLeaves', text: `${t.name} is exiled (your opponent's): it comes back when ${src} leaves the battlefield`, srcId: obj.sourceId, srcName: src })) : null); }
+    else if (/\bdestroy\b/i.test(s)) { const mvc = /\bif it has mana value (\d+) or (less|greater)\b/i.exec(s); each((t, c) => { if (c) { if (mvc) { const v = c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0); if (mvc[2].toLowerCase() === 'less' ? v > +mvc[1] : v < +mvc[1]) { log(`${src}: ${c.name} has mana value ${v}, not ${mvc[1]} or ${mvc[2]}, so nothing happens to it`); toast('Nothing happens', `${c.name} has mana value ${v}.`); return; } } destroyPerm(c, src); } }, t => `Destroy ${t.name}${mvc ? ` (only if its mana value is ${mvc[1]} or ${mvc[2]})` : ''}`); }
+    else if (/\bexile\b/i.test(s) && !/\bexile it\b/i.test(s)) { const srcTx = (obj.sourceId > 0 && (findCard(obj.sourceId) || {}).card) ? String(cardText(findCard(obj.sourceId).card) || '') : ''; const until = !!obj.sourceId && (/\buntil\b[^.]*\bleaves the battlefield/i.test(s) || /leaves the battlefield, return the exiled cards? to the battlefield/i.test(srcTx));
+      const rest = SENTS.slice(sIdx + 1), lifeR = rest.map(x => /^Its controller gains life equal to its (power|toughness|mana value)\.?$/i.exec(x)).find(Boolean), srchR = rest.map(x => /^Its controller may search their library for (.+?)\.?$/i.exec(x)).find(Boolean);
+      each((t, c) => { if (c) { const lifeN = lifeR ? (/power/i.test(lifeR[1]) ? ptCalc(c).p : /toughness/i.test(lifeR[1]) ? ptCalc(c).t : (c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0))) : 0; moveCard(c.id, 'exile'); if (lifeN) { changeLife(lifeN, true); log(`${src}: you gain ${lifeN} life (its controller gains life equal to its ${lifeR[1]})`); } if (srchR) { const so = effectOptionsBase('Search your library for ' + srchR[1] + '.', { sourceName: src, sourceId: null }).filter(o => typeof o.fn === 'function'); if (so[0]) afterSettled(() => so[0].fn()); } if (until) addFx({ kind: 'exileUntil', cardId: c.id, cardName: c.name, srcId: obj.sourceId, srcName: src }); } }, t => `Exile ${t.name}${until ? ' until ' + src + ' leaves the battlefield' : ''}`, until ? (t => addFx({ kind: 'note', until: 'srcLeaves', text: `${t.name} is exiled (your opponent's): it comes back when ${src} leaves the battlefield`, srcId: obj.sourceId, srcName: src })) : null); }
     else if (/\breturn\b[^.]*\bto (?:its|their) owner's hand/i.test(s)) each((t, c) => {
       if (c && t.kind === 'perm') moveCard(c.id, 'hand');
       else if (t.kind === 'spell') { const i = state.stack.findIndex(x => x.id === t.id); if (i >= 0) { snap(); const [x] = state.stack.splice(i, 1); if (!state.stack.length) state.priority = { active: false, passed: false }; if (x.opp) log(`${src}: opponent's ${x.name} returned to its owner's hand`); else { delete x.target; delete x.targets; delete x.modes; delete x.modeTexts; restoreHalf(x); state.hand.push(x); log(`${src}: ${x.name} returned to your hand`); } render(); } }
@@ -332,7 +335,7 @@ function resolveTopOfStack() {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
     // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
     { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts; delete c.splicedTx;
-      let stx=baseTx.replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
+      let stx=applyKickedInstead(baseTx,op0).replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
     if(eff && !adv0 && layoutOn('resolveFirst')){ state.resolving=c; log(`${nm0} is resolving`); }

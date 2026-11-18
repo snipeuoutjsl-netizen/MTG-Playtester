@@ -379,7 +379,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
   const m = modal(`Look at the top ${n === 1 ? 'card' : n + ' cards'}`, { width: 680, sticky: true, noClose: true });
   const need = () => { let left = n; return slots.map(sl => { if (typeof sl.count !== 'number') return null; const k = Math.min(sl.count, left); left -= k; return k; }); };
   const valid = () => {
-    const nd = need(); for (let k = 0; k < slots.length; k++) { if (nd[k] !== null && asg.filter(a => a === k).length !== nd[k]) return false; }
+    const nd = need(); for (let k = 0; k < slots.length; k++) { if (nd[k] !== null && asg.filter(a => a === k).length !== nd[k]) return false; if (slots[k].max && asg.filter(a => a === k).length > slots[k].max) return false; }
     const anyOpen = slots.some(sl => sl.count === 'rest' || sl.count === 'any'); return anyOpen || asg.every(a => a !== null);
   };
   const confirm = h('button', { class: 'primary', text: 'Confirm' });
@@ -391,7 +391,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
     top.forEach((c, i) => {
       const info = cardInfo(c.name);
       const row = h('div', { class: 'row' }, h('span', { class: 'nm' }, c.name, ' ', info && info.mc ? symbols(info.mc) : ''), h('span', { class: 'muted small', text: info ? info.t.split(' // ')[0] : '' }),
-        ...slots.map((sl, k) => h('button', { class: asg[i] === k ? 'tgl on' : 'tgl', text: sl.short || sl.label, title: sl.label, onclick: () => { asg[i] = asg[i] === k ? null : k; draw(); } })));
+        ...slots.map((sl, k) => h('button', { class: asg[i] === k ? 'tgl on' : 'tgl', disabled: !!(sl.filt && !sl.filt(c)), text: sl.short || sl.label, title: sl.label, onclick: () => { asg[i] = asg[i] === k ? null : k; draw(); } })));
       row.addEventListener('mouseenter', () => showPreview(c)); m.body.append(row);
     });
     const nd = need(); const lines = slots.map((sl, k) => { const have = asg.filter(a => a === k).length; return typeof sl.count === 'number' ? `${sl.short || sl.label}: ${have}/${nd[k]}` : null; }).filter(Boolean);
@@ -405,7 +405,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
     const parts = [];
     top.forEach((c, i) => {
       const sl = slots[dest[i]]; if (!sl) { state.library.unshift(c); return; }
-      if (sl.dest === 'hand') state.hand.push(c); else if (sl.dest === 'bottom') state.library.push(c); else if (sl.dest === 'graveyard') gyPush(c, 'library');
+      if (sl.dest === 'battlefield') { enterBattlefield(c, { from: 'library', logMsg: `${srcText || 'Effect'}: ${c.name} put onto the battlefield` }); } else if (sl.dest === 'hand') state.hand.push(c); else if (sl.dest === 'bottom') state.library.push(c); else if (sl.dest === 'graveyard') gyPush(c, 'library');
       else if (sl.dest === 'exile') { if (sl.play) c.mayPlayTurn = state.turn; state.exile.push(c); } else if (sl.dest === 'top') state.library.unshift(c);
       parts.push(`${c.name} → ${sl.dest}${sl.dest === 'exile' && sl.play ? ' (you may play it this turn)' : ''}`);
     });
@@ -418,7 +418,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
 // Reads "Look at the top N cards of your library. Put one into your hand, put one on the bottom, and exile one. You may play the exiled card this turn."
 function parseLookDistribute(tx) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = t.split(/(?<=[.!?])\s+/);
-  const m0 = /^look at the top (a|one|two|three|four|five|six|seven|\d+) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
+  const m0 = /^(?:look at|reveal) the top (a|one|two|three|four|five|six|seven|\d+|x) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
   const n = numOf(m0[1]); let play = false; const slots = []; let ok = true; let alt = null;
   for (const sent of sents.slice(1)) {
     // CR 608.2c: "If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand and the rest on the bottom." (Flow State): an alternative way to sort, chosen by a condition when it resolves
@@ -429,11 +429,22 @@ function parseLookDistribute(tx) {
       const c = cl.trim().toLowerCase(); if (!c) continue;
       const cm = /\b(the rest|all the rest|the remaining cards?|any number|up to (?:a|one|two|three|\d+)|one|two|three|a|an|\d+)\b/.exec(c);
       let count = cm ? (/rest|remaining/.test(cm[1]) ? 'rest' : /any number|up to/.test(cm[1]) ? 'any' : numOf(cm[1])) : null;
-      let dest = /\binto your hand\b|\bto your hand\b/.test(c) ? 'hand' : /\bon the bottom\b/.test(c) ? 'bottom' : /\bgraveyard\b/.test(c) ? 'graveyard' : /\bexile\b/.test(c) ? 'exile' : /\bon top of your library\b/.test(c) ? 'top' : null;
+      let dest = /\bonto the battlefield\b/.test(c) ? 'battlefield' : /\binto your hand\b|\bto your hand\b/.test(c) ? 'hand' : /\bon the bottom\b/.test(c) ? 'bottom' : /\bgraveyard\b/.test(c) ? 'graveyard' : /\bexile\b/.test(c) ? 'exile' : /\bon top of your library\b/.test(c) ? 'top' : null;
       if (count === null && /^exile\b/.test(c)) count = 1;
       if (!dest || count === null) { ok = false; continue; }
-      const nm = { hand: 'Hand', bottom: 'Bottom', graveyard: 'Graveyard', exile: 'Exile', top: 'Top' }[dest];
-      slots.push({ dest, count, label: `${count === 'rest' ? 'the rest' : count === 'any' ? 'any number' : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : 'exiled'}`, short: nm });
+      const nm = { hand: 'Hand', bottom: 'Bottom', graveyard: 'Graveyard', exile: 'Exile', top: 'Top', battlefield: 'Battlefield' }[dest];
+      // "put up to two creature cards with mana value 3 or less from among them onto the battlefield": a cap and a card filter (CR 608.2c)
+      let max = null, filt = null, fdesc = '';
+      if (dest === 'battlefield') {
+        const um = /\bup to (a|one|two|three|four|five|\d+)\b/.exec(c); if (um) max = numOf(um[1]);
+        const fm = /\b(?:put|puts) (?:up to (?:a|one|two|three|four|five|\d+) |any number of |an? |one |two |three |\d+ )?([a-z ]+?) cards?\b(?: with mana value (x|\d+) or (less|greater))?/.exec(c);
+        if (fm) { const words = fm[1].trim().split(/\s+/).filter(w => w !== 'or' && w !== 'and'), mvn = fm[2] ? (fm[2] === 'x' ? numOf(m0[1]) : +fm[2]) : null, op = fm[3];
+          const okWord = w => /^(?:creature|land|artifact|enchantment|planeswalker|permanent|nonland|noncreature|instant|sorcery)$/.test(w);
+          if (words.every(okWord)) { filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || ''; if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
+            return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
+          else { ok = false; } }
+      }
+      slots.push({ dest, count, max, filt, fdesc: fdesc.trim(), label: `${count === 'rest' ? 'the rest' : count === 'any' ? 'any number' : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : dest === 'battlefield' ? `${fdesc ? '(' + fdesc.trim() + ') ' : ''}onto the battlefield${max ? ' (up to ' + max + ')' : ''}` : 'exiled'}`, short: nm });
     }
   }
   if (!slots.length) return null;
@@ -1624,6 +1635,7 @@ function runChain(steps, src, baseModals) {
   next();
 }
 function effectOptions(tx, obj) {
+  tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
@@ -1639,7 +1651,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -3216,7 +3228,8 @@ function targetedOptions(tx, obj) {
   const src = obj.sourceName || '~', opts = [];
   let si = 0;
   const live = t => t.kind === 'perm' ? (findCard(t.id) || {}).card : t.kind === 'gy' ? (findCard(t.id) || {}).card : null;
-  for (const sentence of String(tx).replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/)) {
+  const SENTS = String(tx).replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/);
+  for (let sIdx = 0; sIdx < SENTS.length; sIdx++) { const sentence = SENTS[sIdx];
     const ls = parseTargetSpecs(sentence); if (!ls.length) continue;
     const T = ls.map((_, k) => ts.filter(t => t.spec === si + k)); si += ls.length;
     const first = T[0] || []; if (!first.length) continue;
@@ -3225,8 +3238,10 @@ function targetedOptions(tx, obj) {
     const each = (fnFor, label, oppFn) => { for (const t of first) { const c = live(t); opts.push({ label: label(t), fn: () => { if (t.kind === 'opp') { log(`${src}: ${label(t)} (your opponent's ${/graveyard/.test(t.id) ? 'graveyard' : 'permanent'}: apply it at the table)`); if (oppFn) oppFn(t); render(); return; } fnFor(t, c); } }); } };
     if ((mm = s.match(/\bdeals? (\d+) damage/i))) { const n = +mm[1]; each((t, c) => { if (t.kind === 'player') { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); } else if (c) dealDamageTo(c, n, src); }, t => `Deal ${n} damage to ${t.name}`); }
     else if (/\battach\b/i.test(s) && obj.sourceId) each((t, c) => { if (c) attachTo(obj.sourceId, c.id, src); }, t => `Attach ${src} to ${t.name}`);
-    else if (/\bdestroy\b/i.test(s)) each((t, c) => { if (c) destroyPerm(c, src); }, t => `Destroy ${t.name}`);
-    else if (/\bexile\b/i.test(s) && !/\bexile it\b/i.test(s)) { const until = !!obj.sourceId && /\buntil\b[^.]*\bleaves the battlefield/i.test(s); each((t, c) => { if (c) { moveCard(c.id, 'exile'); if (until) addFx({ kind: 'exileUntil', cardId: c.id, cardName: c.name, srcId: obj.sourceId, srcName: src }); } }, t => `Exile ${t.name}${until ? ' until ' + src + ' leaves the battlefield' : ''}`, until ? (t => addFx({ kind: 'note', until: 'srcLeaves', text: `${t.name} is exiled (your opponent's): it comes back when ${src} leaves the battlefield`, srcId: obj.sourceId, srcName: src })) : null); }
+    else if (/\bdestroy\b/i.test(s)) { const mvc = /\bif it has mana value (\d+) or (less|greater)\b/i.exec(s); each((t, c) => { if (c) { if (mvc) { const v = c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0); if (mvc[2].toLowerCase() === 'less' ? v > +mvc[1] : v < +mvc[1]) { log(`${src}: ${c.name} has mana value ${v}, not ${mvc[1]} or ${mvc[2]}, so nothing happens to it`); toast('Nothing happens', `${c.name} has mana value ${v}.`); return; } } destroyPerm(c, src); } }, t => `Destroy ${t.name}${mvc ? ` (only if its mana value is ${mvc[1]} or ${mvc[2]})` : ''}`); }
+    else if (/\bexile\b/i.test(s) && !/\bexile it\b/i.test(s)) { const srcTx = (obj.sourceId > 0 && (findCard(obj.sourceId) || {}).card) ? String(cardText(findCard(obj.sourceId).card) || '') : ''; const until = !!obj.sourceId && (/\buntil\b[^.]*\bleaves the battlefield/i.test(s) || /leaves the battlefield, return the exiled cards? to the battlefield/i.test(srcTx));
+      const rest = SENTS.slice(sIdx + 1), lifeR = rest.map(x => /^Its controller gains life equal to its (power|toughness|mana value)\.?$/i.exec(x)).find(Boolean), srchR = rest.map(x => /^Its controller may search their library for (.+?)\.?$/i.exec(x)).find(Boolean);
+      each((t, c) => { if (c) { const lifeN = lifeR ? (/power/i.test(lifeR[1]) ? ptCalc(c).p : /toughness/i.test(lifeR[1]) ? ptCalc(c).t : (c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0))) : 0; moveCard(c.id, 'exile'); if (lifeN) { changeLife(lifeN, true); log(`${src}: you gain ${lifeN} life (its controller gains life equal to its ${lifeR[1]})`); } if (srchR) { const so = effectOptionsBase('Search your library for ' + srchR[1] + '.', { sourceName: src, sourceId: null }).filter(o => typeof o.fn === 'function'); if (so[0]) afterSettled(() => so[0].fn()); } if (until) addFx({ kind: 'exileUntil', cardId: c.id, cardName: c.name, srcId: obj.sourceId, srcName: src }); } }, t => `Exile ${t.name}${until ? ' until ' + src + ' leaves the battlefield' : ''}`, until ? (t => addFx({ kind: 'note', until: 'srcLeaves', text: `${t.name} is exiled (your opponent's): it comes back when ${src} leaves the battlefield`, srcId: obj.sourceId, srcName: src })) : null); }
     else if (/\breturn\b[^.]*\bto (?:its|their) owner's hand/i.test(s)) each((t, c) => {
       if (c && t.kind === 'perm') moveCard(c.id, 'hand');
       else if (t.kind === 'spell') { const i = state.stack.findIndex(x => x.id === t.id); if (i >= 0) { snap(); const [x] = state.stack.splice(i, 1); if (!state.stack.length) state.priority = { active: false, passed: false }; if (x.opp) log(`${src}: opponent's ${x.name} returned to its owner's hand`); else { delete x.target; delete x.targets; delete x.modes; delete x.modeTexts; restoreHalf(x); state.hand.push(x); log(`${src}: ${x.name} returned to your hand`); } render(); } }
@@ -3358,7 +3373,7 @@ function resolveTopOfStack() {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
     // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
     { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts; delete c.splicedTx;
-      let stx=baseTx.replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
+      let stx=applyKickedInstead(baseTx,op0).replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
     if(eff && !adv0 && layoutOn('resolveFirst')){ state.resolving=c; log(`${nm0} is resolving`); }
@@ -6308,8 +6323,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.2';
+const APP_VERSION = '0.99.3';
 const CHANGELOG = [
+  { v: '0.99.3', title: 'Rules dive 1: mass effects, hand effects, kicker, and more cards fully read', notes: ['A broad check of 93 well-known cards against the rules-text reader found 41 with lines the app only partly read; this release brings that to 11, and the rest are honest limits (the opponent\'s hand, board and library are not tracked in a goldfish game; divided damage; Balance-style choices).', 'NEW mass effects, read from the rules text: "Destroy all creatures / lands / each artifact, creature, and enchantment with mana value X or less", "Exile all ...", "Return all ... to their owners\' hands", "Tap / Untap all ..." with other / nonland / non-colour / tapped / power / mana value / keyword qualifiers (Wrath of God, Armageddon, Pernicious Deed...). Indestructible permanents survive; "can\'t be regenerated" is accepted.', 'NEW hands: "Each player discards their hand, then draws seven cards" (Wheel of Fortune, Windfall asks how many your opponent discarded), "Each player shuffles their hand and graveyard into their library, then draws seven" (Timetwister), "Draw three cards, then put two cards from your hand on top of your library in any order" (Brainstorm, with an ordering window), "You may put a land card from your hand onto the battlefield" (Growth Spiral).', 'NEW kicker: "If this spell was kicked, it deals 4 damage instead" (Burst Lightning) and "If this spell was kicked, ..." riders are applied when it resolves.', 'NEW look-at-the-top sorting can put cards onto the battlefield with a cap and a filter ("put up to two creature cards with mana value 3 or less ... onto the battlefield", Collected Company; buttons are disabled for cards that do not qualify).', 'NEW target-player compounds: "Target player draws two cards and loses 2 life" (Sign in Blood), "mills two cards", "discards two cards (at random)"; opponent halves that are not tracked are logged, not skipped.', 'NEW: Swords to Plowshares-style "Its controller gains life equal to its power" and Path to Exile-style "may search for a basic land", "Destroy target creature if it has mana value 2 or less" (Fatal Push), Oblivion Ring\'s paired enter / leave effects, "Return ~ to its owner\'s hand" (Rancor) and "put this artifact on top of its owner\'s library" (Sensei\'s Top), Gamble\'s random discard, Duress-style opponent hand reveals (acknowledged, not tracked), and the Suspend line.'] },
   { v: '0.99.2', title: 'Fix: Flow State and "if ..., instead" sorting', notes: ['FIXED: Flow State ignored its graveyard check. "Look at the top N cards ... put one into your hand and the rest on the bottom. If there is an instant card and a sorcery card in your graveyard, instead put two of them into your hand ..." is now read as a base sort plus a conditional "instead" sort (CR 608.2c): when it resolves the app checks the condition and uses the right one (and tells you if it cannot check a wording).', 'NEW condition wording: "there is an instant card and a sorcery card in your graveyard" / "you have a land card and a creature card in your graveyard" (each listed kind must be there), usable by any condition-reading effect.'] },
   { v: '0.99.1', title: 'No more silently skipped lines; Ponder; shuffle animation; themed pointers', notes: ['FIXED (engine): a card line the app only half understood could be dropped without a word. Ponder is the example: only "Draw a card" was read, so the look-and-reorder was skipped and the draw was applied automatically. Now (1) every sentence is checked action by action (look, shuffle, scry, mill, draw, discard, exile, destroy, sacrifice, create, search, put on top/bottom...) and any action the reader did not produce is flagged; (2) an effect with a flagged line is never auto-applied or Always-yielded; (3) the resolve window lists every line the app does NOT apply, with tick boxes, so nothing is skipped silently.', 'NEW: "Look at the top N cards of your library, then put them back in any order. You may shuffle." (Ponder and anything worded like it): you get an ordering window with up/down arrows and a shuffle tick box, then the rest of the effect (draw a card) happens.', 'NEW: "Shuffle it into its owner\'s library" (Blightsteel-style) and "Shuffle your hand and graveyard into your library" (Timetwister-style).', 'NEW: a riffle-shuffle animation over your library every time it is shuffled (search effects, fetch lands, the Shuffle button, Ponder). Turn it off under Settings > Motion & effects > Shuffle animation. Every shuffle now goes through one place, so none can be missed.', 'FIXED: a token whose name is also a creature type (Rat, Pest...) read its own name as "this creature" in rules text such as "for each other Rat you control", so Rat tokens never grew. "Gets +N/+N for each ..." is now read for any countable thing. Aura tokens that set base power and toughness (Cursed Role) now apply.', 'Every one-click set now switches the mouse pointer too: ink quill (Parchment), little galaxy (Pixel cosmos), crescent moon (Midnight), water drop (Abyss), leaf (Forest), neon arrow (Neon), gilded arrow (Obsidian). The pointers are also in Settings > Look & feel > Mouse cursor.'] },
   { v: '0.99.0', title: 'Mana-spent conditions on cast triggers; Dark Matter Manipulator verified', notes: ['NEW: "Whenever you cast a spell, if no mana was spent to cast it, ..." and "if mana was spent to cast that spell" (CR 601.2h, 603.4). The app now records whether any mana was spent when you cast a spell (lands, rocks or floating mana); spells cast for free (cascade, discover, free-cast effects, alternative costs paid without mana) count as no mana spent. The condition is checked as the spell is cast, as the rules require.', 'Checked against its real text: Dark Matter Manipulator (mill three on entering; +2/+0 for every seven cards in your graveyard, counted live in steps of seven). It was already handled by the conditional-static reader and is now covered by a rules test.'] },
@@ -8086,7 +8102,7 @@ function searchEffect(tx, src, obj) {
   const max = m[2] ? wordN(m[2]) : wordN(m[1]);
   const desc = m[3].replace(/^cards?\s*/i, '').trim() || m[3];
   const full = (sentence.match(/for [^,.]*?cards?\b[^,.]*/i) || [m[3]])[0];
-  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}${/shuffle/i.test(tx) ? ', then shuffle' : ''}`, fn: () => {
+  return { label: `Search your library for ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} (${full.replace(/^for /i, '').trim()}) → ${dest === 'top' ? 'top of library' : dest + (freeCast ? ', cast free this turn' : '')}${/discard (?:a|one|two|\d+) cards? at random/i.test(tx) ? ', discard at random' : ''}${/shuffle/i.test(tx) ? ', then shuffle' : ''}`, fn: () => {
     if (!state.library.length) { toast('Library is empty', 'There is nothing to search.'); return; }
     openPickCards({ title: `${src}: search your library`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'}: ${full.replace(/^for /i, '')}. Highlighted cards match the description; you may also choose nothing (you can't be forced to find a card). ${/shuffle/i.test(sentence) || /shuffle/i.test(tx) ? 'Your library is shuffled afterwards.' : ''}`,
       cards: state.library.slice(), max, isOk: c => descMatchesCard(full.replace(/^for (?:up to \w+ |an? |one |two |three |any number of )?/i, ''), c.name), nothing: 'Find nothing',
@@ -8097,6 +8113,7 @@ function searchEffect(tx, src, obj) {
           else if (dest === 'exile') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); if (freeCast) x.freeCastTurn = state.turn; state.exile.push(x); } }   // CR 701.23 search, 406 exile; "until end of turn, you may cast … without paying" (CR 118.9)
           else if (dest === 'top') { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); state.library.unshift(x); } }
           else { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [x] = state.library.splice(i, 1); enterBattlefield(x, { from: 'library', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped }); if (tapped) x.tapped = true; } } }
+        { const dm = /\bdiscard (a|one|two|\d+) cards? at random\b/i.exec(tx); if (dm && dest === 'hand') discardRandom(MASS_NUM(dm[1]), src); }   // Gamble: the discard happens before the shuffle
         if (/shuffle/i.test(tx)) shuffleLib();
         if (dest === 'top' && picked.length) { const [x] = picked; const i = state.library.findIndex(y => y.id === x.id); if (i > 0) { const [y] = state.library.splice(i, 1); state.library.unshift(y); } }
         log(`${src}: searched the library${names.length ? ' and found ' + names.join(', ') + (dest === 'hand' ? ' (to hand)' : ' (' + dest + ')') : ' and found nothing'}${/shuffle/i.test(tx) ? '; shuffled' : ''}`); render(); flushTriggers(); } });
@@ -9084,6 +9101,7 @@ function compileCardOne(c) {
       push(text, 'loyalty', eff.length ? 'ok' : 'part', eff.length ? `Loyalty ability: the cost is tracked and the app can apply: ${eff.join('; ')}.` : 'Loyalty ability: the loyalty cost is tracked; apply its effect by hand.');
       continue;
     }
+    if (/^Suspend \d+\s*[\u2014\u2013-]\s*(?:\{[^}]+\})+/i.test(stripped)) { push(text, 'keyword', 'ok', 'Suspend (702.62): right-click the card in your hand and choose Suspend; it is exiled with time counters, one comes off each upkeep, and the last one casts it for free.'); continue; }
     // cost lines (v0.46)
     if ((m = stripped.match(/^(Evoke|Kicker|Delve|Convoke|Improvise|Cycling|Warp|Flashback|Affinity for\b)/i))) {
       const w = m[1].toLowerCase();
@@ -9092,7 +9110,7 @@ function compileCardOne(c) {
         delve: 'Delve: a window lets you exile graveyard cards; each pays {1} of the generic cost.', convoke: 'Convoke: a window lets you tap creatures; each pays {1} or one mana of its colour.',
         improvise: 'Improvise: a window lets you tap artifacts; each pays {1}.', cycling: 'Cycling: right-click the card in your hand and choose Cycle. The app pays the cost, discards the card and puts "draw a card" on the stack.',
         'affinity for': 'Affinity: the cost is reduced automatically by the permanents you control.' };
-      push(text, 'keyword', w === 'kicker' ? 'part' : 'ok', NOTE[w] || ''); continue;
+      { const kOk = w !== 'kicker' || !/was kicked/i.test(applyKickedInstead(String(info.tx || ''), false)); if (w === 'kicker' && kOk) NOTE.kicker = 'Kicker: an optional extra cost offered when you cast it and remembered as "kicked". Its "if this spell was kicked" effects are applied when it resolves.'; push(text, 'keyword', kOk ? 'ok' : 'part', NOTE[w] || ''); } continue;
     }
     if ((m = stripped.match(/^As an additional cost to cast this spell, (.+?)\.?$/i))) {
       const cs = parseCostComps(m[1].replace(/^you may /i, ''), short), unk = cs.filter(k => k.k === 'other');
@@ -9230,7 +9248,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 // A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
 // Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
 const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
@@ -9246,10 +9264,11 @@ function uncoveredClauses(effectText) {
   sents.forEach((x, i) => {
     if (/^(?:Flashback|Kicker|Multikicker|Buyback|Cycling|Escape|Jump-start|Retrace|Entwine|Storm|Foretell|Suspend)\b/i.test(x)) return;
     if (/^(?:Activate|Cast this spell|This ability|You can't|Spend only|Play this|Cast only|Cast it|This spell can't be countered)\b/i.test(x)) return;
+    if (i > 0 && DEP_HANDLED.some(r => r.test(x))) return;
     if (i > 0 && DEP_SENT.test(x)) { if (!DEP_HANDLED.some(r => r.test(x))) missed.push(x); return; }
     if (sents.length < 2 && !verbGaps(x, null).length) return;   // one understood sentence: nothing more to check
     let ok = false, labs = []; try { labs = recognizedEffects(x); ok = labs.length > 0; } catch (e) { /* ignore */ }
-    if (!ok) missed.push(x); else if (labs.length && verbGaps(x, labs.join(' | ')).length) missed.push(x);   // understood in part: some action in the sentence has no matching effect
+    if (!ok) missed.push(x); else if (labs.length && !labs.every(l => /^applies to the target/.test(l)) && verbGaps(x, labs.join(' | ')).length) missed.push(x);   // understood in part: some action in the sentence has no matching effect
   });
   return missed;
 }
@@ -11614,6 +11633,182 @@ function lookReorderOptions(tx, obj) {
   const rest = sents.slice(i).join(' '), src = (obj && obj.sourceName) || 'Ability';
   const restOpts = rest ? effectOptionsBase(rest, obj).filter(o => typeof o.fn === 'function' && !o.hidden) : [];
   return [{ full: true, label: `Look at the top ${n === 1 ? 'card' : n + ' cards'}, put them back in any order${mayShuffle ? ', you may shuffle' : ''}${rest ? ', then ' + (restOpts[0] ? restOpts[0].label.toLowerCase() : rest) : ''}`, fn: () => openReorderTop(n, src, mayShuffle, () => { for (const o of restOpts.slice(0, 1)) o.fn(); }) }];
+}
+// v0.99.3 Rules-text readers found by the 1.0 rules dive (each is a RULE, not a card):
+//  - mass effects:  "Destroy all creatures." "Destroy all lands." "Destroy each artifact, creature, and enchantment with mana value X or less." "Exile all ..." "Return all ... to their owners' hands." "Tap/Untap all ..."   (CR 701.7, 701.8, 406, 400.7)
+//  - hands:         "Each player discards their hand, then draws seven cards." "Draw three cards, then put two cards from your hand on top of your library in any order." "You may put a land card from your hand onto the battlefield."
+//  - this card:     "Return ~ to its owner's hand." "Put this artifact on top of its owner's library."
+//  - players:       "Target player draws two cards and loses 2 life." "Target player mills two cards." "Target player discards two cards."
+//  - kicker:        "... deals 2 damage ... If this spell was kicked, it deals 4 damage instead."
+const MASS_SENTS = tx => String(tx || '').replace(/’/g, "'").replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+const MASS_NUM = w => /^x$/i.test(w) ? 'X' : (NUMW[String(w).toLowerCase()] || parseInt(w, 10));
+const MASS_COLORS = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+// "nonland permanents", "other creatures", "artifacts, creatures, and enchantments", "creatures with power 4 or greater", "nonblack creatures" -> a predicate, or null if any word is not understood
+function parseMassSet(phrase, obj) {
+  let p = String(phrase || '').toLowerCase().trim().replace(/[.]$/, ''), none = false, qual = null;
+  if (/\b(?:you don't control|an opponent controls|your opponents control|opponents control|each opponent controls)\b/.test(p)) { none = true; p = p.replace(/\b(?:you don't control|an opponent controls|your opponents control|opponents control|each opponent controls)\b/, '').trim(); }
+  p = p.replace(/\byou control\b/, '').trim();
+  const qm = p.match(/\s+(with|without) (.+)$/); if (qm) { qual = { without: qm[1] === 'without', text: qm[2].trim() }; p = p.slice(0, qm.index).trim(); }
+  const toks = p.split(/\s*,\s*(?:and |or )?|\s+(?:and|or)\s+/).map(x => x.trim()).filter(Boolean); if (!toks.length) return null;
+  const types = [], mods = []; let other = false, colors = [];
+  for (const tk of toks) {
+    const ws = tk.split(/\s+/); const typeWord = singularWord(ws[ws.length - 1]); if (!MASS_TYPES.includes(typeWord) && !(typeWord === 'permanent')) return null; if (!types.includes(typeWord)) types.push(typeWord);
+    for (const w of ws.slice(0, -1)) {
+      if (w === 'other' || w === 'another') other = true; else if (/^non-?(land|creature|artifact|enchantment|basic|legendary|token|snow)$/.test(w)) mods.push(w.replace('-', '')); else if (MASS_COLORS[w] && !colors.includes(MASS_COLORS[w])) colors.push(MASS_COLORS[w]);
+      else if (/^non-?(white|blue|black|red|green)$/.test(w)) mods.push(w.replace('-', '')); else if (w === 'tapped' || w === 'untapped' || w === 'attacking' || w === 'legendary' || w === 'basic' || w === 'token') mods.push(w); else return null;
+    }
+  }
+  let q = null;
+  if (qual) {
+    let m;
+    if ((m = qual.text.match(/^mana value (x|\d+)(?: or (less|greater|more))?$/))) q = { kind: 'mv', n: m[1] === 'x' ? (obj && obj.xValue !== undefined ? +obj.xValue : (obj && obj.x !== undefined ? +obj.x : null)) : +m[1], op: m[2] ? (m[2] === 'less' ? 'le' : 'ge') : 'eq' };
+    else if ((m = qual.text.match(/^(power|toughness) (\d+) or (less|greater|more)$/))) q = { kind: m[1], n: +m[2], op: m[3] === 'less' ? 'le' : 'ge' };
+    else if ((m = qual.text.match(/^(flying|reach|first strike|trample|haste|vigilance|deathtouch|lifelink|menace|defender|indestructible)$/))) q = { kind: 'kw', k: m[1] };
+    else return null;
+    if (q.kind === 'mv' && (q.n === null || isNaN(q.n))) { if (obj && obj.sourceId === -1) q.n = 0; else return null; }   // while the app only reads the card (no X chosen yet) the wording is understood
+    q.without = qual.without;
+  }
+  return { none, types, mods, other, colors, q };
+}
+function massMatch(c, S, srcId) {
+  const tl = permTypeLine(c);
+  if (!(S.types.includes('permanent') || S.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl)))) return false;
+  if (S.other && c.id === srcId) return false;
+  if (S.colors.length && !S.colors.some(k => cardColorSet(c).includes(k))) return false;
+  for (const md of S.mods) {
+    if (md === 'nonland' && /\bLand\b/.test(tl)) return false; if (md === 'noncreature' && /\bCreature\b/.test(tl)) return false; if (md === 'nonartifact' && /\bArtifact\b/.test(tl)) return false; if (md === 'nonenchantment' && /\bEnchantment\b/.test(tl)) return false;
+    if (md === 'nonbasic' && /\bBasic\b/.test(tl)) return false; if (md === 'nonlegendary' && /\bLegendary\b/.test(tl)) return false; if (md === 'nontoken' && c.token) return false; if (md === 'nonsnow' && /\bSnow\b/.test(tl)) return false;
+    if (md === 'legendary' && !/\bLegendary\b/.test(tl)) return false; if (md === 'basic' && !/\bBasic\b/.test(tl)) return false; if (md === 'token' && !c.token) return false;
+    if (md === 'tapped' && !c.tapped) return false; if (md === 'untapped' && c.tapped) return false; if (md === 'attacking' && !(state.combat && (state.combat.attackers || []).includes(c.id))) return false;
+    const nc = /^non(white|blue|black|red|green)$/.exec(md); if (nc && cardColorSet(c).includes(MASS_COLORS[nc[1]])) return false;
+  }
+  if (S.q) {
+    let ok = true;
+    if (S.q.kind === 'mv') { const v = c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0); ok = S.q.op === 'le' ? v <= S.q.n : S.q.op === 'ge' ? v >= S.q.n : v === S.q.n; }
+    else if (S.q.kind === 'power' || S.q.kind === 'toughness') { const r = ptCalc(c), v = S.q.kind === 'power' ? r.p : r.t; ok = S.q.op === 'le' ? v <= S.q.n : v >= S.q.n; }
+    else if (S.q.kind === 'kw') ok = hasKw(c, S.q.k);
+    if (S.q.without ? ok : !ok) return false;
+  }
+  return true;
+}
+const MASS_TYPES = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle', 'permanent'];
+// ---- shared helpers
+function massRest(sents, from, obj) { const rest = sents.slice(from).join(' '); return rest ? effectOptionsBase(rest, obj).filter(o => typeof o.fn === 'function' && !o.hidden) : []; }
+function askNumber(title, note, def, cb) {
+  const m = modal(title, { width: 420, sticky: true, noClose: true }); const inp = h('input', { type: 'number', min: 0, value: def, style: 'width:80px' });
+  m.body.append(h('div', { class: 'psub', text: note }), inp); m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: () => { const v = Math.max(0, parseInt(inp.value, 10) || 0); m.close(); cb(v); } }));
+}
+function openOrderList(title, cards, onDone) {   // put these cards back in the order you want; the first one ends up on top
+  const order = cards.map((c, i) => i); if (cards.length < 2) { onDone(cards.slice()); return; }
+  const m = modal(title, { width: 480, sticky: true, noClose: true }); const confirm = h('button', { class: 'primary', text: 'Put them there' });
+  const draw = () => { m.body.replaceChildren(h('div', { class: 'psub', text: 'Choose the order. The first card in the list is on top.' })); order.forEach((ci, pos) => m.body.append(h('div', { class: 'row' }, h('span', { class: 'muted small', text: pos === 0 ? 'Top' : String(pos + 1) }), h('span', { class: 'nm', text: cards[ci].name }), h('button', { text: '▲', disabled: pos === 0, onclick: () => { [order[pos - 1], order[pos]] = [order[pos], order[pos - 1]]; draw(); } }), h('button', { text: '▼', disabled: pos === order.length - 1, onclick: () => { [order[pos + 1], order[pos]] = [order[pos], order[pos + 1]]; draw(); } })))); };
+  confirm.addEventListener('click', () => { m.close(); onDone(order.map(i => cards[i])); }); m.foot.append(confirm); draw();
+}
+function discardFromHand(cards, src) { for (const c of cards) { const f = findCard(c.id); if (f && f.zone === 'hand') moveCard(c.id, 'graveyard'); } if (cards.length) log(`${src}: discarded ${cards.map(c => c.name).join(', ')}`); }
+function discardRandom(n, src) { const out = []; for (let i = 0; i < n && state.hand.length; i++) { const c = state.hand[rnd(state.hand.length)]; moveCard(c.id, 'graveyard'); out.push(c); } log(`${src}: discarded ${out.length ? out.map(c => c.name).join(', ') : 'nothing (your hand is empty)'} at random`); return out.length; }
+// ---- mass effects
+function massEffectOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx); if (!sents.length) return null; const src = (obj && obj.sourceName) || 'Ability', srcId = obj && obj.sourceId;
+  let m = /^(destroy|exile) (?:all|each) (.+)$/i.exec(sents[0].replace(/\.$/, '')), verb = m && m[1].toLowerCase(), set = m && m[2];
+  if (!m) { m = /^return (?:all|each) (.+?) to their owners' hands$/i.exec(sents[0].replace(/\.$/, '')); if (m) { verb = 'bounce'; set = m[1]; } }
+  if (!m) { m = /^(tap|untap) (?:all|each) (.+)$/i.exec(sents[0].replace(/\.$/, '')); if (m) { verb = m[1].toLowerCase(); set = m[2]; } }
+  if (!m) return null;
+  const S = parseMassSet(set, obj); if (!S) return null;
+  let i = 1; while (sents[i] && /^(?:they|it|those \w+) can'?t be regenerated\.?$/i.test(sents[i])) i++;   // CR 701.15 regeneration is not tracked as a shield here, so the rider changes nothing
+  const word = { destroy: 'Destroy', exile: 'Exile', bounce: 'Return to their owners\' hands', tap: 'Tap', untap: 'Untap' }[verb];
+  const full = { full: !sents[i], label: `${word} all ${set.replace(/\.$/, '')}`, fn: () => {
+    snap(); const hit = S.none ? [] : state.battlefield.filter(c => massMatch(c, S, srcId)); let n = 0;
+    if (S.none) log(`${src}: affects only permanents you do not control; the opponent's board is not tracked here, so apply it at the table`);
+    for (const c of hit) {
+      if (verb === 'destroy') { if (hasKw(c, 'indestructible')) { log(`${src}: ${c.name} is indestructible`); continue; } log(`${src}: destroyed ${c.name}`); leaveBattlefield(c, 'graveyard'); n++; }
+      else if (verb === 'exile') { moveCard(c.id, 'exile'); n++; } else if (verb === 'bounce') { moveCard(c.id, 'hand'); n++; }
+      else if (verb === 'tap') { if (!c.tapped) { toggleTap(c.id); n++; } } else if (verb === 'untap') { if (c.tapped) { untapByEffect(c.id); n++; } }
+    }
+    log(`${src}: ${word.toLowerCase()} ${n} permanent${n === 1 ? '' : 's'} (${set})`); render(); flushTriggers();
+  } };
+  return [full, ...massRest(sents, i, obj)];
+}
+// ---- hands: "Each player discards their hand, then draws seven cards." / "Each player shuffles their hand and graveyard into their library, then draws seven cards." / Windfall
+function handRefillOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx); const s0 = (sents[0] || '').replace(/\.$/, ''); const src = (obj && obj.sourceName) || 'Ability'; let m;
+  const draw = (cnt, extra) => { const n = drawCards(cnt); log(`${src}: drew ${n}${extra || ''}`); render(); };
+  if ((m = /^each player discards (?:their|his or her) hand, then draws (seven|six|five|four|three|\d+(?= cards?)|cards equal to the greatest number of cards a player discarded this way)(?: cards?)?$/i.exec(s0))) {
+    const greatest = /^cards equal/i.test(m[1]), k = greatest ? 0 : MASS_NUM(m[1]);
+    return [{ full: sents.length === 1, label: greatest ? 'You discard your hand, then draw cards equal to the greatest number discarded' : `You discard your hand, then draw ${k}`, fn: () => { snap(); const hand = state.hand.slice(), mine = hand.length; discardFromHand(hand, src);
+      if (!greatest) { log(`${src}: your opponent also discards and draws (their hand is not tracked)`); draw(k); return; }
+      askNumber(`${src}: opponent's discard`, `Your opponent's hand is not tracked. How many cards did your opponent discard? (You discarded ${mine}; you draw the greater number.)`, 0, o => { draw(Math.max(mine, o), ` (you discarded ${mine}, your opponent ${o})`); }); } }, ...massRest(sents, 1, obj)];
+  }
+  if ((m = /^each player shuffles (?:their|his or her) hand and graveyard into (?:their|his or her) library, then draws (seven|six|five|four|three|\d+) cards?$/i.exec(s0))) {
+    const k = MASS_NUM(m[1]);
+    return [{ full: sents.length === 1, label: `You shuffle your hand and graveyard into your library, then draw ${k}`, fn: () => { snap(); let n = 0; for (const z of ['hand', 'graveyard']) { const cs = state[z].splice(0); n += cs.length; for (const c of cs) if (!c.token) state.library.push(c); } shuffleLib(); log(`${src}: ${n} card${n === 1 ? '' : 's'} shuffled into your library; your opponent does the same (not tracked)`); draw(k); } }, ...massRest(sents, 1, obj)];
+  }
+  // Brainstorm: "Draw three cards, then put two cards from your hand on top of your library in any order."
+  if ((m = /^draw (a|one|two|three|four|\d+) cards?,? then put (a|one|two|three|four|\d+) cards? from your hand (on top of|on the bottom of) your library(?: in any order)?$/i.exec(s0))) {
+    const nd = MASS_NUM(m[1]), np = MASS_NUM(m[2]), top = /top/i.test(m[3]);
+    return [{ full: sents.length === 1, label: `Draw ${nd}, then put ${np} card${np === 1 ? '' : 's'} from your hand ${top ? 'on top of' : 'on the bottom of'} your library`, fn: () => { drawCards(nd); const k = Math.min(np, state.hand.length); if (!k) { render(); return; }
+      openPickCards({ title: `${src}: put ${k} card${k === 1 ? '' : 's'} back`, note: `Choose ${k} card${k === 1 ? '' : 's'} from your hand to put ${top ? 'on top of' : 'on the bottom of'} your library.`, cards: state.hand.slice(), max: k, min: k, done: picked => {
+        openOrderList(`${src}: order the cards`, picked, ordered => { snap(); for (const c of ordered) { const i = state.hand.findIndex(x => x.id === c.id); if (i >= 0) state.hand.splice(i, 1); }
+          if (top) state.library.unshift(...ordered); else state.library.push(...ordered); log(`${src}: drew ${nd}, put ${ordered.map(c => c.name).join(', ')} ${top ? 'on top of' : 'on the bottom of'} the library`); render(); }); } }); } }, ...massRest(sents, 1, obj)];
+  }
+  // Growth Spiral: "You may put a land card from your hand onto the battlefield."
+  if ((m = /^you may put (?:a|an|one) (.+?) cards? from your hand onto the battlefield( tapped)?$/i.exec(s0))) {
+    const kind = m[1].toLowerCase(), tapped = !!m[2];
+    return [{ full: sents.length === 1, label: `You may put a ${kind} card from your hand onto the battlefield${tapped ? ' tapped' : ''}`, fn: () => { const ok = c => { const tl = (cardInfo(c.name) || {}).t || ''; return kind.split(/\s+/).every(w => w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'permanent' ? !/Instant|Sorcery/.test(tl) : new RegExp('\\b' + singularWord(w) + '\\b', 'i').test(tl)); };
+      const cands = state.hand.filter(ok); if (!cands.length) { toast('Nothing to put', `You have no ${kind} card in your hand.`); return; }
+      openPickCards({ title: `${src}: put a ${kind} card onto the battlefield`, note: 'Choose a card, or none.', cards: cands, max: 1, nothing: 'Put none', done: picked => { for (const c of picked) { const i = state.hand.findIndex(x => x.id === c.id); if (i < 0) continue; snap(); const [x] = state.hand.splice(i, 1); enterBattlefield(x, { from: 'hand', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped }); if (tapped) x.tapped = true; } render(); } }); } }, ...massRest(sents, 1, obj)];
+  }
+  // an earlier sentence is something else ("Draw a card. You may put a land card from your hand onto the battlefield."): read it, then this one
+  for (let j = 1; j < sents.length; j++) { const tail = handRefillOptions(sents.slice(j).join(' '), obj); if (tail) { const head = effectOptionsBase(sents.slice(0, j).join(' '), obj).filter(o => typeof o.fn === 'function' && !o.hidden); return [...head, ...tail]; } }
+  return null;
+}
+// ---- the card itself moves: "Return ~ to its owner's hand." "Put this artifact on top of its owner's library." (Rancor, Sensei's Divining Top)
+function selfMoveOptions(tx, obj) {
+  if (!state || !obj || !obj.sourceId) return null; const sents = MASS_SENTS(tx); const src = obj.sourceName || 'Ability'; const self = '(?:~|this [a-z]+|it|that card|' + String(src).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')';
+  const move = (to) => () => { const f = findCard(obj.sourceId); if (!f) { log(`${src} is not in a zone it can move from`); return; } snap(); if (f.card.token) { moveCard(f.card.id, 'graveyard'); return; } if (to === 'hand') moveCard(f.card.id, 'hand'); else { moveCard(f.card.id, 'library'); } log(`${src}: ${to === 'hand' ? 'returned to its owner\'s hand' : 'put on top of its owner\'s library'}`); render(); };
+  let m;
+  if ((m = new RegExp('^return ' + self + ' to its owner\'s hand$', 'i').exec(sents[0].replace(/\.$/, '')))) return [{ full: sents.length === 1, label: `Return ${src} to its owner's hand`, fn: move('hand') }, ...massRest(sents, 1, obj)];
+  if ((m = new RegExp('^(?:you may )?put ' + self + ' on top of (?:its owner\'s|your) library$', 'i').exec(sents[0].replace(/\.$/, '')))) return [{ full: sents.length === 1, label: `Put ${src} on top of its owner's library`, fn: move('top') }, ...massRest(sents, 1, obj)];
+  if ((m = new RegExp('^(.+?), then put ' + self + ' on top of (?:its owner\'s|your) library$', 'i').exec(sents[0].replace(/\.$/, '')))) { const first = effectOptionsBase(m[1] + '.', obj).filter(o => typeof o.fn === 'function' && !o.hidden); if (first.length === 1) return [{ full: sents.length === 1, label: `${first[0].label}, then put ${src} on top of its owner's library`, fn: () => { first[0].fn(); afterSettled(() => move('top')()); } }, ...massRest(sents, 1, obj)]; }
+  return null;
+}
+// ---- "Target player draws two cards and loses 2 life." "Target player mills two cards." "Target player discards two cards (at random)."
+function playerClauseOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx); const s0 = (sents[0] || '').replace(/\.$/, ''); const m = /^target (player|opponent) (.+)$/i.exec(s0); if (!m) return null; const src = (obj && obj.sourceName) || 'Ability';
+  const parts = m[2].split(/,? and (?=(?:loses?|gains?|draws?|mills?|discards?)\b)/i).map(x => x.trim()); const acts = [];
+  for (const p of parts) { let q;
+    if ((q = /^draws? (a|one|two|three|four|five|\d+) cards?$/i.exec(p))) acts.push({ k: 'draw', n: MASS_NUM(q[1]) }); else if ((q = /^loses? (\d+) life$/i.exec(p))) acts.push({ k: 'lose', n: +q[1] }); else if ((q = /^gains? (\d+) life$/i.exec(p))) acts.push({ k: 'gain', n: +q[1] });
+    else if ((q = /^mills? (a|one|two|three|four|five|six|seven|\d+) cards?$/i.exec(p))) acts.push({ k: 'mill', n: MASS_NUM(q[1]) }); else if ((q = /^discards? (a|one|two|three|four|five|\d+) cards?( at random)?$/i.exec(p))) acts.push({ k: 'discard', n: MASS_NUM(q[1]), rnd: !!q[2] });
+    else return null; }
+  const run = who => () => { snap(); const lines = [];
+    const doDiscards = () => { const d = acts.find(a => a.k === 'discard'); if (!d || who !== 'you') return; if (d.rnd) discardRandom(d.n, src); else { const k = Math.min(d.n, state.hand.length); if (k) openPickCards({ title: `${src}: discard ${k} card${k === 1 ? '' : 's'}`, note: `Choose ${k} card${k === 1 ? '' : 's'} from your hand to discard.`, cards: state.hand.slice(), max: k, min: k, done: p => { discardFromHand(p, src); render(); } }); } };
+    for (const a of acts) { if (who === 'you') { if (a.k === 'draw') lines.push(`drew ${drawCards(a.n)}`); else if (a.k === 'lose') { changeLife(-a.n, true); lines.push(`lost ${a.n} life`); } else if (a.k === 'gain') { changeLife(a.n, true); lines.push(`gained ${a.n} life`); } else if (a.k === 'mill') { millCards(a.n); lines.push(`milled ${a.n}`); } }
+      else { if (a.k === 'lose') { changeOppLife(-a.n); lines.push(`opponent lost ${a.n} life`); } else if (a.k === 'gain') { changeOppLife(a.n); lines.push(`opponent gained ${a.n} life`); } else lines.push(`opponent ${a.k === 'draw' ? 'draws' : a.k === 'mill' ? 'mills' : 'discards'} ${a.n} (their library and hand are not tracked)`); } }
+    if (lines.length) log(`${src}: ${lines.join(', ')}`); doDiscards(); render(); };
+  const descOf = third => acts.map(a => a.k === 'draw' ? `${third ? 'draws' : 'draw'} ${a.n}` : a.k === 'lose' ? `${third ? 'loses' : 'lose'} ${a.n} life` : a.k === 'gain' ? `${third ? 'gains' : 'gain'} ${a.n} life` : a.k === 'mill' ? `${third ? 'mills' : 'mill'} ${a.n}` : `${third ? 'discards' : 'discard'} ${a.n}${a.rnd ? ' at random' : ''}`).join(' and '), desc = descOf(true);
+  const t = (obj && obj.targets || [])[0], who = t && t.kind === 'player' ? t.id : null; const full = sents.length === 1;
+  if (who) return [{ full, label: `${who === 'you' ? 'You ' + descOf(false) : 'Your opponent ' + desc}`, fn: run(who) }, ...massRest(sents, 1, obj)];
+  return [{ full, label: `You ${descOf(false)}`, fn: run('you') }, { full, label: `Your opponent ${desc}`, fn: run('opp') }, ...massRest(sents, 1, obj)];
+}
+// ---- the opponent's hand is not tracked in a goldfish game: say so instead of silently skipping ("Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.")
+function oppHandOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx); if (!sents.length) return null; const src = (obj && obj.sourceName) || 'Ability';
+  if (!/^target (?:player|opponent) reveals (?:their|his or her) hand$/i.test(sents[0].replace(/\.$/, ''))) return null;
+  const rest = sents.slice(1); if (!rest.every(s => /^you choose (?:a|an) .+ card from it\b|^that player discards (?:that card|it)$/i.test(s.replace(/\.$/, '')))) return null;
+  return [{ full: true, label: `${src}: the opponent reveals their hand and discards the card you choose (their hand is not tracked in a goldfish game)`, fn: () => { log(`${src}: opponent's hand is not tracked here, so look at it and make them discard at the table`); toast(`${src}`, "Your opponent's hand is not tracked in a goldfish game. Do this part at the table."); } }];
+}
+// ---- kicker: "... deals 2 damage ... If this spell was kicked, it deals 4 damage instead." -> the right number is substituted before the effect is read (CR 702.33)
+function applyKickedInstead(tx, kicked) {
+  let t = String(tx || '');
+  const km = /\s*If (?:this spell|it|that spell|~) was kicked, (?:it|~|this spell) deals? (\d+) damage instead\.?/i.exec(t);
+  if (km) { t = t.replace(km[0], ''); if (kicked) t = t.replace(/\bdeals? (\d+) damage/i, a => a.replace(/\d+/, km[1])); }
+  t = t.replace(/\s*If (?:this spell|it|that spell|~) was kicked, ([^.]+\.)/i, (all, rest) => kicked ? ' ' + rest.charAt(0).toUpperCase() + rest.slice(1) : '');
+  return t;
+}
+
+// "When this leaves the battlefield, return the exiled card to the battlefield under its owner's control." (Oblivion Ring): the exile was recorded when it happened (CR 610.3), so the card comes back by itself.
+function exiledReturnOptions(tx, obj) {
+  if (!/^return the exiled cards? to the battlefield under (?:its|their) owner'?s? control\.?$/i.test(String(tx || '').replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim())) return null; const src = (obj && obj.sourceName) || 'Ability';
+  return [{ full: true, label: `The exiled card returns to the battlefield (the app already did this when ${src} left)`, fn: () => log(`${src}: the card it exiled returns to the battlefield under its owner's control (done automatically)`) }];
 }
 init();
 
