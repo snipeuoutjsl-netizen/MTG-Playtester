@@ -578,6 +578,7 @@ function runChain(steps, src, baseModals) {
 function effectOptions(tx, obj) {
   if (hasRawQuote(tx)) { const res = effectOptions(maskQuotes(tx), obj); return res.map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o); }   // quoted text is another object's ability
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
+  tx = applyCondInstead(tx);   // "... deals 4 damage instead if you control three or more artifacts"
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
