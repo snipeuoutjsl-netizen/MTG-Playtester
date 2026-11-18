@@ -1150,10 +1150,11 @@ function parseTriggers(c) {
     }
     // v0.94.4 intervening-if on casts: "if it's the second creature spell you cast this turn, you may return ~ ..." (Vengevine) is checked when the spell is cast (CR 603.4) and then dropped from the effect text
     let nth = null;
+    if (ev === 'cast') { const n2 = /^(?:when|whenever) you cast your (first|second|third|fourth|fifth) (?:(noncreature|creature|instant|sorcery|artifact|enchantment|land|instant or sorcery) )?spell (?:each|this) turn$/i.exec(cm[1]); if (n2) { nth = { n: ['first', 'second', 'third', 'fourth', 'fifth'].indexOf(n2[1].toLowerCase()) + 1, type: (n2[2] || '').toLowerCase() }; filter = n2[2] ? n2[2].toLowerCase() + ' spell' : ''; } }   // CR 603.4-style ordinal cast triggers: flurry, "your second spell each turn"
     if (ev === 'cast') { const nm = /^if it'?s the (first|second|third|fourth) (?:(noncreature|creature|instant|sorcery|artifact|enchantment|land|instant or sorcery) )?spell you cast (?:this|each) turn,\s*/i.exec(cm[2]); if (nm) { nth = { n: ['first', 'second', 'third', 'fourth'].indexOf(nm[1].toLowerCase()) + 1, type: (nm[2] || '').toLowerCase() }; cm[2] = cm[2].slice(nm[0].length); } }
     if (/^if (?:~|this \w+) is in your graveyard\b/i.test(cm[2]) || (ev === 'gy-self')) zone = 'graveyard';
     if (ev !== 'gy-self' && /\breturn (?:~|this \w+|it) from your graveyard to the battlefield/i.test(cm[2])) zone = 'graveyard';   // v0.94.1 Bloodghast: Landfall \u2014 you may return ~ from your graveyard to the battlefield
-    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, castAny });
+    out.push({ ev, cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null, zone, from, cyc, dis, another, nth, castAny, unsupported: ev === 'cast' && !nth && /\b(?:first|second|third|fourth|fifth|sixth)\b[^,]*\bspell\b/i.test(cm[1]) });
     if (ev === 'etb-self' && /enters(?: the battlefield)? or attacks/.test(cond)) out.push({ ev: 'attack-self', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ko) out.push({ ev: 'etb-other', cond: cm[1], effect: cm[2], line: body, filter: 'another ' + ko[1], optional: /\byou may\b/i.test(cm[2]), special: null });
     if (ev === 'etb-self' && /\band whenever an opponent draws a card/i.test(cond)) out.push({ ev: 'opp-draw', cond: cm[1], effect: cm[2], line: body, filter, optional: /\byou may\b/i.test(cm[2]), special: null });
@@ -1208,7 +1209,7 @@ function fireTrigger(ev, ctx = {}) {
     const sp = ctx.card;
     for (const t of parseTriggers(sp)) if (t.ev === 'cast-self') add(sp, t, `You cast ${sp.name}. "When you cast this spell" abilities trigger immediately and go on the stack above the spell, so they resolve first.`);
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast-any' && castAnyOk(t.castAny, sp, c)) { const n0 = state.pendingTriggers.length; add(c, t, `${sp.name} was cast with mana value ${spellMV(sp)}${t.castAny.counters ? ', equal to the number of ' + t.castAny.counters + ' counters on ' + c.name : ''}.`); if (state.pendingTriggers.length > n0) Object.assign(state.pendingTriggers[state.pendingTriggers.length - 1], { special: 'counterCast', spellId: sp.id }); }
-    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
+    for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'cast' && !t.unsupported && filterMatches(t.filter, sp) && (!t.nth || castNth(t.nth, sp))) add(c, t, `You cast ${sp.name}, which matches "${t.filter || 'a spell'}".`);
     for (const c of state.battlefield) if (prowessCount(cardText(c)) === 0 && hasKw(c, 'prowess') && filterMatches(PROWESS_TRIG.filter, sp)) add(c, PROWESS_TRIG, `You cast ${sp.name}, a noncreature spell, and ${c.name} has prowess (given by another effect).`);
   } else if (ev === 'attack') {
     const atk = ctx.cards || [];
@@ -1632,7 +1633,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -6300,8 +6301,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.98.6';
+const APP_VERSION = '0.98.7';
 const CHANGELOG = [
+  { v: '0.98.7', title: 'Cori-Steel Cutter: flurry and "you may attach", per its rulings', notes: ['FIXED: "Whenever you cast your second spell each turn" (and first / third / fourth, with an optional spell type) was not understood, so the ability fired on EVERY spell. Ordinal cast triggers now count the spells you cast this turn (CR 603.2, 601.2i), including spells cast before the permanent entered the battlefield. A cast-ordinal wording the app cannot read is skipped and flagged instead of guessed.', 'NEW: "Create a ... token. You may attach this Equipment to that token." The token is created first, then you choose whether (and, with several tokens, to which one) to attach it, with nothing able to happen in between (CR 701.3, 301.5, 303.4). Until you do, the Equipment is unattached and gives nothing, because "equipped creature gets ..." only affects the creature it is attached to (CR 301.5).', 'Test: Cori-Steel Cutter second-spell gating, token enters 1/1 with no bonus, then 2/2 trample haste once attached.'] },
   { v: '0.98.6', title: 'Prowess fixed and checked against CR 702.108', notes: ['FIXED: prowess was tagged as a special case, so Always yield and automatic resolving skipped it. It is now an ordinary triggered ability ("whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn"), so Always yield is offered and works.', 'FIXED: any card that merely mentioned the word prowess in its rules text could be treated as having it. Prowess is now read from the keyword line only, or from an effect that gives it.', 'Each instance triggers separately (CR 702.108c), prowess given by another permanent works, and it triggers only on your noncreature spells. Tested end to end: trigger, Always yield, stacking pumps and ending at the cleanup step.'] },
   { v: '0.98.5', title: 'Conditional statics, and the app now knows what it is missing', notes: ['New rules-text reader for conditional and scaling static abilities (CR 611.3, 613.4c): "gets +2/+2 as long as there are three or more land cards in your graveyard", "gets +2/+0 for every seven cards in your graveyard", "as long as it\'s your turn, this creature has first strike". It understands graveyard / hand / battlefield counts by card type or subtype, life totals, hand size, counters on it, tapped / attacking, spells cast this turn and "or more / or fewer / no" wording, joined with "and" / "or". Nothing is keyed to card names.', 'Honest gaps: wording the reader cannot evaluate is never guessed. The line is marked as only a reminder in How the app reads cards, a \u26a0 badge appears on the permanent (hover it to see the lines), the log says so when the card enters, and a conditional power/toughness is shown with a ?. Both aids can be switched off in Settings.'] },
   { v: '0.98.4', title: 'Fix: "when this dies / is put into a graveyard" triggers, and loses-all-abilities effects', notes: ['FIXED: abilities like "When ~ dies" and "When ~ is put into a graveyard from the battlefield" (Flagstones of Trokair) were being dropped, because the check that a card is in the right zone ran after the card had already reached the graveyard. Leaves-the-battlefield abilities now look back as the rules say (CR 603.10a). A test now sends cards to the graveyard by every route (destroy, sacrifice, move, leave) and checks the trigger appears.', 'New: effects that change what a permanent is (CR 613): "loses all abilities", "becomes a blue Frog with base power and toughness 1/1" (Turn to Frog), "loses flying", and Auras such as Kenrith\'s Transformation, Darksteel Mutation, Imprisoned in the Moon and Song of the Dryads (a land that becomes a Forest taps for G and loses its other abilities, CR 305.7). Triggers, keywords, type line, colour, power/toughness and mana follow the new characteristics, and temporary effects end on their own.'] },
@@ -10951,6 +10953,32 @@ function ifYouDoOptions(tx, obj) {
   const full = { full: true, label: `${a.label}. If you do: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
     const before = stateSig(); a.fn();
     afterSettled(() => { if (stateSig() === before) { log(`${src}: you didn't do the first part, so "if you do" does nothing (CR 608.2c)`); toast(`${src}`, `The first part was not done, so the "if you do" part does not happen.`); return; } b.fn(); });
+  } };
+  const out = [full]; if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
+}
+
+// ---- "Create a ... token. You may attach this Equipment to that token." (CR 701.3, 301.5, 303.4): the second sentence acts on what the first one made.
+// An unattached Equipment gives nothing (it only affects the creature it is attached to), so the attach is a choice the player makes right after the token appears.
+const ATTACH_AFTER_RE = /^you may attach (?:this|~|it)(?: (?:equipment|aura|permanent|artifact))? to (?:that|the|it|one of them|that token|that creature|the token)(?: token| creature)?$/i;
+function attachAfterCreateOptions(tx, obj) {
+  if (!state || !obj || !obj.sourceId) return null;
+  const clean = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const sents = clean.split(/(?<=[.!?])\s+/).map(x => x.trim().replace(/[.!?]$/, '')).filter(Boolean);
+  const j = sents.findIndex((x, i) => i > 0 && ATTACH_AFTER_RE.test(x.replace(selfNameRe(obj.sourceName || ''), '~'))); if (j < 1) return null;
+  const A = sents.slice(0, j).join('. ') + '.', rest = sents.slice(j + 1).join('. ');
+  const aO = effectOptionsBase(A, obj).filter(o => typeof o.fn === 'function' && !o.hidden); if (aO.length !== 1) return null;
+  const a = aO[0], src = obj.sourceName || 'Ability';
+  const full = { full: true, label: `${a.label}; then you may attach ${src} to it`, fn: () => {
+    const before = new Set(state.battlefield.map(c => c.id)); a.fn();
+    afterSettled(() => {
+      const made = state.battlefield.filter(c => !before.has(c.id)); if (!made.length) { log(`${src}: nothing was created, so there is nothing to attach to`); return; }
+      const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { log(`${src} is no longer on the battlefield, so it cannot be attached`); return; }
+      const attach = t => { if (attachTo(f.card.id, t.id, src)) log(`${src} is attached to ${t.name} (it now gives its bonus to that creature)`); render(); flushTriggers(); };
+      const m = modal(`${src}: attach it?`, { width: 480, sticky: true, noClose: true });
+      m.body.append(h('div', { class: 'psub', text: `${src} stays unattached unless you attach it now, and an unattached Equipment gives nothing. No player may act between the token appearing and this choice.` }));
+      for (const t of made) m.body.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: `${t.name} (${ptText(t)})` }), h('button', { class: 'primary', text: 'Attach to this', onclick: () => { m.close(); attach(t); } })));
+      m.foot.append(h('button', { text: "Don't attach", onclick: () => { m.close(); log(`${src}: you chose not to attach it`); render(); } }));
+    });
   } };
   const out = [full]; if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
 }
