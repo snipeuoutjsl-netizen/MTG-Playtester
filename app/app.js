@@ -193,8 +193,9 @@ function updateDbStatus(msg) {
   const el = $('#dbStatus');
   el.dataset.state = (cardCount || META.size) ? 'ok' : 'warn';
   if (msg) { el.textContent = msg; return; }
-  if (cardCount) el.textContent = `Card data: ${cardCount.toLocaleString()} cards`;
-  else if (META.size) el.textContent = `Card data: ${deckMetaCount().toLocaleString()} cards`;
+  const tk = typeof tokenTotal === 'function' ? tokenTotal() : 0, tkTxt = tk ? ` · ${tk.toLocaleString()} tokens` : '';
+  if (cardCount) el.textContent = `Card data: ${cardCount.toLocaleString()} cards${tkTxt}`;
+  else if (META.size) el.textContent = `Card data: ${deckMetaCount().toLocaleString()} cards${tkTxt}`;
   else el.textContent = 'No card data loaded (names only)';
   el.title = cardCount ? 'Full Scryfall Oracle data is loaded.' : META.size ? 'Rules text and types were saved when the card images were downloaded. Load the full Oracle file in Card data… to cover every card.' : 'Open Tools → Card data… to download card data, or Images… to fetch images for this deck.';
 }
@@ -226,7 +227,7 @@ async function importCardData(file) {
     const out = []; const seen = new Set(); const toks = [];
     for (const o of raw) {
       if (!o || !o.name) continue;
-      if (o.layout === 'token' || o.layout === 'double_faced_token') { try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
+      if (o.layout === 'token' || o.layout === 'double_faced_token' || o.layout === 'emblem') { try { toks.push(compactToken(o)); } catch (e) { /* ignore */ } continue; }
       if (SKIP_LAYOUTS.has(o.layout)) continue;
       const k = norm(o.name);
       if (seen.has(k)) continue;
@@ -234,10 +235,11 @@ async function importCardData(file) {
       out.push(compact(o));
     }
     if (!out.length) { alert('No cards found in that file.'); updateDbStatus(); return; }
-    installCards(out); installTokens(toks);
+    installCards(out); mergeTokens(toks);
     let saved = true;
-    try { await idbSet('cards', out); await idbSet('tokens', toks); } catch (e) { saved = false; }
+    try { await idbSet('cards', out); await idbSet('tokens', (() => { const a = []; TOKENDB.forEach(x => x.forEach(r => a.push(r))); return a; })()); } catch (e) { saved = false; }
     updateDbStatus();
+    syncTokens(true);
     if (!saved) alert('Cards loaded, but your browser would not save them. You will need to load the file again next time.');
     render();
     prepareImages();
@@ -601,6 +603,7 @@ function parseStaticCard(g) {
             const x = part.trim(); let q; if (!x) continue;
             if ((q = x.match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { p += +q[1]; t += +q[2]; }
             else if ((q = x.match(/^(?:has|have) (.+)$/i))) { for (const k of q[1].toLowerCase().split(/\s+and\s+/)) { if (GRANTABLE.includes(k.trim())) kws.push(k.trim()); else other.push(k.trim()); } }
+            else if (/^attacks each (?:combat|turn) if able$/i.test(x)) kws.push('mustattack');   // CR 508.1d, enforced when attackers are declared
             else other.push(x);
           }
           list.push({ line: l0, kind: 'cond', g, cond: 'delirium', n, p, t, kws, other }); continue;
@@ -1665,6 +1668,7 @@ function runChain(steps, src, baseModals) {
   next();
 }
 function effectOptions(tx, obj) {
+  if (hasRawQuote(tx)) { const res = effectOptions(maskQuotes(tx), obj); return res.map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o); }   // quoted text is another object's ability
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
@@ -4060,6 +4064,7 @@ function nextPhase() {
   if (state && state.resolvingAb) { state.resolvingAb = null; state.resLines = []; }
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
+  if (STEPS[state.step].id === 'attack' && !state.combat.declared && declareMandatoryAttackers()) return;
   if (STEPS[state.step].id === 'attack' && !state.combat.declared && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
   if (state.step >= CLEANUP) { nextTurn(); return; }
   jumpToStep(state.step + 1);
@@ -4488,13 +4493,23 @@ const TOKEN_PRE = {
 };
 const TOKEN_NUMW = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const TOKEN_COL = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+// Quoted rules text ("When this token leaves the battlefield, it deals 2 damage to any target.") is an ability of the thing being created or granted, NOT of the card that says it.
+// The card's own readers must not see inside the quotes; the token reader gets them back. (CR 111.4 / 113.3: an ability belongs to the object that has it.)
+const QUOTE_STORE = [];
+const normQuotes = s => String(s || '').replace(/[\u201c\u201d]/g, '"');
+// Only a quote that follows "...token... with/and" is the created token's ability. Emblems and "gains/has "..."" grants keep their quotes for their own readers.
+const quoteIsTokens = (s, off) => { const seg = s.slice(Math.max(s.lastIndexOf('. ', off) + 1, 0), off); return /\btokens?\b/i.test(seg) && !/\bemblem\b/i.test(seg) && !/\b(?:gains?|has|have|loses?)\b/i.test(seg.slice(seg.search(/\btokens?\b/i))); };
+function maskQuotes(tx) { const s = normQuotes(tx); return s.replace(/"([^"]*)"/g, (m, inner, off) => { if (/^\u0001Q\d+\u0001$/.test(inner) || !quoteIsTokens(s, off)) return m; QUOTE_STORE.push(inner); return '"\u0001Q' + (QUOTE_STORE.length - 1) + '\u0001"'; }); }
+const hasRawQuote = s => { const n = normQuotes(s); let hit = false; n.replace(/"([^"]*)"/g, (m, inner, off) => { if (!/^\u0001Q\d+\u0001$/.test(inner) && quoteIsTokens(n, off)) hit = true; return m; }); return hit; };
+function unmaskQuotes(s) { return String(s == null ? '' : s).replace(/\u0001Q(\d+)\u0001/g, (m, i) => QUOTE_STORE[+i] != null ? QUOTE_STORE[+i] : ''); }
 function tokenDefsFromText(text, srcName) {
-  const t = String(text || '').replace(/\([^)]*\)/g, ' ').replace(/\n/g, ' ').replace(/\u2019/g, "'");
+  const t = unmaskQuotes(normQuotes(text)).replace(/\([^)]*\)/g, ' ').replace(/\n/g, ' ').replace(/\u2019/g, "'");
   const out = [], re = /\bcreates?\s+([^"]*?)\btokens?\b((?:"[^"]*"|[^."])*)/gi; let m;
   const mk = d => { d.from = srcName || ''; d.key = [d.name, d.pt || '', (d.col || []).join(''), d.tx || ''].join('|'); out.push(d); };
   while ((m = re.exec(t))) {
     let head = m[1].trim(), tail = m[2] || '';
-    if (/\b(?:cop(?:y|ies)|that's a|named)\b/i.test(head + ' ' + tail.slice(0, 30)) || !head) continue;
+    let tokNamed = ''; { const nm0 = tail.match(/^\s+named ([A-Z][^"]*?)(?=\s+with\b|\s*,|\s*$)/); if (nm0) { tokNamed = nm0[1].trim(); tail = tail.slice(nm0[0].length); } }   // "a colorless artifact token named Munitions with ..."
+    if (/\b(?:cop(?:y|ies)|that's a)\b/i.test(head + ' ' + tail.slice(0, 30)) || (!tokNamed && /\bnamed\b/i.test(tail.slice(0, 30))) || !head) continue;
     if (/^(?:one or more|that many|twice that many|those|an additional|a number of)\b/i.test(head) || /\bof those\b/i.test(head + ' ' + tail.slice(0, 30))) continue;   // v0.95.1 replacement-effect wording (Doubling Season), not a token to make
     let named = '', lg = /\blegendary\b/i.test(head), nmM = head.match(/^([A-Z][^,]*),\s+(?:an?\s+)?(.*)$/);
     if (nmM) { named = nmM[1].trim(); head = nmM[2]; }
@@ -4507,7 +4522,7 @@ function tokenDefsFromText(text, srcName) {
     for (const w of words) { const lw = w.toLowerCase().replace(/,$/, '');
       if (TOKEN_COL[lw]) col.push(TOKEN_COL[lw]); else if (lw === 'colorless' || lw === 'and' || lw === 'legendary') continue;
       else if (/^(creature|artifact|enchantment|land)$/.test(lw)) types.push(lw[0].toUpperCase() + lw.slice(1)); else nameW.push(w); }
-    const name = named || nameW.join(' ').trim(); if (!name) continue;
+    const name = tokNamed || named || nameW.join(' ').trim(); if (!name) continue;
     const pre = TOKEN_PRE[name.toLowerCase()] || {};
     if (!pt && pre.pt) pt = pre.pt;
     const off = officialToken(name, pt, col, '');
@@ -4515,12 +4530,12 @@ function tokenDefsFromText(text, srcName) {
     if (pt && !ty.includes('Creature')) ty.unshift('Creature');
     const lines = [], tm = tail.match(/^\s*,?\s*(?:tapped(?: and attacking)?,?\s*)?with\s+(.*)$/i);
     if (tm) { const rest = tm[1], q0 = rest.indexOf('"'); let kwPart = q0 >= 0 ? rest.slice(0, q0) : rest;
-      if (q0 >= 0) { const qm = rest.slice(q0).match(/^(?:"[^"]*")(?:\s*(?:,|and)?\s*"[^"]*")*/); if (qm) for (const q of qm[0].matchAll(/"([^"]*)"/g)) lines.push(q[1]); }
+      if (q0 >= 0) { const qm = rest.slice(q0).match(/^(?:"[^"]*")(?:\s*(?:,|and)?\s*"[^"]*")*/); if (qm) for (const q of qm[0].matchAll(/"([^"]*)"/g)) lines.push(q[1].replace(/~/g, 'this token')); }   // inside quotes "~" was this token itself
       const kw = kwPart.split(/,|\band\b/).map(x => x.trim()).filter(x => x && !/counter|\bon it\b/i.test(x));
       for (const k of kw.reverse()) lines.unshift(k[0].toUpperCase() + k.slice(1)); }
     let tx = lines.join('\n'); if (!tx && pre.tx) tx = pre.tx;
-    const subW = named ? nameW : name.split(/\s+/);
-    const d = { name, pt, col, types: ty, subs: subW.map(x => x.toLowerCase()), tx, count, tapped, legendary: lg, type: `Token ${lg ? 'Legendary ' : ''}${ty.join(' ')} — ${subW.join(' ') || name}` };
+    const subW = tokNamed ? [] : named ? nameW : name.split(/\s+/);
+    const d = { name, pt, col, types: ty, subs: subW.map(x => x.toLowerCase()), tx, count, tapped, legendary: lg, type: `Token ${lg ? 'Legendary ' : ''}${ty.join(' ')}${subW.join(' ') || !tokNamed ? ' — ' + (subW.join(' ') || name) : ''}` };
     if (off) {   // v0.95.0 the official token card is the truth for its type line and rules text; what the card text said is the fallback
       d.type = off.t.replace(/^(?!Token)/, 'Token ');
       d.official = true; if (off.tx && off.tx.replace(/\([^)]*\)/g, '').trim()) d.tx = off.tx.replace(/\([^)]*\)/g, '').replace(/\n{2,}/g, '\n').trim();
@@ -5656,22 +5671,25 @@ function openCombatHelper(){
     const rows=h('div',{class:'prelist'});
     const creatures=state.battlefield.filter(c=>permZone(c)==='creatures');
     if(!creatures.length) rows.append(h('div',{class:'muted',text:'You control no creatures.'}));
+    const mand=new Map(mandatoryAttackers().map(c=>[c.id,mustAttackWhy(c)])); for(const id of mand.keys()) picks.add(id);   // CR 508.1d: required attackers are already chosen
     const btns=new Map(), sync=(c)=>{const b=btns.get(c.id); if(!b) return; b.className=picks.has(c.id)?'tgl on':'tgl'; b.textContent=picks.has(c.id)?'Attacking':'Attack';};
     creatures.forEach(c=>{
       const why=attackBlock(c), vig=hasKw(c,'vigilance');
-      const btn=h('button',{class:'tgl',text:'Attack',disabled:!!why,title:why}); btns.set(c.id,btn);
+      const btn=h('button',{class:'tgl',text:'Attack',disabled:!!why||mand.has(c.id),title:why||mand.get(c.id)||''}); btns.set(c.id,btn);
       btn.addEventListener('click',()=>{picks.has(c.id)?picks.delete(c.id):picks.add(c.id);sync(c);});
       const pw=powerOf(c);
-      rows.append(h('div',{class:'row'+(why?' cantatk':'')},h('span',{class:'nm'},c.name+(vig?' (vigilance: does not tap)':'')),h('span',{class:'muted small',text:why?why:`power ${pw.n}${pw.star?' (*)':''}`}),btn));
+      rows.append(h('div',{class:'row'+(why?' cantatk':'')},h('span',{class:'nm'},c.name+(vig?' (vigilance: does not tap)':'')),h('span',{class:'muted small',text:why?why:mand.has(c.id)?`must attack — ${mand.get(c.id)}`:`power ${pw.n}${pw.star?' (*)':''}`}),btn));
     });
+    creatures.forEach(c=>sync(c));
     // v0.94.3 Attack with all: picks every creature that can legally attack (not tapped, not summoning sick unless it has haste, no defender, no "can't attack" effect)
     const viable=creatures.filter(c=>!attackBlock(c)), skipped=creatures.filter(c=>attackBlock(c));
     const allBtn=h('button',{text:`Attack with all (${viable.length})`,disabled:!viable.length,title:viable.length?'Selects every creature that can attack right now':'No creature can attack right now',onclick:()=>{viable.forEach(c=>picks.add(c.id));creatures.forEach(sync);allNote.textContent=skipped.length?`Left out: ${skipped.map(c=>`${c.name} (${c.tapped?'tapped':isSick(c)?'summoning sick':hasKw(c,'defender')?'defender':"can't attack"})`).join(', ')}.`:'Every creature you control is attacking.';}});
-    const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();creatures.forEach(sync);allNote.textContent='';}});
+    const noneBtn=h('button',{text:'Clear',disabled:!viable.length,onclick:()=>{picks.clear();for(const id of mand.keys())picks.add(id);creatures.forEach(sync);allNote.textContent='';}});
     const allNote=h('div',{class:'muted small'});
     m.body.append(h('div',{class:'psub'},'Choose the creatures that will attack. Creatures that are tapped, summoning sick (no haste) or have defender cannot attack. Attacking taps a creature unless it has vigilance.'),rows);
     rows.prepend(h('div',{class:'row',style:'gap:8px;justify-content:flex-start'},allBtn,noneBtn),allNote);
     m.foot.append(h('button',{text:'Cancel',onclick:()=>m.close()}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{
+      for(const id of mand.keys())picks.add(id);
       snap();state.combat.attackers=[...picks];state.combat.declared=true;
       const atk=[...picks].map(id=>findCard(id)?.card).filter(Boolean);
       for(const c of atk){ if(!hasKw(c,'vigilance')) c.tapped=true; }
@@ -5713,7 +5731,7 @@ function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});
   m.body.append(h('div',{class:'psub',text:`You have ${n} creature${n===1?'':'s'} that can attack, and you have not declared attackers this turn.`}));
-  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
+  m.foot.append(h('button',{text:'Skip attacking',onclick:()=>{m.close();if(declareMandatoryAttackers())return;state.combat.declared=true;jumpToStep(state.step+1);}}),h('button',{class:'primary',text:'Declare attackers',onclick:()=>{m.close();openCombatHelper();}}));
 }
 function renderOverlay() {
   const ov = $('#overlay');
@@ -6310,7 +6328,7 @@ function openWelcome(onDone) {
   const pages = [
     ['Welcome to MTG Playtester', [P('A solo "goldfish" table for Magic: The Gathering. Load your deck, draw a hand, and practise sequencing your turns with no opponent needed. It runs fully offline once your card data is loaded.'),
       P('This short tour covers getting set up, how a turn works, and how to make the table look the way you like. You can skip it now and reopen it any time from the ', B('⚙ menu → Welcome tour'), '.')]],
-    ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It then works offline.'),
+    ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
       P('The deck button at the top left lists your saved decks and switches between them.')]],
@@ -6367,8 +6385,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.8';
+const APP_VERSION = '0.99.9';
 const CHANGELOG = [
+  { v: '0.99.9', title: 'Attack requirements, quoted token abilities, and every token offline', notes: ['NEW: "Attacks each combat if able" (Dragon\'s Rage Channeler when delirious, Goblin Rabblemaster\'s Goblins, and the same wording on any card or Aura) is now enforced (CR 508.1d). The attack helper pre-selects the creatures that must attack, shows why, and will not let you untick them; skipping attacking still sends them in.', 'FIXED: a quoted ability on a token a card creates ("create a token with \'Whenever this creature attacks, ...\'") was read as the card\'s own ability, so Weapons Manufacturing skipped its token (CR 111.4, 113.3). Quoted text now belongs to the thing it is given to; the card is read without it. Emblems and granted abilities keep their quotes.', 'NEW: every official token and emblem is downloaded from Scryfall on first start and with each card-data load, then saved offline like the cards (refreshed monthly). The status chip shows the token count, so the engine knows every token a deck might create.']},
   { v: '0.99.8', title: 'Vehicles, repeatable modes, and stricter always-yield', notes: ['NEW: Crew (CR 702.122). Right-click a Vehicle, choose Activate, and pick untapped creatures with total power at least the crew number (summoning-sick ones may crew); they tap and the Vehicle becomes an artifact creature with its printed power and toughness until end of turn.','NEW: "Choose three. You may choose the same mode more than once" (Mystic Confluence): each mode has a + / − counter; repeated draws add up and a repeated targeted mode gets its own target (CR 700.2d).','NEW: "Reveal the top card of your library. If it\'s a land card, put it onto the battlefield. Otherwise, put it into your hand." (Coiling Oracle) and the Ad Nauseam loop (reveal, put into hand, lose life equal to its mana value, repeat as often as you like) are applied by the app.','FIXED: "Always yield" now only applies to plain abilities. A "you may" ability or one with an "if"/"unless" condition always asks you on resolution (CR 603.5, 603.4), and an ability with a line the app cannot apply is never auto-resolved.','FIXED: Aura "Enchant …" lines show as understood (the app already makes you choose a legal host and puts the Aura into the graveyard if there is none).'] },
   { v: '0.99.7', title: 'Rules dive 2: global statics, devotion, top-of-library play', notes: ['NEW: Winter Orb / Static Orb ("players can\'t untap more than one land / two permanents") ask which ones untap; Sulfuric Vortex stops life gain; Containment Priest exiles a creature that enters without being cast; Rhonas and similar "can\'t attack or block unless you control another creature with power 4 or greater" are enforced; Humility-style "All creatures lose all abilities and have base power and toughness 1/1" applies to every creature.','NEW: "where X is your devotion to blue" (Thassa\'s Oracle, including its win check), "Add {B} for each Swamp you control" (Cabal Coffers), Nykthos\'s devotion mana, and "you win the game" are all read from the text (CR 700.5).','NEW: Courser of Kruphix and Oracle of Mul Daya: the top card is shown revealed under your library, and the library menu has "Play the top land", which uses your land drop.','FIXED: Torpor Orb\'s real wording ("Creatures entering the battlefield…") is recognised; Oracle-shortened names like "Rhonas" count as the card itself; lord and loyalty lines such as "−X:" (Ugin) now show as understood; Time Warp is read as an extra turn.'] },
   { v: '0.99.6', title: 'Lords, player-choice clauses, and a consistency pass on the look', notes: ['NEW: "Other Merfolk get +1/+1 and have islandwalk", "Other Goblin creatures you control get +1/+1 and have haste" and "Creature tokens you control get +1/+1 and have vigilance" now work: a line that gives both a bonus and an ability is read as two static effects (CR 611.3). Landwalk keywords can be granted.','NEW: "Each player discards a card", "Each player sacrifices a creature" and "Target player sacrifices a creature" (Liliana of the Veil) let you choose yours; the opponent\'s half is stated in the log. "Untap up to three lands" (Frantic Search) lets you pick which lands. "Look at the top card of your library. You may put it into your graveyard" works.','NEW: "Exile each permanent with mana value X or less that\'s one or more colors" (Ugin, the Spirit Dragon) leaves colourless permanents alone.','LOOK: one shared corner radius for buttons, fields and toolbar controls; stray half-pixel font sizes and odd radii were moved onto the shared scale; the four pixel-art playmats are dimmed so they sit back like the other mats and the zone labels stay readable.'] },
@@ -9172,6 +9191,7 @@ function compileCardOne(c) {
     if (/\bspells?\b.*\bcost\b.*\b(?:more|less) to cast\b/i.test(stripped) && !/^this\b/i.test(stripped)) {
       push(text, 'static', 'ok', /opponents/i.test(stripped) ? 'Cost effect on opponents’ spells: not used in a goldfish game.' : 'Cost modifier: applied automatically to every spell you cast while this is on the battlefield (shown on the card in hand). Add effects the app cannot see with Tools → Cost effects.'); continue;
     }
+    if (MUST_ATK_SELF.test(stripped.replace(nameRe, '~')) || /^(?:Enchanted|Equipped) creature (?:[^.]*? and )?attacks each combat if able\.?$/i.test(stripped) || /^Other [A-Za-z]+ creatures you control attack each combat if able\.?$/i.test(stripped)) { push(text, 'static', 'ok', 'Attack requirement (rule 508.1d): the declare-attackers window pre-selects it and will not let you leave it out whenever it is able to attack; skipping combat declares it for you.'); continue; }
     if (/^Enchant\b/i.test(stripped) && /\bAura\b/.test(front) && !/graveyard|opponent|don'?t control|\bplayer\b/i.test(stripped)) { push(text, 'static', 'ok', 'Enchant (rule 303.4 / 702.5): when the Aura enters you choose a legal permanent to attach it to; with no legal host it goes to the graveyard (704.5m), and it falls off if the host stops being legal or leaves.'); continue; }
     if (/^Crew \d+\b/i.test(stripped)) { push(text, 'activated', 'ok', 'Crew (rule 702.122): right-click the Vehicle, choose Activate and pick untapped creatures with total power at least the crew number (summoning-sick creatures may crew); they tap, and the Vehicle becomes an artifact creature until end of turn.'); continue; }
     if (/^Equip\b/i.test(stripped)) { push(text, 'activated', 'ok', 'Equip (rule 702.6): a sorcery-speed ability. Right-click the Equipment, choose Activate, pay the cost and pick a creature you control; it stays attached until it moves or either leaves.'); continue; }
@@ -9225,7 +9245,7 @@ function compileCardOne(c) {
       const subjText = norml.replace(/ (?:has|have|get|gets|is|are) .*$/i, '');
       if (rec.kind === 'cs') { const okc = (!rec.cond || csUnderstood(rec.cond, null)) && (!rec.per || csUnderstood(null, rec.per.thing)) && !rec.other.length;
         push(text, 'static', okc ? 'ok' : 'part', okc ? `Conditional static (CR 611.3): the app checks ${rec.cond ? '"' + rec.cond + '"' : 'the count of "' + rec.per.thing + '"'}${rec.per ? ' (per ' + rec.per.every + ')' : ''} as the game changes and applies ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', rec.kws.join(', '), rec.cant ? 'a restriction' : ''].filter(Boolean).join(' and ')} automatically.` : `Static ability the app could not fully read (${!rec.cond || csUnderstood(rec.cond, null) ? '' : 'its condition "' + rec.cond + '" is not understood'}${rec.other.length ? ' its effect "' + rec.other.join('; ') + '"' : ''}). Apply it by hand.`); continue; }
-      if (rec.kind === 'cond') { push(text, 'static', rec.other.length ? 'part' : 'ok', `${rec.cond === 'ctrl' ? 'Conditional bonus: while you control a ' + rec.need + ' the app applies' : 'Delirium: while there are ' + rec.n + '+ card types in your graveyard the app applies'}`.replace(/applies$/, 'applies') + `  ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', ...rec.kws].filter(Boolean).join(', ')} live${rec.other.length ? '; “' + rec.other.join('; ') + '” is not enforced' : ''}. A badge on the card shows the count.`); continue; }
+      if (rec.kind === 'cond') { push(text, 'static', rec.other.length ? 'part' : 'ok', `${rec.cond === 'ctrl' ? 'Conditional bonus: while you control a ' + rec.need + ' the app applies' : 'Delirium: while there are ' + rec.n + '+ card types in your graveyard the app applies'}`.replace(/applies$/, 'applies') + `  ${[(rec.p || rec.t) ? (rec.p >= 0 ? '+' : '') + rec.p + '/' + (rec.t >= 0 ? '+' : '') + rec.t : '', ...rec.kws.map(k => k === "mustattack" ? "attacks each combat if able" : k)].filter(Boolean).join(', ')} live${rec.other.length ? '; “' + rec.other.join('; ') + '” is not enforced' : ''}. A badge on the card shows the count.`); continue; }
       const note = rec.kind === 'color' ? `Static ability: changes the colours of ${subjText.toLowerCase()} (applied to every permanent it describes).`
         : rec.kind === 'kw' ? `Static ability: grants ${rec.items.map(i => i.kws.join('/') + (i.cond ? ' if it’s ' + i.cond : '')).join('; ')} to ${subjText.toLowerCase()}.`
         : `Static ability: ${rec.p >= 0 ? '+' : ''}${rec.p}/${rec.t >= 0 ? '+' : ''}${rec.t} to ${subjText.toLowerCase()}.`;
@@ -9312,6 +9332,7 @@ function verbGaps(sentence, labels) {
   return VERB_CHECKS.filter(([v, l]) => v.test(s) && !l.test(labels)).map(([v]) => v.source);
 }
 function uncoveredClauses(effectText) {
+  if (hasRawQuote(effectText)) effectText = maskQuotes(effectText);   // quoted ability text belongs to the token/granted object, not to this card's own clauses
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
   try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; } catch (e) { /* ignore */ }
@@ -9328,6 +9349,7 @@ function uncoveredClauses(effectText) {
   return missed;
 }
 function recognizedEffects(tx) {
+  if (hasRawQuote(tx)) return recognizedEffects(maskQuotes(tx)).map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o);
   const r = effectOptions(tx, { sourceName: '~', sourceId: -1 }).map(o => o.label ? o.label.toLowerCase() : o.summary);
   if (r.length) return r;
   // effects on a chosen target are applied once the target is picked (targetedOptions), so they count as handled
@@ -9585,7 +9607,7 @@ document.addEventListener('keydown', e => {
   loadSleeve();
   render();
   updateDbStatus();
-  idbGet('tokens').then(t => { if (Array.isArray(t)) installTokens(t); }).catch(() => {});
+  idbGet('tokens').then(t => { if (Array.isArray(t)) { installTokens(t); updateDbStatus(); } }).catch(() => {}).then(() => setTimeout(() => syncTokens(false), 2500));
   idbGet('cards').then(list => {
     if (Array.isArray(list) && list.length) { installCards(list); render(); }
     else updateDbStatus();
@@ -11484,6 +11506,7 @@ function csEffect(eff) {
     const x = part.trim(); let q; if (!x) continue;
     if ((q = x.match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { out.p += +q[1]; out.t += +q[2]; }
     else if ((q = x.match(/^(?:has|have) (.+)$/i))) { for (const k of q[1].toLowerCase().split(/\s*(?:,|\band\b)\s*/)) { const w = k.trim(); if (GRANTABLE.includes(w)) out.kws.push(w); else if (w) out.other.push(w); } }
+    else if (/^attacks each (?:combat|turn) if able$/i.test(x)) out.kws.push('mustattack');   // CR 508.1d requirement, e.g. Dragon's Rage Channeler's delirium
     else if ((q = x.match(/^can't (attack(?: or block)?|block)$/i))) out.cant = { attack: /attack/i.test(q[1]), block: /block/i.test(q[1]) };
     else out.other.push(x);
   }
@@ -12048,7 +12071,7 @@ function globalOvrFor(c) {   // layer 4-7 effects from any permanent's "All crea
 }
 
 // CR 401.5 + 305.2: "Play with the top card of your library revealed." and "You may play lands from the top of your library." (Courser of Kruphix, Oracle of Mul Daya)
-GLOBAL_STATIC_RES.push(/^Play with the top card of your library revealed\.?$/i, /^You may play lands from the top of your library\.?$/i);
+GLOBAL_STATIC_RES.push(/^(?:All|Each) creatures? (?:attacks?|must attack) each combat if able\.?$/i, /^Other [A-Za-z]+ creatures you control attack each combat if able\.?$/i, /^Play with the top card of your library revealed\.?$/i, /^You may play lands from the top of your library\.?$/i);
 const topRevealSource = () => state ? globalHas(/^Play with the top card of your library revealed\.?$/i) : null;
 const topLandSource = () => state ? globalHas(/^You may play lands from the top of your library\.?$/i) : null;
 function topLandPlayable() {
@@ -12091,6 +12114,73 @@ function vehicleOptions(tx, obj) {
   return [{ full: true, label: `${nm} becomes an artifact creature until end of turn`, fn: () => { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null, c = f && f.zone === 'battlefield' ? f.card : state.battlefield.find(x => x.name === nm); if (!c) { log(`${nm} is no longer on the battlefield`); render(); return; }
     const i = cardInfo(c.name); snap(); c.becomes = { pt: (i && i.pt) || '0/0', types: ['artifact', 'creature'], subs: ['vehicle'], kws: [] };
     addFx({ kind: 'delayed', when: 'end', action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name}: it stops being a creature.`, srcName: nm }); log(`${nm} becomes an artifact creature until end of turn (${c.becomes.pt})`); render(); } }];
+}
+
+// ---- Attack requirements (CR 508.1d): "~ attacks each combat if able."  Dragon's Rage Channeler (delirium), Auras like "Enchanted creature attacks each combat if able", "All creatures attack each combat if able" (Grand Melee).
+// A requirement is not a trigger: the declare-attackers step simply has to include every creature that is able to attack and is required to.
+const MUST_ATK_SELF = /^(?:~|this creature) (?:attacks each (?:combat|turn) if able|must attack each (?:combat|turn) if able)\.?$/i;
+function mustAttackWhy(c) {   // '' unless this creature is required to attack each combat (it still must be ABLE to; see mandatoryAttackers)
+  if (!state || !c || c.token && !c.tk) return '';
+  if (hasKw(c, 'mustattack')) return `${c.name}'s ability: it attacks each combat if able`;
+  const own = String(cardText(c) || '').replace(/\([^)]*\)/g, '').replace(/’/g, "'").split('\n');
+  for (const ln of own) if (MUST_ATK_SELF.test(ln.trim().replace(selfNameRe(c.name), '~'))) return `${c.name}: it attacks each combat if able`;
+  for (const a of state.battlefield) { if (a.att !== c.id) continue;
+    for (const ln of String(cardText(a) || '').replace(/’/g, "'").split('\n')) if (/^(?:Enchanted|Equipped) creature (?:[^.]*? and )?attacks each combat if able\.?$/i.test(ln.trim())) return `${a.name}: enchanted/equipped creature attacks each combat if able`; }
+  const g = globalHas(/^(?:All|Each) creatures? (?:attacks?|must attack) each combat if able\.?$/i); if (g) return `${g.g.name}: all creatures attack each combat if able`;
+  for (const o of state.battlefield) { if (o.id === c.id || o.token) continue;   // "Other Goblin creatures you control attack each combat if able." (Goblin Rabblemaster)
+    for (const ln of String(cardText(o) || '').replace(/\([^)]*\)/g, '').replace(/\u2019/g, "'").split('\n')) { const m = ln.trim().match(/^Other ([A-Za-z]+) creatures you control attack each combat if able\.?$/i);
+      if (m && (() => { const ti = permTypeInfo(c), w = m[1].toLowerCase(); return ti.changeling || (ti.subs && ti.subs.has(w)); })()) return `${o.name}: other ${m[1]} creatures you control attack each combat if able`; } }
+  return '';
+}
+const mandatoryAttackers = () => state ? state.battlefield.filter(c => permZone(c) === 'creatures' && !attackBlock(c) && mustAttackWhy(c)) : [];
+function declareMandatoryAttackers() {   // the player leaves the declare-attackers step without declaring: the required attackers attack anyway
+  const req = mandatoryAttackers(); if (!req.length || state.combat.declared) return false;
+  snap(); state.combat.attackers = req.map(c => c.id); state.combat.declared = true;
+  for (const c of req) if (!hasKw(c, 'vigilance')) c.tapped = true;
+  log(`Declared attackers (required): ${req.map(c => c.name).join(', ')} — ${[...new Set(req.map(c => mustAttackWhy(c)))].join('; ')}`);
+  toast('Required attackers', `${req.map(c => c.name).join(', ')} must attack: the rules require it whenever it is able to (CR 508.1d). It was declared for you.`);
+  fireTrigger('attack', { cards: req }); render(); flushTriggers(); return true;
+}
+// v0.99.9 Token sync (CR 111): the Oracle file does not carry every token, so the first start (and every card-data load) also pulls ALL official
+// token and emblem objects from Scryfall's search API and keeps them offline beside the cards. The engine then knows every token a deck might make.
+const TOKEN_SYNC_QUERY = '(layout:token OR layout:double_faced_token OR layout:emblem)';
+const TOKEN_SYNC_DAYS = 30;
+let tokenCount = 0, tokenSyncing = false;
+function tokenTotal() { let n = 0; TOKENDB.forEach(a => { n += a.length; }); return n; }
+function mergeTokens(extra) {
+  const all = []; TOKENDB.forEach(a => a.forEach(r => all.push(r)));
+  installTokens(all.concat(extra || [])); tokenCount = tokenTotal(); return all.length;
+}
+async function downloadAllTokens(onProgress) {
+  const out = []; let url = 'https://api.scryfall.com/cards/search?unique=cards&order=name&q=' + encodeURIComponent(TOKEN_SYNC_QUERY), page = 0;
+  while (url && page < 80) {
+    const res = await netFetch(url, 3);
+    if (!res.ok) { if (res.status === 404 && !out.length) break; throw Object.assign(new Error('HTTP ' + res.status), { status: res.status }); }
+    const j = await res.json(); page++;
+    for (const o of j.data || []) { try { out.push(compactToken(o)); } catch (e) { /* skip */ } }
+    if (onProgress) onProgress(`Downloading tokens… ${out.length}${j.total_cards ? ' of ' + j.total_cards : ''}`);
+    url = j.has_more ? j.next_page : null;
+    if (url) await sleep(110);   // Scryfall asks for 50–100 ms between requests
+  }
+  return out;
+}
+// force: ignore the 30-day freshness check. Safe offline: it just keeps what is saved.
+async function syncTokens(force, onProgress) {
+  if (tokenSyncing) return false;
+  const at = lsGet('mtgpt.tokensAt', 0);
+  if (!force && tokenTotal() > 300 && Date.now() - at < TOKEN_SYNC_DAYS * 864e5) return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  tokenSyncing = true;
+  try {
+    updateDbStatus(onProgress ? undefined : 'Downloading tokens…');
+    const list = await downloadAllTokens(m => { updateDbStatus(m); if (onProgress) onProgress(m); });
+    if (!list.length) return false;
+    mergeTokens(list);
+    const all = []; TOKENDB.forEach(a => a.forEach(r => all.push(r)));
+    try { await idbSet('tokens', all); lsSet('mtgpt.tokensAt', Date.now()); } catch (e) { /* kept for this session */ }
+    return true;
+  } catch (e) { console.warn('Token download failed', e); return false; }
+  finally { tokenSyncing = false; updateDbStatus(); }
 }
 init();
 

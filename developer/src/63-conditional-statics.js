@@ -72,6 +72,7 @@ function csEffect(eff) {
     const x = part.trim(); let q; if (!x) continue;
     if ((q = x.match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { out.p += +q[1]; out.t += +q[2]; }
     else if ((q = x.match(/^(?:has|have) (.+)$/i))) { for (const k of q[1].toLowerCase().split(/\s*(?:,|\band\b)\s*/)) { const w = k.trim(); if (GRANTABLE.includes(w)) out.kws.push(w); else if (w) out.other.push(w); } }
+    else if (/^attacks each (?:combat|turn) if able$/i.test(x)) out.kws.push('mustattack');   // CR 508.1d requirement, e.g. Dragon's Rage Channeler's delirium
     else if ((q = x.match(/^can't (attack(?: or block)?|block)$/i))) out.cant = { attack: /attack/i.test(q[1]), block: /block/i.test(q[1]) };
     else out.other.push(x);
   }

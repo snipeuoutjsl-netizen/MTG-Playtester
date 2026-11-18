@@ -572,6 +572,7 @@ function runChain(steps, src, baseModals) {
   next();
 }
 function effectOptions(tx, obj) {
+  if (hasRawQuote(tx)) { const res = effectOptions(maskQuotes(tx), obj); return res.map(o => o && typeof o.label === 'string' && o.label.includes('\u0001') ? Object.assign({}, o, { label: unmaskQuotes(o.label) }) : o); }   // quoted text is another object's ability
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
