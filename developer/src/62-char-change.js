@@ -14,7 +14,7 @@ function parseCharChange(rest) {
   let r = String(rest || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim().replace(/\.$/, '').replace(/\s+until end of turn$/i, '');
   const grant = [...r.matchAll(/"([^"]+)"/g)].map(m => m[1]); r = r.replace(/"[^"]*"/g, '""');
   const out = { lose: false, grant, loseKws: [] };
-  if (/\bloses all (?:other card types and )?abilities\b|\bwith no abilities\b|\bhas no abilities\b|\bloses all other card types and abilities\b/i.test(r)) out.lose = true;
+  if (/\bloses? all (?:other card types and )?abilities\b|\bwith no abilities\b|\bhas no abilities\b|\bloses all other card types and abilities\b/i.test(r)) out.lose = true;
   const resetTypes = /\bloses all other card types\b/i.test(r), resetSubs = resetTypes || /\bloses all (?:other )?creature types\b|\band creature types\b/i.test(r);
   const im = /\b(is|are|becomes?) an? (?:(\d+)\/(\d+) )?((?:[A-Za-z'-]+ )*?[A-Za-z'-]+?)(?= with | and |,|$)/i.exec(r);
   if (im) {
@@ -50,6 +50,7 @@ function ovrOf(c) {
   if (!state || !c) return null; let out = null;
   const merge = o => { if (!o) return; out = out || { lose: false, grant: [], loseKws: [] }; if (o.lose) out.lose = true; for (const k of ['subs', 'types', 'addTypes', 'colors', 'pt']) if (o[k] !== undefined) out[k] = o[k]; out.grant = out.grant.concat(o.grant || []); out.loseKws = out.loseKws.concat(o.loseKws || []); };
   merge(c.ovr);
+  for (const o of globalOvrFor(c)) merge(o);   // CR 613: a permanent's own static effect applies to every object it describes (Humility)
   for (const a of state.battlefield) if (a.att === c.id) merge(auraOvrOf(a));
   return out;
 }

@@ -241,6 +241,7 @@ function addCounter(id,d,type='plus',manual) {
 
 function changeLife(d, real) {   // real = life gained or lost by a card effect (manual +/- buttons do not trigger anything)
   if (!state) return;
+  if (real && d > 0 && lifeGainBlocked()) { log(`Life gain prevented: ${lifeGainBlocked().g.name} says a player who would gain life gains no life instead`); toast('No life gained', `${lifeGainBlocked().g.name}: if a player would gain life, that player gains no life instead.`); render(); return; }
   snap();
   state.life += d;
   log(`Life ${d > 0 ? '+' : ''}${d} → ${state.life}`);

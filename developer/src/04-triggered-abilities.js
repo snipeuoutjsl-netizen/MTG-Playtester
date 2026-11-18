@@ -8,7 +8,7 @@ const MAIN_STEPS = [[/\b(?:precombat|first) main phase\b/, 'main1'], [/\b(?:post
 // A token's name ("Rat", "Pest") is a creature type its own rules text uses for OTHER creatures ("each other Rat you control"), never a reference to itself, so tokens match only "this creature" and friends.
 const selfNm = c => c && c.token ? '\u0000' : (c ? c.name : '');
 function selfNameRe(full) {
-  const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : '';
+  const f = String(full || '').split(' // ')[0], esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), short = f.includes(',') ? f.split(',')[0].trim() : (/^[A-Z][\w'’-]+ (?:the|of the) /.test(f) ? f.split(' ')[0] : '');   // Oracle shortens legendary names: "Rhonas" for Rhonas the Indomitable
   const nm = short && short.length > 2 ? '(?:' + esc(f) + '|' + esc(short) + ')' : esc(f);
   return new RegExp('(?:' + nm + '|\\bthis (?:creature|artifact|enchantment|land|permanent|planeswalker|vehicle|equipment|aura|saga|battle|token)\\b)', 'gi');   // v0.86: current Oracle wording says "this creature", not the card's name
 }
@@ -555,6 +555,7 @@ function runChain(steps, src, baseModals) {
 }
 function effectOptions(tx, obj) {
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
+  tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
@@ -570,7 +571,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || manaCountOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -716,7 +717,7 @@ function effectOptionsBase(tx, obj) {
   if (!/^\{T\}/.test(tx) && (mm = txNq.match(/\badd ((?:\{[WUBRGC]\})+)/i)) && !/for each|any number/i.test(tx)) { const cols = [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]); opts.push({ label: `Add ${cols.join('')}`, fn: () => { snap(); for (const col of cols) addFloatingMana(col); render(); } }); }
   if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana of any (one )?color\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana of any one color`, fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col, nn); render(); } }, ['W', 'U', 'B', 'R', 'G']) }); }
   if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana in any combination of colors\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana in any combination of colors`, fn: () => { let left = nn; const next = () => { if (left <= 0) return; openManaChoice({ name: src + ` (${left} left)` }, col => { if (col) { snap(); addFloatingMana(col, 1); left--; render(); next(); } }, ['W', 'U', 'B', 'R', 'G']); }; next(); } }); }
-  if (/\btake an extra turn after this one\b/i.test(tx)) opts.push({ label: 'Take an extra turn after this one', fn: () => { state.extraTurns = (state.extraTurns || 0) + 1; log(`${src}: you will take an extra turn after this one`); toast('Extra turn', 'You take another turn right after this one (rule 500.7). In a goldfish every turn is already yours; the log notes it.'); } });
+  if (/\btakes? an extra turn after this one\b/i.test(tx)) opts.push({ label: 'Take an extra turn after this one', fn: () => { state.extraTurns = (state.extraTurns || 0) + 1; log(`${src}: you will take an extra turn after this one`); toast('Extra turn', 'You take another turn right after this one (rule 500.7). In a goldfish every turn is already yours; the log notes it.'); } });
   if (/\badd one mana of any color\b/i.test(txNq)) opts.push({ label: 'Add one mana of any color', fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col); render(); } }, ['W', 'U', 'B', 'R', 'G']) });
   // v0.67.1 Thespian's Stage: "~ becomes a copy of target land, except it has this ability." (rule 707.9: it keeps counters and tapped state; no enter-the-battlefield event)
   if (obj.sourceId && /\bbecomes a copy of target land, except it has this ability\b/i.test(tx)) return [{ full: true, label: `${src} becomes a copy of a land`, fn: () => {

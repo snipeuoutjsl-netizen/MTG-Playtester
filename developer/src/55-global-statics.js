@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------- v0.96.26 global static abilities of permanents, read from rules text
 // Each is a short pattern for a whole FAMILY of cards (Oracle wording), checked against every permanent on the battlefield.
 //  CR 508.1c-style attack restriction:  "Creatures with power greater than the number of cards in your hand can't attack."   (Ensnaring Bridge)
-//  CR 603.2g (events that don't cause abilities to trigger):  "Creatures entering don't cause abilities to trigger."   (Torpor Orb)
+//  CR 603.2g (events that don't cause abilities to trigger):  "Creatures entering(?: the battlefield)? don't cause abilities to trigger."   (Torpor Orb)
 //  CR 614.12 / 401.? zone restrictions:  "Creature cards in graveyards and libraries can't enter the battlefield." / "Players can't cast spells from graveyards or libraries."  (Grafdigger's Cage)
 //  CR 614.1 replacement of mana loss:  "If you would lose unspent mana, that mana becomes colorless instead."   (Omnath, Locus of the Void)
 //  CR 118.7 cost increase per spell cast:  "Each spell a player casts costs {1} more to cast for each other spell that player has cast this turn."   (Damping Sphere)
@@ -25,7 +25,7 @@ function globalAttackBlock(c) {
   }
   return '';
 }
-const torporOrbOn = c => !!c && /\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering don't cause abilities to trigger\.?$/i);
+const torporOrbOn = c => !!c && /\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i);
 const cageBlocksEnter = (c, from) => (from === 'graveyard' || from === 'library') && !!c && /\bCreature\b/.test(frontType(c) || '') && globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i);
 const cageBlocksCast = () => !!globalHas(/^Players can't cast spells from graveyards or libraries\.?$/i);
 const omnathColorless = () => !!globalHas(/^If you would lose unspent mana, that mana becomes colorless instead\.?$/i);
@@ -36,7 +36,7 @@ function perSpellTaxAdj(c) {
   return out;
 }
 const GLOBAL_STATIC_RES = [
-  /^Creatures with power (?:greater than the number of cards in your hand|\d+ or (?:greater|less)) can't attack\.?$/i, /^Creatures entering don't cause abilities to trigger\.?$/i,
+  /^Creatures with power (?:greater than the number of cards in your hand|\d+ or (?:greater|less)) can't attack\.?$/i, /^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i,
   /^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i, /^Players can't cast spells from graveyards or libraries\.?$/i,
   /^If you would lose unspent mana, that mana becomes colorless instead\.?$/i, /^Each spell a player casts costs \{\d+\} more to cast for each other spell that player has cast this turn\.?$/i,
   /^(?:Lands|Permanents) you control enter untapped\.?$/i, /^~ can't be blocked by creatures with power \d+ or less\.?$/i];

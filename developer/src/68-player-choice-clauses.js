@@ -52,3 +52,35 @@ function playerChoiceOptions(tx, obj) {
   }
   return null;
 }
+
+// ---- Counting from the board (v0.99.7): devotion (CR 700.5), "where X is ...", scaling mana, "you win the game"
+const DEV_COLORS = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+function devotionTo(cols) {   // CR 700.5: the number of mana symbols of those colours among the mana costs of permanents you control
+  let n = 0; if (!state) return 0;
+  for (const c of state.battlefield) { if (c.token) continue; const i = cardInfo(c.name); if (!i) continue; const mc = String(i.mc || '').split(' // ')[0];
+    for (const m of mc.matchAll(/\{([^}]+)\}/g)) { const parts = m[1].split('/'); if (parts.some(p => cols.includes(p))) n++; } }
+  return n;
+}
+function applyWhereX(tx, obj) {
+  let T = String(tx || ''), m, n = null;
+  if ((m = /,? where X is your devotion to (white|blue|black|red|green)(?: and (white|blue|black|red|green))?/i.exec(T))) { n = devotionTo([DEV_COLORS[m[1].toLowerCase()], m[2] && DEV_COLORS[m[2].toLowerCase()]].filter(Boolean)); T = T.replace(m[0], ''); }
+  else if ((m = /,? where X is the number of ([a-z' -]+?)(?: you control)?(?=[.,]|$)/i.exec(T))) { const src = obj && obj.sourceId > 0 && findCard(obj.sourceId); n = csCount(m[1].trim() + ' you control', src ? src.card : { id: -1 }) || 0; T = T.replace(m[0], ''); }
+  if (n === null) return T;
+  T = T.replace(/(?<![{\w])X(?![\w}])/g, String(n));
+  T = T.replace(/(?:^|(?<=\. ))If (\d+) is greater than or equal to the number of cards in your library, you win the game\.?/i, (all, v) => (state ? +v >= state.library.length : true) ? 'You win the game.' : '');   // Thassa's Oracle
+  return T.replace(/\s+$/, '');
+}
+function manaCountOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx); if (!sents.length) return null; const src = (obj && obj.sourceName) || 'Ability';
+  const s0 = sents[0].replace(/^[^:{]*(?:\{[^}]*\}[^:]*)*?:\s*(?=add\b)/i, '').replace(/\.$/, ''); let m;
+  if (sents.length === 1 && (m = /^add ((?:\{[WUBRGC]\})+) for each (.+?)(?: you control)?$/i.exec(s0))) {
+    const col = m[1].match(/[WUBRGC]/g), thing = m[2]; const srcC = obj && obj.sourceId > 0 && findCard(obj.sourceId);
+    const n = () => csCount(thing + ' you control', srcC ? srcC.card : { id: -1 }) || 0;
+    return [{ full: true, label: `Add ${m[1]} for each ${thing} you control (counted when it resolves)`, fn: () => { const k = n(); snap(); for (let i = 0; i < k; i++) for (const c of col) addFloatingMana(c); log(`${src}: added ${k * col.length} mana (${m[1]} × ${k})`); render(); } }];
+  }
+  if (sents.length === 2 && /^choose a colou?r$/i.test(sents[0].replace(/\.$/, '')) && (m = /^add an amount of mana of that colou?r equal to your devotion to that colou?r$/i.exec(sents[1].replace(/\.$/, '')))) {
+    return Object.entries(DEV_COLORS).map(([nm, sym]) => ({ full: true, label: `Choose ${nm}: add mana equal to your devotion to ${nm} (${devotionTo([sym])})`, fn: () => { const k = devotionTo([sym]); snap(); for (let i = 0; i < k; i++) addFloatingMana(sym); log(`${src}: chose ${nm}, added ${k} {${sym}} (devotion ${k})`); render(); } }));
+  }
+  if (sents.length === 1 && /^you win the game$/i.test(s0)) return [{ full: true, label: 'You win the game', fn: () => { log(`${src}: you win the game!`); toast('You win the game', `${src}: the game is over, and you won.`); render(); } }];
+  return null;
+}

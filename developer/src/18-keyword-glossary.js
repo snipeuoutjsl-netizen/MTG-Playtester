@@ -382,6 +382,7 @@ function renderInner() {
   $('#handLegend')?.classList.toggle('hidden', !teach('playability'));
   for (const z of ['graveyard', 'exile']) renderPileTop(z);
   $('#libstack').classList.toggle('empty', !has || !state.library.length);
+  if (has) renderTopReveal(); else { const lt = $('#libTop'); if (lt) lt.remove(); }
 
   const rows = { creatures: $('#row-creatures'), noncreature: $('#row-noncreature'), lands: $('#row-lands') };
   const hand = $('#row-hand');

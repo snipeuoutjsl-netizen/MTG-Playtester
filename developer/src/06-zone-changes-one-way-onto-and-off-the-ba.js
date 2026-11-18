@@ -18,6 +18,7 @@ function enterBattlefield(c, o = {}) {
   // o.from: 'hand' | 'stack' | 'library' | 'graveyard' | 'exile' | 'effect'   o.tapped: force tapped/untapped
   // o.logMsg: logged first   o.afterPlace(c): runs once it is on the battlefield, before any triggers (counters, flags)
   if (cageBlocksEnter(c, o.from)) { const g = globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i); log(`${g.g.name}: ${c.name} can't enter the battlefield from your ${o.from}; it stays there`); toast("It can't enter", `${g.g.name}: creature cards in graveyards and libraries can't enter the battlefield.`); if (o.from === 'graveyard' && !state.graveyard.includes(c)) state.graveyard.push(c); else if (o.from === 'library' && !state.library.includes(c)) state.library.unshift(c); return c; }
+  { const pr = priestExiles(c, o.from); if (pr) { log(`${pr.name}: ${c.name} would enter without being cast, so it is exiled instead`); toast('Exiled instead', `${pr.name}: a nontoken creature that would enter and wasn't cast is exiled instead.`); for (const z of ['hand', 'library', 'graveyard']) { const k = state[z].indexOf(c); if (k >= 0) state[z].splice(k, 1); } state.exile.push(c); render(); return c; } }
   c.counters = c.counters || { plus: 0, minus: 0 };
   sfx(!c.token && isLandName(c.name) ? 'land' : 'enter');
   if (o.logMsg) log(o.logMsg);
