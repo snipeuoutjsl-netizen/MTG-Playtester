@@ -87,6 +87,7 @@ function permMatchesSpec(c, sp, ctx) {
     if (md === 'other' && ctx && ctx.srcId === c.id) return false;
   }
   if (hasKw(c, 'shroud')) return false;
+  if (ctx && (ctx.srcCard || ctx.srcId != null) && ctx.srcId !== c.id) { const sc = ctx.srcCard || (findCard(ctx.srcId) || {}).card; if (sc && sc.id !== c.id && protBlocks(protQuals(c), sc)) return false; }   // CR 702.16b protection: it can't be targeted by sources with the quality
   return true;
 }
 function legalTargets(sp, ctx) {

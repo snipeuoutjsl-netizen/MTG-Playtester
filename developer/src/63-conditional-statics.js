@@ -30,12 +30,22 @@ function csCount(phrase, g) {
   const f = typeof countForEach === 'function' ? countForEach(t) : null; return f;
 }
 function csCmp(n, op, k) { return /less|fewer/.test(op) ? n <= k : n >= k; }
+// The conditions the top-bar game-state icons already track, by the words a card uses for them.
+function IND_COND_KEY(t) {
+  if (/^you control (?:three|3) or more artifacts$/.test(t)) return 'metalcraft';
+  if (/^(?:there are )?(?:seven|7) or more cards (?:are )?in your graveyard$|^you have (?:seven|7) or more cards in your graveyard$/.test(t)) return 'threshold';
+  if (/^(?:there are )?(?:four|4) or more card types among cards in your graveyard$/.test(t)) return 'delirium';
+  if (/^a permanent you controlled left the battlefield this turn$/.test(t)) return 'revolt';
+  if (/^a creature died this turn$/.test(t)) return 'morbid';
+  return null;
+}
 function evalCond(text, g) {
   if (!state) return null;
   let t = String(text || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim().replace(/\.$/, '').toLowerCase(), m;
   if (!t) return null;
   { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
+  { const ik = IND_COND_KEY(t); if (ik) { const g = gameStates().find(x => x.key === ik); return g ? !!g.on : null; } }   // the top-bar game-state checks are the one source of truth (Metalcraft, Threshold, Delirium, Revolt, Morbid ...)
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
   if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
   if ((m = t.match(/^(?:there are )?(\w+) or more (.+?) (?:are )?in your graveyard$/)) && !/^there are/.test(t)) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }   // "seven or more cards are in your graveyard" (threshold)
@@ -67,11 +77,12 @@ function evalCond(text, g) {
 }
 // Parse the effect half: "~ gets +2/+2 and has flying" -> { p, t, kws, cant, other }
 function csEffect(eff) {
-  const out = { p: 0, t: 0, kws: [], cant: null, other: [] };
+  const out = { p: 0, t: 0, kws: [], cant: null, other: [], prot: [] };
   const body = eff.replace(/^(?:~|it|this \w+)\s+/i, '');
   for (const part of body.split(/,\s*(?:and\s+)?|\s+and\s+(?=gets?\b|has\b|have\b|can't\b)/i)) {
     const x = part.trim(); let q; if (!x) continue;
     if ((q = x.match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { out.p += +q[1]; out.t += +q[2]; }
+    else if ((q = x.match(/^(?:has|have) protection from (.+)$/i))) out.prot.push(q[1].toLowerCase());   // CR 702.16: protection from all colors / a colour / everything
     else if ((q = x.match(/^(?:has|have) (.+)$/i))) { for (const k of q[1].toLowerCase().split(/\s*(?:,|\band\b)\s*/)) { const w = k.trim(); if (GRANTABLE.includes(w)) out.kws.push(w); else if (w) out.other.push(w); } }
     else if (/^attacks each (?:combat|turn) if able$/i.test(x)) out.kws.push('mustattack');   // CR 508.1d requirement, e.g. Dragon's Rage Channeler's delirium
     else if ((q = x.match(/^can't (attack(?: or block)?|block)$/i))) out.cant = { attack: /attack/i.test(q[1]), block: /block/i.test(q[1]) };
@@ -87,8 +98,8 @@ function parseCondStatic(line, g) {
   else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for every (\w+) (.+)$/i))) { eff = m[1]; per = { every: CS_NUM(m[2]), thing: m[3] }; if (isNaN(per.every)) per = { every: 1, thing: m[2] + ' ' + m[3] }; }
   else if ((m = L.match(/^((?:~|this \w+) gets? [+-]\d+\/[+-]\d+) for each (.+)$/i))) { eff = m[1]; per = { every: 1, thing: m[2] }; }   // CR 613.4c: "gets +1/+1 for each other Rat you control"
   else return null;
-  const e = csEffect(eff); if (!(e.p || e.t || e.kws.length || e.cant)) return null;
-  return { line: L, kind: 'cs', g, cond, per, p: e.p, t: e.t, kws: e.kws, cant: e.cant, other: e.other };
+  const e = csEffect(eff); if (!(e.p || e.t || e.kws.length || e.cant || e.prot.length)) return null;
+  return { line: L, kind: 'cs', g, cond, per, p: e.p, t: e.t, kws: e.kws, cant: e.cant, other: e.other, prot: e.prot };
 }
 // Is it on right now? true / false / null (not understood). The numbers for a "for every N things" static come back as `mult`.
 function csState(e) {

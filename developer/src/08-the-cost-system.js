@@ -483,7 +483,7 @@ function suspendCastFree(id, done, label) {
       if (done) done();
       if (!state.pendingTriggers.length) openStack();
     };
-    if (specs.length) chooseTargets(c.name, specs, put, { srcId: null, onCancel: () => fail('no target was chosen') }); else put(null);
+    if (specs.length) chooseTargets(c.name, specs, put, { srcId: null, srcCard: c, onCancel: () => fail('no target was chosen') }); else put(null);
   };
   if (md) openModeChoice(c.name, md, go, '0'); else go(undefined);
 }

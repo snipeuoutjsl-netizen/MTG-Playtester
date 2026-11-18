@@ -113,9 +113,11 @@ function compileCardOne(c) {
   for (const raw of String(info.tx || '').replace(/,\n/g, ', ').replace(/\n(?=\s*[\u2022\u2023])/g, ' ').split('\n')) {
     const text = raw.trim(); if (!text) continue;
     if (text === '//') { faceIx++; isSpell = /\b(Instant|Sorcery)\b/.test(faceTypes[faceIx] || ''); continue; }
-    const stripped = text.replace(/\([^)]*\)/g, '').trim();
+    const stripped = stripAW(text.replace(/\([^)]*\)/g, '').trim());   // CR 207.2c: the label is not read
     if (!stripped) { push(text, 'reminder', 'info', 'Reminder text: it only explains the rules.'); continue; }
     const norml = stripped.replace(nameRe, '~').replace(/\u2019/g, "'");
+    { const im = /^(.*\S) instead if (.+?)\.?$/i.exec(stripped) || /^If (.+?), (.+?) instead\.?$/i.exec(stripped);   // CR 614.1a: a conditional "instead" replaces the sentence before it while its condition holds
+      if (im && lines.length) { const cnd = /^If /i.test(stripped) ? im[1] : im[2]; if (condSyntaxOk(cnd) || (state && evalCond(cnd) !== null)) { push(text, 'spell', 'ok', `Conditional "instead" (rule 614.1a): while "${cnd}" is true, this replaces the sentence before it; otherwise it is left out. The app checks the condition when the effect is read.`); continue; } } }
     let m;
     // loyalty ability
     if (/^[+−–-]?(?:\d+|X):|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
