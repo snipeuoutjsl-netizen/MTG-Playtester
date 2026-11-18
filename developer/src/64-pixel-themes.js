@@ -51,3 +51,20 @@ UI_SETS.push(
   { id: 'pixfrog', label: 'Pixel frog', ui: 'pixfrog', sleeve: 'pixfrog', mat: 'pixfrog', frame: 'none', song: 'rain', note: 'Frog on a lily pad, pond-green colours, rainy-window music.' },
   { id: 'pixmusic', label: 'Pixel music', ui: 'pixmusic', sleeve: 'pixmusic', mat: 'pixmusic', frame: 'none', song: 'arcade', note: 'Notes on a staff, synth colours, arcade chill.' }
 );
+
+// Matching mouse pointers: a little sprite for each set, and a pixel arrow in the set's colours. Hover = the same picture with a light outline.
+PX_SPR.arrow = ['K.......', 'KK......', 'KLK.....', 'KLLK....', 'KLLLK...', 'KLLLLK..', 'KLLLLLK.', 'KLLLKKKK', 'KLKLK...', 'KK.KLK..', 'K..KLK..', '....KK..'];
+const PX_CUR = { mush: ['mushroom', 'mushroom', null, 2], cat: ['cats', 'cat', null, 2], frog: ['frog', 'frog', null, 2], music: ['music', 'note', { K: '#ff7ac8' }, 2] };
+const PX_ARROW = { mush: '#d8453f', cat: '#f2a65a', frog: '#59c85a', music: '#ff7ac8' };
+function pixCursor(style, hover) {
+  const m = /^pix(arrow)?-(mush|cat|frog|music)$/.exec(style); if (!m) return null;
+  const k = m[2], arrow = !!m[1], T = PXT[PX_CUR[k][0]];
+  const rows = PX_SPR[arrow ? 'arrow' : PX_CUR[k][1]], map = arrow ? { K: '#120b18', L: PX_ARROW[k] } : PX_CUR[k][2], S = 2, o = 2;
+  const col = ch => (map && map[ch]) || T.pal[ch] || null, filled = (x, y) => y >= 0 && y < rows.length && x >= 0 && x < rows[y].length && rows[y][x] !== '.';
+  let out = '';
+  if (hover) for (let y = -1; y <= rows.length; y++) for (let x = -1; x <= rows[0].length; x++) if (!filled(x, y) && (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1))) out += `<rect x="${o + x * S}" y="${o + y * S}" width="${S}" height="${S}" fill="#ffffff" opacity=".9"/>`;
+  for (let y = 0; y < rows.length; y++) for (let x = 0; x < rows[y].length; x++) { const c = rows[y][x] === '.' ? null : col(rows[y][x]); if (c) out += `<rect x="${o + x * S}" y="${o + y * S}" width="${S}" height="${S}" fill="${c}"/>`; }
+  return { hx: o, hy: o, body: `<g shape-rendering="crispEdges">${out}</g>` };
+}
+CURSOR_STYLES.push(['pix-mush', 'Pixel mushroom'], ['pix-cat', 'Pixel cat'], ['pix-frog', 'Pixel frog'], ['pix-music', 'Pixel music note'], ['pixarrow-mush', 'Pixel arrow — mushroom red'], ['pixarrow-cat', 'Pixel arrow — cat orange'], ['pixarrow-frog', 'Pixel arrow — frog green'], ['pixarrow-music', 'Pixel arrow — music pink']);
+for (const [id, cur] of [['pixmush', 'pix-mush'], ['pixcat', 'pix-cat'], ['pixfrog', 'pix-frog'], ['pixmusic', 'pix-music']]) UI_SETS.find(x => x.id === id).cursor = cur;

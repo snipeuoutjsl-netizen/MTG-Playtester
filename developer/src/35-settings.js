@@ -69,10 +69,11 @@ const UI_SETS = [
 function applyUiSet(id) {
   const st = UI_SETS.find(x => x.id === id); if (!st) return;
   settings.uiSet = st.id; settings.uiTheme = st.ui; settings.sleevePreset = st.sleeve; settings.matPreset = st.mat; settings.custom = false; settings.frame = st.frame;
+  if (st.cursor) { settings.cursor = st.cursor; try { applyCursor(); } catch (e) {} }
   if (settings.setMusic !== false) { settings.sound.musicStyle = st.song; settings.sound.music = true; settings.sound.on = true; }
   saveSettings(); try { applySettings(); } catch (e) {} try { applyUiTheme(); } catch (e) {} try { applySleeve(); } catch (e) {}
   if (settings.setMusic !== false) { try { musicSettingsChanged(); } catch (e) {} }
-  toast(st.label, 'Theme, sleeve, playmat' + (st.frame !== 'none' ? ', frame' : '') + (settings.setMusic !== false ? ' and music' : '') + ' set.');
+  toast(st.label, 'Theme, sleeve, playmat' + (st.cursor ? ', mouse pointer' : '') + (st.frame !== 'none' ? ', frame' : '') + (settings.setMusic !== false ? ' and music' : '') + ' set.');
 }
 function applySettings() {
   applyFrame(); applyCursor(); applyUiTheme();

@@ -6301,8 +6301,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.98.8';
+const APP_VERSION = '0.98.9';
 const CHANGELOG = [
+  { v: '0.98.9', title: 'Matching mouse pointers for the pixel sets', notes: ['The Pixel mushroom, cats, frog and music sets now switch your mouse pointer too, to a small pixel sprite of the same theme (mushroom, cat, frog, music note) with a white-outlined hover picture.', 'Eight new pointers under Settings > Look & feel > Mouse cursor: the four sprites, plus a pixel arrow in each set colour (mushroom red, cat orange, frog green, music pink).'] },
   { v: '0.98.8', title: 'Four new pixel-art sets: mushroom, cats, frog, music', notes: ['New one-click sets under Settings > Look & feel: Pixel mushroom, Pixel cats, Pixel frog and Pixel music. Each brings its own hand-drawn pixel sleeve, a matching playmat (Settings > Board), interface colours and a song (golden hour, jazz-hop, rainy window and arcade chill). All art is original and drawn in code, so it works offline.', 'The sleeve, playmat and interface theme can also be picked on their own.'] },
   { v: '0.98.7', title: 'Cori-Steel Cutter: flurry and "you may attach", per its rulings', notes: ['FIXED: "Whenever you cast your second spell each turn" (and first / third / fourth, with an optional spell type) was not understood, so the ability fired on EVERY spell. Ordinal cast triggers now count the spells you cast this turn (CR 603.2, 601.2i), including spells cast before the permanent entered the battlefield. A cast-ordinal wording the app cannot read is skipped and flagged instead of guessed.', 'NEW: "Create a ... token. You may attach this Equipment to that token." The token is created first, then you choose whether (and, with several tokens, to which one) to attach it, with nothing able to happen in between (CR 701.3, 301.5, 303.4). Until you do, the Equipment is unattached and gives nothing, because "equipped creature gets ..." only affects the creature it is attached to (CR 301.5).', 'Test: Cori-Steel Cutter second-spell gating, token enters 1/1 with no bonus, then 2/2 trample haste once attached.'] },
   { v: '0.98.6', title: 'Prowess fixed and checked against CR 702.108', notes: ['FIXED: prowess was tagged as a special case, so Always yield and automatic resolving skipped it. It is now an ordinary triggered ability ("whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn"), so Always yield is offered and works.', 'FIXED: any card that merely mentioned the word prowess in its rules text could be treated as having it. Prowess is now read from the keyword line only, or from an effect that gives it.', 'Each instance triggers separately (CR 702.108c), prowess given by another permanent works, and it triggers only on your noncreature spells. Tested end to end: trigger, Always yield, stacking pumps and ending at the cleanup step.'] },
@@ -7279,6 +7280,7 @@ function cursorSvg(style, hover) {   // returns { body, hx, hy } on a 32×32 can
   if (style === 'sword') return { hx: 3, hy: 3, body: `${hover ? '<line x1="3" y1="3" x2="19" y2="19" stroke="rgba(150,210,255,.55)" stroke-width="8" stroke-linecap="round"/>' : ''}<line x1="3" y1="3" x2="19" y2="19" stroke="#1b2026" stroke-width="5.4" stroke-linecap="round"/><line x1="3.6" y1="3.6" x2="19" y2="19" stroke="${hover ? '#ffffff' : '#dfe6ee'}" stroke-width="3" stroke-linecap="round"/><line x1="15" y1="24" x2="24" y2="15" stroke="#1b2026" stroke-width="5" stroke-linecap="round"/><line x1="15" y1="24" x2="24" y2="15" stroke="#e3b95c" stroke-width="3" stroke-linecap="round"/><line x1="21.5" y1="21.5" x2="27" y2="27" stroke="#2a1a0a" stroke-width="5" stroke-linecap="round"/><line x1="21.5" y1="21.5" x2="27" y2="27" stroke="#7a4e22" stroke-width="3" stroke-linecap="round"/><circle cx="28.5" cy="28.5" r="2.2" fill="#e3b95c"/>` };
   const m = /^orb-([WUBRG])$/.exec(style);
   if (m) { const [c1, c2] = MANA_ORB[m[1]], r = hover ? 9.5 : 7.5; return { hx: 16, hy: 16, body: `<defs><radialGradient id="g${m[1]}" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></radialGradient></defs>${hover ? `<circle cx="16" cy="16" r="13.5" fill="${c2}" opacity=".35"/>` : ''}<circle cx="16" cy="16" r="${r}" fill="url(#g${m[1]})" stroke="rgba(0,0,0,.65)" stroke-width="1.6"/><circle cx="13.5" cy="13" r="2" fill="rgba(255,255,255,.6)"/>` }; }
+  { const pc = typeof pixCursor === 'function' && pixCursor(style, hover); if (pc) return pc; }
   return null;
 }
 let cursorStyleEl = null;
@@ -8471,10 +8473,11 @@ const UI_SETS = [
 function applyUiSet(id) {
   const st = UI_SETS.find(x => x.id === id); if (!st) return;
   settings.uiSet = st.id; settings.uiTheme = st.ui; settings.sleevePreset = st.sleeve; settings.matPreset = st.mat; settings.custom = false; settings.frame = st.frame;
+  if (st.cursor) { settings.cursor = st.cursor; try { applyCursor(); } catch (e) {} }
   if (settings.setMusic !== false) { settings.sound.musicStyle = st.song; settings.sound.music = true; settings.sound.on = true; }
   saveSettings(); try { applySettings(); } catch (e) {} try { applyUiTheme(); } catch (e) {} try { applySleeve(); } catch (e) {}
   if (settings.setMusic !== false) { try { musicSettingsChanged(); } catch (e) {} }
-  toast(st.label, 'Theme, sleeve, playmat' + (st.frame !== 'none' ? ', frame' : '') + (settings.setMusic !== false ? ' and music' : '') + ' set.');
+  toast(st.label, 'Theme, sleeve, playmat' + (st.cursor ? ', mouse pointer' : '') + (st.frame !== 'none' ? ', frame' : '') + (settings.setMusic !== false ? ' and music' : '') + ' set.');
 }
 function applySettings() {
   applyFrame(); applyCursor(); applyUiTheme();
@@ -11478,6 +11481,23 @@ UI_SETS.push(
   { id: 'pixfrog', label: 'Pixel frog', ui: 'pixfrog', sleeve: 'pixfrog', mat: 'pixfrog', frame: 'none', song: 'rain', note: 'Frog on a lily pad, pond-green colours, rainy-window music.' },
   { id: 'pixmusic', label: 'Pixel music', ui: 'pixmusic', sleeve: 'pixmusic', mat: 'pixmusic', frame: 'none', song: 'arcade', note: 'Notes on a staff, synth colours, arcade chill.' }
 );
+
+// Matching mouse pointers: a little sprite for each set, and a pixel arrow in the set's colours. Hover = the same picture with a light outline.
+PX_SPR.arrow = ['K.......', 'KK......', 'KLK.....', 'KLLK....', 'KLLLK...', 'KLLLLK..', 'KLLLLLK.', 'KLLLKKKK', 'KLKLK...', 'KK.KLK..', 'K..KLK..', '....KK..'];
+const PX_CUR = { mush: ['mushroom', 'mushroom', null, 2], cat: ['cats', 'cat', null, 2], frog: ['frog', 'frog', null, 2], music: ['music', 'note', { K: '#ff7ac8' }, 2] };
+const PX_ARROW = { mush: '#d8453f', cat: '#f2a65a', frog: '#59c85a', music: '#ff7ac8' };
+function pixCursor(style, hover) {
+  const m = /^pix(arrow)?-(mush|cat|frog|music)$/.exec(style); if (!m) return null;
+  const k = m[2], arrow = !!m[1], T = PXT[PX_CUR[k][0]];
+  const rows = PX_SPR[arrow ? 'arrow' : PX_CUR[k][1]], map = arrow ? { K: '#120b18', L: PX_ARROW[k] } : PX_CUR[k][2], S = 2, o = 2;
+  const col = ch => (map && map[ch]) || T.pal[ch] || null, filled = (x, y) => y >= 0 && y < rows.length && x >= 0 && x < rows[y].length && rows[y][x] !== '.';
+  let out = '';
+  if (hover) for (let y = -1; y <= rows.length; y++) for (let x = -1; x <= rows[0].length; x++) if (!filled(x, y) && (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1))) out += `<rect x="${o + x * S}" y="${o + y * S}" width="${S}" height="${S}" fill="#ffffff" opacity=".9"/>`;
+  for (let y = 0; y < rows.length; y++) for (let x = 0; x < rows[y].length; x++) { const c = rows[y][x] === '.' ? null : col(rows[y][x]); if (c) out += `<rect x="${o + x * S}" y="${o + y * S}" width="${S}" height="${S}" fill="${c}"/>`; }
+  return { hx: o, hy: o, body: `<g shape-rendering="crispEdges">${out}</g>` };
+}
+CURSOR_STYLES.push(['pix-mush', 'Pixel mushroom'], ['pix-cat', 'Pixel cat'], ['pix-frog', 'Pixel frog'], ['pix-music', 'Pixel music note'], ['pixarrow-mush', 'Pixel arrow — mushroom red'], ['pixarrow-cat', 'Pixel arrow — cat orange'], ['pixarrow-frog', 'Pixel arrow — frog green'], ['pixarrow-music', 'Pixel arrow — music pink']);
+for (const [id, cur] of [['pixmush', 'pix-mush'], ['pixcat', 'pix-cat'], ['pixfrog', 'pix-frog'], ['pixmusic', 'pix-music']]) UI_SETS.find(x => x.id === id).cursor = cur;
 init();
 
 })();
