@@ -128,7 +128,7 @@ function fireTrigger(ev, ctx = {}) {
   if (!state || !teach('triggerPrompts')) return;
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
-  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why }); };
+  const add = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount }); };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -377,7 +377,7 @@ function openTriggerBatch(batch) {
   };
   const pushWith = (t, text, picked) => {
     remaining.splice(remaining.indexOf(t), 1); t._picked = picked; t._text = text;
-    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, spellId: t.spellId, otherId: t.otherId, kw: t.kw, n: t.n, arg: t.arg };
+    const obj = { ability: true, trigger: true, id: state.nextId++, name: `${t.cardName} — trigger`, sourceId: t.cardId, sourceName: t.cardName, text, special: t.special, spellId: t.spellId, otherId: t.otherId, kw: t.kw, n: t.n, arg: t.arg, amt: t.amt };
     if (picked) { obj.targets = picked; obj._tgtAsked = true; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; }
     state.stack.push(obj);
     state.priority = { active: true, passed: false };
@@ -597,7 +597,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
