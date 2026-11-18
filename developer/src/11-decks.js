@@ -32,26 +32,29 @@ Sideboard
 
 function parseDeck(text) {
   const main = [], side = [];
-  let cur = main, blankUsed = false;
+  let cur = main, blankUsed = false, inCmd = false;
   const hasSideHeader = /^\s*(sideboard|side)\s*:?\s*$/im.test(text);
   for (const raw of text.split(/\r?\n/)) {
     let line = raw.trim();
     if (!line) {
+      if (inCmd) { inCmd = false; continue; }   // a blank line ends the Commander block (the rest is the main deck)
       if (!hasSideHeader && !blankUsed && main.length) { cur = side; blankUsed = true; }
       continue;
     }
     if (/^(\/\/|#)/.test(line)) continue;
-    if (/^(deck|mainboard|main|commander|companion)\s*:?$/i.test(line)) { cur = main; continue; }
-    if (/^(sideboard|side)\s*:?$/i.test(line)) { cur = side; continue; }
+    if (/^commander\s*:?$/i.test(line)) { cur = main; inCmd = true; continue; }   // v0.99.29 the cards under a Commander header are flagged (cmd:true); they stay in main unless Commander mode is on
+    if (/^(deck|mainboard|main|companion)\s*:?$/i.test(line)) { cur = main; inCmd = false; continue; }
+    if (/^(sideboard|side)\s*:?$/i.test(line)) { cur = side; inCmd = false; continue; }
     let target = cur;
     let m = line.match(/^SB:\s*(.*)$/i);
     if (m) { target = side; line = m[1]; }
     m = line.match(/^(\d+)\s*x?\s+(.+)$/i);
     let qty = 1, name = line;
     if (m) { qty = parseInt(m[1], 10); name = m[2]; }
-    name = name.replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[\w★-]*\s*$/, '').replace(/\s*\*[A-Za-z]+\*\s*$/, '').trim();
+    const isCmd = (inCmd && cur === main && target === main) || /\*cmdr\*|\[commander\b/i.test(line);
+    name = name.replace(/\s*\[[^\]]*\]\s*$/, '').replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[\w★-]*\s*$/, '').replace(/\s*\*[A-Za-z]+\*\s*$/, '').trim();
     if (!name || !(qty > 0)) continue;
-    target.push({ qty, name });
+    if (isCmd && target === main) target.push({ qty, name, cmd: true }); else target.push({ qty, name });
   }
   return { main, side };
 }

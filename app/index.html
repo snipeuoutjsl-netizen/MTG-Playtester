@@ -22,6 +22,7 @@
   <div class="tb-group tb-game">
     <button id="btnNew" class="primary newgame"><svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New game</span></button>
     <label class="chk playtoggle" title="Tick = you go first (no draw on turn 1)"><input type="checkbox" id="chkPlay" checked><span class="chk-box"></span><span>On the play</span></label>
+    <label class="chk playtoggle" id="cmdWrap" hidden title="Commander rules: 40 life, command zone, commander tax, free first mulligan"><input type="checkbox" id="chkCmd" checked><span class="chk-box"></span><span>Commander</span></label>
   </div>
   <span class="sep"></span>
   <div class="tb-group tb-actions" role="group" aria-label="Game actions">
@@ -106,6 +107,10 @@
           <div class="pile" id="pile-graveyard" data-drop="graveyard">
             <div class="pilelabel">Graveyard</div>
             <div class="stack" data-open="graveyard" title="Click to view"><div class="stacktop" id="top-graveyard"></div><span class="pcount" id="pcnt-graveyard">0</span></div>
+          </div>
+          <div class="pile" id="pile-command" data-drop="command" hidden>
+            <div class="pilelabel">Command</div>
+            <div class="stack" data-open="command" title="Click to view"><div class="stacktop" id="top-command"></div><span class="pcount" id="pcnt-command">0</span></div>
           </div>
           <div class="pile" id="pile-exile" data-drop="exile">
             <div class="pilelabel">Exile</div>

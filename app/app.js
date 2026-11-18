@@ -4,7 +4,7 @@
 (function () {
 
 // Features that are built but switched off until the owner says to turn them on (set to true to expose them again).
-const FEATURES = { multiplayer: false, commander: false };
+const FEATURES = { multiplayer: false, commander: true };
 // ---------------------------------------------------------------- helpers
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -325,6 +325,7 @@ function healHalves() {
     if (state.halfChosen === c.id) continue;
     if (c.half) restoreHalf(c);
     if (c.fromExile) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromExile; state.exile.push(c); } }
+    if (c.fromCmd) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromCmd; state.command.push(c); } }   // a cancelled cast from the command zone goes back there
     if (c.fromGy) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); if (c.fromGy.kind === 'disturb' && c.face) setFace(c, 0); delete c.fromGy; state.graveyard.push(c); } }
   }
 }
@@ -2402,6 +2403,7 @@ function spellSubjTest(subj) {
 function costAdjustments(c) { return c && c.id != null ? renderMemo('ca:' + c.id + ':' + c.name, () => costAdjustmentsRaw(c)).slice() : costAdjustmentsRaw(c); }
 function costAdjustmentsRaw(c) {
   const out = []; if (!state || !c) return out;
+  if (c.fromCmd && (c.cmdCasts || 0) > 0) out.push({ src: 'Commander tax (CR 903.8)', dir: 'more', amt: 2 * c.cmdCasts });
   const test = (src, dir, amt, subj) => { if (amt > 0 && spellSubjTest(subj)(c)) out.push({ src, dir, amt }); };
   for (const g of state.battlefield) {
     if (g.token) continue;
@@ -2971,8 +2973,9 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   const f=findCard(id); if(!f||f.zone!=='hand'||isLandName(f.card.name))return;
   const fromC=centerOf(`#row-hand .card[data-id="${id}"]`); noteFlightFrom(id,`#row-hand .card[data-id="${id}"]`);
   snap(); const [c]=state.hand.splice(f.idx,1); sfx('cast'); spotlight(c,'cast',fromC);
-  state.halfChosen=null; delete c.preAlt; delete c.miracleNow; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
+  state.halfChosen=null; delete c.preAlt; delete c.miracleNow; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':c.fromCmd?'command zone':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
   if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.warpExile; delete c.plotted; delete c.foretold; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
+  if(c.fromCmd){ delete c.fromCmd; c.cmdCasts=(c.cmdCasts||0)+1; log(`${c.name}: cast from the command zone (cast ${c.cmdCasts} time${c.cmdCasts===1?'':'s'}; it will cost {${2*c.cmdCasts}} more next time)`); }
   c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }
   if(modes){ const md=spellModal(c); if(md){ c.modes=modes; c.modeTexts=modes.map(i=>md.modes[i].text); log(`${c.name}: chosen ${md.spree?'extras':'modes'}: ${c.modeTexts.join(' | ')}`); } }
@@ -3696,26 +3699,29 @@ Sideboard
 
 function parseDeck(text) {
   const main = [], side = [];
-  let cur = main, blankUsed = false;
+  let cur = main, blankUsed = false, inCmd = false;
   const hasSideHeader = /^\s*(sideboard|side)\s*:?\s*$/im.test(text);
   for (const raw of text.split(/\r?\n/)) {
     let line = raw.trim();
     if (!line) {
+      if (inCmd) { inCmd = false; continue; }   // a blank line ends the Commander block (the rest is the main deck)
       if (!hasSideHeader && !blankUsed && main.length) { cur = side; blankUsed = true; }
       continue;
     }
     if (/^(\/\/|#)/.test(line)) continue;
-    if (/^(deck|mainboard|main|commander|companion)\s*:?$/i.test(line)) { cur = main; continue; }
-    if (/^(sideboard|side)\s*:?$/i.test(line)) { cur = side; continue; }
+    if (/^commander\s*:?$/i.test(line)) { cur = main; inCmd = true; continue; }   // v0.99.29 the cards under a Commander header are flagged (cmd:true); they stay in main unless Commander mode is on
+    if (/^(deck|mainboard|main|companion)\s*:?$/i.test(line)) { cur = main; inCmd = false; continue; }
+    if (/^(sideboard|side)\s*:?$/i.test(line)) { cur = side; inCmd = false; continue; }
     let target = cur;
     let m = line.match(/^SB:\s*(.*)$/i);
     if (m) { target = side; line = m[1]; }
     m = line.match(/^(\d+)\s*x?\s+(.+)$/i);
     let qty = 1, name = line;
     if (m) { qty = parseInt(m[1], 10); name = m[2]; }
-    name = name.replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[\w★-]*\s*$/, '').replace(/\s*\*[A-Za-z]+\*\s*$/, '').trim();
+    const isCmd = (inCmd && cur === main && target === main) || /\*cmdr\*|\[commander\b/i.test(line);
+    name = name.replace(/\s*\[[^\]]*\]\s*$/, '').replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[\w★-]*\s*$/, '').replace(/\s*\*[A-Za-z]+\*\s*$/, '').trim();
     if (!name || !(qty > 0)) continue;
-    target.push({ qty, name });
+    if (isCmd && target === main) target.push({ qty, name, cmd: true }); else target.push({ qty, name });
   }
   return { main, side };
 }
@@ -3749,7 +3755,7 @@ function getCurrentDeck() {
 }
 
 // ---------------------------------------------------------------- game state
-const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile', 'sideboard'];
+const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile', 'sideboard', 'command'];
 let state = null;
 let undoStack = [];
 let selected = null;
@@ -3797,7 +3803,7 @@ function newCard(name, extra) { return Object.assign({ id: 0, name, tapped: fals
 
 function freshState() {
   return { gs: {}, spellsCast: { turn: 0, n: 0 }, delayed: [], fx: [], nextId: 1, phase: 'idle', turn: 0, life: 20, onPlay: true, mulls: 0, bottomPhase: false, serumPending: false, step: 0, discarding: 0, skipDraw: false, landPlayedThisTurn: false,
-    library: [], hand: [], battlefield: [], graveyard: [], exile: [], sideboard: [], stack: [], log: [],
+    library: [], hand: [], battlefield: [], graveyard: [], exile: [], sideboard: [], command: [], stack: [], log: [],
     manaPool: {W:0,U:0,B:0,R:0,G:0,C:0},
     phasePause: false, pendingTriggers: [], costMods: [], priority: {active:false, passed:false}, combat: {attackers:[], blockers:{}, declared:false, dealt:false}, oppLife: 20, dmgHistory: [], pregameDone: false };
 }
@@ -3884,11 +3890,13 @@ function startGame() {
   state = freshState();
   undoStack = []; selected = null; bottomSel.clear();
   const unknown = new Set();
-  for (const { qty, name } of deck.main) {
+  const cmdOn = commanderModeOn(deck);   // v0.99.29 Commander mode (CR 903)
+  for (const { qty, name, cmd } of deck.main) {
     const rec = resolve(name);
     if (!rec && cardCount) unknown.add(name);
-    for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.library.push(c); }
+    for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; if (cmdOn && cmd) { c.isCommander = true; c.cmdCasts = 0; state.command.push(c); } else state.library.push(c); }
   }
+  if (cmdOn) startCommanderState();
   for (const { qty, name } of deck.side) {
     const rec = resolve(name);
     for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.sideboard.push(c); }
@@ -3908,9 +3916,10 @@ function doMulligan() {
   snap();
   state.library.push(...state.hand.splice(0));
   shuffleLib({ quiet: true });
-  state.mulls++;
+  const free = !!state.cmdMode && !state.freeMullUsed;   // CR 103.5c: in a multiplayer game such as Commander the first mulligan is free
+  if (free) state.freeMullUsed = true; else state.mulls++;
   drawCards(7, true);
-  log(`Mulligan #${state.mulls}`);
+  log(free ? 'Free mulligan (CR 103.5c): drew a new seven' : `Mulligan #${state.mulls}`);
   render();
 }
 
@@ -5458,8 +5467,8 @@ function permZone(c) {
 }
 
 function renderPileTop(zone) {
-  const el = $('#top-' + zone);
-  const arr = state ? state[zone] : [];
+  const el = $('#top-' + zone); if (!el) return;
+  const arr = state ? (state[zone] || []) : [];
   el.className = 'stacktop' + (arr.length ? '' : ' empty');
   el.replaceChildren();
   if (!arr.length) return;
@@ -5635,12 +5644,13 @@ function renderInner() {
   $('#oppBox').title = has && state.dmgHistory && state.dmgHistory.length ? 'Combat damage dealt so far: ' + state.dmgHistory.map(d => `turn ${d.turn}: ${d.dmg}`).join(', ') : 'Goldfish opponent life. Combat damage from your attackers is subtracted automatically.';
   const cbt = $('#btnCombat'); if (cbt) cbt.hidden = !(has && state.phase === 'play' && STEPS[state.step].id === 'attack' && !state.phasePause && !state.combat.declared);
   renderManaPool(); drawStateIcons();
-  for (const z of ['library', 'graveyard', 'exile']) { const n = has ? state[z].length : 0; const pc = $('#pcnt-' + z); pc.textContent = n; pc.classList.toggle('zero', !n); }
+  for (const z of ['library', 'graveyard', 'exile', 'command']) { const n = has ? (state[z] || []).length : 0; const pc = $('#pcnt-' + z); if (!pc) continue; pc.textContent = n; pc.classList.toggle('zero', !n); }
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
   { const n = has ? state.library.length : 0; const ls = $('#libstack'); ls.dataset.thick = n > 40 ? 3 : n > 15 ? 2 : n > 0 ? 1 : 0; ls.title = teach('libraryMenu') ? 'Click for draw, look, scry, surveil, mill, search' : ''; }
   $('#cnt-hand').textContent = has ? `(${state.hand.length})` : '';
   $('#handLegend')?.classList.toggle('hidden', !teach('playability'));
-  for (const z of ['graveyard', 'exile']) renderPileTop(z);
+  for (const z of ['graveyard', 'exile', 'command']) renderPileTop(z);
+  try { commanderRender(); } catch (e) { /* commander UI only */ }
   $('#libstack').classList.toggle('empty', !has || !state.library.length);
   if (has) renderTopReveal(); else { const lt = $('#libTop'); if (lt) lt.remove(); }
 
@@ -5817,7 +5827,7 @@ function dealCombatDamage(){
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
   if(state.oppLife<=0) log(`Goldfish kill on turn ${state.turn}`);
   if(lifeGain>0){ state.life+=lifeGain; log(`Lifelink: gained ${lifeGain} life (${lifeParts.join(', ')}) → ${state.life}`); toast(`Lifelink: +${lifeGain} life`, `You are now at ${state.life}.`); fireTrigger('lifegain',{amount:lifeGain}); }
-  noteCombatDealers(dealers);
+  noteCombatDealers(dealers); commanderDamage(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d, amount:powerOf(d).n});
 }
 function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
@@ -5886,7 +5896,7 @@ function renderOverlay() {
           h('button', { class: 'primary', text: 'Keep', onclick: keepHand }),
           h('button', { text: 'Draw 1', onclick: () => pregameDraw(1) }),
           state.hand.some(mulliganHandSwap) ? h('button', { text: `Use Serum Powder — exile hand, draw ${state.hand.length}`, onclick: serumPowder }) : null,   // v0.96.25 only offered when a card in the hand allows it (CR 103.5b)
-          h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : `Mulligan to ${7 - state.mulls - 1}`, disabled: state.mulls >= 6, onclick: doMulligan })),
+          h('button', { text: state.mulls >= 6 ? 'Cannot mulligan' : (state.cmdMode && !state.freeMullUsed ? 'Free mulligan (draw 7)' : `Mulligan to ${7 - state.mulls - 1}`), disabled: state.mulls >= 6, onclick: doMulligan })),
         h('div', { class: 'phint', text: state.hand.some(mulliganHandSwap)
           ? 'This card lets you exile your hand and draw that many cards any time you could mulligan (CR 103.5b). Exile the entire current opening hand and draw 7 new cards; if the new hand has Serum Powder, you may repeat. Mulligan normally only when you are ready to continue.'
           : 'Your hand is shown below.' }));
@@ -6188,7 +6198,7 @@ function openDeckEditor(opts) {
 // Zone viewer (library search, graveyard, exile, sideboard)
 function openZone(zone) {
   if (!state) return;
-  const names = { library: 'Library', graveyard: 'Graveyard', exile: 'Exile', sideboard: 'Sideboard', hand: 'Hand' };
+  const names = { library: 'Library', graveyard: 'Graveyard', exile: 'Exile', sideboard: 'Sideboard', hand: 'Hand', command: 'Command zone' };
   const shuffleChk = h('input', { type: 'checkbox', checked: true });
   const m = modal(names[zone], {
     width: 680,
@@ -6228,6 +6238,7 @@ function openZone(zone) {
         draw();
       } });
       if(teach('libraryPreview')) row.addEventListener('mouseenter', () => showPreview(c));
+      if (zone === 'command' && c.isCommander) row.append(h('button', { class: 'primary', text: `Cast${(c.cmdCasts || 0) ? ' (+{' + 2 * c.cmdCasts + '} tax)' : ''}`, title: 'Cast your commander from the command zone (CR 903.8): it costs {2} more for each time you have cast it from there', onclick: () => { m.close(); castFromCommand(c.id); } }));
       if (zone === 'exile' && (c.mayPlayTurn === state.turn || c.mayPlayAlways)) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
       if (zone === 'exile' && c.freeCastTurn === state.turn && !isLandName(c.name)) row.append(h('button', { class: 'primary', text: 'Cast free (this turn)', title: 'An effect lets you cast this exiled card without paying its mana cost until end of turn', onclick: () => { m.close(); suspendCastFree(c.id, null, 'Free cast'); } }));
       if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
@@ -6425,7 +6436,7 @@ function openWelcome(onDone) {
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('The deck button at the top left lists your saved decks and switches between them.')]],
+      P('The deck button at the top left lists your saved decks and switches between them.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). A ', B('Commander'), ' switch then appears beside ', B('On the play'), ': it gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
@@ -6479,8 +6490,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.28';
+const APP_VERSION = '0.99.29';
 const CHANGELOG = [
+  { v: '0.99.29', title: 'Commander mode (goldfish)', notes: ['Put your commander under a Commander heading in the deck list (or mark it *CMDR*). A Commander switch appears beside On the play.','Rules enforced: 40 life, 99-card library, a command zone pile, casting it from there costs {2} more per previous cast, a free first mulligan, and the choice to put it back into the command zone when it would go to the graveyard, exile, hand or library (CR 903.9). Commander combat damage to your opponent is tracked (21 is lethal).','A deck check at the start of a game reports the card count, singleton and colour identity problems.'] },
   { v: '0.99.28', title: 'Accessibility tab, mulligan fix, centred pop-ups', notes: ['Mulligan hand fixed: it stays inside the table layout (the fixed-position version could land off-screen on some windows). A test now checks it at several window sizes.','Pop-ups now all open at the same place, the centre of the window; only the stack and resolving panels keep their own spots, and the mulligan steps sit above the hand.','The One Ring and other "for each counter" text: Always Yield now still recognises the action while the live count changes.','⚙ → Settings → Accessibility: interface size (100–175%), high contrast, calm motion (no animation, tilt, fan or scrolling text), larger click targets, strong keyboard focus, and screen-reader announcements of the game log. More options are planned (colour-blind markers, full keyboard play, a text view of each zone).'] },
   { v: '0.99.27', title: 'Bigger opening hand; Ancient Stirrings read in full', notes: ['The opening-hand screen (Keep / Draw / Mulligan) now shows your hand large and centred so every card can be read.','"Look at the top N cards. You may reveal a [type or colorless] card from among them and put it into your hand. Put the rest on the bottom" is now read in full (Ancient Stirrings and similar): at most one card, only cards of that kind.'] },
   { v: '0.99.26', title: 'Multi-step abilities apply every step (Orcish Bowmasters)', notes: ['An ability like "deals 1 damage to any target. Then amass Orcs 1." is now one button that applies every step in written order, instead of one button per step where the later steps were easy to miss. Always Yield repeats the whole chain too, not just the first step.'] },
@@ -12542,6 +12554,80 @@ function buildA11yTab() {
   return box;
 }
 applyA11y();
+// ---- Commander mode (CR 903), goldfish. A separate, rules-enforced mode: tick "Commander" next to "On the play" when the deck has a Commander section.
+//  903.6/903.7  the commander starts in the command zone; 40 life, 99-card library        903.8  casting it from there costs {2} more per previous cast from there
+//  903.9        if it would go to graveyard, exile, hand or library you may put it in the command zone instead   903.10a  21 commander combat damage is lethal
+//  103.5c       the first mulligan is free        903.5  deck: 100 cards, singleton, colour identity of the commander
+function commanderModeOn(deck) {
+  if (!FEATURES.commander || !deck) return false; const box = document.getElementById('chkCmd');
+  return !!deck.main.some(x => x.cmd) && !!(box ? box.checked : true);
+}
+function startCommanderState() {
+  state.cmdMode = true; state.life = 40; state.oppLife = 40; state.cmdDealt = {}; state.freeMullUsed = false;
+  const names = state.command.map(c => c.name).join(' + ');
+  state.log.push(`Commander mode: ${names} starts in the command zone. 40 life; the first mulligan is free; casting the commander from the command zone costs {2} more each time (CR 903).`);
+  const rep = commanderDeckCheck(); if (rep.length) state.log.push('Deck check (CR 903.5): ' + rep.join(' '));
+}
+// ---- colour identity (CR 903.4): mana symbols in the cost and rules text (hybrid counts both colours; reminder text does not count)
+function colorIdentityOf(name) {
+  const i = cardInfo(name); if (!i) return null; const set = new Set();
+  const grab = t => { for (const m of String(t || '').matchAll(/\{([^}]+)\}/g)) for (const ch of m[1].split('/')) if (/^[WUBRG]$/.test(ch)) set.add(ch); };
+  grab(i.mc); grab(String(i.tx || '').replace(/\([^)]*\)/g, ''));
+  if (Array.isArray(i.ci)) for (const x of i.ci) set.add(x);
+  return set;
+}
+function commanderDeckCheck() {
+  const out = []; if (!state) return out;
+  const cmds = state.command.slice(), deckCards = state.library.concat(state.hand, state.command);
+  const n = deckCards.length; if (n !== 100) out.push(`${n} cards (a Commander deck has exactly 100).`);
+  if (cmds.length > 2) out.push('More than two commanders.');
+  const ci = new Set(); for (const c of cmds) { const s = colorIdentityOf(c.name); if (s) for (const x of s) ci.add(x); }
+  const seen = new Map(), dup = [], off = [];
+  for (const c of deckCards) { const i = cardInfo(c.name), basic = i && /\bBasic\b/.test(i.t || ''), many = i && /a deck can have any number of cards named/i.test(i.tx || '');
+    if (!basic && !many) seen.set(c.name, (seen.get(c.name) || 0) + 1);
+    const s = colorIdentityOf(c.name); if (s && cmds.length) for (const x of s) if (!ci.has(x)) { off.push(c.name); break; } }
+  for (const [nm, k] of seen) if (k > 1) dup.push(`${nm} ×${k}`);
+  if (dup.length) out.push(`Not singleton: ${dup.slice(0, 6).join(', ')}${dup.length > 6 ? '…' : ''}.`);
+  if (off.length) out.push(`Outside the commander's colour identity: ${[...new Set(off)].slice(0, 6).join(', ')}${new Set(off).size > 6 ? '…' : ''}.`);
+  for (const c of cmds) { const i = cardInfo(c.name); if (i && !/\bLegendary\b/.test(i.t || '') && !/can be your commander/i.test(i.tx || '')) out.push(`${c.name} is not a legal commander (it must be a legendary creature or say it can be your commander).`); }
+  if (cmds.length === 2 && !cmds.every(c => /\bPartner\b|Choose a Background|Friends forever|Doctor's companion/i.test((cardInfo(c.name) || {}).tx || '') || /\bBackground\b/.test((cardInfo(c.name) || {}).t || ''))) out.push('Two commanders need Partner (or Background / Friends forever).');
+  return out;
+}
+// ---- casting from the command zone (CR 903.8): the card is lifted into the hand for the normal cast flow; the tax is added by costAdjustments
+function castFromCommand(id) {
+  if (!state) return; const i = state.command.findIndex(x => x.id === id); if (i < 0) return; const c = state.command[i];
+  if (!canCastNow(c)) { toast('Wrong timing', 'A commander follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
+  state.command.splice(i, 1); c.fromCmd = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
+}
+// ---- CR 903.9: a commander that is in the graveyard or exile (state-based action), or in the hand or library (replacement), may go to the command zone instead
+let CMD_ASKING = false;
+function commanderSBA() {
+  if (!state || !state.cmdMode || CMD_ASKING || state.phase === 'idle') return;
+  for (const z of ['graveyard', 'exile', 'hand', 'library']) for (const c of state[z]) {
+    if (!c.isCommander || c.fromCmd) continue;
+    if (c._cmdAsk === z) continue; c._cmdAsk = z;
+    if (z === 'hand' && state.phase !== 'play') continue;   // it is only a question once the game is running
+    CMD_ASKING = true;
+    const m = modal(`${c.name}: command zone?`, { width: 460, sticky: true, noClose: true });
+    m.body.append(h('div', { class: 'psub', text: `${c.name} is in your ${z}. Its owner may put it into the command zone instead (CR 903.9). If you keep it in the ${z} it is an ordinary card there, and you can still cast it from there, but the commander tax no longer applies.` }));
+    m.foot.append(h('button', { text: `Leave it in the ${z}`, onclick: () => { m.close(); CMD_ASKING = false; log(`${c.name}: left in the ${z}`); render(); } }),
+      h('button', { class: 'primary', text: 'Put it in the command zone', onclick: () => { m.close(); CMD_ASKING = false; snap(); const f = findCard(c.id); if (f) { state[f.zone].splice(f.idx, 1); delete c._cmdAsk; c.tapped = false; c.counters = { plus: 0, minus: 0 }; state.command.push(c); log(`${c.name}: put into the command zone (CR 903.9)`); } render(); } }));
+    return;   // one question at a time; the render after the answer asks about the next
+  }
+}
+// ---- commander damage dealt to the opponent (CR 903.10a: 21 from one commander is lethal)
+function commanderDamage(dealers) {
+  if (!state || !state.cmdMode) return;
+  for (const d of dealers || []) { if (!d.isCommander) continue; let n = 0; try { n = powerOf(d).n * (hasKw(d, 'double strike') ? 2 : 1); } catch (e) { n = 0; } if (n <= 0) continue;
+    state.cmdDealt[d.name] = (state.cmdDealt[d.name] || 0) + n; const t = state.cmdDealt[d.name];
+    log(`Commander damage: ${d.name} has dealt ${t} combat damage to your opponent in total (21 is lethal, CR 903.10a)`);
+    if (t >= 21) { toast('Commander damage', `${d.name} has dealt ${t} damage: that is lethal in Commander.`); log(`${d.name}: 21 commander damage, your opponent loses the game (CR 903.10a)`); } }
+}
+function commanderRender() {
+  const pile = document.getElementById('pile-command'); if (pile) pile.hidden = !(state && state.cmdMode);
+  const cb = document.getElementById('cmdWrap'); if (cb) { const d = (typeof getCurrentDeck === 'function') ? getCurrentDeck() : null; cb.hidden = !(FEATURES.commander && d && d.main.some(x => x.cmd)); }
+  if (state && state.cmdMode) { const el = document.getElementById('pile-command'); if (el) { const tax = state.command.length ? (state.command[0].cmdCasts || 0) * 2 : 0; el.title = state.command.length ? `Command zone: click to cast your commander${tax ? ` (+{${tax}} commander tax)` : ''}` : 'Your commander is not in the command zone'; } setTimeout(commanderSBA, 0); }
+}
 init();
 
 })();

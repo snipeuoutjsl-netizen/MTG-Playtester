@@ -106,7 +106,7 @@ function openDeckEditor(opts) {
 // Zone viewer (library search, graveyard, exile, sideboard)
 function openZone(zone) {
   if (!state) return;
-  const names = { library: 'Library', graveyard: 'Graveyard', exile: 'Exile', sideboard: 'Sideboard', hand: 'Hand' };
+  const names = { library: 'Library', graveyard: 'Graveyard', exile: 'Exile', sideboard: 'Sideboard', hand: 'Hand', command: 'Command zone' };
   const shuffleChk = h('input', { type: 'checkbox', checked: true });
   const m = modal(names[zone], {
     width: 680,
@@ -146,6 +146,7 @@ function openZone(zone) {
         draw();
       } });
       if(teach('libraryPreview')) row.addEventListener('mouseenter', () => showPreview(c));
+      if (zone === 'command' && c.isCommander) row.append(h('button', { class: 'primary', text: `Cast${(c.cmdCasts || 0) ? ' (+{' + 2 * c.cmdCasts + '} tax)' : ''}`, title: 'Cast your commander from the command zone (CR 903.8): it costs {2} more for each time you have cast it from there', onclick: () => { m.close(); castFromCommand(c.id); } }));
       if (zone === 'exile' && (c.mayPlayTurn === state.turn || c.mayPlayAlways)) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
       if (zone === 'exile' && c.freeCastTurn === state.turn && !isLandName(c.name)) row.append(h('button', { class: 'primary', text: 'Cast free (this turn)', title: 'An effect lets you cast this exiled card without paying its mana cost until end of turn', onclick: () => { m.close(); suspendCastFree(c.id, null, 'Free cast'); } }));
       if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
@@ -343,7 +344,7 @@ function openWelcome(onDone) {
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('The deck button at the top left lists your saved decks and switches between them.')]],
+      P('The deck button at the top left lists your saved decks and switches between them.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). A ', B('Commander'), ' switch then appears beside ', B('On the play'), ': it gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),

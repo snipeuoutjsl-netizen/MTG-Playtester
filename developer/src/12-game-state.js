@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------- game state
-const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile', 'sideboard'];
+const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile', 'sideboard', 'command'];
 let state = null;
 let undoStack = [];
 let selected = null;
@@ -47,7 +47,7 @@ function newCard(name, extra) { return Object.assign({ id: 0, name, tapped: fals
 
 function freshState() {
   return { gs: {}, spellsCast: { turn: 0, n: 0 }, delayed: [], fx: [], nextId: 1, phase: 'idle', turn: 0, life: 20, onPlay: true, mulls: 0, bottomPhase: false, serumPending: false, step: 0, discarding: 0, skipDraw: false, landPlayedThisTurn: false,
-    library: [], hand: [], battlefield: [], graveyard: [], exile: [], sideboard: [], stack: [], log: [],
+    library: [], hand: [], battlefield: [], graveyard: [], exile: [], sideboard: [], command: [], stack: [], log: [],
     manaPool: {W:0,U:0,B:0,R:0,G:0,C:0},
     phasePause: false, pendingTriggers: [], costMods: [], priority: {active:false, passed:false}, combat: {attackers:[], blockers:{}, declared:false, dealt:false}, oppLife: 20, dmgHistory: [], pregameDone: false };
 }
@@ -134,11 +134,13 @@ function startGame() {
   state = freshState();
   undoStack = []; selected = null; bottomSel.clear();
   const unknown = new Set();
-  for (const { qty, name } of deck.main) {
+  const cmdOn = commanderModeOn(deck);   // v0.99.29 Commander mode (CR 903)
+  for (const { qty, name, cmd } of deck.main) {
     const rec = resolve(name);
     if (!rec && cardCount) unknown.add(name);
-    for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.library.push(c); }
+    for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; if (cmdOn && cmd) { c.isCommander = true; c.cmdCasts = 0; state.command.push(c); } else state.library.push(c); }
   }
+  if (cmdOn) startCommanderState();
   for (const { qty, name } of deck.side) {
     const rec = resolve(name);
     for (let i = 0; i < qty; i++) { const c = newCard(rec ? rec.name : name); c.id = state.nextId++; state.sideboard.push(c); }
@@ -158,9 +160,10 @@ function doMulligan() {
   snap();
   state.library.push(...state.hand.splice(0));
   shuffleLib({ quiet: true });
-  state.mulls++;
+  const free = !!state.cmdMode && !state.freeMullUsed;   // CR 103.5c: in a multiplayer game such as Commander the first mulligan is free
+  if (free) state.freeMullUsed = true; else state.mulls++;
   drawCards(7, true);
-  log(`Mulligan #${state.mulls}`);
+  log(free ? 'Free mulligan (CR 103.5c): drew a new seven' : `Mulligan #${state.mulls}`);
   render();
 }
 
