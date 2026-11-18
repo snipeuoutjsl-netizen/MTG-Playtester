@@ -5604,7 +5604,10 @@ function renderInner() {
     const atk = new Set((state.combat && state.combat.declared && state.combat.attackers || []).map(a => a.id ?? a));
     const lane = layoutOn('combatLane') && atk.size > 0;
     const brows = battlefieldRows(state.battlefield);
+    const onBf = new Set(state.battlefield.map(x => x.id)), attMap = new Map();   // v0.99.21 an Aura or Equipment is drawn in the stack under what it is attached to
+    for (const x of state.battlefield) if (x.att && onBf.has(x.att)) { if (!attMap.has(x.att)) attMap.set(x.att, []); attMap.get(x.att).push(x); }
     for (const z of ['creatures', 'noncreature', 'lands']) for (const g of brows[z]) {
+      if (g.cards.length === 1 && g.cards[0].att && onBf.has(g.cards[0].att)) { counts[z]++; continue; }   // drawn with its host below
       if (g.pile && g.cards.length > 1) {   // v0.99.12 land pile: a cascade where every land's name strip stays readable (the deck-view layout)
         const n = g.cards.length, tapped = g.cards[0].tapped, f = n <= 8 ? 1 : Math.max(.35, 7 / (n - 1));
         const el = h('div', { class: 'landpile' + (tapped ? ' tappile' : ''), style: `--n:${n};--f:${f}`, title: `${n} lands: ${g.cap}` });
@@ -5626,6 +5629,12 @@ function renderInner() {
         if (layoutOn('dimIdle') && ((z === 'lands' && (mixed ? tapN === g.cards.length : c.tapped)) || (z === 'creatures' && isSick(c) && !c.tapped))) e.classList.add('idle');
         if (lane && z === 'creatures' && !atk.has(c.id) && !rows[z].querySelector('.first-idle')) e.classList.add('first-idle');
         if (lane && z === 'creatures' && atk.has(c.id)) { e.classList.add('attacking'); if (!rows[z].querySelector('.lanebreak')) rows[z].append(h('div', { class: 'lanebreak' })); }
+        { const ats = attMap.get(c.id);
+          if (ats && ats.length && g.cards.length === 1) {
+            const n = ats.length + 1, el = h('div', { class: 'landpile attstack' + (c.tapped ? ' hosttap' : ''), style: `--n:${n};--f:${n <= 8 ? 1 : Math.max(.35, 7 / (n - 1))}`, title: `${c.name} with ${ats.map(a => a.name).join(', ')}` });
+            ats.forEach((a, i) => { const ae = cardEl(a, 'battlefield'); ae.style.setProperty('--i', String(i)); ae.style.zIndex = String(i + 1); el.append(ae); });
+            e.style.setProperty('--i', String(ats.length)); e.style.zIndex = String(n); el.append(e); rows[z].append(el); return;
+          } }
         rows[z].append(e);
       });
     }
@@ -6421,8 +6430,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.21';
+const APP_VERSION = '0.99.22';
 const CHANGELOG = [
+  { v: '0.99.22', title: 'Auras and Equipment stack under their host', notes: ['NEW: an Aura or Equipment is now drawn in a stack with the permanent it is attached to, the same cascade as a land pile: the host sits in front and each attachment shows its name strip above it. The "attached" tag on each card stays as it was.', 'CHANGED: piles no longer print the land or artifact name under them, since the cascade already shows each name. The colour and Tapped labels stay.', 'CHANGED: the Hand / Key tag now sits permanently in the bottom-right corner, level with the bottom of your hand.']},
   { v: '0.99.21', title: '3D tilt on every card; multiplayer switched off', notes: ['CHANGED: cards on the battlefield now lean toward the pointer in 3D just like the cards in your hand and the big preview (a tapped card keeps its turn). It follows Settings > Animations > 3D card tilt.', 'CHANGED: Multiplayer (LAN) is switched off for now and its menu entry is hidden until it is in a better place. The code is kept and can be switched back on.']},
   { v: '0.99.20', title: 'Big card preview follows the pointer again', notes: ['FIXED: the enlarged card preview in the right column now leans toward the pointer in a soft 3D tilt with a light spot, and settles back when the pointer leaves it. It had only moved for foil cards. It stays still if your system asks for reduced motion.']},
   { v: '0.99.19', title: 'Artifact piles and a calmer turn bar', notes: ['NEW: non-creature artifacts pile the way lands do. Mana artifacts (Sol Ring, Mox Opal...) pile by the colours they make, identical artifacts pile together, an artifact with an activated ability (Equipment and the like) only piles with exact copies, and all tapped artifacts share one sideways Tapped pile. Artifact creatures and tokens are not piled this way (tokens still bundle in fives). The same Settings > Layout switch controls it.', 'CHANGED: the progress fill in the turn bar is now a flat tint with a slim accent line along the bottom, the same look as the other bars, instead of animated stripes with a glow.']},
@@ -8411,17 +8421,17 @@ function tokenBundles(n) { const out = []; let left = n; for (const sz of TOKEN_
 function artPileKey(c) {
   const extra = [JSON.stringify(c.counters || {}), c.chosen || '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
   if (c.tapped) return { key: 'art#tapped~' + extra, cap: 'Tapped' };
-  if (landHasActivated(c)) return { key: 'art#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };   // equipment, Clue-like cards with an ability: only exact copies pile
+  if (landHasActivated(c)) return { key: 'art#own~' + c.name + '~' + extra, cap: '' };   // equipment, Clue-like cards with an ability: only exact copies pile
   let cols = []; try { cols = rockColors(c).slice(); } catch (e) { cols = []; }
   const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
   if (cols.length) return { key: 'art#cols:' + cols.join('') + '~' + extra, cap: cols.join(' ') };   // mana artifacts pile by the colours they make
-  return { key: 'art#name~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+  return { key: 'art#name~' + c.name + '~' + extra, cap: '' };
 }
 function landHasActivated(c) { try { return activatedAbilitiesFor(c).length > 0; } catch (e) { return false; } }
 function landPileKey(c) {
   const extra = [JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
   if (c.tapped) return { key: 'lands#tapped~' + extra, cap: 'Tapped' };
-  if (landHasActivated(c)) return { key: 'lands#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+  if (landHasActivated(c)) return { key: 'lands#own~' + c.name + '~' + extra, cap: '' };   // the cascade already shows each land's name
   let cols = []; try { cols = landManaColors(c).slice().sort(); } catch (e) { cols = []; }
   const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
   return { key: 'lands#cols:' + cols.join('') + '~' + extra, cap: cols.length ? cols.join(' ') : 'No mana' };

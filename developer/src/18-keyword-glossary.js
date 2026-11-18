@@ -393,7 +393,10 @@ function renderInner() {
     const atk = new Set((state.combat && state.combat.declared && state.combat.attackers || []).map(a => a.id ?? a));
     const lane = layoutOn('combatLane') && atk.size > 0;
     const brows = battlefieldRows(state.battlefield);
+    const onBf = new Set(state.battlefield.map(x => x.id)), attMap = new Map();   // v0.99.21 an Aura or Equipment is drawn in the stack under what it is attached to
+    for (const x of state.battlefield) if (x.att && onBf.has(x.att)) { if (!attMap.has(x.att)) attMap.set(x.att, []); attMap.get(x.att).push(x); }
     for (const z of ['creatures', 'noncreature', 'lands']) for (const g of brows[z]) {
+      if (g.cards.length === 1 && g.cards[0].att && onBf.has(g.cards[0].att)) { counts[z]++; continue; }   // drawn with its host below
       if (g.pile && g.cards.length > 1) {   // v0.99.12 land pile: a cascade where every land's name strip stays readable (the deck-view layout)
         const n = g.cards.length, tapped = g.cards[0].tapped, f = n <= 8 ? 1 : Math.max(.35, 7 / (n - 1));
         const el = h('div', { class: 'landpile' + (tapped ? ' tappile' : ''), style: `--n:${n};--f:${f}`, title: `${n} lands: ${g.cap}` });
@@ -415,6 +418,12 @@ function renderInner() {
         if (layoutOn('dimIdle') && ((z === 'lands' && (mixed ? tapN === g.cards.length : c.tapped)) || (z === 'creatures' && isSick(c) && !c.tapped))) e.classList.add('idle');
         if (lane && z === 'creatures' && !atk.has(c.id) && !rows[z].querySelector('.first-idle')) e.classList.add('first-idle');
         if (lane && z === 'creatures' && atk.has(c.id)) { e.classList.add('attacking'); if (!rows[z].querySelector('.lanebreak')) rows[z].append(h('div', { class: 'lanebreak' })); }
+        { const ats = attMap.get(c.id);
+          if (ats && ats.length && g.cards.length === 1) {
+            const n = ats.length + 1, el = h('div', { class: 'landpile attstack' + (c.tapped ? ' hosttap' : ''), style: `--n:${n};--f:${n <= 8 ? 1 : Math.max(.35, 7 / (n - 1))}`, title: `${c.name} with ${ats.map(a => a.name).join(', ')}` });
+            ats.forEach((a, i) => { const ae = cardEl(a, 'battlefield'); ae.style.setProperty('--i', String(i)); ae.style.zIndex = String(i + 1); el.append(ae); });
+            e.style.setProperty('--i', String(ats.length)); e.style.zIndex = String(n); el.append(e); rows[z].append(el); return;
+          } }
         rows[z].append(e);
       });
     }

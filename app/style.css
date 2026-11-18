@@ -1499,7 +1499,7 @@ body #handWrap, body[data-frame]:not([data-frame="none"]) #handWrap {
   pointer-events: none; z-index: 40;
 }
 #handWrap > .zlabel {
-  position: absolute; top: auto; left: auto; right: 14px; bottom: calc(var(--ch) + 16px); height: auto; overflow: visible; min-height: 0; padding: 3px 8px; gap: 6px; z-index: 45;
+  position: absolute; top: auto; left: auto; right: 14px; bottom: 6px; height: auto; overflow: visible; min-height: 0; padding: 3px 8px; gap: 6px; z-index: 45;
   background: rgba(10,13,12,.78); border: 1px solid var(--line); border-radius: 999px; pointer-events: auto; font-size: 11px; justify-content: flex-start;
 }
 #handWrap > .zlabel .handsort { margin-left: 4px; min-height: 22px; }
@@ -1711,3 +1711,10 @@ body.hand3d #mat .cardrow .card.tapped:not(.dragging):hover { transform: rotate(
 body.hand3d #mat .landpile > .card:not(.dragging):hover { transform: perspective(700px) rotateX(calc(var(--ry, 0) * -9deg)) rotateY(calc(var(--rx, 0) * 11deg)) !important; }
 body.hand3d #mat .landpile.tappile > .card.tapped:not(.dragging):hover { transform: rotate(90deg) perspective(700px) rotateX(calc(var(--ry, 0) * 9deg)) rotateY(calc(var(--rx, 0) * -11deg)) !important; }
 @media (prefers-reduced-motion: reduce) { body.hand3d #mat .cardrow .card:hover { transform: none; } body.hand3d #mat .cardrow .card.tapped:hover { transform: rotate(90deg); } }
+/* v0.99.21 an Aura or Equipment sits in the stack under its host: same cascade as a land pile, host in front */
+.landpile.attstack { margin-bottom: 8px; }
+.attstack > .card.tapped { opacity: 1; }
+.attstack.hosttap { width: var(--card-h); }
+.attstack.hosttap > .card { left: calc((var(--card-h) - var(--card-w)) / 2); }
+.attstack.hosttap > .card.tapped { transform: rotate(90deg) !important; }
+body.hand3d #mat .attstack.hosttap > .card.tapped:not(.dragging):hover { transform: rotate(90deg) perspective(700px) rotateX(calc(var(--ry, 0) * 9deg)) rotateY(calc(var(--rx, 0) * -11deg)) !important; }

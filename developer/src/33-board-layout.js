@@ -48,17 +48,17 @@ function tokenBundles(n) { const out = []; let left = n; for (const sz of TOKEN_
 function artPileKey(c) {
   const extra = [JSON.stringify(c.counters || {}), c.chosen || '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
   if (c.tapped) return { key: 'art#tapped~' + extra, cap: 'Tapped' };
-  if (landHasActivated(c)) return { key: 'art#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };   // equipment, Clue-like cards with an ability: only exact copies pile
+  if (landHasActivated(c)) return { key: 'art#own~' + c.name + '~' + extra, cap: '' };   // equipment, Clue-like cards with an ability: only exact copies pile
   let cols = []; try { cols = rockColors(c).slice(); } catch (e) { cols = []; }
   const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
   if (cols.length) return { key: 'art#cols:' + cols.join('') + '~' + extra, cap: cols.join(' ') };   // mana artifacts pile by the colours they make
-  return { key: 'art#name~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+  return { key: 'art#name~' + c.name + '~' + extra, cap: '' };
 }
 function landHasActivated(c) { try { return activatedAbilitiesFor(c).length > 0; } catch (e) { return false; } }
 function landPileKey(c) {
   const extra = [JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
   if (c.tapped) return { key: 'lands#tapped~' + extra, cap: 'Tapped' };
-  if (landHasActivated(c)) return { key: 'lands#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+  if (landHasActivated(c)) return { key: 'lands#own~' + c.name + '~' + extra, cap: '' };   // the cascade already shows each land's name
   let cols = []; try { cols = landManaColors(c).slice().sort(); } catch (e) { cols = []; }
   const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
   return { key: 'lands#cols:' + cols.join('') + '~' + extra, cap: cols.length ? cols.join(' ') : 'No mana' };
