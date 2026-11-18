@@ -43,6 +43,8 @@ function activatedAbilitiesFor(c){
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }
+    { const cr=line.match(/^Crew (\d+)\b/i);   // Crew (CR 702.122a): "Tap any number of untapped creatures you control with total power N or more: this permanent becomes an artifact creature until end of turn."
+      if(cr){ res.push({cost:'Crew '+cr[1],effect:'~ becomes an artifact creature until end of turn.',ix:res.length,crew:+cr[1]}); continue; } }
     { const ol=line.match(/^Outlast\s+((?:\{[^}]+\})+)\s*(?:\(.*\))?$/i);   // Outlast (CR 702.107a): "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."
       if(ol){ const pc=parseAbilityCost(ol[1]+', {T}',short);
         res.push({cost:'Outlast '+ol[1],effect:'Put a +1/+1 counter on ~. Activate only as a sorcery.',tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length}); continue; } }
@@ -57,6 +59,7 @@ function activatedAbilitiesFor(c){
 function activatedAbilityFor(c){ return activatedAbilitiesFor(c)[0]||null; }
 function abilityReady(c, ab) {   // can this particular ability be activated right now? returns '' or a reason string for the outline tooltip
   if (ab.tap && (c.tapped || isSick(c))) return 'tap';
+  if (ab.crew && crewPower(c) < ab.crew) return 'cost';
   if (ab.removeN) { const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {}); if ((cc[ab.removeKind] || 0) < ab.removeN) return 'counters'; }
   if (ab.life && state.life < ab.life) return 'life';
   if (ab.comps && ab.comps.length && compsFeasible(ab.comps, c.id)) return 'cost';
@@ -104,6 +107,7 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
     if(ab.other) toast('Other costs',`Pay the rest of the cost yourself: ${ab.other}.`);
     render(); openStack();
   };
+  if(ab.crew){ crewPick(f.card, ab.crew, ()=>go(null,null,[])); return; }
   const payThen=target=>{
     { const why=compsFeasible(ab.comps||[],f.card.id); if(why){ toast('Cannot pay the cost',why); return; } }
     gatherCosts({id:f.card.id,name:f.card.name,ability:true},ab.comps||[],picks=>{

@@ -87,3 +87,23 @@ function renderTopReveal() {   // a small label under the library showing the re
   el.textContent = c ? `Top: ${c.name}` : 'Top: (empty)'; el.title = `${src.g.name}: you play with the top card of your library revealed.` + (info && info.t ? ` ${info.t}` : '');
   el.classList.toggle('land', !!c && isLandName(c.name));
 }
+
+// ---- Vehicles: Crew (CR 702.122, 301.7)
+const crewCands = (vehicle) => state.battlefield.filter(x => x.id !== vehicle.id && !x.tapped && permTypeInfo(x).types.has('creature'));
+const crewPow = x => { const r = ptCalc(x); return r && !r.unknown ? Math.max(0, r.p) : 0; };
+const crewPower = vehicle => crewCands(vehicle).reduce((n, x) => n + crewPow(x), 0);
+function crewPick(vehicle, n, cb) {
+  const cands = crewCands(vehicle);
+  if (crewPower(vehicle) < n) { toast('Cannot crew', `${vehicle.name} needs untapped creatures with total power ${n} or more (you have ${crewPower(vehicle)}).`); return; }
+  openPickCards({ title: `${vehicle.name}: Crew ${n}`, note: `Tap any number of untapped creatures you control with total power ${n} or more. Summoning-sick creatures can crew. Their powers are shown on the cards.`, cards: cands, min: 1, max: cands.length,
+    done: picked => { const sum = picked.reduce((a, x) => a + crewPow(x), 0);
+      if (sum < n) { toast('Not enough power', `Those creatures have total power ${sum}; ${vehicle.name} needs ${n}.`); crewPick(vehicle, n, cb); return; }
+      snap(); for (const x of picked) { x.tapped = true; } log(`${vehicle.name}: crewed by tapping ${picked.map(x => x.name).join(', ')} (total power ${sum})`); cb(); } });
+}
+function vehicleOptions(tx, obj) {
+  if (!state || !/^~ becomes an artifact creature until end of turn\.?$/i.test(String(tx || '').replace(selfNameRe((obj && obj.sourceName) || ''), '~').trim())) return null;
+  const nm = (obj && obj.sourceName) || 'Vehicle';
+  return [{ full: true, label: `${nm} becomes an artifact creature until end of turn`, fn: () => { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null, c = f && f.zone === 'battlefield' ? f.card : state.battlefield.find(x => x.name === nm); if (!c) { log(`${nm} is no longer on the battlefield`); render(); return; }
+    const i = cardInfo(c.name); snap(); c.becomes = { pt: (i && i.pt) || '0/0', types: ['artifact', 'creature'], subs: ['vehicle'], kws: [] };
+    addFx({ kind: 'delayed', when: 'end', action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name}: it stops being a creature.`, srcName: nm }); log(`${nm} becomes an artifact creature until end of turn (${c.becomes.pt})`); render(); } }];
+}

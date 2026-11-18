@@ -1335,6 +1335,10 @@ function parseModal(tx) {
     const modes = spreeLines.map(l => { const mm = l.match(/^\+\s*((?:\{[^}]+\})+)\s*—\s*(.+)$/); return { text: mm[2].trim(), cost: mm[1] }; });
     return { spree: true, min: 1, max: modes.length, label: 'one or more additional costs (Spree)', modes, kind: 'spell' };
   }
+  let repeat = false;
+  { const rm = tx.match(/\bchoose (one|two|three|four|five)\.\s*You may choose the same mode more than once\.\s*(?=•)/i);   // Mystic Confluence (CR 700.2d): the same mode may be chosen more than once
+    if (rm) { const N0 = { one: 1, two: 2, three: 3, four: 4, five: 5 }; const modes0 = ('• ' + tx.slice(rm.index + rm[0].length)).split(/\s*•\s*/).slice(1).map(x => ({ text: x.trim() })).filter(x => x.text);
+      if (modes0.length >= 2) return { spree: false, repeat: true, min: N0[rm[1].toLowerCase()], max: N0[rm[1].toLowerCase()], label: rm[1].toLowerCase() + ' (repeats allowed)', modes: modes0, kind: /^\s*(?:when|whenever|at the beginning)/i.test(tx.slice(0, rm.index)) ? 'trigger' : 'spell', escalate: '' }; } }
   m = tx.match(/\bchoose (one or both|one or more|up to (?:one|two|three|four)|one|two|three|four)\b[^•—]*—\s*/i);
   if (!m || !/•/.test(tx)) return null;
   const word = m[1].toLowerCase(), after = tx.slice(m.index + m[0].length);
@@ -1361,7 +1365,14 @@ function spellModal(c) {
   return /\b(?:Instant|Sorcery)\b/.test(frontType(c)) || !frontType(c) ? md : null;
 }
 // Text of the chosen modes (in printed order), used as the text of the spell/ability as it resolves.
-function modalText(md, idxs) { return [...idxs].sort((a, b) => a - b).map(i => md.modes[i].text).join(' '); }
+function modalText(md, idxs) {
+  const sorted = [...idxs].sort((a, b) => a - b); if (!md.repeat) return sorted.map(i => md.modes[i].text).join(' ');
+  const seen = {}, draws = sorted.filter(i => /^Draw a card\.?$/i.test(md.modes[i].text)).length, out = []; let drew = false;
+  for (const i of sorted) { const t = md.modes[i].text; seen[i] = (seen[i] || 0) + 1;
+    if (/^Draw a card\.?$/i.test(t)) { if (!drew) { out.push(draws === 1 ? 'Draw a card.' : `Draw ${draws} cards.`); drew = true; } continue; }
+    out.push(seen[i] === 1 ? t : t.replace(/\btarget\b/i, 'another target')); }   // a repeated mode needs its own target (CR 700.2d)
+  return out.join(' ');
+}
 function mergeGeneric(cost) { let n = 0; const rest = []; for (const m of String(cost || '').match(/\{[^}]+\}/g) || []) { if (/^\{\d+\}$/.test(m)) n += +m.slice(1, -1); else rest.push(m); } return (n ? `{${n}}` : '') + rest.join(''); }
 function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : md.escalate ? md.escalate.repeat(Math.max(0, idxs.length - 1)) : ''; }
 function openModeChoice(name, md, cb, baseCost) {
@@ -1371,23 +1382,27 @@ function openModeChoice(name, md, cb, baseCost) {
   const total = h('div', { class: 'muted small' });
   const ok = h('button', { class: 'primary', text: md.spree ? 'Choose and continue' : 'Choose', disabled: true });
   const rows = [];
+  const counts = {};   // repeat modes: how many times each is chosen
   const refresh = () => {
-    const n = chosen.size;
+    const n = md.repeat ? Object.values(counts).reduce((a, b) => a + b, 0) : chosen.size;
     info.textContent = md.spree ? `Pick one or more extras. Each one adds its cost to the spell. (${n} chosen)` : md.min === md.max ? `Choose ${md.max}. (${n} of ${md.max} chosen)` : `Choose ${md.min === 0 ? 'up to ' + md.max : md.label.replace(/^./, c => c.toLowerCase())}. (${n} chosen)`;
-    for (const r of rows) r.box.disabled = !chosen.has(r.i) && n >= md.max;
+    if (md.repeat) for (const r of rows) { r.plus.disabled = n >= md.max; r.minus.disabled = !(counts[r.i] > 0); r.num.textContent = String(counts[r.i] || 0); }
+    else for (const r of rows) r.box.disabled = !chosen.has(r.i) && n >= md.max;
     ok.disabled = n < md.min || n > md.max;
     if (md.spree || md.escalate) total.textContent = `Total cost: ${mergeGeneric((baseCost || '') + modalCost(md, [...chosen])).replace(/[{}]/g, '') || '0'}`;
   };
   md.modes.forEach((mo, i) => {
-    const box = h('input', { type: 'checkbox' });
-    box.addEventListener('change', () => { if (box.checked) chosen.add(i); else chosen.delete(i); refresh(); });
+    const box = md.repeat ? h('span', { class: 'mode-count' }) : h('input', { type: 'checkbox' });
     const eff = recognizedEffects(mo.text);
-    rows.push({ i, box });
+    if (md.repeat) { const minus = h('button', { text: '−', title: 'One fewer' }), plus = h('button', { text: '+', title: 'Choose this mode again' }), num = h('b', { text: '0' });
+      minus.addEventListener('click', e => { e.preventDefault(); if (counts[i] > 0) counts[i]--; refresh(); }); plus.addEventListener('click', e => { e.preventDefault(); counts[i] = (counts[i] || 0) + 1; refresh(); });
+      box.append(minus, num, plus); rows.push({ i, box, minus, plus, num }); }
+    else { box.addEventListener('change', () => { if (box.checked) chosen.add(i); else chosen.delete(i); refresh(); }); rows.push({ i, box }); }
     m.body.append(h('label', { class: 'mode-row' }, box, h('span', { class: 'mode-txt' }, h('b', { text: md.spree ? `+${mo.cost.replace(/[{}]/g, '')}  ` : `Mode ${i + 1}  ` }), mo.text, h('span', { class: 'muted small', text: eff.length ? `  — the app can apply: ${eff.join('; ')}` : '  — you apply this one by hand' }))));
   });
   m.body.prepend(info);
   m.body.append(total, teach('rulesHints') ? h('div', { class: 'muted small', text: 'Modes are chosen as you cast the spell, before you pay. You cannot pick the same mode twice, and the chosen modes happen in the order they are printed.' }) : null);
-  ok.addEventListener('click', () => { m.close(); cb([...chosen].sort((a, b) => a - b)); });
+  ok.addEventListener('click', () => { m.close(); cb(md.repeat ? Object.entries(counts).flatMap(([i, k]) => Array(k).fill(+i)).sort((a, b) => a - b) : [...chosen].sort((a, b) => a - b)); });
   m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }), ok);
   refresh();
 }
@@ -1395,10 +1410,13 @@ function openModeChoice(name, md, cb, baseCost) {
 // ---- "Always yield" (like Magic Online): remember, for the rest of THIS game, that a given triggered ability should go on the stack by itself
 // with the same targets and apply the same effect, so it stops asking every time. The first time each ability appears you are asked once.
 const ayKey = (name, text) => String(name || '') + '|' + String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+// CR 603.5 + 603.4: a "may" ability is decided on resolution, and an ability with a condition (intervening "if", "unless") is checked again on resolution.
+// So only plain, unconditional abilities can be remembered as "always yield"; the rest ask every time.
+const ayEligibleText = tx => !/\b(?:may|if|unless|as long as|choose|instead|up to|any number)\b/i.test(String(tx || ''));
 function ayGet(name, text) { return state && state.ay ? state.ay[ayKey(name, text)] || null : null; }
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect)); if (!t) { next(); return; }
+  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect), tg = t._picked && t._picked.length ? t._picked : null;
   state.ay[key] = { auto: false, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
@@ -1410,7 +1428,7 @@ function askAlwaysYield(list, next) {
 function ayResolveAuto() {   // resolve always-yield abilities from the top of the stack while their effect is already known
   for (let i = 0; i < 12; i++) {
     const top = state.stack[state.stack.length - 1]; if (!top || !top.ability || !top.trigger) break;
-    const e = ayGet(top.sourceName, top.text); if (!e || !e.auto || !e.label || document.querySelector('#modalRoot .backdrop')) break;
+    const e = ayGet(top.sourceName, top.text); if (!e || !e.auto || !e.label || !ayEligibleText(top.text) || document.querySelector('#modalRoot .backdrop')) break;
     resolveTopOfStack();
   }
   if (state.stack.length && !document.querySelector('#modalRoot .backdrop')) openStack();
@@ -1470,7 +1488,7 @@ function openTriggerBatch(batch) {
     ].filter(Boolean));
   };
   for (const t of [...remaining]) {   // always-yield abilities go on the stack by themselves
-    const e = ayGet(t.cardName, t.effect); if (!e || !e.auto || !remaining.includes(t) || parseModal(t.effect)) continue;
+    const e = ayGet(t.cardName, t.effect); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
     const specs = t.special ? [] : parseTargetSpecs(t.effect);
     if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
     else if (e.targets && ayTargetsOk(e.targets)) { t._auto = true; pushWith(t, t.effect, e.targets.map(x => ({ ...x }))); if (!remaining.length) return; }
@@ -1664,7 +1682,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || manaCountOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -1925,7 +1943,7 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && o.label) e.label = o.label; } o.fn(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
   }
@@ -5819,6 +5837,8 @@ function activatedAbilitiesFor(c){
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }
+    { const cr=line.match(/^Crew (\d+)\b/i);   // Crew (CR 702.122a): "Tap any number of untapped creatures you control with total power N or more: this permanent becomes an artifact creature until end of turn."
+      if(cr){ res.push({cost:'Crew '+cr[1],effect:'~ becomes an artifact creature until end of turn.',ix:res.length,crew:+cr[1]}); continue; } }
     { const ol=line.match(/^Outlast\s+((?:\{[^}]+\})+)\s*(?:\(.*\))?$/i);   // Outlast (CR 702.107a): "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery."
       if(ol){ const pc=parseAbilityCost(ol[1]+', {T}',short);
         res.push({cost:'Outlast '+ol[1],effect:'Put a +1/+1 counter on ~. Activate only as a sorcery.',tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length}); continue; } }
@@ -5833,6 +5853,7 @@ function activatedAbilitiesFor(c){
 function activatedAbilityFor(c){ return activatedAbilitiesFor(c)[0]||null; }
 function abilityReady(c, ab) {   // can this particular ability be activated right now? returns '' or a reason string for the outline tooltip
   if (ab.tap && (c.tapped || isSick(c))) return 'tap';
+  if (ab.crew && crewPower(c) < ab.crew) return 'cost';
   if (ab.removeN) { const cc = typeof c.counters === 'number' ? { plus: c.counters, minus: 0 } : (c.counters || {}); if ((cc[ab.removeKind] || 0) < ab.removeN) return 'counters'; }
   if (ab.life && state.life < ab.life) return 'life';
   if (ab.comps && ab.comps.length && compsFeasible(ab.comps, c.id)) return 'cost';
@@ -5880,6 +5901,7 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
     if(ab.other) toast('Other costs',`Pay the rest of the cost yourself: ${ab.other}.`);
     render(); openStack();
   };
+  if(ab.crew){ crewPick(f.card, ab.crew, ()=>go(null,null,[])); return; }
   const payThen=target=>{
     { const why=compsFeasible(ab.comps||[],f.card.id); if(why){ toast('Cannot pay the cost',why); return; } }
     gatherCosts({id:f.card.id,name:f.card.name,ability:true},ab.comps||[],picks=>{
@@ -6345,8 +6367,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.7';
+const APP_VERSION = '0.99.8';
 const CHANGELOG = [
+  { v: '0.99.8', title: 'Vehicles, repeatable modes, and stricter always-yield', notes: ['NEW: Crew (CR 702.122). Right-click a Vehicle, choose Activate, and pick untapped creatures with total power at least the crew number (summoning-sick ones may crew); they tap and the Vehicle becomes an artifact creature with its printed power and toughness until end of turn.','NEW: "Choose three. You may choose the same mode more than once" (Mystic Confluence): each mode has a + / − counter; repeated draws add up and a repeated targeted mode gets its own target (CR 700.2d).','NEW: "Reveal the top card of your library. If it\'s a land card, put it onto the battlefield. Otherwise, put it into your hand." (Coiling Oracle) and the Ad Nauseam loop (reveal, put into hand, lose life equal to its mana value, repeat as often as you like) are applied by the app.','FIXED: "Always yield" now only applies to plain abilities. A "you may" ability or one with an "if"/"unless" condition always asks you on resolution (CR 603.5, 603.4), and an ability with a line the app cannot apply is never auto-resolved.','FIXED: Aura "Enchant …" lines show as understood (the app already makes you choose a legal host and puts the Aura into the graveyard if there is none).'] },
   { v: '0.99.7', title: 'Rules dive 2: global statics, devotion, top-of-library play', notes: ['NEW: Winter Orb / Static Orb ("players can\'t untap more than one land / two permanents") ask which ones untap; Sulfuric Vortex stops life gain; Containment Priest exiles a creature that enters without being cast; Rhonas and similar "can\'t attack or block unless you control another creature with power 4 or greater" are enforced; Humility-style "All creatures lose all abilities and have base power and toughness 1/1" applies to every creature.','NEW: "where X is your devotion to blue" (Thassa\'s Oracle, including its win check), "Add {B} for each Swamp you control" (Cabal Coffers), Nykthos\'s devotion mana, and "you win the game" are all read from the text (CR 700.5).','NEW: Courser of Kruphix and Oracle of Mul Daya: the top card is shown revealed under your library, and the library menu has "Play the top land", which uses your land drop.','FIXED: Torpor Orb\'s real wording ("Creatures entering the battlefield…") is recognised; Oracle-shortened names like "Rhonas" count as the card itself; lord and loyalty lines such as "−X:" (Ugin) now show as understood; Time Warp is read as an extra turn.'] },
   { v: '0.99.6', title: 'Lords, player-choice clauses, and a consistency pass on the look', notes: ['NEW: "Other Merfolk get +1/+1 and have islandwalk", "Other Goblin creatures you control get +1/+1 and have haste" and "Creature tokens you control get +1/+1 and have vigilance" now work: a line that gives both a bonus and an ability is read as two static effects (CR 611.3). Landwalk keywords can be granted.','NEW: "Each player discards a card", "Each player sacrifices a creature" and "Target player sacrifices a creature" (Liliana of the Veil) let you choose yours; the opponent\'s half is stated in the log. "Untap up to three lands" (Frantic Search) lets you pick which lands. "Look at the top card of your library. You may put it into your graveyard" works.','NEW: "Exile each permanent with mana value X or less that\'s one or more colors" (Ugin, the Spirit Dragon) leaves colourless permanents alone.','LOOK: one shared corner radius for buttons, fields and toolbar controls; stray half-pixel font sizes and odd radii were moved onto the shared scale; the four pixel-art playmats are dimmed so they sit back like the other mats and the zone labels stay readable.'] },
   { v: '0.99.5', title: 'Scaling mana: Elvish Archdruid, Gilded Lotus', notes: ['NEW: "{T}: Add {G} for each Elf you control" (and any "for each <thing> you control") is counted when you tap, so the right amount floats (CR 106.1, 605.1a).','NEW: "{T}: Add three mana of any one color" (Gilded Lotus) gives three mana of the colour you choose.'] },
@@ -9149,6 +9172,8 @@ function compileCardOne(c) {
     if (/\bspells?\b.*\bcost\b.*\b(?:more|less) to cast\b/i.test(stripped) && !/^this\b/i.test(stripped)) {
       push(text, 'static', 'ok', /opponents/i.test(stripped) ? 'Cost effect on opponents’ spells: not used in a goldfish game.' : 'Cost modifier: applied automatically to every spell you cast while this is on the battlefield (shown on the card in hand). Add effects the app cannot see with Tools → Cost effects.'); continue;
     }
+    if (/^Enchant\b/i.test(stripped) && /\bAura\b/.test(front) && !/graveyard|opponent|don'?t control|\bplayer\b/i.test(stripped)) { push(text, 'static', 'ok', 'Enchant (rule 303.4 / 702.5): when the Aura enters you choose a legal permanent to attach it to; with no legal host it goes to the graveyard (704.5m), and it falls off if the host stops being legal or leaves.'); continue; }
+    if (/^Crew \d+\b/i.test(stripped)) { push(text, 'activated', 'ok', 'Crew (rule 702.122): right-click the Vehicle, choose Activate and pick untapped creatures with total power at least the crew number (summoning-sick creatures may crew); they tap, and the Vehicle becomes an artifact creature until end of turn.'); continue; }
     if (/^Equip\b/i.test(stripped)) { push(text, 'activated', 'ok', 'Equip (rule 702.6): a sorcery-speed ability. Right-click the Equipment, choose Activate, pay the cost and pick a creature you control; it stays attached until it moves or either leaves.'); continue; }
     if (/^(?:equipped|enchanted) (?:creature|permanent|land|artifact)\b/i.test(norml) && /can't (?:attack|block)/i.test(norml) && statRecs.some(r => r.kind === 'cant')) { push(text, 'static', 'ok', "Attachment restriction: while attached the creature can't attack (the app removes it from your attackers). Blocking only matters against a real opponent."); continue; }
     if (/^(?:equipped|enchanted) (?:creature|permanent|land|artifact)\b/i.test(norml) && statRecs.some(r => r.subj && r.subj.attach && norml.replace(/,?\s*"[^"]*"/g, '').replace(/\.$/, '').trim() === r.line)) { const q = /"/.test(norml); push(text, 'static', q ? 'part' : 'ok', 'Attachment bonus: applied live to the permanent it is attached to (+P/T, keywords, counted "for each" amounts)' + (q ? '; the quoted ability it also grants is not applied by the app.' : '.')); continue; }
@@ -11929,6 +11954,35 @@ function manaCountOptions(tx, obj) {
   if (sents.length === 1 && /^you win the game$/i.test(s0)) return [{ full: true, label: 'You win the game', fn: () => { log(`${src}: you win the game!`); toast('You win the game', `${src}: the game is over, and you won.`); render(); } }];
   return null;
 }
+
+// ---- Reveal the top card (CR 701.16, 400.7): "Reveal the top card of your library. If it's a land card, put it onto the battlefield. Otherwise, put it into your hand."
+//      and the Ad Nauseam shape "Reveal the top card ... put that card into your hand. You lose life equal to its mana value. You may repeat this process any number of times."
+const RT_DEST = { 'onto the battlefield': 'battlefield', 'into your hand': 'hand', 'into your graveyard': 'graveyard', 'on the bottom of your library': 'bottom', 'on top of your library': 'top' };
+function rtMove(c, dest, src) {
+  if (dest === 'battlefield') { const i = state.library.indexOf(c); if (i >= 0) state.library.splice(i, 1); enterBattlefield(c, { from: 'library', logMsg: `${src}: ${c.name} put onto the battlefield from the top of the library` }); }
+  else if (dest === 'bottom') { moveCard(c.id, 'library', 'bottom'); log(`${src}: ${c.name} put on the bottom of the library`); }
+  else if (dest === 'top') log(`${src}: ${c.name} stays on top of the library`);
+  else { moveCard(c.id, dest); log(`${src}: ${c.name} put into your ${dest}`); }
+}
+function revealTopOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx).map(s => s.replace(/\.$/, '')); if (!sents.length) return null; const src = (obj && obj.sourceName) || 'Ability'; let m;
+  if (sents.length >= 2 && /^reveal the top card of your library$/i.test(sents[0]) && (m = /^if it'?s an? (land|creature|artifact|enchantment|instant|sorcery|planeswalker|nonland|permanent) card, put it (onto the battlefield|into your hand|into your graveyard|on the bottom of your library)$/i.exec(sents[1]))) {
+    const other = sents[2] && /^otherwise,? put it (into your hand|into your graveyard|on the bottom of your library|on top of your library)$/i.exec(sents[2]); if (sents[2] && !other) return null; if (sents.length > 3) return null;
+    const kind = m[1].toLowerCase(), yes = RT_DEST[m[2].toLowerCase()], no = other ? RT_DEST[other[1].toLowerCase()] : 'top';
+    return [{ full: true, label: `Reveal the top card: if it's ${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind} card put it ${m[2].toLowerCase()}${other ? ', otherwise ' + other[1].toLowerCase() : ''}`, fn: () => { const c = state.library[0]; if (!c) { log(`${src}: library is empty`); render(); return; }
+      snap(); const is = kind === 'nonland' ? !isLandName(c.name) : pcPermIsCard(c, kind); log(`${src}: revealed ${c.name}`); rtMove(c, is ? yes : no, src); render(); } }];
+  }
+  if (sents.length >= 2 && /^reveal the top card of your library and put that card into your hand$/i.test(sents[0]) && /^you lose life equal to its mana value$/i.test(sents[1]) && (sents.length === 2 || (sents.length === 3 && /^you may repeat this process any number of times$/i.test(sents[2])))) {
+    const rep = sents.length === 3;
+    const step = () => { const c = state.library[0]; if (!c) { log(`${src}: library is empty`); render(); return false; } const v = c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0); snap(); log(`${src}: revealed ${c.name} (mana value ${v})`); moveCard(c.id, 'hand'); changeLife(-v, true); log(`${src}: lost ${v} life`); return true; };
+    const ask = () => { render(); if (!state.library.length) return; const m2 = modal(src, { width: 460, sticky: true, noClose: true });
+      m2.body.append(h('div', { class: 'psub', text: `You are at ${state.life} life with ${state.library.length} cards in your library. Repeat the process?` }));
+      m2.foot.append(h('button', { text: 'Stop', onclick: () => { m2.close(); render(); } }), h('button', { class: 'primary', text: 'Repeat', onclick: () => { m2.close(); if (step() && state.life > 0) ask(); else render(); } })); };
+    return [{ full: true, label: `Reveal the top card, put it into your hand, lose life equal to its mana value${rep ? ' (you may repeat any number of times)' : ''}`, fn: () => { if (step() && rep && state.life > 0) ask(); else render(); } }];
+  }
+  return null;
+}
+function pcPermIsCard(c, kind) { try { return frontType(c).toLowerCase().split(/[\s—-]+/).includes(kind) || permTypeInfo(c).types.has(kind); } catch (e) { return false; } }
 // ---- More static abilities read from rules text (v0.99.7)
 //  CR 502.3 + 614 "As long as ~ is untapped, players can't untap more than one land during their untap steps."  (Winter Orb, Static Orb)
 //  CR 119.7 + 614.1 "If a player would gain life, that player gains no life instead."  (Sulfuric Vortex)
@@ -12017,6 +12071,26 @@ function renderTopReveal() {   // a small label under the library showing the re
   const info = c && !c.token ? cardInfo(c.name) : null;
   el.textContent = c ? `Top: ${c.name}` : 'Top: (empty)'; el.title = `${src.g.name}: you play with the top card of your library revealed.` + (info && info.t ? ` ${info.t}` : '');
   el.classList.toggle('land', !!c && isLandName(c.name));
+}
+
+// ---- Vehicles: Crew (CR 702.122, 301.7)
+const crewCands = (vehicle) => state.battlefield.filter(x => x.id !== vehicle.id && !x.tapped && permTypeInfo(x).types.has('creature'));
+const crewPow = x => { const r = ptCalc(x); return r && !r.unknown ? Math.max(0, r.p) : 0; };
+const crewPower = vehicle => crewCands(vehicle).reduce((n, x) => n + crewPow(x), 0);
+function crewPick(vehicle, n, cb) {
+  const cands = crewCands(vehicle);
+  if (crewPower(vehicle) < n) { toast('Cannot crew', `${vehicle.name} needs untapped creatures with total power ${n} or more (you have ${crewPower(vehicle)}).`); return; }
+  openPickCards({ title: `${vehicle.name}: Crew ${n}`, note: `Tap any number of untapped creatures you control with total power ${n} or more. Summoning-sick creatures can crew. Their powers are shown on the cards.`, cards: cands, min: 1, max: cands.length,
+    done: picked => { const sum = picked.reduce((a, x) => a + crewPow(x), 0);
+      if (sum < n) { toast('Not enough power', `Those creatures have total power ${sum}; ${vehicle.name} needs ${n}.`); crewPick(vehicle, n, cb); return; }
+      snap(); for (const x of picked) { x.tapped = true; } log(`${vehicle.name}: crewed by tapping ${picked.map(x => x.name).join(', ')} (total power ${sum})`); cb(); } });
+}
+function vehicleOptions(tx, obj) {
+  if (!state || !/^~ becomes an artifact creature until end of turn\.?$/i.test(String(tx || '').replace(selfNameRe((obj && obj.sourceName) || ''), '~').trim())) return null;
+  const nm = (obj && obj.sourceName) || 'Vehicle';
+  return [{ full: true, label: `${nm} becomes an artifact creature until end of turn`, fn: () => { const f = obj && obj.sourceId ? findCard(obj.sourceId) : null, c = f && f.zone === 'battlefield' ? f.card : state.battlefield.find(x => x.name === nm); if (!c) { log(`${nm} is no longer on the battlefield`); render(); return; }
+    const i = cardInfo(c.name); snap(); c.becomes = { pt: (i && i.pt) || '0/0', types: ['artifact', 'creature'], subs: ['vehicle'], kws: [] };
+    addFx({ kind: 'delayed', when: 'end', action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name}: it stops being a creature.`, srcName: nm }); log(`${nm} becomes an artifact creature until end of turn (${c.becomes.pt})`); render(); } }];
 }
 init();
 

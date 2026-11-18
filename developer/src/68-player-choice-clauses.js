@@ -84,3 +84,32 @@ function manaCountOptions(tx, obj) {
   if (sents.length === 1 && /^you win the game$/i.test(s0)) return [{ full: true, label: 'You win the game', fn: () => { log(`${src}: you win the game!`); toast('You win the game', `${src}: the game is over, and you won.`); render(); } }];
   return null;
 }
+
+// ---- Reveal the top card (CR 701.16, 400.7): "Reveal the top card of your library. If it's a land card, put it onto the battlefield. Otherwise, put it into your hand."
+//      and the Ad Nauseam shape "Reveal the top card ... put that card into your hand. You lose life equal to its mana value. You may repeat this process any number of times."
+const RT_DEST = { 'onto the battlefield': 'battlefield', 'into your hand': 'hand', 'into your graveyard': 'graveyard', 'on the bottom of your library': 'bottom', 'on top of your library': 'top' };
+function rtMove(c, dest, src) {
+  if (dest === 'battlefield') { const i = state.library.indexOf(c); if (i >= 0) state.library.splice(i, 1); enterBattlefield(c, { from: 'library', logMsg: `${src}: ${c.name} put onto the battlefield from the top of the library` }); }
+  else if (dest === 'bottom') { moveCard(c.id, 'library', 'bottom'); log(`${src}: ${c.name} put on the bottom of the library`); }
+  else if (dest === 'top') log(`${src}: ${c.name} stays on top of the library`);
+  else { moveCard(c.id, dest); log(`${src}: ${c.name} put into your ${dest}`); }
+}
+function revealTopOptions(tx, obj) {
+  if (!state) return null; const sents = MASS_SENTS(tx).map(s => s.replace(/\.$/, '')); if (!sents.length) return null; const src = (obj && obj.sourceName) || 'Ability'; let m;
+  if (sents.length >= 2 && /^reveal the top card of your library$/i.test(sents[0]) && (m = /^if it'?s an? (land|creature|artifact|enchantment|instant|sorcery|planeswalker|nonland|permanent) card, put it (onto the battlefield|into your hand|into your graveyard|on the bottom of your library)$/i.exec(sents[1]))) {
+    const other = sents[2] && /^otherwise,? put it (into your hand|into your graveyard|on the bottom of your library|on top of your library)$/i.exec(sents[2]); if (sents[2] && !other) return null; if (sents.length > 3) return null;
+    const kind = m[1].toLowerCase(), yes = RT_DEST[m[2].toLowerCase()], no = other ? RT_DEST[other[1].toLowerCase()] : 'top';
+    return [{ full: true, label: `Reveal the top card: if it's ${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind} card put it ${m[2].toLowerCase()}${other ? ', otherwise ' + other[1].toLowerCase() : ''}`, fn: () => { const c = state.library[0]; if (!c) { log(`${src}: library is empty`); render(); return; }
+      snap(); const is = kind === 'nonland' ? !isLandName(c.name) : pcPermIsCard(c, kind); log(`${src}: revealed ${c.name}`); rtMove(c, is ? yes : no, src); render(); } }];
+  }
+  if (sents.length >= 2 && /^reveal the top card of your library and put that card into your hand$/i.test(sents[0]) && /^you lose life equal to its mana value$/i.test(sents[1]) && (sents.length === 2 || (sents.length === 3 && /^you may repeat this process any number of times$/i.test(sents[2])))) {
+    const rep = sents.length === 3;
+    const step = () => { const c = state.library[0]; if (!c) { log(`${src}: library is empty`); render(); return false; } const v = c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0); snap(); log(`${src}: revealed ${c.name} (mana value ${v})`); moveCard(c.id, 'hand'); changeLife(-v, true); log(`${src}: lost ${v} life`); return true; };
+    const ask = () => { render(); if (!state.library.length) return; const m2 = modal(src, { width: 460, sticky: true, noClose: true });
+      m2.body.append(h('div', { class: 'psub', text: `You are at ${state.life} life with ${state.library.length} cards in your library. Repeat the process?` }));
+      m2.foot.append(h('button', { text: 'Stop', onclick: () => { m2.close(); render(); } }), h('button', { class: 'primary', text: 'Repeat', onclick: () => { m2.close(); if (step() && state.life > 0) ask(); else render(); } })); };
+    return [{ full: true, label: `Reveal the top card, put it into your hand, lose life equal to its mana value${rep ? ' (you may repeat any number of times)' : ''}`, fn: () => { if (step() && rep && state.life > 0) ask(); else render(); } }];
+  }
+  return null;
+}
+function pcPermIsCard(c, kind) { try { return frontType(c).toLowerCase().split(/[\s—-]+/).includes(kind) || permTypeInfo(c).types.has(kind); } catch (e) { return false; } }
