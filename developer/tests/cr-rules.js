@@ -1392,11 +1392,11 @@ const { setup } = require('./common.js');
       const vis = [...document.querySelectorAll('.setmain .teachopt, .setmain .setrow')].filter(e => e.offsetParent).map(e => e.querySelector('b, label') ? (e.querySelector('b, label').textContent) : '');
       document.getElementById('modalRoot').innerHTML = ''; return { tabs, n: labels.length, dup, vis }; });
     return { ok: r.tabs.includes('mat') && r.tabs.includes('a11y') && r.n >= 20 && r.dup === 0 && r.vis.length === 1 && /Dredge/.test(r.vis[0]), why: JSON.stringify(r) }; });
-  await T('UI decks', 'deck bookcase: a click takes a deck box off the shelf into a details view (Use this deck, Edit, Sideboard, art), Escape puts it back, and a double-click still picks the deck at once', async () => { await reset();
+  await T('UI decks', 'deck bookcase (books, ten to a shelf): a click takes a deck off the shelf into a details view (Use this deck, Edit, Sideboard, art), Escape puts it back, and a double-click still picks the deck at once', async () => { await reset();
     const r = await ev(async () => { document.getElementById('modalRoot').innerHTML = ''; __d.openDeckPicker(); const W = ms => new Promise(r => setTimeout(r, ms)); await W(200);
-      const st = document.querySelector('.dbx-shelf .dbx-stage'); st.click(); await W(900); const pull = document.querySelector('.dbx-pull'); const btns = pull ? [...pull.querySelectorAll('button')].map(b => b.textContent) : [];
+      const st = document.querySelector('.bk-shelf .bk-stage'); st.click(); await W(900); const pull = document.querySelector('.dbx-pull'); const btns = pull ? [...pull.querySelectorAll('button')].map(b => b.textContent) : [];
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(800); const back = !document.querySelector('.dbx-pull') && !!document.querySelector('.dbx-modal');
-      document.querySelector('.dbx-shelf .dbx-stage').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await W(300); const picked = !document.querySelector('.dbx-modal');
+      document.querySelector('.bk-shelf .bk-stage').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await W(300); const picked = !document.querySelector('.dbx-modal');
       document.getElementById('modalRoot').innerHTML = ''; return { btns, back, picked }; });
     return { ok: r.btns.some(b => /Use this deck|Keep using/.test(b)) && r.btns.includes('Edit list') && r.btns.some(b => /Sideboard/.test(b)) && r.back && r.picked, why: JSON.stringify(r) }; });
   await T('716.2 + 716.3', "Class (Stormchaser's Talent): enters at level 1 with only its level-1 ability; the level-3 \"whenever you cast an instant or sorcery\" makes no token before level 3; Level N is offered only from level N-1 at sorcery speed; becoming level 2 triggers its level-2 ability; leaving the battlefield resets the level", async () => { await reset(); await toMain();
@@ -1409,6 +1409,12 @@ const { setup } = require('./common.js');
       __d.moveCard(c.id, 'graveyard'); out.reset = c.classLevel === undefined; return out; });
     const lvlOk = (a, i) => a[i] !== 'restriction';
     return { ok: r.l1 === 0 && !r.has1 && lvlOk(r.r1, 0) && r.r1[1] === 'restriction' && r.trig2 && r.l2 === 0 && r.r2[0] === 'restriction' && lvlOk(r.r2, 1) && r.l3 === 1 && r.reset, why: JSON.stringify(r) }; });
+  await T('103.5 + UI', 'mulligan on screen: every card of the old hand is shown going back into the library (even one that is drawn again in the new seven), then the new hand is dealt', async () => { await reset();
+    const r = await ev(async () => { document.querySelectorAll('.backdrop').forEach(x => x.remove()); window.confirm = () => true; __d.startGame(); await new Promise(r => setTimeout(r, 3500)); const s = __d.state; const n0 = s.hand.length;
+      __d.doMulligan(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); await new Promise(r => setTimeout(r, 150));
+      const ghosts = document.querySelectorAll('body > .ghost').length; await new Promise(r => setTimeout(r, 4000)); __d.keepHand(); if (s.bottomPhase) { s.hand.slice(0, s.mulls).forEach(c => __d.bottomSel.add(c.id)); __d.finishMulligan(); }
+      return { n0, ghosts, hand: s.hand.length, anim: __d.settings.anim && __d.settings.anim.on !== false }; });
+    return { ok: !r.anim || r.ghosts === r.n0, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

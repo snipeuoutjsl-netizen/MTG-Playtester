@@ -3959,6 +3959,7 @@ function doMulligan() {
   dealingStart();
   snap();
   state.library.push(...state.hand.splice(0));   // CR 103.5: the whole hand goes back into the library ...
+  state.mullReset = true;   // the animation shows all seven going back, even cards that are drawn again
   shuffleLib({ delay: 450 });   // ... which is shuffled (on screen, once the old hand has landed on it) ...
   state.dealDelay = 450 + riffleDuration();   // ... then a new seven is dealt (London mulligan, CR 103.5)
   const free = !!state.cmdMode && !state.freeMullUsed;   // CR 103.5c: in a multiplayer game such as Commander the first mulligan is free
@@ -6546,7 +6547,7 @@ function openWelcome(onDone) {
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('The deck button at the top left opens your deck bookcase. Click a deck box to take it off the shelf and see its colours, mana curve and key cards, with ', B('Use this deck'), ', Edit, Sideboard and art buttons; double-click a box to use it straight away.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
+      P('The deck button at the top left opens your deck bookcase: each deck is a book with its name on the spine, ten to a shelf. Hover a book to pull it out and see its cover; click it to take it off the shelf and see its colours, mana curve and key cards, with ', B('Use this deck'), ', Edit, Sideboard and art buttons; double-click a box to use it straight away.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
@@ -6602,8 +6603,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.41';
+const APP_VERSION = '0.99.42';
 const CHANGELOG = [
+  { v: '0.99.42', title: 'Decks are books on a bookshelf', notes: ['The deck screen is now a real bookshelf: each deck is a book standing spine out with its name and colours on the spine, ten books to a shelf. Hover a book (or move to it with Tab) and it slides out and turns so you can see its front cover with the deck art. Click it to take it off the shelf (details, mana curve, Use this deck, Edit, Sideboard, art), Escape to put it back, double-click to use it straight away. The deck in use has a gold bookmark ribbon.', 'Each book is the deck\'s main colour (the colour with the most mana symbols in the deck; a deck with no coloured spells goes by its basic lands): white, blue, black, red, green, or grey for colourless.', 'FIXED: after a mulligan, a card that was drawn again in the new seven looked as if it had never left your hand. The rules were already right (CR 103.5: the whole hand goes back, the library is shuffled, a new seven is drawn); now the screen shows it too: all seven cards fly back into the library before the new hand is dealt.'] },
   { v: '0.99.41', title: 'Class enchantments have levels', notes: ['FIXED (rules, CR 716): Class enchantments such as Stormchaser\'s Talent had all of their abilities at once, so the level-3 "whenever you cast an instant or sorcery spell, create an Otter" made tokens from the start. A Class now enters at level 1 and has only the abilities of the levels it has reached. "{cost}: Level N" is offered as an ability, at sorcery speed, only from level N-1; "When this Class becomes level N" triggers when it levels up; a Class that leaves the battlefield starts again at level 1.', 'The same "only what it has reached" reading now also decides the triggered and static abilities of Spacecraft (station levels).'] },
   { v: '0.99.40', title: 'Deck bookcase, tidier Settings, mulligan to zero, Spacecraft text', notes: ['NEW: the deck screen is a bookcase. Deck boxes stand on wooden shelves; hovering slides one forward, and a click takes it off the shelf into the middle of the window, where you can turn it with the mouse and see its colours, mana curve and key cards next to Use this deck, Edit list, Sideboard, Box art and Card art & printings. Escape or Put it back returns it; a double-click still picks a deck at once.', 'Settings reorganised: Playmat & frame has its own tab, the teaching aids are grouped (Turn flow, Casting & the stack, On the cards, Help & the log) in two columns, the rows are tighter, and search now finds a single switch inside a group. A duplicate "Replacement effect notes" switch was removed. Every option and every accessibility setting is still there; the columns drop to one when the text is large.', 'FIXED: a window opened during the opening hand (Settings, for example) was drawn underneath the large hand cards.', 'RULES (CR 103.5): a mulligan always puts the whole hand back, shuffles and draws a new seven; you may now mulligan all the way to zero cards (it used to stop at one).', 'FIXED (rules): keyword costs written "Keyword\u2014Cost." (Cumulative upkeep\u2014Pay 1 life., and similar) were not read because the line ends in a period.', 'FIXED (rules): Spacecraft now read their real Oracle text ("10+ | Flying" lines, with the power and toughness box at the threshold the reminder text names), so they are only creatures, and only get those abilities, once they have enough charge counters.', 'Tests: the invented test cards are now kept in the repository, and all 237 rules checks pass.'] },
   { v: '0.99.39', title: 'Tribal Flames and "where X is" counting fixed; Card art grid tidied', notes: ['FIXED (rules): Tribal Flames and other Domain cards dealt 0 damage. "X is the number of basic land types among lands you control" is now counted (with Leyline of the Guildpact or Prismatic Omen out, each land you control has all five types, so one land gives 5; with no lands it is 0).','FIXED: a "where X is the number of ..." that the app cannot count is never taken as 0 any more. The line is left for you to do by hand (and shown as not understood) instead of quietly doing nothing. "The number of cards in your graveyard" now counts the graveyard (it used to give 0).','Card art & printings: the buttons fit inside each card (Printing\u2026 on its own row), and every card lines up.'] },
@@ -7777,6 +7779,7 @@ const DECKBOX_COL = { W: ['#4b4733', '#d8d1a2'], U: ['#0e2a52', '#3f7fcc'], B: [
 function deckColorsOf(deck) {
   const cnt = { W: 0, U: 0, B: 0, R: 0, G: 0 };
   for (const { qty, name } of deck.main) { const i = cardInfo(name); if (!i || !i.mc) continue; for (const m of i.mc.matchAll(/\{([WUBRG])\}|\{([WUBRG])\/[^}]+\}/g)) cnt[m[1] || m[2]] += qty; }
+  if (!Object.values(cnt).some(Boolean)) for (const { qty, name } of deck.main) { const t = ((cardInfo(name) || {}).t || '') + ' ' + name; for (const [k, w] of [['W', 'Plains'], ['U', 'Island'], ['B', 'Swamp'], ['R', 'Mountain'], ['G', 'Forest']]) if (new RegExp('\\b' + w + '\\b').test(t)) cnt[k] += qty; }   // no coloured spells: go by the basic land types
   return Object.entries(cnt).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]).map(e => e[0]);
 }
 function deckArtName(deckName, deck) {
@@ -7785,18 +7788,24 @@ function deckArtName(deckName, deck) {
   return deck.main[0] ? deck.main[0].name : '';
 }
 function artStyle(im) { return im && im.front ? `background-image:url("${im.front}")` : ''; }
-// v0.99.40 The deck screen is a bookcase: boxes stand on wooden shelves at an angle (front and spine both show). Hover slides a box forward;
-// clicking pulls it off the shelf into the middle of the window, where it can be turned with the mouse and played, edited or sideboarded.
-// Double-click (or Enter twice) still picks a deck straight away.
-function deckBoxModel(deckName, deck, cols, im) {
-  const a = DECKBOX_COL[cols[0] || ''], b = DECKBOX_COL[cols[1] || cols[0] || ''];
-  return h('div', { class: 'dbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
-    h('div', { class: 'dbx-face front' },
+// v0.99.42 The deck screen is a bookcase of books, ten to a shelf. Each deck is a book standing spine out (its name on the spine); hovering
+// pulls it part-way off the shelf and turns it so the front cover (art from the deck) shows. Clicking takes it right off the shelf into the
+// middle of the window, where it can be turned with the mouse and played, edited or sideboarded. Double-click (or Enter twice) uses it at once.
+const BOOKS_PER_SHELF = 10;
+const BOOK_COL = { W: ['#8f8566', '#eee6c4'], U: ['#0d2a57', '#3d82d6'], B: ['#0b090e', '#3c3446'], R: ['#4a0f08', '#d4442a'], G: ['#0b2d16', '#3f9f58'], '': ['#2a2d33', '#8b9099'] };
+const strHash = t => { let x = 7; for (const ch of String(t)) x = (x * 31 + ch.charCodeAt(0)) >>> 0; return x; };
+function bookModel(deckName, deck, cols, im, big) {
+  const a = BOOK_COL[cols[0] || ''], b = BOOK_COL[cols[1] || cols[0] || ''], hs = strHash(deckName);   // the book is the deck's main colour (the colour with the most mana symbols)
+  const T = big ? 70 : 44 + hs % 11, H = big ? 330 : 198 + (hs >> 4) % 26, D = big ? 236 : 146;
+  const pips = cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }));
+  return h('div', { class: 'bk' + (big ? ' big' : ''), 'data-col': cols[0] || 'C', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]};--T:${T}px;--H:${H}px;--D:${D}px` },
+    h('div', { class: 'bk-face spine' }, h('i', { class: 'bk-band' }), h('span', { class: 'bk-title', text: deckName }), h('span', { class: 'bk-pips' }, ...pips.map(x => x.cloneNode())), h('i', { class: 'bk-band low' })),
+    h('div', { class: 'bk-face cover' },
       h('div', { class: 'dbx-art' + (im ? '' : ' none'), style: artStyle(im) }, im ? null : h('span', { text: (deckName.trim()[0] || '?').toUpperCase() })),
       h('div', { class: 'dbx-gloss' }),
-      h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }))))),
-    h('div', { class: 'dbx-face side' }, h('span', { text: deckName })),
-    h('div', { class: 'dbx-face top' }));
+      h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...pips))),
+    h('div', { class: 'bk-face back' }),
+    h('div', { class: 'bk-face top' }));
 }
 const tiltWith = (zone, box) => {
   zone.addEventListener('mousemove', e => { const r = zone.getBoundingClientRect(); box.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); box.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
@@ -7811,21 +7820,21 @@ function deckSummary(deck) {
 }
 function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
   const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
-  const dbx = deckBoxModel(deckName, deck, cols, im);
-  const stage = h('div', { class: 'dbx-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: isCur ? `${deckName} (current deck) — click to take it off the shelf, double-click to use it` : `${deckName} — click to take it off the shelf, double-click to use it` }, dbx);
+  const bk = bookModel(deckName, deck, cols, im, false);
+  const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf, double-click to use it` }, bk);
   let clickT = 0;
   stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
   stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
-  tiltWith(stage, dbx);
-  const tile = h('div', { class: 'dbx-tile' + (isCur ? ' on' : '') }, stage, h('div', { class: 'dbx-shadow' }), h('div', { class: 'dbx-name', text: deckName }), isCur ? h('div', { class: 'dbx-cur', text: 'In use' }) : null);
+  tiltWith(stage, bk);
+  const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
   return tile;
 }
-// Take a box off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
+// Take a book off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
 function pullDeckBox(m, tile, d) {
   if (m.el.querySelector('.dbx-pull')) return;
-  const src = tile.querySelector('.dbx'), mr = m.el.getBoundingClientRect(), sr = src.getBoundingClientRect();
-  const big = deckBoxModel(d.deckName, d.deck, d.cols, d.im); big.classList.add('big');
+  const src = tile.querySelector('.bk-stage'), sr = src.getBoundingClientRect();
+  const big = bookModel(d.deckName, d.deck, d.cols, d.im, true);
   const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big); tiltWith(turn, big);
   const sm = deckSummary(d.deck), maxC = Math.max(1, ...sm.curve);
   const btn = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => { putBack(true); fn(); } });
@@ -7901,13 +7910,13 @@ function openDeckPicker() {
     const seg = FEATURES.commander ? h('div', { class: 'modeseg', role: 'tablist', 'aria-label': 'Game mode' },
       ...[['standard', 'Decks', 'Normal goldfish games'], ['commander', 'Commander', 'Commander decks and Commander rules (40 life, command zone, commander tax)']].map(([k, lab, tip]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: tip, text: lab, onclick: () => pick(k) }))) : null;
     m.body.replaceChildren(seg, names.length
-      ? h('div', { class: 'dbx-shelf' }, names.map(n => deckBoxEl(n, n === cur,
+      ? h('div', { class: 'bk-case' }, Array.from({ length: Math.ceil(names.length / BOOKS_PER_SHELF) }, (_, r) => h('div', { class: 'bk-shelf' }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
         () => openDeckArtPicker(n, draw),
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
         () => openCustomArt(n, draw),
         () => openSideboarding(n, draw),
-        (tile, d) => pullDeckBox(m, tile, d))))
+        (tile, d) => pullDeckBox(m, tile, d)))), h('div', { class: 'bk-plank' }))))
       : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();
@@ -8084,7 +8093,7 @@ function animCapture() {
   const cards = new Map(), nodes = new Map(); let n = 0;
   for (const el of document.querySelectorAll(CARD_SEL)) {
     const r = el.getBoundingClientRect(); if (!r.width) continue;
-    cards.set(el.dataset.id, { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: el.offsetWidth, h: el.offsetHeight, t: getComputedStyle(el).transform, stage: !!el.closest('#stackStage') });
+    cards.set(el.dataset.id, { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: el.offsetWidth, h: el.offsetHeight, t: getComputedStyle(el).transform, stage: !!el.closest('#stackStage'), hand: !!el.closest('#row-hand') });
     if (n++ < 70) nodes.set(el.dataset.id, el.cloneNode(true));
   }
   animPrev = { cards, nodes };
@@ -8100,7 +8109,9 @@ function sparks(x, y, col, n, dist, dur) {
   }
 }
 function animApply() {
-  const prev = animPrev; animPrev = null; if (!prev || !state || !animOn('move')) return;
+  const prev = animPrev; animPrev = null; const mullReset = !!(state && state.mullReset); if (state) delete state.mullReset; if (!prev || !state || !animOn('move')) return;
+  // v0.99.42 CR 103.5: after a mulligan EVERY card of the old hand is shown going back into the library, even one that is drawn again
+  // in the new seven (same card object, so it would otherwise just stay where it was); the new hand is then dealt from the library.
   const now = [...document.querySelectorAll(CARD_SEL)], seen = new Set(), lib = centerOf('#libstack'), jobs = [];
   let newHand = 0;
   // v0.99.35 the opening hand is dealt one card at a time; after a mulligan the old hand goes back to the library first
@@ -8108,7 +8119,7 @@ function animApply() {
   const dealBase = opening ? (state && state.dealDelay ? state.dealDelay * aspd() : returning ? 420 : 0) : 0,   /* animation units: wa() divides by the speed setting, and dealDelay is real time */ dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
   for (const el of now) {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
-    let p = prev.cards.get(id); const ff = flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
+    let p = mullReset && el.closest('#row-hand') ? null : prev.cards.get(id); const ff = mullReset ? null : flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2, t = getComputedStyle(el).transform;
     if (p) {
       const dx = p.cx - cx, dy = p.cy - cy; if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5 && p.t === t) continue;
@@ -8124,7 +8135,7 @@ function animApply() {
         const col = (SPOT_COL[spotKey(el)] || SPOT_COL['']); sparks(cx, cy, col[0], 7, 46, 520); });
     }
   }
-  const gone = [...prev.cards.keys()].filter(id => !seen.has(id));
+  const gone = [...prev.cards.keys()].filter(id => !seen.has(id) || (mullReset && prev.cards.get(id).hand));
   if (jobs.length + gone.length > 45) return;
   jobs.forEach(j => j());
   if (opening && newHand) {   // hold the Opening hand prompt back until the last card has landed, then check the fit once more
@@ -8136,7 +8147,7 @@ function animApply() {
   for (const id of gone) {
     const p = prev.cards.get(id), node = prev.nodes.get(id); if (!node) continue;
     const f = findCard(+id); let dest = null;
-    if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
+    if (mullReset && p.hand) dest = centerOf('#libstack'); else if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
     if (!dest && state.stack.some(s => s.id === +id)) dest = centerOf('#stackBox');
     node.removeAttribute('data-id'); node.removeAttribute('title'); node.classList.add('ghost');
     if (flightCounter.has(+id)) { node.style.filter = 'sepia(1) hue-rotate(-35deg) saturate(3.2) brightness(.85)'; flightCounter.delete(+id); }
