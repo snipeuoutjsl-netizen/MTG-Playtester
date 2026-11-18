@@ -1680,3 +1680,19 @@ body[data-uitheme="pixmusic"] { --bar-a: #33205f; --bar-b: #211443; --hand-a: #2
 /* top card of the library, revealed (Courser of Kruphix, Oracle of Mul Daya) — sits under the library pile like the other pile labels */
 .libtop { margin-top: 4px; max-width: 120px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--text); font-size: 10px; line-height: 1.5; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .libtop.land { border-color: var(--acc); }
+
+/* v0.99.12 land piles (a cascade like the deck view) and token bundles */
+.landpile { position: relative; flex: none; width: var(--card-w); height: calc(var(--card-h) + (var(--n) - 1) * var(--off, 22px) * var(--f, 1)); margin: 0 8px calc(16px + var(--off, 22px) * .2) 0; --off: max(15px, calc(var(--card-h) * .2)); }
+.landpile > .card { position: absolute; left: 0; top: calc(var(--i) * var(--off) * var(--f, 1)); margin: 0 !important; transform: none !important; }
+.landpile > .card:hover { z-index: 30 !important; }
+.landpile > .card.idle, .landpile.tappile > .card.tapped { opacity: 1 !important; filter: brightness(.72) saturate(.55); }
+.landpile.tappile > .card.tapped::after { content: '\21B7'; position: absolute; right: 4px; top: 2px; font-size: 12px; color: var(--muted); }
+.pilecount { position: absolute; z-index: 40; right: -6px; top: -7px; min-width: 24px; height: 20px; padding: 0 6px; border-radius: 10px; border: 1px solid rgba(0,0,0,.5); background: var(--gold, #e3b95c); color: #1a1305; font: 800 11px/18px system-ui; text-align: center; pointer-events: none; }
+.pilecap { position: absolute; left: 0; right: 0; bottom: -15px; text-align: center; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.tappile .pilecount { background: var(--panel-2); color: var(--text); border-color: var(--line); }
+.card.bundle .grpbadge { background: #e8803a; font-size: 12px; }
+.card.bundle.bt50 .grpbadge, .card.bundle.bt100 .grpbadge, .card.bundle.bt500 .grpbadge, .card.bundle.bt1000 .grpbadge { background: #d9534f; color: #fff; min-width: 32px; height: 24px; font-size: 14px; line-height: 22px; }
+.card.bundle.bt10 .grpbadge { background: #e3b95c; }
+.card.bundle.bt100, .card.bundle.bt500, .card.bundle.bt1000 { outline: 2px solid #d9534f; outline-offset: 2px; }
+#mat .cardrow .landpile { --card-w: calc(var(--cw) * var(--zone-scale)); --card-h: calc(var(--ch) * var(--zone-scale)); }
+.landpile > .card.idle:hover, .landpile.tappile > .card.tapped:hover { filter: none; }

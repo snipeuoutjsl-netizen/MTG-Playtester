@@ -5578,11 +5578,19 @@ function renderInner() {
     const lane = layoutOn('combatLane') && atk.size > 0;
     const brows = battlefieldRows(state.battlefield);
     for (const z of ['creatures', 'noncreature', 'lands']) for (const g of brows[z]) {
+      if (g.pile && g.cards.length > 1) {   // v0.99.12 land pile: a cascade where every land's name strip stays readable (the deck-view layout)
+        const n = g.cards.length, tapped = g.cards[0].tapped, f = n <= 8 ? 1 : Math.max(.35, 7 / (n - 1));
+        const el = h('div', { class: 'landpile' + (tapped ? ' tappile' : ''), style: `--n:${n};--f:${f}`, title: `${n} lands: ${g.cap}` });
+        g.cards.forEach((c, i) => { counts[z]++; const e = cardEl(c, 'battlefield'); e.style.setProperty('--i', String(i)); e.style.zIndex = String(i + 1); if (layoutOn('dimIdle') && c.tapped) e.classList.add('idle'); el.append(e); });
+        el.append(h('span', { class: 'pilecount', text: '\u00d7' + n }), h('span', { class: 'pilecap', text: g.cap }));
+        rows[z].append(el); continue;
+      }
       const open = g.key && expandedGroups.has(g.key);
       const mixed = z === 'lands' && layV('mix') && g.cards.length > 1 && !open, tapN = g.cards.filter(x => x.tapped).length;
       const shown = g.cards.length > 1 && !open ? [mixed ? ([...g.cards].reverse().find(x => !x.tapped) || g.cards[g.cards.length - 1]) : g.cards[g.cards.length - 1]] : g.cards;
       shown.forEach((c, i) => {
         counts[z]++; const e = cardEl(c, 'battlefield');
+        if (g.bundle) e.classList.add('bundle', 'bt' + g.bundle);
         if (g.cards.length > 1 && !open) { e.classList.add('stackgrp'); counts[z] += g.cards.length - 1; e.dataset.stack = String(g.cards.length); e.style.setProperty('--sg', String(Math.min(3, g.cards.length - 1)));
           { const nl = Math.min(4, g.cards.length - 1), im0 = cardArt(c), im1 = im0;
             for (let k = nl; k >= 1; k--) e.prepend(h('div', { class: 'sgl', style: `--k:${k};--n:${nl}` }, im1 ? h('img', { src: im1.front, alt: '', draggable: 'false' }) : h('div', { class: 'mini' }, h('b', { text: c.name })))); }
@@ -6385,8 +6393,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.11';
+const APP_VERSION = '0.99.12';
 const CHANGELOG = [
+  { v: '0.99.12', title: 'Land piles by colour and token bundles', notes: ['NEW: lands pile by what they do. Untapped lands that make the same colours share one pile (all your {G} lands together, all {U}/{B} lands together), every tapped land goes into one Tapped pile, and a land with an activated ability (fetch lands, Wasteland, manlands) only piles with exact copies of itself until it is tapped. A pile is a cascade like the deck view, so the name of every land stays readable; click one land to tap or untap just that land. Tapped lands in a pile are dimmed rather than turned sideways so their names still read. Turn it off with Settings > Layout > Land piles by mana colour.', 'NEW: identical tokens bundle in fives. Two fives make a ten, five tens a fifty, two fifties a hundred, and so on up to a thousand, each with a count and a stronger colour as it grows, so an infinite-token engine is easy to see. Fewer than five stay as separate tokens; click a bundle to spread the whole group out.']},
   { v: '0.99.11', title: 'Only usable tokens', notes: ['CHANGED: the offline token set now holds only tokens that can appear in a paper game. Joke / Un-set and memorabilia tokens are left out, and entries that differ only by artwork, colour order or reminder text collapse into one. Older saved token lists are replaced by a fresh filtered download on next start.']},
   { v: '0.99.10', title: 'Always yield is per card', notes: ['FIXED: "Always yield" was remembered by card name, so a second copy of the same card (Kappa Cannonier, for example) reused the first copy\'s targets. It is now tracked per individual card: cast a second copy, pick its targets, and choose Always yield again if you want it (CR 603.5, 601.2c).']},
   { v: '0.99.9', title: 'Attack requirements, quoted token abilities, and every token offline', notes: ['NEW: "Attacks each combat if able" (Dragon\'s Rage Channeler when delirious, Goblin Rabblemaster\'s Goblins, and the same wording on any card or Aura) is now enforced (CR 508.1d). The attack helper pre-selects the creatures that must attack, shows why, and will not let you untick them; skipping attacking still sends them in.', 'FIXED: a quoted ability on a token a card creates ("create a token with \'Whenever this creature attacks, ...\'") was read as the card\'s own ability, so Weapons Manufacturing skipped its token (CR 111.4, 113.3). Quoted text now belongs to the thing it is given to; the card is read without it. Emblems and granted abilities keep their quotes.', 'NEW: every official token and emblem is downloaded from Scryfall on first start and with each card-data load, then saved offline like the cards (refreshed monthly). The status chip shows the token count, so the engine knows every token a deck might create.']},
@@ -8332,7 +8341,7 @@ const LAY_DEFS = [
   ['lanes', 'Two lanes', 'Creatures get one wide lane across the top and are centred in it; lands and other permanents share one band below, lands on the left.'],
   ['rail', 'Slim zone rail', 'Library, graveyard and exile become three card-sized slots on a slim rail at the edge. Click one to open it; hover for a list.'],
   ['side', 'Slimmer right column', 'The enlarged card preview, the stack and the log share a narrower right column (286px instead of 330px), so the board is wider.'],
-  ['mix', 'One pile per land name', 'Tapped and untapped copies of a land share one pile. The pile shows how many are tapped, and clicking it taps an untapped one (or untaps one if all are tapped).']
+  ['mix', 'Land piles by mana colour', 'Untapped lands that make the same colours share a pile, all tapped lands share one pile, and a land with an activated ability only piles with exact copies. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
 ];
 const layMode = () => settings.layoutMode !== 'original';
 const layV = k => layMode() && !(settings.lay && settings.lay[k] === false);
@@ -8351,15 +8360,43 @@ function stackableCard(c) {
   if (state.battlefield.some(x => x.att === c.id)) return false;
   return (c.token || permZone(c) === 'lands');
 }
+// v0.99.12 Land piles and token bundles.
+// Lands: untapped lands pile by the mana colours they make (every Forest and Llanowar Wastes-type land that makes only {G} share a pile), all tapped lands share one pile,
+// and a land with an activated ability (fetch, manland, Wasteland...) only piles with exact copies of itself until it is tapped. A pile is a cascade like the deck view: every land keeps its name strip visible.
+// Tokens: identical tokens bundle in fives; two fives make a ten, five tens a fifty, two fifties a hundred, and so on, so a huge number of tokens is one obvious stack with a count.
+const TOKEN_LADDER = [1000, 500, 100, 50, 10, 5];
+function tokenBundles(n) { const out = []; let left = n; for (const sz of TOKEN_LADDER) while (left >= sz) { out.push(sz); left -= sz; } return { bundles: out, loose: left }; }
+function landHasActivated(c) { try { return activatedAbilitiesFor(c).length > 0; } catch (e) { return false; } }
+function landPileKey(c) {
+  const extra = [JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : ''].join('~');
+  if (c.tapped) return { key: 'lands#tapped~' + extra, cap: 'Tapped' };
+  if (landHasActivated(c)) return { key: 'lands#own~' + c.name + '~' + extra, cap: c.name.split(' // ')[0] };
+  let cols = []; try { cols = landManaColors(c).slice().sort(); } catch (e) { cols = []; }
+  const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
+  return { key: 'lands#cols:' + cols.join('') + '~' + extra, cap: cols.length ? cols.join(' ') : 'No mana' };
+}
 // Rows of the battlefield with identical cards folded into one (v0.67).
 function battlefieldRows(cards) {
   const out = { creatures: [], noncreature: [], lands: [] };
   const on = layoutOn('stackCards'), groups = new Map();
   for (const c of cards) {
     const z = permZone(c);
-    if (on && stackableCard(c)) { const k = z + '#' + (z === 'lands' && layV('mix') ? groupKeyMix(c) : groupKey(c)); let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [] }; groups.set(k, g); out[z].push(g); } g.cards.push(c); }
-    else out[z].push({ key: null, zone: z, cards: [c] });
+    if (on && stackableCard(c)) {
+      let k, cap = '';
+      if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else k = z + '#' + groupKey(c);
+      let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: z === 'lands' && layV('mix'), cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
+    } else out[z].push({ key: null, zone: z, cards: [c] });
   }
+  for (const z of ['creatures', 'noncreature']) {   // token bundles (fives, tens, fifties...)
+    const list = out[z]; out[z] = [];
+    for (const g of list) {
+      if (!g.key || g.cards.length < 5 || expandedGroups.has(g.key)) { out[z].push(g); continue; }
+      const { bundles, loose } = tokenBundles(g.cards.length); let at = 0;
+      for (const sz of bundles) { out[z].push({ key: g.key, zone: z, cards: g.cards.slice(at, at + sz), bundle: sz }); at += sz; }
+      for (; at < g.cards.length; at++) out[z].push({ key: null, zone: z, cards: [g.cards[at]] });
+    }
+  }
+  for (const g of out.lands) if (g.pile && g.cards.length > 1) g.cards.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   return out;
 }
 // The stack floats in the middle of the table (v0.70.2) so you can see exactly what is on it. While you drag a card or permanent, it becomes a drop
