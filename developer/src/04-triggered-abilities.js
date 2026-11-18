@@ -711,12 +711,25 @@ function effectOptionsBase(tx, obj) {
     const lk = /look at the top card of your library\.\s*You may reveal (?:that|it)(?: card)?\.\s*If an? ([^.,]+?) card is revealed this way, transform ~/i.exec(txs);
     if (lk) {
       const words = lk[1].split(/,\s*|\s+or\s+/).map(w => w.trim()).filter(Boolean), re = new RegExp('\\b(?:' + words.join('|') + ')\\b', 'i');
-      opts.push({ full: true, label: `Look at the top card of your library; transform ${src} if it is ${lk[1]}`, fn: () => {
+      // v0.99.43 CR 701.16a + 608.2c: you look at the card first (only you see it), then decide whether to reveal it. Revealing any card is allowed;
+      // only a revealed card of the named kind transforms it (CR 701.28). The card stays on top of the library either way.
+      opts.push({ full: true, label: `Look at the top card of your library, then choose whether to reveal it (${src} transforms if you reveal ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card)`, fn: () => {
         const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; }
         const top = state.library[0]; if (!top) { toast('Library empty', 'There is no card to look at.'); return; }
-        const ti = cardInfo(top.name), ty = ((ti && ti.t) || '').split(' // ')[0];
-        if (re.test(ty)) { log(`${src}: revealed ${top.name} (${lk[1]}); transforming`); toast(`Revealed ${top.name}`, `It is ${lk[1]}, so ${src} transforms.`); transformPerm(f.card.id, 1); }
-        else { log(`${src}: looked at the top card (${top.name}); not revealed, no transform`); toast(`Top card: ${top.name}`, `It is not ${lk[1]}, so you do not reveal it and ${src} does not transform. It stays on top of your library.`); }
+        const ti = cardInfo(top.name), ty = ((ti && ti.t) || '').split(' // ')[0], hit = re.test(ty);
+        const m = modal(`${src}: the top card of your library`, { width: 460, sticky: true, noClose: true });
+        let pic = null; try { pic = spotCardEl(top); pic.classList.add('peek-card'); } catch (e) { pic = h('div', { class: 'peek-card', text: top.name }); }
+        m.body.append(h('div', { class: 'peek-wrap' }, pic,
+          h('div', { class: 'peek-txt' }, h('b', { text: top.name }), h('div', { class: 'muted small', text: ty || 'card' }),
+            h('div', { class: 'small', style: 'margin-top:8px', text: `Only you have looked at it. You may reveal it. If you reveal ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card, ${src} transforms. It stays on top of your library either way.` }),
+            h('div', { class: 'small ' + (hit ? 'peek-yes' : 'muted'), style: 'margin-top:6px', text: hit ? `This is ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card: revealing it transforms ${src}.` : `This is not ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card: revealing it would not transform ${src}.` }))));
+        const done = reveal => { m.close();
+          if (!reveal) { log(`${src}: looked at the top card and kept it hidden; no transform`); return; }
+          const g = findCard(obj.sourceId);
+          if (hit && g && g.zone === 'battlefield') { log(`${src}: revealed ${top.name} (${lk[1]}); transforming`); transformPerm(g.card.id, 1); }
+          else { log(`${src}: revealed ${top.name}${hit ? '' : ` (not ${lk[1]})`}; no transform`); toast(`Revealed ${top.name}`, hit ? `${src} is no longer on the battlefield.` : `It is not ${lk[1]}, so ${src} does not transform.`); }
+          render(); };
+        m.foot.append(h('button', { text: 'Keep it hidden', onclick: () => done(false) }), h('button', { class: hit ? 'primary' : '', text: hit ? `Reveal it (transform ${src})` : 'Reveal it', onclick: () => done(true) }));
       } });
     } else opts.push({ label: `Transform ${src}`, fn: () => transformPerm(obj.sourceId) });
   }

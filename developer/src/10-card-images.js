@@ -11,7 +11,11 @@ const imgKey = name => norm(name);
 // Custom card art (v0.69): the player's own images, stored per deck and per card in IndexedDB ('cart:<deck>|<card>').
 const CUSTOM = new Map();         // `${deck}|${normalized name}` -> { front, back: null, custom: true }
 const customMapKey = (deck, name) => deck + '|' + imgKey(name);
-const imgFor = (name, deck) => { const d = deck === undefined ? lsGet('mtgpt.current', null) : deck; if (d && CUSTOM.size) { const c = CUSTOM.get(customMapKey(d, name)); if (c) return c; } const e = IMG.get(imgKey(name)); if (e) return e; const fr = FACES.get(imgKey(name)); if (fr) { const pe = IMG.get(imgKey(fr.bf)) || IMG.get(imgKey(fr.bf.split(' // ')[0])); if (pe && fr.half) return pe; if (pe && pe.back) return { ...pe, front: pe.back, back: pe.front }; } return null; };
+const imgFor = (name, deck) => { const d = deck === undefined ? lsGet('mtgpt.current', null) : deck; if (d && CUSTOM.size) { const c = CUSTOM.get(customMapKey(d, name)); if (c) return c; } const e = IMG.get(imgKey(name)), fr = FACES.get(imgKey(name));
+  // v0.99.43 the back face of a transforming card (Insectile Aberration): its picture is the BACK of the whole card's entry. An entry saved under the
+  // back face's own name is also the whole card (Scryfall answers a back-face name with the whole card, front first), so it is turned over too.
+  if (fr && !fr.half && fr.fi > 0) { const pe = IMG.get(imgKey(fr.bf)) || IMG.get(imgKey(fr.bf.split(' // ')[0])); if (pe && pe.back) return { ...pe, front: pe.back, back: pe.front }; if (e && e.back) return { ...e, front: e.back, back: e.front }; }
+  if (e) return e; if (fr) { const pe = IMG.get(imgKey(fr.bf)) || IMG.get(imgKey(fr.bf.split(' // ')[0])); if (pe && fr.half) return pe; if (pe && pe.back) return { ...pe, front: pe.back, back: pe.front }; } return null; };
 
 async function idbGetMany(keys) {
   try {

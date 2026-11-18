@@ -25,7 +25,8 @@ async function fetchPrints(name) {
     for (const c of j.data || []) {
       const face = c.image_uris ? c : (c.card_faces || []).find(f => f.image_uris); if (!face) continue;
       out.push({ id: c.id, set: c.set, setName: c.set_name, cn: c.collector_number, tcg: c.tcgplayer_id || null, year: (c.released_at || '').slice(0, 4), lang: c.lang,
-        small: face.image_uris.small || face.image_uris.normal, normal: face.image_uris.normal || face.image_uris.large, finishes: c.finishes || [] });
+        small: face.image_uris.small || face.image_uris.normal, normal: face.image_uris.normal || face.image_uris.large, finishes: c.finishes || [],
+        ...(c.card_faces && c.card_faces.length > 1 && c.card_faces[1].image_uris ? { backName: c.card_faces[1].name, backNormal: c.card_faces[1].image_uris.normal || c.card_faces[1].image_uris.large } : {}) });   // a transforming card: its back face's picture of the same printing
     }
     url = j.has_more ? j.next_page : null; if (url) await sleep(110);   // Scryfall asks for no more than about ten requests a second
   }
@@ -49,7 +50,9 @@ function openPrintPicker(deck, name, after) {
         status.textContent = `Downloading ${p.setName} #${p.cn}…`;
         try {
           const r = await fetch(p.normal); if (!r.ok) throw new Error('picture ' + r.status);
-          await setCustomArt(deck, name, await r.blob(), { id: p.id, set: p.set, setName: p.setName, cn: p.cn, tcg: p.tcg, year: p.year });
+          const pm = { id: p.id, set: p.set, setName: p.setName, cn: p.cn, tcg: p.tcg, year: p.year };
+          await setCustomArt(deck, name, await r.blob(), pm);
+          if (p.backNormal && p.backName) { const rb = await fetch(p.backNormal); if (rb.ok) await setCustomArt(deck, p.backName, await rb.blob(), pm); }   // the back face shows the same printing once it transforms
           m.close(); render(); toast('Printing chosen', `${name}: ${printLabel(printFor(deck, name))}`);
         } catch (e) { status.textContent = 'Could not download that picture (' + e.message + '). Check the internet connection and try again.'; }
       });

@@ -1828,12 +1828,25 @@ function effectOptionsBase(tx, obj) {
     const lk = /look at the top card of your library\.\s*You may reveal (?:that|it)(?: card)?\.\s*If an? ([^.,]+?) card is revealed this way, transform ~/i.exec(txs);
     if (lk) {
       const words = lk[1].split(/,\s*|\s+or\s+/).map(w => w.trim()).filter(Boolean), re = new RegExp('\\b(?:' + words.join('|') + ')\\b', 'i');
-      opts.push({ full: true, label: `Look at the top card of your library; transform ${src} if it is ${lk[1]}`, fn: () => {
+      // v0.99.43 CR 701.16a + 608.2c: you look at the card first (only you see it), then decide whether to reveal it. Revealing any card is allowed;
+      // only a revealed card of the named kind transforms it (CR 701.28). The card stays on top of the library either way.
+      opts.push({ full: true, label: `Look at the top card of your library, then choose whether to reveal it (${src} transforms if you reveal ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card)`, fn: () => {
         const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; }
         const top = state.library[0]; if (!top) { toast('Library empty', 'There is no card to look at.'); return; }
-        const ti = cardInfo(top.name), ty = ((ti && ti.t) || '').split(' // ')[0];
-        if (re.test(ty)) { log(`${src}: revealed ${top.name} (${lk[1]}); transforming`); toast(`Revealed ${top.name}`, `It is ${lk[1]}, so ${src} transforms.`); transformPerm(f.card.id, 1); }
-        else { log(`${src}: looked at the top card (${top.name}); not revealed, no transform`); toast(`Top card: ${top.name}`, `It is not ${lk[1]}, so you do not reveal it and ${src} does not transform. It stays on top of your library.`); }
+        const ti = cardInfo(top.name), ty = ((ti && ti.t) || '').split(' // ')[0], hit = re.test(ty);
+        const m = modal(`${src}: the top card of your library`, { width: 460, sticky: true, noClose: true });
+        let pic = null; try { pic = spotCardEl(top); pic.classList.add('peek-card'); } catch (e) { pic = h('div', { class: 'peek-card', text: top.name }); }
+        m.body.append(h('div', { class: 'peek-wrap' }, pic,
+          h('div', { class: 'peek-txt' }, h('b', { text: top.name }), h('div', { class: 'muted small', text: ty || 'card' }),
+            h('div', { class: 'small', style: 'margin-top:8px', text: `Only you have looked at it. You may reveal it. If you reveal ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card, ${src} transforms. It stays on top of your library either way.` }),
+            h('div', { class: 'small ' + (hit ? 'peek-yes' : 'muted'), style: 'margin-top:6px', text: hit ? `This is ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card: revealing it transforms ${src}.` : `This is not ${/^[aeiou]/i.test(lk[1]) ? 'an' : 'a'} ${lk[1]} card: revealing it would not transform ${src}.` }))));
+        const done = reveal => { m.close();
+          if (!reveal) { log(`${src}: looked at the top card and kept it hidden; no transform`); return; }
+          const g = findCard(obj.sourceId);
+          if (hit && g && g.zone === 'battlefield') { log(`${src}: revealed ${top.name} (${lk[1]}); transforming`); transformPerm(g.card.id, 1); }
+          else { log(`${src}: revealed ${top.name}${hit ? '' : ` (not ${lk[1]})`}; no transform`); toast(`Revealed ${top.name}`, hit ? `${src} is no longer on the battlefield.` : `It is not ${lk[1]}, so ${src} does not transform.`); }
+          render(); };
+        m.foot.append(h('button', { text: 'Keep it hidden', onclick: () => done(false) }), h('button', { class: hit ? 'primary' : '', text: hit ? `Reveal it (transform ${src})` : 'Reveal it', onclick: () => done(true) }));
       } });
     } else opts.push({ label: `Transform ${src}`, fn: () => transformPerm(obj.sourceId) });
   }
@@ -3511,7 +3524,11 @@ const imgKey = name => norm(name);
 // Custom card art (v0.69): the player's own images, stored per deck and per card in IndexedDB ('cart:<deck>|<card>').
 const CUSTOM = new Map();         // `${deck}|${normalized name}` -> { front, back: null, custom: true }
 const customMapKey = (deck, name) => deck + '|' + imgKey(name);
-const imgFor = (name, deck) => { const d = deck === undefined ? lsGet('mtgpt.current', null) : deck; if (d && CUSTOM.size) { const c = CUSTOM.get(customMapKey(d, name)); if (c) return c; } const e = IMG.get(imgKey(name)); if (e) return e; const fr = FACES.get(imgKey(name)); if (fr) { const pe = IMG.get(imgKey(fr.bf)) || IMG.get(imgKey(fr.bf.split(' // ')[0])); if (pe && fr.half) return pe; if (pe && pe.back) return { ...pe, front: pe.back, back: pe.front }; } return null; };
+const imgFor = (name, deck) => { const d = deck === undefined ? lsGet('mtgpt.current', null) : deck; if (d && CUSTOM.size) { const c = CUSTOM.get(customMapKey(d, name)); if (c) return c; } const e = IMG.get(imgKey(name)), fr = FACES.get(imgKey(name));
+  // v0.99.43 the back face of a transforming card (Insectile Aberration): its picture is the BACK of the whole card's entry. An entry saved under the
+  // back face's own name is also the whole card (Scryfall answers a back-face name with the whole card, front first), so it is turned over too.
+  if (fr && !fr.half && fr.fi > 0) { const pe = IMG.get(imgKey(fr.bf)) || IMG.get(imgKey(fr.bf.split(' // ')[0])); if (pe && pe.back) return { ...pe, front: pe.back, back: pe.front }; if (e && e.back) return { ...e, front: e.back, back: e.front }; }
+  if (e) return e; if (fr) { const pe = IMG.get(imgKey(fr.bf)) || IMG.get(imgKey(fr.bf.split(' // ')[0])); if (pe && fr.half) return pe; if (pe && pe.back) return { ...pe, front: pe.back, back: pe.front }; } return null; };
 
 async function idbGetMany(keys) {
   try {
@@ -6603,8 +6620,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.42';
+const APP_VERSION = '0.99.43';
 const CHANGELOG = [
+  { v: '0.99.43', title: 'Delver: look before you reveal; transformed cards show their back art', notes: ['CHANGED (rules, CR 701.16a): Delver of Secrets and cards like it now show you the top card of your library first. Then you choose Reveal it or Keep it hidden. Only a revealed instant or sorcery transforms it, and the card stays on top of your library either way.', 'FIXED: a transformed card (Delver of Secrets \u2192 Insectile Aberration) could keep showing its front picture. The back face now always shows the back of the card. If you chose a printing for a two-faced card, its back face uses the same printing; Use the default art resets both faces.', 'Mulligan check: watched frame by frame, all seven cards of the old hand fly back into the library (including any that are drawn again) before the new seven is dealt. This needs v0.99.42 or later.'] },
   { v: '0.99.42', title: 'Decks are books on a bookshelf', notes: ['The deck screen is now a real bookshelf: each deck is a book standing spine out with its name and colours on the spine, ten books to a shelf. Hover a book (or move to it with Tab) and it slides out and turns so you can see its front cover with the deck art. Click it to take it off the shelf (details, mana curve, Use this deck, Edit, Sideboard, art), Escape to put it back, double-click to use it straight away. The deck in use has a gold bookmark ribbon.', 'Each book is the deck\'s main colour (the colour with the most mana symbols in the deck; a deck with no coloured spells goes by its basic lands): white, blue, black, red, green, or grey for colourless.', 'FIXED: after a mulligan, a card that was drawn again in the new seven looked as if it had never left your hand. The rules were already right (CR 103.5: the whole hand goes back, the library is shuffled, a new seven is drawn); now the screen shows it too: all seven cards fly back into the library before the new hand is dealt.'] },
   { v: '0.99.41', title: 'Class enchantments have levels', notes: ['FIXED (rules, CR 716): Class enchantments such as Stormchaser\'s Talent had all of their abilities at once, so the level-3 "whenever you cast an instant or sorcery spell, create an Otter" made tokens from the start. A Class now enters at level 1 and has only the abilities of the levels it has reached. "{cost}: Level N" is offered as an ability, at sorcery speed, only from level N-1; "When this Class becomes level N" triggers when it levels up; a Class that leaves the battlefield starts again at level 1.', 'The same "only what it has reached" reading now also decides the triggered and static abilities of Spacecraft (station levels).'] },
   { v: '0.99.40', title: 'Deck bookcase, tidier Settings, mulligan to zero, Spacecraft text', notes: ['NEW: the deck screen is a bookcase. Deck boxes stand on wooden shelves; hovering slides one forward, and a click takes it off the shelf into the middle of the window, where you can turn it with the mouse and see its colours, mana curve and key cards next to Use this deck, Edit list, Sideboard, Box art and Card art & printings. Escape or Put it back returns it; a double-click still picks a deck at once.', 'Settings reorganised: Playmat & frame has its own tab, the teaching aids are grouped (Turn flow, Casting & the stack, On the cards, Help & the log) in two columns, the rows are tighter, and search now finds a single switch inside a group. A duplicate "Replacement effect notes" switch was removed. Every option and every accessibility setting is still there; the columns drop to one when the text is large.', 'FIXED: a window opened during the opening hand (Settings, for example) was drawn underneath the large hand cards.', 'RULES (CR 103.5): a mulligan always puts the whole hand back, shuffles and draws a new seven; you may now mulligan all the way to zero cards (it used to stop at one).', 'FIXED (rules): keyword costs written "Keyword\u2014Cost." (Cumulative upkeep\u2014Pay 1 life., and similar) were not read because the line ends in a period.', 'FIXED (rules): Spacecraft now read their real Oracle text ("10+ | Flying" lines, with the power and toughness box at the threshold the reminder text names), so they are only creatures, and only get those abilities, once they have enough charge counters.', 'Tests: the invented test cards are now kept in the repository, and all 237 rules checks pass.'] },
@@ -7984,8 +8002,9 @@ async function setCustomArt(deck, name, file, print) {   // v0.99.37 print: the 
   if (old) URL.revokeObjectURL(old.front);
   CUSTOM.set(mk, { front: URL.createObjectURL(blob), back: null, remote: false, custom: true });
 }
-async function resetCustomArt(deck, name) {
+async function resetCustomArt(deck, name, _face) {
   const mk = customMapKey(deck, name), old = CUSTOM.get(mk); if (old) URL.revokeObjectURL(old.front); CUSTOM.delete(mk); setPrintMeta(deck, name, null);
+  if (!_face) { const inf = cardInfo(name); for (const f of (inf && inf.fc) || []) if (f && f.name && f.name !== name && CUSTOM.has(customMapKey(deck, f.name))) await resetCustomArt(deck, f.name, true); }   // and the back face's picture of that printing
   try { await idbDelete(['cart:' + mk]); } catch (e) { /* ignore */ }
 }
 function clearDeckArt(deck) {
@@ -13093,7 +13112,8 @@ async function fetchPrints(name) {
     for (const c of j.data || []) {
       const face = c.image_uris ? c : (c.card_faces || []).find(f => f.image_uris); if (!face) continue;
       out.push({ id: c.id, set: c.set, setName: c.set_name, cn: c.collector_number, tcg: c.tcgplayer_id || null, year: (c.released_at || '').slice(0, 4), lang: c.lang,
-        small: face.image_uris.small || face.image_uris.normal, normal: face.image_uris.normal || face.image_uris.large, finishes: c.finishes || [] });
+        small: face.image_uris.small || face.image_uris.normal, normal: face.image_uris.normal || face.image_uris.large, finishes: c.finishes || [],
+        ...(c.card_faces && c.card_faces.length > 1 && c.card_faces[1].image_uris ? { backName: c.card_faces[1].name, backNormal: c.card_faces[1].image_uris.normal || c.card_faces[1].image_uris.large } : {}) });   // a transforming card: its back face's picture of the same printing
     }
     url = j.has_more ? j.next_page : null; if (url) await sleep(110);   // Scryfall asks for no more than about ten requests a second
   }
@@ -13117,7 +13137,9 @@ function openPrintPicker(deck, name, after) {
         status.textContent = `Downloading ${p.setName} #${p.cn}…`;
         try {
           const r = await fetch(p.normal); if (!r.ok) throw new Error('picture ' + r.status);
-          await setCustomArt(deck, name, await r.blob(), { id: p.id, set: p.set, setName: p.setName, cn: p.cn, tcg: p.tcg, year: p.year });
+          const pm = { id: p.id, set: p.set, setName: p.setName, cn: p.cn, tcg: p.tcg, year: p.year };
+          await setCustomArt(deck, name, await r.blob(), pm);
+          if (p.backNormal && p.backName) { const rb = await fetch(p.backNormal); if (rb.ok) await setCustomArt(deck, p.backName, await rb.blob(), pm); }   // the back face shows the same printing once it transforms
           m.close(); render(); toast('Printing chosen', `${name}: ${printLabel(printFor(deck, name))}`);
         } catch (e) { status.textContent = 'Could not download that picture (' + e.message + '). Check the internet connection and try again.'; }
       });
