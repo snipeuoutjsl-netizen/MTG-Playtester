@@ -6592,8 +6592,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.36';
+const APP_VERSION = '0.99.37';
 const CHANGELOG = [
+  { v: '0.99.37', title: 'Choose printings (alternate art) and buy the deck', notes: ['Card art & printings (Deck view, or Deck boxes \u2192 art): every card has a Printing\u2026 button that lists all of the card\u2019s real printings from Scryfall with their pictures. Pick one and that art is used for the card in this deck, on the table, in your hand and in the preview. Use the default art goes back. Your own pictures still work as before.','Buy this deck (Deck view): opens TCGplayer Mass Entry in your browser with the deck filled in, using the exact printing you chose for each card (other cards are left to TCGplayer). Nothing is bought until you check out there. Copy list with set codes puts the list on the clipboard for any other store (Card Kingdom, Mana Pool, a local store).'] },
   { v: '0.99.36', title: 'Opening hand, attack requirements, triggers on the stack, choice costs', notes: ['Opening hand: the large, centred hand is only for deciding whether to keep or mulligan, so you can read every card. From Keep on (putting cards on the bottom, Pre-game actions, your first turn) it is the normal hand. The prompt and the hand sit together in the middle of the table.','Mulligan and new game: you see the whole hand go back into the library, the library shuffle, and the new seven dealt one at a time (rules 103.2 and 103.5). Shuffles were already correct (an unbiased Fisher-Yates shuffle with cryptographic randomness); this is now checked by statistical tests.','The card you choose for a mulligan is stamped BOTTOM, not DISCARD (the stamp now says what happens to the card).','FIXED (rules): a creature that "attacks each combat if able" (Dragon\u2019s Rage Channeler with delirium, Goblin Rabblemaster\u2019s Goblins...) no longer attacks by itself. The Declare attackers window opens with it already chosen and locked, and you may add other attackers (rule 508.1d). Clicking a later step or Next turn also stops at declare attackers instead of skipping the requirement.','Triggered abilities go on the stack by themselves (rule 603.3): there is no "Put on the stack" button for a single ability. You are asked only for its targets or modes; if several abilities trigger at once, a window asks for their order (rule 603.3b). A "you may" choice is made when the ability resolves (rule 603.5).','FIXED (rules): an additional cost with a choice, such as Lightning Axe\u2019s "discard a card or pay {5}", is read as two ways to cast the spell (rule 601.2b); each is offered when you can pay it.'] },
   { v: '0.99.35', title: 'A smoother opening hand; the stack shown on top of the table', notes: ['Opening hand: your seven cards are dealt one at a time from the library, and the Opening hand box appears once the last card has landed. After a mulligan the old hand goes back to the library first, then the new one is dealt.','The hand keeps one size from the deal, through mulligans and choosing cards for the bottom, to the Pre-game actions screen, and only goes back to normal size when your first turn begins. On a small window it takes the size that fits every step instead of changing between them.','Pre-game actions shows the first sentence of each card (the full text is in its tooltip), so the screen stays compact.','Stack: the stack panel in the middle of the table is now solid and always on top. Your board is dimmed behind it, your cards and permanents stay usable so you can respond, and the panel shrinks to fit above your hand, so no card or zone covers it or its buttons.'] },
   { v: '0.99.34', title: 'UI check: top bar on wide screens, tidier start of game', notes: ['FIXED: on wide windows (over 1700 pixels) the top bar labels (Undo, Shuffle, Draw, Untap all, Token, Stack) were squeezed into small square buttons, overlapped each other and covered the next button, so a click could hit the wrong one. They now get their full width.','The Pre-game actions screen only appears when a card in your opening hand can actually do something before the game (Leylines, opening-hand reveals...). It no longer stops every game just to say there is nothing to do.','The Opening hand box no longer says "Your hand is shown below."','Pop-ups opened during the opening hand (for example Deck view) now fit above your hand and scroll, instead of running off the top of the window.','The "Download card data?" prompt closes by itself once card data has been loaded from a file.'] },
@@ -7211,7 +7212,9 @@ function openStats() {
   }
 
   })();
-  m.foot.append(h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+  m.foot.append(h('button', { text: 'Card art & printings…', title: 'Choose a printing (alternate art) for any card, or your own picture', onclick: () => { m.close(); openCustomArt(deck.name, () => openStats()); } }),
+    h('button', { text: 'Buy this deck…', title: 'Open TCGplayer with this list (and your chosen printings) ready to add to the cart', onclick: () => openBuyDeck(deck) }),
+    h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));   // v0.99.37
 }
 
 // ---------------------------------------------------------------- fetch lands
@@ -7895,17 +7898,19 @@ async function fitArt(file) {
   const cx = cv.getContext('2d'); cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(bmp, 0, 0, cv.width, cv.height); if (bmp.close) bmp.close();
   return await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('Could not read that picture.')), 'image/jpeg', 0.92));
 }
-async function setCustomArt(deck, name, file) {
+async function setCustomArt(deck, name, file, print) {   // v0.99.37 print: the Scryfall printing this picture is (from the printing picker); your own picture clears it
   const blob = await fitArt(file), mk = customMapKey(deck, name), old = CUSTOM.get(mk);
+  setPrintMeta(deck, name, print || null);
   try { await idbSet('cart:' + mk, blob); } catch (e) { toast('Not saved', 'This picture is used for now, but the browser would not store it, so it will be gone next time.'); }
   if (old) URL.revokeObjectURL(old.front);
   CUSTOM.set(mk, { front: URL.createObjectURL(blob), back: null, remote: false, custom: true });
 }
 async function resetCustomArt(deck, name) {
-  const mk = customMapKey(deck, name), old = CUSTOM.get(mk); if (old) URL.revokeObjectURL(old.front); CUSTOM.delete(mk);
+  const mk = customMapKey(deck, name), old = CUSTOM.get(mk); if (old) URL.revokeObjectURL(old.front); CUSTOM.delete(mk); setPrintMeta(deck, name, null);
   try { await idbDelete(['cart:' + mk]); } catch (e) { /* ignore */ }
 }
 function clearDeckArt(deck) {
+  forgetDeckPrints(deck);
   const ks = [...CUSTOM.keys()].filter(k => k.startsWith(deck + '|'));
   for (const k of ks) { URL.revokeObjectURL(CUSTOM.get(k).front); CUSTOM.delete(k); }
   if (ks.length) idbDelete(ks.map(k => 'cart:' + k)).catch(() => {});
@@ -7914,7 +7919,7 @@ function openCustomArt(deckName, after) {
   const dk = loadDecks()[deckName]; if (!dk) return; const deck = parseDeck(dk.text);
   const qty = new Map(); for (const x of deck.main.concat(deck.side)) { const r = resolve(x.name), n = r ? r.name : x.name; qty.set(n, (qty.get(n) || 0) + (x.qty || x.n || 1)); }
   const names = [...qty.keys()].sort((a, b) => a.localeCompare(b));
-  const m = modal(`Custom card art: ${deckName}`, { width: 900, onClose: after });
+  const m = modal(`Card art & printings: ${deckName}`, { width: 900, onClose: after });
   const grid = h('div', { class: 'cart-grid' }), note = h('div', { class: 'small', style: 'color:var(--gold);min-height:18px;margin:4px 0' });
   const customCount = () => names.filter(n => CUSTOM.has(customMapKey(deckName, n))).length;
   const pick = (accept, multiple, cb) => { const inp = h('input', { type: 'file', accept, style: 'display:none' }); if (multiple) inp.multiple = true; inp.addEventListener('change', () => { const fs = [...inp.files]; inp.remove(); if (fs.length) cb(fs); }); document.body.append(inp); inp.click(); };
@@ -7922,8 +7927,10 @@ function openCustomArt(deckName, after) {
     grid.replaceChildren(...names.map(n => {
       const has = CUSTOM.has(customMapKey(deckName, n)), im = imgFor(n, deckName);
       const thumb = h('div', { class: 'cart-thumb' + (im ? '' : ' none') + (has ? ' mine' : ''), style: im ? `background-image:url("${im.front}")` : '' }, im ? null : h('span', { text: n }), has ? h('i', { class: 'cart-mine', text: 'custom' }) : null);
-      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }),
+      const pr = printFor(deckName, n);
+      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }), pr ? h('div', { class: 'cart-print small muted', text: printLabel(pr) }) : null,
         h('div', { class: 'cart-btns' },
+          h('button', { text: 'Printing…', title: 'Choose one of the card\u2019s real printings (alternate art) from Scryfall', onclick: () => openPrintPicker(deckName, n, () => { draw(); render(); }) }),
           h('button', { text: has ? 'Change…' : 'Choose image…', onclick: () => pick('image/*', false, async fs => { try { note.textContent = 'Saving…'; await setCustomArt(deckName, n, fs[0]); note.textContent = `Saved art for ${n}.`; } catch (e) { note.textContent = 'Could not use that file: ' + e.message; } draw(); render(); }) }),
           has ? h('button', { text: 'Reset', title: 'Go back to the normal card art', onclick: async () => { await resetCustomArt(deckName, n); note.textContent = `${n} is back to its normal art.`; draw(); render(); } }) : null));
     }));
@@ -12914,6 +12921,96 @@ function assimilateOptions(tx, obj) {
   }
   if (!out.length) out.push({ full: true, label: 'Nothing to assimilate and no creature to exile', fn: () => log(`${src}: nothing happened`) });
   return out;
+}
+// ---------------------------------------------------------------- v0.99.37 printings (alternate art) and "Buy this deck"
+// Every printing of a card is listed by Scryfall (one search, unique=prints). Choosing one saves its picture as this deck's art for the card (the same per-deck
+// art store as your own pictures, 'cart:<deck>|<card>') and remembers which printing it is (set, collector number, TCGplayer product id), so "Buy this deck"
+// can ask TCGplayer for exactly that printing. Nothing is downloaded until you open the picker for a card.
+const PRINTS_KEY = 'mtgpt.prints';
+const printsCache = new Map();   // normalized card name -> [print] for this session
+function deckPrints(deck) { const all = lsGet(PRINTS_KEY, {}) || {}; return all[deck] || {}; }
+function printFor(deck, name) { return deckPrints(deck)[imgKey(name)] || null; }
+function setPrintMeta(deck, name, p) {
+  const all = lsGet(PRINTS_KEY, {}) || {}; const d = all[deck] || (all[deck] = {});
+  if (p) d[imgKey(name)] = p; else delete d[imgKey(name)];
+  if (!Object.keys(d).length) delete all[deck];
+  lsSet(PRINTS_KEY, all);
+}
+function forgetDeckPrints(deck) { const all = lsGet(PRINTS_KEY, {}) || {}; if (all[deck]) { delete all[deck]; lsSet(PRINTS_KEY, all); } }
+const printLabel = p => p ? `${p.setName || String(p.set).toUpperCase()} #${p.cn}${p.year ? ' (' + p.year + ')' : ''}` : '';
+
+async function fetchPrints(name) {
+  const key = imgKey(name); if (printsCache.has(key)) return printsCache.get(key);
+  const q = `!"${frontName(name).replace(/"/g, '')}" include:extras`;
+  let url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&unique=prints&order=released&dir=desc`, out = [];
+  for (let page = 0; url && page < 6; page++) {   // Scryfall pages hold 175 cards; a few pages cover even Lightning Bolt
+    const r = await fetch(url, { headers: { Accept: 'application/json' } }); if (!r.ok) { if (r.status === 404) break; throw new Error('Scryfall answered ' + r.status); }
+    const j = await r.json();
+    for (const c of j.data || []) {
+      const face = c.image_uris ? c : (c.card_faces || []).find(f => f.image_uris); if (!face) continue;
+      out.push({ id: c.id, set: c.set, setName: c.set_name, cn: c.collector_number, tcg: c.tcgplayer_id || null, year: (c.released_at || '').slice(0, 4), lang: c.lang,
+        small: face.image_uris.small || face.image_uris.normal, normal: face.image_uris.normal || face.image_uris.large, finishes: c.finishes || [] });
+    }
+    url = j.has_more ? j.next_page : null; if (url) await sleep(110);   // Scryfall asks for no more than about ten requests a second
+  }
+  printsCache.set(key, out); return out;
+}
+
+function openPrintPicker(deck, name, after) {
+  const m = modal(`Printings: ${name}`, { width: 980, onClose: after });
+  const cur = printFor(deck, name), status = h('div', { class: 'small muted', text: 'Loading every printing from Scryfall…' }), grid = h('div', { class: 'print-grid' });
+  m.body.append(h('p', { class: 'small muted', text: 'Pick the printing (art) to use for this card in this deck. It is shown on the table, in your hand and in the preview, and "Buy this deck" asks the store for exactly this printing.' }), status, grid);
+  m.foot.append(h('button', { text: 'Use the default art', disabled: !cur, onclick: async () => { await resetCustomArt(deck, name); setPrintMeta(deck, name, null); m.close(); render(); } }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+  fetchPrints(name).then(list => {
+    if (!list.length) { status.textContent = 'Scryfall has no printings with pictures for this card.'; return; }
+    status.textContent = `${list.length} printing${list.length === 1 ? '' : 's'}${cur ? ' — in use: ' + printLabel(cur) : ''}. Click one to use it.`;
+    grid.replaceChildren(...list.map(p => {
+      const on = cur && cur.id === p.id;
+      const cell = h('button', { class: 'print-cell' + (on ? ' on' : ''), title: `${p.setName} #${p.cn}${p.tcg ? '' : ' (not sold on TCGplayer)'}` },
+        h('img', { src: p.small, alt: `${name} — ${p.setName}`, loading: 'lazy', draggable: 'false' }),
+        h('span', { class: 'print-set', text: `${String(p.set).toUpperCase()} #${p.cn}` }), h('span', { class: 'print-year muted small', text: `${p.year}${p.lang && p.lang !== 'en' ? ' · ' + p.lang.toUpperCase() : ''}` }));
+      cell.addEventListener('click', async () => {
+        status.textContent = `Downloading ${p.setName} #${p.cn}…`;
+        try {
+          const r = await fetch(p.normal); if (!r.ok) throw new Error('picture ' + r.status);
+          await setCustomArt(deck, name, await r.blob(), { id: p.id, set: p.set, setName: p.setName, cn: p.cn, tcg: p.tcg, year: p.year });
+          m.close(); render(); toast('Printing chosen', `${name}: ${printLabel(printFor(deck, name))}`);
+        } catch (e) { status.textContent = 'Could not download that picture (' + e.message + '). Check the internet connection and try again.'; }
+      });
+      return cell;
+    }));
+  }).catch(e => { status.textContent = 'Could not reach Scryfall (' + e.message + '). The printings list needs an internet connection.'; });
+}
+
+// ---- Buy this deck: TCGplayer Mass Entry, prefilled. Lines are "qty-productId" for a chosen printing (exact product), otherwise "qty Card Name" (TCGplayer picks).
+// The page reads ?productline=Magic&c= with lines joined by "||"; a very long list is copied to the clipboard instead (the address would be too long).
+const TCG_MASS = 'https://www.tcgplayer.com/massentry?productline=Magic&c=';
+function buyLines(deck, withSide) {
+  const tot = new Map();
+  for (const x of deck.main.concat(withSide ? deck.side : [])) { const r = resolve(x.name), n = r ? r.name : x.name; tot.set(n, (tot.get(n) || 0) + (x.qty || 1)); }
+  return [...tot].map(([n, q]) => { const p = printFor(deck.name, n); return { name: n, qty: q, p, tcgLine: p && p.tcg ? `${q}-${p.tcg}` : `${q} ${n}`, textLine: p ? `${q} ${n} [${String(p.set).toUpperCase()}] ${p.cn}` : `${q} ${n}` }; });
+}
+function openBuyDeck(deck) {
+  const m = modal(`Buy this deck: ${deck.name}`, { width: 620 });
+  const side = h('input', { type: 'checkbox' }); side.checked = !!deck.side.length;
+  const info = h('div', { class: 'small' });
+  const draw = () => {
+    const ls = buyLines(deck, side.checked), exact = ls.filter(l => l.p && l.p.tcg).length, cards = ls.reduce((a, l) => a + l.qty, 0);
+    info.replaceChildren(h('p', { text: `${cards} cards (${ls.length} different). ${exact ? `${exact} with the printing you chose — TCGplayer is asked for exactly that one.` : 'No printings chosen: TCGplayer picks a printing for each card (choose them in Card art & printings).'}` }));
+  };
+  side.addEventListener('change', draw);
+  const copy = async (txt, what) => { try { await navigator.clipboard.writeText(txt); toast('Copied', what); } catch (e) { const ta = h('textarea', { style: 'position:fixed;opacity:0' }); ta.value = txt; document.body.append(ta); ta.select(); try { document.execCommand('copy'); toast('Copied', what); } catch (er) { toast('Could not copy', 'Select the list and copy it yourself.'); } ta.remove(); } };
+  m.body.append(h('p', { class: 'small muted', text: 'Opens TCGplayer Mass Entry in your browser with this list filled in. Review it there and press Add to Cart; nothing is bought until you check out. Prices and stock come from TCGplayer.' }),
+    h('label', { class: 'teachopt' }, side, h('span', null, h('b', { text: 'Include the sideboard' }))), info);
+  m.foot.append(
+    h('button', { text: 'Copy list with set codes', title: 'For any store that takes a pasted list (Card Kingdom, Mana Pool, a local store...)', onclick: () => copy(buyLines(deck, side.checked).map(l => l.textLine).join('\n'), 'The list (with set and collector number for chosen printings) is on the clipboard.') }),
+    h('button', { class: 'primary', text: 'Open on TCGplayer', onclick: () => {
+      const ls = buyLines(deck, side.checked), url = TCG_MASS + encodeURIComponent(ls.map(l => l.tcgLine).join('||'));
+      if (url.length > 7800) { copy(ls.map(l => l.textLine).join('\n'), 'The list is too long for a link, so it is on the clipboard: paste it into the Mass Entry box that just opened.'); window.open(TCG_MASS, '_blank'); }
+      else window.open(url, '_blank');
+      m.close(); } }),
+    h('button', { text: 'Close', onclick: () => m.close() }));
+  draw();
 }
 init();
 

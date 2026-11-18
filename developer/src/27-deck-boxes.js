@@ -139,17 +139,19 @@ async function fitArt(file) {
   const cx = cv.getContext('2d'); cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(bmp, 0, 0, cv.width, cv.height); if (bmp.close) bmp.close();
   return await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('Could not read that picture.')), 'image/jpeg', 0.92));
 }
-async function setCustomArt(deck, name, file) {
+async function setCustomArt(deck, name, file, print) {   // v0.99.37 print: the Scryfall printing this picture is (from the printing picker); your own picture clears it
   const blob = await fitArt(file), mk = customMapKey(deck, name), old = CUSTOM.get(mk);
+  setPrintMeta(deck, name, print || null);
   try { await idbSet('cart:' + mk, blob); } catch (e) { toast('Not saved', 'This picture is used for now, but the browser would not store it, so it will be gone next time.'); }
   if (old) URL.revokeObjectURL(old.front);
   CUSTOM.set(mk, { front: URL.createObjectURL(blob), back: null, remote: false, custom: true });
 }
 async function resetCustomArt(deck, name) {
-  const mk = customMapKey(deck, name), old = CUSTOM.get(mk); if (old) URL.revokeObjectURL(old.front); CUSTOM.delete(mk);
+  const mk = customMapKey(deck, name), old = CUSTOM.get(mk); if (old) URL.revokeObjectURL(old.front); CUSTOM.delete(mk); setPrintMeta(deck, name, null);
   try { await idbDelete(['cart:' + mk]); } catch (e) { /* ignore */ }
 }
 function clearDeckArt(deck) {
+  forgetDeckPrints(deck);
   const ks = [...CUSTOM.keys()].filter(k => k.startsWith(deck + '|'));
   for (const k of ks) { URL.revokeObjectURL(CUSTOM.get(k).front); CUSTOM.delete(k); }
   if (ks.length) idbDelete(ks.map(k => 'cart:' + k)).catch(() => {});
@@ -158,7 +160,7 @@ function openCustomArt(deckName, after) {
   const dk = loadDecks()[deckName]; if (!dk) return; const deck = parseDeck(dk.text);
   const qty = new Map(); for (const x of deck.main.concat(deck.side)) { const r = resolve(x.name), n = r ? r.name : x.name; qty.set(n, (qty.get(n) || 0) + (x.qty || x.n || 1)); }
   const names = [...qty.keys()].sort((a, b) => a.localeCompare(b));
-  const m = modal(`Custom card art: ${deckName}`, { width: 900, onClose: after });
+  const m = modal(`Card art & printings: ${deckName}`, { width: 900, onClose: after });
   const grid = h('div', { class: 'cart-grid' }), note = h('div', { class: 'small', style: 'color:var(--gold);min-height:18px;margin:4px 0' });
   const customCount = () => names.filter(n => CUSTOM.has(customMapKey(deckName, n))).length;
   const pick = (accept, multiple, cb) => { const inp = h('input', { type: 'file', accept, style: 'display:none' }); if (multiple) inp.multiple = true; inp.addEventListener('change', () => { const fs = [...inp.files]; inp.remove(); if (fs.length) cb(fs); }); document.body.append(inp); inp.click(); };
@@ -166,8 +168,10 @@ function openCustomArt(deckName, after) {
     grid.replaceChildren(...names.map(n => {
       const has = CUSTOM.has(customMapKey(deckName, n)), im = imgFor(n, deckName);
       const thumb = h('div', { class: 'cart-thumb' + (im ? '' : ' none') + (has ? ' mine' : ''), style: im ? `background-image:url("${im.front}")` : '' }, im ? null : h('span', { text: n }), has ? h('i', { class: 'cart-mine', text: 'custom' }) : null);
-      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }),
+      const pr = printFor(deckName, n);
+      return h('div', { class: 'cart-cell' }, thumb, h('div', { class: 'cart-name', title: n, text: `${qty.get(n)}× ${n}` }), pr ? h('div', { class: 'cart-print small muted', text: printLabel(pr) }) : null,
         h('div', { class: 'cart-btns' },
+          h('button', { text: 'Printing…', title: 'Choose one of the card\u2019s real printings (alternate art) from Scryfall', onclick: () => openPrintPicker(deckName, n, () => { draw(); render(); }) }),
           h('button', { text: has ? 'Change…' : 'Choose image…', onclick: () => pick('image/*', false, async fs => { try { note.textContent = 'Saving…'; await setCustomArt(deckName, n, fs[0]); note.textContent = `Saved art for ${n}.`; } catch (e) { note.textContent = 'Could not use that file: ' + e.message; } draw(); render(); }) }),
           has ? h('button', { text: 'Reset', title: 'Go back to the normal card art', onclick: async () => { await resetCustomArt(deckName, n); note.textContent = `${n} is back to its normal art.`; draw(); render(); } }) : null));
     }));

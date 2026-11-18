@@ -156,6 +156,8 @@ function openStats() {
   }
 
   })();
-  m.foot.append(h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+  m.foot.append(h('button', { text: 'Card art & printings…', title: 'Choose a printing (alternate art) for any card, or your own picture', onclick: () => { m.close(); openCustomArt(deck.name, () => openStats()); } }),
+    h('button', { text: 'Buy this deck…', title: 'Open TCGplayer with this list (and your chosen printings) ready to add to the cart', onclick: () => openBuyDeck(deck) }),
+    h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));   // v0.99.37
 }
 
