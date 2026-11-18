@@ -6,6 +6,7 @@ const ALT_KW = [
   { cr: '702.109', kw: 'dash', cond: '', note: 'It gains haste. Return it to its owner\'s hand at the beginning of the next end step.' },
   { cr: '702.137', kw: 'spectacle', cond: 'If an opponent lost life this turn', test: () => (state.oppLifeLostTurn === state.turn ? '' : 'no opponent has lost life this turn') },
   { cr: '702.96', kw: 'overload', cond: '', note: 'Each instead of target.' },
+  { cr: '702.140', kw: 'mutate', cond: '', note: 'Merge with a non-Human creature you own.' },
   { cr: '702.103', kw: 'bestow', cond: '', note: 'Cast as an Aura with enchant creature.' },
   { cr: '702.119', kw: 'emerge', cond: 'Sacrifice a creature; the cost is reduced by its mana value', reduceBySac: true },
   { cr: '702.76', kw: 'prowl', cond: 'If an opponent was dealt combat damage by a creature you controlled that shares a type with this card', test: c => prowlWhy(c) },

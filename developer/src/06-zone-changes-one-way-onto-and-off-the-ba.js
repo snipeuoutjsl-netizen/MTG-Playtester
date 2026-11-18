@@ -46,13 +46,15 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
   detachFrom(c);
-  for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'mutating', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
   if (c.origName) { c.name = c.origName; delete c.origName; }
+  const _mp = c.mutParts ? c : null;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
   delete c.exileInstead; delete c.monstrous; delete c.exerted;   // CR 701.37b: monstrous lasts until it leaves the battlefield
+  if (_mp) mutSpawnParts(c, dest);
   if (c.token) {   // a token that leaves the battlefield ceases to exist, but it did leave (and may have died)
     log(`Token ${c.name} left the battlefield`);
     if (dest === 'graveyard') { memNote('died', c); fireTrigger('dies', { card: c }); }
@@ -70,6 +72,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
 // Every card going to the graveyard goes through here so replacement effects can apply.
 let discardHow = null, silentGy = false;
 function gyPush(c, from) {
+  if (c) delete c.splicedTx;
   if (c.gyExile) { delete c.gyExile; state.exile.push(c); log(`${c.faceOf || c.name} was cast from the graveyard, so it is exiled instead of going anywhere else`); if (from === 'battlefield') fireTrigger('leaves', { card: c }); if (c.half && from !== 'stack') restoreHalf(c); return 'exile'; }
   if (c.half && from !== 'stack') restoreHalf(c);
   if (c.exileInstead && from === 'battlefield') { delete c.exileInstead; delete c.exileAtEnd; state.exile.push(c); log(`${c.name} would leave the battlefield, so it is exiled instead`); fireTrigger('leaves', { card: c }); return 'exile'; }   // (leaveBattlefield normally handles this first)

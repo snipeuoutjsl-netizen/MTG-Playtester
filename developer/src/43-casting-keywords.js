@@ -1,16 +1,16 @@
 // ---------------------------------------------------------------- casting keywords that change how or when a spell is cast (v0.96.3)
 // Overload, Bestow (chosen BEFORE targets: CR 601.2b), Escalate (cost per extra mode), Replicate (copies per payment), Emerge (sacrifice reduces the cost),
 // Prowl, Miracle, Plot and Foretell (cast later from exile). Lines are read by altKwLine (42) and the helpers here.
-const PRE_ALT = ['overload', 'bestow'];
+const PRE_ALT = ['overload', 'bestow', 'mutate'];
 function preAltKinds(c) { return altCostsFor(c).filter(a => PRE_ALT.includes(a.kind)); }
 // Overload: every "target" in the spell's text becomes "each" (CR 702.96a).
 function overloadText(tx) { return String(tx || '').replace(/^Overload\b.*$/gim, '').replace(/\btarget\b/gi, 'each'); }
 function openPreAlt(c, alts, cb) {
   const m = modal(`Cast ${c.name}: how?`, { width: 560, sticky: true, onCancel: () => { delete c.preAlt; } });
   const pick = k => { c.preAlt = k; m.close(); cb(); };
-  m.body.append(h('div', { class: 'psub', text: 'Overload and bestow are alternative costs, so you choose them before you choose targets (CR 601.2b).' }),
+  m.body.append(h('div', { class: 'psub', text: 'Overload, bestow and mutate are alternative costs, so you choose them before you choose targets (CR 601.2b).' }),
     h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Cast it normally' }), h('button', { class: 'primary', text: 'Normal', onclick: () => pick('') })),
-    ...alts.map(a => h('div', { class: 'row' }, h('span', { class: 'nm' }, a.label + ' ', a.mana ? symbols(a.mana) : ''), h('span', { class: 'muted small', text: a.kind === 'overload' ? 'Each instead of target' : 'Cast as an Aura with enchant creature' }), h('button', { class: 'primary', text: a.label, onclick: () => pick(a.kind) }))));
+    ...alts.map(a => h('div', { class: 'row' }, h('span', { class: 'nm' }, a.label + ' ', a.mana ? symbols(a.mana) : ''), h('span', { class: 'muted small', text: a.kind === 'overload' ? 'Each instead of target' : a.kind === 'mutate' ? 'Merge with a non-Human creature you own' : 'Cast as an Aura with enchant creature' }), h('button', { class: 'primary', text: a.label, onclick: () => pick(a.kind) }))));
   m.foot.append(h('button', { text: 'Cancel', onclick: () => { delete c.preAlt; m.close(); } }));
 }
 // Bestow (CR 702.103): the permanent resolves attached to its target; if the target is gone it enters as a creature. If the host leaves, it stays as a creature.

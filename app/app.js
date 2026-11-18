@@ -268,7 +268,7 @@ function resolve(name) {
 }
 // v0.95.0 What a permanent says, as a card record: a token's own rules text, or the card's. Used by everything that reads abilities.
 function rulesInfo(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; return cardInfo(c.name); }
-function cardText(c) { if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); const b = i && i.tx ? i.tx : ''; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
+function cardText(c) { if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
 function isTransformCard(c) { const p = faceParent(c); return !!(p && p.fc && p.fc.length > 1 && !p.mdfc && !p.kind); }   // a transform card (not a modal double-faced one)
@@ -1109,6 +1109,7 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) you cast /.test(cond)) { ev = 'cast'; filter = cond.replace(/^(?:when|whenever) you cast /, ''); }
     else if ((cAny = cond.match(/^(?:when|whenever) a player casts a spell(?: with mana value (equal to the number of ([a-z+\/-]+) counters on (?:~|this \w+)|(\d+)(?: or (less|greater))?))?$/)) && /^counter that spell\.?$/i.test(cm[2].trim())) {   // v0.96.31 Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
       ev = 'cast-any'; castAny = { counters: cAny[2] || '', mv: cAny[3] !== undefined ? +cAny[3] : null, cmp: cAny[4] || 'equal' }; }
+    else if (/^(?:when|whenever) (?:~|this \w+) mutates$/.test(cond)) ev = 'mutates-self';
     else if (/^(?:when|whenever) (?:~|this \w+) enters/.test(cond)) ev = 'etb-self';
     else if (word === 'Landfall' || /\ba land (?:you control )?enters|land enters the battlefield under your control/.test(cond)) ev = 'landfall';
     else if (/^(?:when|whenever) (?:another|a|an|one or more) .*enters/.test(cond) && !/opponent/.test(cond)) { ev = 'etb-other'; filter = cond; }
@@ -1199,6 +1200,8 @@ function fireTrigger(ev, ctx = {}) {
     const atk = ctx.cards || [];
     for (const a of atk) for (const t of parseTriggers(a)) if (t.ev === 'attack-self' && (!t.test || t.test(a, atk))) add(a, t, `${a.name} was declared as an attacker.`);
     if (atk.length) for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'attack-any' && (!t.test || t.test(c, atk))) add(c, t, 'You declared attackers.');
+  } else if (ev === 'mutates') {
+    const mc = ctx.card; for (const t of parseTriggers(mc)) if (t.ev === 'mutates-self') add(mc, t, `${mc.name} mutated (a creature spell merged with it).`);
   } else if (ev === 'dies') {
     const d = ctx.card;
     if (d.blitzBody) { delete d.blitzBody; state.pendingTriggers.push({ kind: 'ability', cardId: d.id, cardName: d.name, text: 'Blitz (keyword, CR 702.152): when this creature dies, draw a card.', effect: 'Draw a card.', special: null, optional: false, why: `${d.name} was cast for its blitz cost and died.` }); }
@@ -1979,13 +1982,15 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.pairedWith) unpairCard(c);
   fxOnLeave(c);
   detachFrom(c);
-  for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
+  for (const k of ['becomes', 'basePT', 'tmp', 'tmpKw', 'exileAtEnd', 'overloaded', 'bestowed', 'bestowAura', 'mutating', 'replicateN', 'preAlt', 'miracleNow', 'blitzed', 'dashed', 'casualtyPaid', 'squadN', 'offspringPaid', 'impended', 'target', 'targets', 'dmg', 'xValue', 'modes', 'modeTexts', 'loyalty', 'evoked', 'kicked', 'gained', 'exiledWith']) delete c[k];
   c.tapped = false; c.counters = { plus: 0, minus: 0 }; c._noCtr = false;
   delete c.chosen;
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
   if (c.origName) { c.name = c.origName; delete c.origName; }
+  const _mp = c.mutParts ? c : null;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
   delete c.exileInstead; delete c.monstrous; delete c.exerted;   // CR 701.37b: monstrous lasts until it leaves the battlefield
+  if (_mp) mutSpawnParts(c, dest);
   if (c.token) {   // a token that leaves the battlefield ceases to exist, but it did leave (and may have died)
     log(`Token ${c.name} left the battlefield`);
     if (dest === 'graveyard') { memNote('died', c); fireTrigger('dies', { card: c }); }
@@ -2003,6 +2008,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
 // Every card going to the graveyard goes through here so replacement effects can apply.
 let discardHow = null, silentGy = false;
 function gyPush(c, from) {
+  if (c) delete c.splicedTx;
   if (c.gyExile) { delete c.gyExile; state.exile.push(c); log(`${c.faceOf || c.name} was cast from the graveyard, so it is exiled instead of going anywhere else`); if (from === 'battlefield') fireTrigger('leaves', { card: c }); if (c.half && from !== 'stack') restoreHalf(c); return 'exile'; }
   if (c.half && from !== 'stack') restoreHalf(c);
   if (c.exileInstead && from === 'battlefield') { delete c.exileInstead; delete c.exileAtEnd; state.exile.push(c); log(`${c.name} would leave the battlefield, so it is exiled instead`); fireTrigger('leaves', { card: c }); return 'exile'; }   // (leaveBattlefield normally handles this first)
@@ -2380,6 +2386,7 @@ function additionalCosts(c) {
     } else if ((m = line.match(/^Kicker\s+((?:\{[^}]+\})+)\s*$/i))) optional.push({ label: 'Kicker', mana: m[1], comps: [], kicker: true });
     else if ((m = line.match(/^Kicker—(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); optional.push({ label: 'Kicker — ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), kicker: true }); }
   }
+  for (const o of spliceOffers(c)) optional.push(o);   // v0.98.3 Splice (CR 702.47)
   return { req, optional };
 }
 // Every way this card can be cast right now: { label, mana, comps, alt, ok, why, detail }
@@ -2520,11 +2527,13 @@ function applyCostInfo(c, ci) {
     if (ci.alt === 'dash') c.dashed = true;
     if (ci.casualty) c.casualtyPaid = true;
     if (ci.replicate) c.replicateN = ci.replicate;
+    if (ci.splice && ci.splice.length) spliceApply(c, ci.splice);
     if (ci.squad) { c.squadN = ci.squad; log(`${c.name}: squad cost paid ${ci.squad} time${ci.squad === 1 ? '' : 's'}`); }
     if (ci.offspring) { c.offspringPaid = true; log(`${c.name}: offspring cost paid`); }
     if (ci.alt === 'impending') c.impended = true;
     if (ci.alt === 'overload') c.overloaded = true;
     if (ci.alt === 'bestow') c.bestowed = true;
+    if (ci.alt === 'mutate') c.mutating = true;
     if (ci.evoked) { c.evoked = true; log(`${c.name}: cast for its evoke cost`); }
     else if (ci.alt) log(`${c.name}: cast using an alternative cost (${ci.label})`);
     if (ci.kicked && ci.kicked.some(l => /^(?:Kicker|Multikicker)/i.test(l))) { c.kicked = true; log(`${c.name}: kicked`); }
@@ -2589,7 +2598,7 @@ function runCast(c, reopen, modes, route, kicks) {
   gatherCosts(c, comps, picks => {
     let manaE = mana; if (route.alt && route.alt.reduceBySac) { const sp = picks.find(p => p.comp.emerge); const sc = sp && findCard(sp.ids[0]); const mv = sc && !sc.card.token ? (cardInfo(sc.card.name) || {}).cmc || 0 : 0; manaE = reduceGenericBy(mana, mv); log(`${c.name}: emerge, ${sc ? sc.card.name : 'the sacrificed creature'} has mana value ${mv}, so the cost is reduced by ${mv}`); }
     runReducers(c, manaE, reducerKinds(c), (mana2, rpicks) => {
-      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke') };
+      const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke'), splice: kicks.filter(k => k.splice).map(k => k.splice) };
       const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }
@@ -2980,7 +2989,7 @@ function castSpell0(id,reopen=true,modes) {
   if(md && modes===undefined){ openModeChoice(f.card.name, md, idxs=>castSpell(id,reopen,idxs), effectiveCost(f.card).cost); return; }
   { const ft=frontType(f.card), castText=md&&modes?modalText(md,modes):cardText(f.card);
     const castText2=f.card.preAlt==='overload'?overloadText(castText):castText;
-    const specs=f.card.preAlt==='bestow'?parseTargetSpecs('Bestow: attach to target creature.'):(!ft||/\b(?:Instant|Sorcery)\b/.test(ft))?parseTargetSpecs(castText2):[];
+    const specs=f.card.preAlt==='bestow'?parseTargetSpecs('Bestow: attach to target creature.'):f.card.preAlt==='mutate'?parseTargetSpecs('Mutate: merge with target nonhuman creature you control.'):(!ft||/\b(?:Instant|Sorcery)\b/.test(ft))?parseTargetSpecs(castText2):[];
     if(specs.length){
       if(targetChosenFor!==id){
         chooseTargets(f.card.name,specs,picked=>{ const g=findCard(id); if(!g||g.zone!=='hand') return;
@@ -3026,6 +3035,8 @@ function parseTargetSpecs(text) {
     else if (/\bspells?\b/.test(p)) {
       sp.kind = 'spell'; sp.types = (p.match(/\b(?:instant|sorcery|creature|artifact|enchantment|planeswalker|land)\b/g) || []); sp.mods = (p.match(/\bnon\w+/g) || []); sp.label = 'target ' + p;
       // v0.94.5 "target spell or nonland permanent an opponent controls" (Sink into Stupor): the target may be a spell on the stack OR a permanent
+      { const pa = t.slice(m.index, m.index + 140).split(/[.;]/)[0], mvm = pa.match(/\bmana value (?:of )?(\d+|x)(?: or (less|greater|more))?/i); if (mvm && /^\d+$/.test(mvm[1])) sp.mvf = { n: +mvm[1], op: mvm[2] ? (mvm[2].toLowerCase() === 'less' ? 'le' : 'ge') : 'eq' };   // "Counter target spell with mana value 1" (Spell Snare)
+        const cw = p.match(/\b(white|blue|black|red|green|colorless|multicolored)\b/); if (cw) sp.colorWord = cw[1]; }
       if (/\bspells?\b.*\bor\b.*\bpermanents?\b/.test(p)) { sp.alsoPerm = true; sp.types = []; }
       if (/\b(?:an opponent controls|you don't control|your opponents? controls?|opponents? control)\b/.test(p)) sp.ctrl = 'opp'; else if (/\byou control\b/.test(p)) sp.ctrl = 'you';
     }
@@ -3107,7 +3118,9 @@ function legalTargets(sp, ctx) {
       if (sp.kind === 'spell') {
         const tl = x.opp ? (x.oppType || '') : (frontType(x) || '');
         if (sp.types.length && tl && !sp.types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl))) continue;
-        if (sp.mods.includes('noncreature') && /\bCreature\b/.test(tl)) continue;
+        if (tl && sp.mods.some(m => m.length > 3 && new RegExp('\\b' + m.slice(3) + '\\b', 'i').test(tl))) continue;   // nonland / nonartifact / noncreature ... spells
+        if (sp.mvf && cardInfo(x.name)) { const mv = spellMV(x); if (!(sp.mvf.op === 'le' ? mv <= sp.mvf.n : sp.mvf.op === 'ge' ? mv >= sp.mvf.n : mv === sp.mvf.n)) continue; }
+        if (sp.colorWord && cardInfo(x.name) && !colorWordOk(sp.colorWord, cardColorSet(x))) continue;
       }
       if (sp.kind === 'spell' && sp.ctrl === 'opp' && !x.opp) continue;
       if (sp.kind === 'spell' && sp.ctrl === 'you' && x.opp) continue;
@@ -3263,7 +3276,7 @@ function counterStackObject(id, by, dest) {   // dest: where a countered spell g
   if(!state) return; const i=state.stack.findIndex(x=>x.id===id); if(i<0) return;
   { const sc=state.stack[i]; if(!sc.ability && !sc.opp && /(?:this spell|this card) can'?t be countered/i.test((cardText(sc)||'').replace(/\u2019/g,"'"))) { log(`${by?by+': ':''}${sc.name} can't be countered, so it stays on the stack`); toast("Can't be countered", `${sc.name} says it can't be countered, so the counterspell does nothing to it (rule 101.2).`); return; } }
   snap();
-  const [c]=state.stack.splice(i,1); if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
+  const [c]=state.stack.splice(i,1); delete c.splicedTx; if(!state.stack.length) state.priority={active:false,passed:false}; sfx('counter'); if(!c.ability) { flightCounter.add(c.id); spotlight(c,'counter',null); }
   if(c.opp){ log(`${by?by+': ':''}Opponent's ${c.name} was countered`); toast(`Opponent's ${c.name} countered`,'It leaves the stack without resolving.'); }
   else if(c.ability){ log(`${by?by+': ':''}${c.sourceName||c.name}: ability was countered — it does not resolve`); toast('Ability countered','It leaves the stack without resolving. The permanent that made it is unaffected.'); }
   else { const where = dest === 'hand' ? (state.hand.push(c), "its owner's hand") : dest === 'top' ? (state.library.unshift(c), 'the top of its owner\'s library') : dest === 'exile' ? (state.exile.push(c), 'exile') : gyPush(c,'stack'); delete c.target; delete c.targets; delete c.modes; delete c.modeTexts; log(`${by?by+': ':''}${c.name} was countered → ${where}`); restoreHalf(c); toast(`${c.name} countered`, `A countered spell does not resolve (no effects, no entering the battlefield) and goes to its owner's ${where}.`); }
@@ -3295,7 +3308,7 @@ function resolveTopOfStack() {
   if(c.opp){ log(`Opponent's ${c.name} resolves — apply its effects at the table`); toast(`Opponent's ${c.name} resolves`,'Its effects are not tracked here. Adjust your board, life or cards by hand.'); render(); return; }
   if(c.targets&&c.targets.length){
     const alive=c.targets.filter(targetStillLegal);
-    if(!alive.length){
+    if(!alive.length && !c.mutating){
       log(`${c.ability?c.sourceName+' ability':c.name} fizzles: all its targets (${c.targets.map(t=>t.name).join(', ')}) are gone`);
       toast('Fizzled','Every target is illegal now, so it does nothing (rule 608.2b).');
       if(!c.ability){ gyPush(c,'stack'); restoreHalf(c); delete c.targets; delete c.target; }
@@ -3305,6 +3318,7 @@ function resolveTopOfStack() {
   }
   let eff=null; if(!isPermanentCard(c)||c.ability) sfx('resolve'); if(!c.opp&&!c.ability&&!isPermanentCard(c)) spotlight(c,'resolve',null);
   if(c.ability){ log(`Resolved ability of ${c.sourceName}`); eff=c; }
+  else if (isPermanentCard(c) && c.mutating && mutateMerge(c)) { /* merged into its target: no new permanent enters (CR 702.140c) */ }
   else if (isPermanentCard(c)) {
     enterBattlefield(c,{from:'stack',logMsg:`Resolved ${c.name} → battlefield`,afterPlace:()=>{
     if(c.warped){ delete c.warped; c.warpExile=state.turn; addFx({kind:'delayed',when:'end',action:'exile',targetId:c.id,targetName:c.name,text:`Exile ${c.name} (warp).`,srcName:c.name}); log(`${c.name}: warped, it will be exiled at the beginning of the next end step; you may cast it from exile on a later turn`); }
@@ -3320,7 +3334,7 @@ function resolveTopOfStack() {
   } else {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
     // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
-    { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts;
+    { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts; delete c.splicedTx;
       let stx=baseTx.replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
@@ -4991,6 +5005,7 @@ function cardEl(c, zone) {
       return h('div', { class: 'cpt' + (ptc && (ptc.dynamic || ptc.modified) ? ' ptmod' : '') + (d ? ' pt-' + d + ' ptshow' : '') + (flash ? ' ptflash' : ''), text: pt, 'data-len': String(String(pt).length), title: ptc ? ptTitle(c, ptc) : '' }); })() : null,
     pw && zone === 'battlefield' ? h('div', { class: 'cloyalty', text: String(c.loyalty ?? '?'), title: 'Loyalty counters. Double-click to use loyalty abilities.' }) : null,
     !c.token && isLandName(c.name) && effectiveLandTypes(c).types.length && effectiveLandTypes(c).types.join('|') !== baseLandTypesOf(c.name).types.join('|') ? h('div', { class: 'land-effect-badge', text: effectiveLandTypes(c).types.map(t => t[0]).join(' '), title: `Effective land types: ${effectiveLandTypes(c).types.join(', ')}` }) : null,
+    zone === 'battlefield' && c.mutParts ? h('div', { class: 'fxbadge', text: '\u29c9 Mutated \u00d7' + c.mutParts.length, title: 'A merged permanent: ' + c.mutParts.map(x => x.name).join(' + ') + '. It has all of their abilities; the top card is ' + c.mutParts[0].name }) : null,
     zone === 'battlefield' && c.pairedWith ? h('div', { class: 'fxbadge', text: '\u26D3 Paired', title: 'Soulbond: paired with another creature for as long as you control both' }) : null,
     zone === 'battlefield' ? kwIconsOnTile(c) : null,
     zone === 'battlefield' && state && teach('durationHints') && fxOn(c).length ? h('div', { class: 'fxbadge', title: fxOn(c).map(e => `${e.kind === 'pt' ? sgnN(e.p) + '/' + sgnN(e.t) : e.kind === 'kw' ? e.kw : e.text} ${UNTIL_WORDS[e.until] || ''}`).join('\n'), text: '\u23F3' }) : null,
@@ -6219,11 +6234,11 @@ function openWelcome(onDone) {
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
       P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.'),
-      P('Tired of the same trigger asking every time? The first time an ability goes on the stack you are asked about ', B('Always yield'), ': say yes and it goes on the stack, picks the same targets and applies the same effect by itself for the rest of that game. Review or remove them under ', B('\u2699 \u2192 Always yield'), '.'),
-      P('Tokens never have official art here, so the app draws generic art for every token. Open ', B('\u2699 \u2192 Token glossary & art'), ' to browse every token and add your own picture to any of them.'),
-      P('To play a friend on the same network open ', B('⚙ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.'),
-      P('For coin flips and die rolls open ', B('⚙ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
-    ['5. Settings', [P('Open ', B('⚙ → Settings'), '. The tabs are:'),
+      P('Tired of the same trigger asking every time? The first time an ability goes on the stack you are asked about ', B('Always yield'), ': say yes and it goes on the stack, picks the same targets and applies the same effect by itself for the rest of that game. Review or remove them under ', B('\u2630 \u2192 Always yield'), '.'),
+      P('Tokens never have official art here, so the app draws generic art for every token. Open ', B('\u2630 \u2192 Token glossary & art'), ' to browse every token and add your own picture to any of them.'),
+      P('To play a friend on the same network open ', B('☰ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.'),
+      P('For coin flips and die rolls open ', B('☰ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
+    ['5. Settings', [P('The ', B('⚙ gear'), ' holds settings and updates (Settings, Update app, Import / edit deck, Card data, Images, help). The ', B('☰ Game tools'), ' button beside it holds the in-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin, Multiplayer).'), P('Open ', B('⚙ → Settings'), '. The tabs are:'),
       h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, foil, cursor, card sizes, turn-flow bar opacity and card sleeves.'), h('li', null, B('Board'), ' – board layout, playmat and the frame around it.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
     ['6. Themes, playmats and sleeves', [P('Under ', B('Settings → Look & feel'), ' the ', B('One-click set'), ' picker changes everything at once: interface theme, card sleeve, playmat, board frame and (if ticked) a matching song. Or choose each part yourself.'),
       P('Pick a built-in playmat under ', B('Settings → Board'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
@@ -6267,8 +6282,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.98.2';
+const APP_VERSION = '0.98.3';
 const CHANGELOG = [
+  { v: '0.98.3', title: 'Mutate, Splice, spell target filters and a tidier gear menu', notes: ['Mutate (CR 702.140): cast a creature for its mutate cost, target a non-Human creature, and choose over or under. The merged permanent is one creature with every card\'s abilities, keeps its counters and auras, fires "whenever this creature mutates" triggers, and all its cards leave the battlefield together. If the target is gone it resolves as a normal creature spell.', 'Splice onto Arcane (CR 702.47): when you cast an Arcane spell, splice cards in your hand are offered as optional extra costs. The spell gains their effects and they stay in your hand.', 'Counter and other spell-targeting text now honours "with mana value N (or less/greater)", "nonland" style words and colour words when choosing targets on the stack.', 'The gear menu is now only Settings, Update, Import / edit deck, Card data, Images and help. In-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin, Multiplayer) moved to a new Game tools button (the ☰ beside the gear).'] },
   { v: '0.98.2', title: 'Counterspell rules', notes: ['"Counter target spell unless its controller pays {N}" (Mana Leak, Force Spike, Spell Pierce...) now asks whether the cost was paid; it only counters if it was not (CR 608.2c).', '"If that spell is countered this way, put it into its owner\'s hand / on top of its library / exile it instead" (Remand, Memory Lapse, Dissipate) is honoured for your own spells.', '"Counter target spell if it has mana value 3 or less" checks the mana value.', '"Its controller may search their library..." (Boseiju, Path to Exile) is linked to the target and read as your own library when the permanent is yours.'] },
   { v: '0.98.1', title: 'Official token pictures from Scryfall', notes: ['Token pictures can now be downloaded the same way card pictures are: the tokens your deck can make are fetched automatically when Images auto-download is on, and the Token glossary has Download buttons for your deck\'s tokens or every token.', 'Order of art on a token: your own picture, then the official picture, then the generic art.', 'Official pictures are cached on this computer, so they keep working offline once downloaded.'] },
   { v: '0.98.0', title: 'Token art and Token glossary', notes: ['Every token now has generic art drawn by the app (colour frame, an icon for its kind, name, type and P/T), since tokens have no official art here.', 'New Token glossary & art (Tools menu, and a button in the Tokens tracker): browse every token the app knows, see how many of its abilities are implemented, and add your own picture to any token. Pictures are stored on this computer and used on the table, in the preview, in stacks and in the graveyard.', 'Generic token art can be switched off in the glossary.'] },
@@ -9345,16 +9361,21 @@ function openPoolScan() {
   m.foot.append(copyBtn, saveBtn, h('button', { text: 'Close', onclick: () => m.close() }));
 }
 
-// ---------------------------------------------------------------- utility menu
-function toggleUtilityMenu(force) {
-  const menu = $('#utilityMenu');
-  const btn = $('#btnTools');
-  if (!menu || !btn) return;
-  const open = force === undefined ? menu.hidden : !!force;
-  menu.hidden = !open;
-  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+// ---------------------------------------------------------------- top-bar menus: the gear (settings & updates) and the game tools menu (v0.98.3)
+function setTopMenu(menuSel, btnSel, open) {
+  const menu = $(menuSel), btn = $(btnSel); if (!menu || !btn) return;
+  menu.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
-
+function toggleUtilityMenu(force) {   // the gear menu; toggleUtilityMenu(false) closes every top-bar menu
+  const menu = $('#utilityMenu'); if (!menu) return;
+  const open = force === undefined ? menu.hidden : !!force;
+  setTopMenu('#utilityMenu', '#btnTools', open); setTopMenu('#gameMenu', '#btnGameTools', false);
+}
+function toggleGameMenu(force) {
+  const menu = $('#gameMenu'); if (!menu) return;
+  const open = force === undefined ? menu.hidden : !!force;
+  setTopMenu('#gameMenu', '#btnGameTools', open); setTopMenu('#utilityMenu', '#btnTools', false);
+}
 // ---------------------------------------------------------------- wiring
 function init() {
   refreshDeckSelect();
@@ -9366,6 +9387,8 @@ function init() {
   $('#btnDecks').addEventListener('click', openDeckPicker);
   $('#btnTools').addEventListener('click', e => { e.stopPropagation(); toggleUtilityMenu(); });
   $('#utilityMenu').addEventListener('click', e => e.stopPropagation());
+  $('#btnGameTools').addEventListener('click', e => { e.stopPropagation(); toggleGameMenu(); });
+  $('#gameMenu').addEventListener('click', e => e.stopPropagation());
   $('#btnDeckEdit').addEventListener('click', () => { toggleUtilityMenu(false); openDeckEditor(); });
   setupVersionBadge();
   if (window.desktop && window.desktop.ghCheck && settings.autoUpdateCheck !== false) setTimeout(async () => { try { const r = await window.desktop.ghCheck(); if (r && r.ok && r.newer) { const b = $('#btnUpdate'); if (b) b.textContent = b.textContent.replace(/ \u25CF$/, '') + ' \u25CF'; if (settings.updatePrompt !== false) { if (settings.skipUpdate !== r.latest) openUpdatePrompt(r); } else toast('Update available', `Version ${r.latest} is on GitHub. Open the menu \u2192 Update app to read what changed and install it.`); } } catch (e) { /* offline: stay quiet */ } }, 3500);
@@ -9565,7 +9588,7 @@ const RULES_TABLE = [
   ['702.44', 'Sunburst', 'ability', 'none'],
   ['702.45', 'Bushido', 'ability', 'none'],
   ['702.46', 'Soulshift', 'ability', 'none'],
-  ['702.47', 'Splice', 'ability', 'named'],
+  ['702.47', 'Splice', 'ability', 'tested'],
   ['702.48', 'Offering', 'ability', 'none'],
   ['702.49', 'Ninjutsu', 'ability', 'named'],
   ['702.50', 'Epic', 'ability', 'none'],
@@ -9658,7 +9681,7 @@ const RULES_TABLE = [
   ['702.137', 'Spectacle', 'ability', 'tested'],
   ['702.138', 'Escape', 'ability', 'named'],
   ['702.139', 'Companion', 'ability', 'named'],
-  ['702.140', 'Mutate', 'ability', 'none'],
+  ['702.140', 'Mutate', 'ability', 'tested'],
   ['702.141', 'Encore', 'ability', 'tested'],
   ['702.142', 'Boast', 'ability', 'tested'],
   ['702.143', 'Foretell', 'ability', 'tested'],
@@ -9831,6 +9854,7 @@ const ALT_KW = [
   { cr: '702.109', kw: 'dash', cond: '', note: 'It gains haste. Return it to its owner\'s hand at the beginning of the next end step.' },
   { cr: '702.137', kw: 'spectacle', cond: 'If an opponent lost life this turn', test: () => (state.oppLifeLostTurn === state.turn ? '' : 'no opponent has lost life this turn') },
   { cr: '702.96', kw: 'overload', cond: '', note: 'Each instead of target.' },
+  { cr: '702.140', kw: 'mutate', cond: '', note: 'Merge with a non-Human creature you own.' },
   { cr: '702.103', kw: 'bestow', cond: '', note: 'Cast as an Aura with enchant creature.' },
   { cr: '702.119', kw: 'emerge', cond: 'Sacrifice a creature; the cost is reduced by its mana value', reduceBySac: true },
   { cr: '702.76', kw: 'prowl', cond: 'If an opponent was dealt combat damage by a creature you controlled that shares a type with this card', test: c => prowlWhy(c) },
@@ -9869,16 +9893,16 @@ function altKwResolved(c) {
 // ---------------------------------------------------------------- casting keywords that change how or when a spell is cast (v0.96.3)
 // Overload, Bestow (chosen BEFORE targets: CR 601.2b), Escalate (cost per extra mode), Replicate (copies per payment), Emerge (sacrifice reduces the cost),
 // Prowl, Miracle, Plot and Foretell (cast later from exile). Lines are read by altKwLine (42) and the helpers here.
-const PRE_ALT = ['overload', 'bestow'];
+const PRE_ALT = ['overload', 'bestow', 'mutate'];
 function preAltKinds(c) { return altCostsFor(c).filter(a => PRE_ALT.includes(a.kind)); }
 // Overload: every "target" in the spell's text becomes "each" (CR 702.96a).
 function overloadText(tx) { return String(tx || '').replace(/^Overload\b.*$/gim, '').replace(/\btarget\b/gi, 'each'); }
 function openPreAlt(c, alts, cb) {
   const m = modal(`Cast ${c.name}: how?`, { width: 560, sticky: true, onCancel: () => { delete c.preAlt; } });
   const pick = k => { c.preAlt = k; m.close(); cb(); };
-  m.body.append(h('div', { class: 'psub', text: 'Overload and bestow are alternative costs, so you choose them before you choose targets (CR 601.2b).' }),
+  m.body.append(h('div', { class: 'psub', text: 'Overload, bestow and mutate are alternative costs, so you choose them before you choose targets (CR 601.2b).' }),
     h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Cast it normally' }), h('button', { class: 'primary', text: 'Normal', onclick: () => pick('') })),
-    ...alts.map(a => h('div', { class: 'row' }, h('span', { class: 'nm' }, a.label + ' ', a.mana ? symbols(a.mana) : ''), h('span', { class: 'muted small', text: a.kind === 'overload' ? 'Each instead of target' : 'Cast as an Aura with enchant creature' }), h('button', { class: 'primary', text: a.label, onclick: () => pick(a.kind) }))));
+    ...alts.map(a => h('div', { class: 'row' }, h('span', { class: 'nm' }, a.label + ' ', a.mana ? symbols(a.mana) : ''), h('span', { class: 'muted small', text: a.kind === 'overload' ? 'Each instead of target' : a.kind === 'mutate' ? 'Merge with a non-Human creature you own' : 'Cast as an Aura with enchant creature' }), h('button', { class: 'primary', text: a.label, onclick: () => pick(a.kind) }))));
   m.foot.append(h('button', { text: 'Cancel', onclick: () => { delete c.preAlt; m.close(); } }));
 }
 // Bestow (CR 702.103): the permanent resolves attached to its target; if the target is gone it enters as a creature. If the host leaves, it stays as a creature.
@@ -11074,6 +11098,72 @@ function openTokenGlossary() {
     h('div', { class: 'cart-bar' }, search, h('label', { class: 'small', style: 'white-space:nowrap' }, gen, ' Show generic art on tokens'), count), h('div', { class: 'cart-bar' }, dlDeck, dlAll, dlStop), note, grid, h('div', { class: 'row', style: 'justify-content:center' }, more));
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() }));
   draw();
+}
+// ---------------------------------------------------------------- v0.98.3 Mutate (CR 702.140, 729)
+// Cast for its mutate cost, the spell targets a non-Human creature you own. As it resolves it merges with that creature: put it over (it becomes
+// the top card: name, types and P/T) or under (the creature keeps them). The merged permanent is ONE object, has the abilities of every card in it,
+// keeps its counters, auras and tapped state, and when it leaves the battlefield every card goes with it. If the target is gone the spell resolves
+// as an ordinary creature spell (CR 702.140b).
+function mutPartsOf(c) { return c.mutParts && c.mutParts.length ? c.mutParts : null; }
+function mutateTargetOk(c) { return c && c.zone !== 'x' && !c.token && /\bCreature\b/.test(frontType(c) || '') && !/\bHuman\b/.test(frontType(c) || ''); }
+function mutateMerge(spell) {
+  const t = spell.targets && spell.targets[0], f = t && findCard(t.id);
+  delete spell.mutating;
+  if (!f || f.zone !== 'battlefield' || !mutateTargetOk(f.card) || f.card.id === spell.id) { log(`${spell.name}: its mutate target is gone or illegal, so it resolves as a creature spell and enters the battlefield (CR 702.140b)`); return false; }
+  const host = f.card, parts = mutPartsOf(host) || [{ name: host.name }];
+  const done = over => {
+    const topName = over ? spell.name : host.name, np = over ? [{ name: spell.name }].concat(parts) : parts.concat([{ name: spell.name }]);
+    host.mutParts = np; host.name = np[0].name; host.mutCount = np.length;
+    log(`${spell.name} mutates ${over ? 'over' : 'under'} ${over ? parts[0].name : host.name}: one permanent of ${np.length} cards, shown as ${host.name} (CR 702.140c)`);
+    sfx('resolve'); render();
+    fireTrigger('mutates', { card: host }); flushTriggers();
+    if (state.pendingTriggers.length) resolvePendingTrigger();
+  };
+  const m = modal(`${spell.name}: mutate`, { width: 480, sticky: true, noClose: true });
+  m.body.append(h('div', { class: 'psub', text: `${spell.name} merges with ${host.name}. Put it over or under?` }), h('div', { class: 'muted small', text: 'Over: it becomes the top card, so you use its name, types and power/toughness. Under: the creature keeps its own. Either way the merged creature has the abilities of every card in it.' }));
+  m.foot.append(h('button', { text: `Under ${host.name}`, onclick: () => { m.close(); done(false); } }), h('button', { class: 'primary', text: `Over ${host.name}`, onclick: () => { m.close(); done(true); } }));
+  return true;
+}
+// The text of the cards below the top one is added to the permanent's text; their own name reads as the merged creature's name.
+function mutExtraText(c) {
+  const parts = mutPartsOf(c); if (!parts) return '';
+  const out = [];
+  for (const p of parts.slice(1)) { const i = cardInfo(p.name); if (i && i.tx) out.push(String(i.tx).replace(selfNameRe(p.name), c.name)); }
+  return out.join('\n');
+}
+// Leaving the battlefield: every card of a merged permanent goes to the same place (CR 729.? / 702.140d). The top card is the object itself.
+function mutSpawnParts(c, dest) {
+  const parts = mutPartsOf(c); if (!parts) return;
+  delete c.mutParts; delete c.mutCount;
+  for (const p of parts.slice(1)) {
+    const nc = newCard(p.name); nc.id = state.nextId++;
+    if (dest === 'exile') state.exile.push(nc); else if (dest === 'hand') state.hand.push(nc); else if (dest === 'library') state.library.unshift(nc); else gyPush(nc, 'battlefield');
+  }
+  log(`${c.name}: the other ${parts.length - 1} card${parts.length > 2 ? 's' : ''} of the merged permanent go${parts.length > 2 ? '' : 'es'} to the ${dest} too`);
+}
+
+// ---------------------------------------------------------------- v0.98.3 Splice onto [subtype] (CR 702.47)
+// As you cast an instant or sorcery spell of that subtype you may reveal a card with splice from your hand and pay its splice cost. The spell gains the
+// rules text of the revealed card (not its splice line) and the revealed card stays in your hand. Offered as optional extras in the cost step.
+const SPLICE_RE = /^Splice onto ([A-Za-z]+)\s*(.+?)\.?\s*$/i;
+function spliceLine(card) { for (const raw of String(cardText(card) || '').replace(/\([^)]*\)/g, '').split('\n')) { const m = raw.trim().match(SPLICE_RE); if (m) return m; } return null; }
+function spliceOffers(c) {
+  if (!state || c.token || c.ability || !/\b(?:Instant|Sorcery)\b/.test(frontType(c) || '')) return [];
+  const out = [], ty = frontType(c) || '';
+  for (const x of state.hand) {
+    if (x.id === c.id) continue; const m = spliceLine(x); if (!m || !new RegExp('\\b' + m[1] + '\\b', 'i').test(ty)) continue;
+    const cs = parseCostComps(m[2].replace(/^[\u2014-]\s*/, ''), x.name);
+    out.push({ label: `Splice ${x.name} onto this spell`, mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), splice: x.id });
+  }
+  return out;
+}
+function spliceApply(c, ids) {
+  const parts = [];
+  for (const id of ids) { const x = state.hand.find(y => y.id === id); if (!x) continue;
+    const tx = String(cardText(x) || '').replace(/\([^)]*\)/g, '').split('\n').map(l => l.trim()).filter(l => l && !SPLICE_RE.test(l)).join('\n');
+    if (tx) parts.push(tx.replace(selfNameRe(x.name), c.name));
+    log(`${c.name}: spliced ${x.name} onto it (revealed from your hand; it stays in your hand). Its effect is added after this spell's own (CR 702.47)`); }
+  if (parts.length) c.splicedTx = (c.splicedTx ? c.splicedTx + '\n' : '') + parts.join('\n');
 }
 init();
 

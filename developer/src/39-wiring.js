@@ -9,6 +9,8 @@ function init() {
   $('#btnDecks').addEventListener('click', openDeckPicker);
   $('#btnTools').addEventListener('click', e => { e.stopPropagation(); toggleUtilityMenu(); });
   $('#utilityMenu').addEventListener('click', e => e.stopPropagation());
+  $('#btnGameTools').addEventListener('click', e => { e.stopPropagation(); toggleGameMenu(); });
+  $('#gameMenu').addEventListener('click', e => e.stopPropagation());
   $('#btnDeckEdit').addEventListener('click', () => { toggleUtilityMenu(false); openDeckEditor(); });
   setupVersionBadge();
   if (window.desktop && window.desktop.ghCheck && settings.autoUpdateCheck !== false) setTimeout(async () => { try { const r = await window.desktop.ghCheck(); if (r && r.ok && r.newer) { const b = $('#btnUpdate'); if (b) b.textContent = b.textContent.replace(/ \u25CF$/, '') + ' \u25CF'; if (settings.updatePrompt !== false) { if (settings.skipUpdate !== r.latest) openUpdatePrompt(r); } else toast('Update available', `Version ${r.latest} is on GitHub. Open the menu \u2192 Update app to read what changed and install it.`); } } catch (e) { /* offline: stay quiet */ } }, 3500);
