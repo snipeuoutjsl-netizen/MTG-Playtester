@@ -6430,8 +6430,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.22';
+const APP_VERSION = '0.99.23';
 const CHANGELOG = [
+  { v: '0.99.23', title: 'News-ticker status text and a matching mulligan bar', notes: ['Top-bar status chips whose text is too long (Images 20/23, Card data…) now scroll sideways and back, news-ticker style, instead of being clipped.', 'The mulligan "put on the bottom" bar and the discard bar now use the same panel look, accent colours, pill counter and buttons as the rest of the game.'] },
   { v: '0.99.22', title: 'Auras and Equipment stack under their host', notes: ['NEW: an Aura or Equipment is now drawn in a stack with the permanent it is attached to, the same cascade as a land pile: the host sits in front and each attachment shows its name strip above it. The "attached" tag on each card stays as it was.', 'CHANGED: piles no longer print the land or artifact name under them, since the cascade already shows each name. The colour and Tapped labels stay.', 'CHANGED: the Hand / Key tag now sits permanently in the bottom-right corner, level with the bottom of your hand.']},
   { v: '0.99.21', title: '3D tilt on every card; multiplayer switched off', notes: ['CHANGED: cards on the battlefield now lean toward the pointer in 3D just like the cards in your hand and the big preview (a tapped card keeps its turn). It follows Settings > Animations > 3D card tilt.', 'CHANGED: Multiplayer (LAN) is switched off for now and its menu entry is hidden until it is in a better place. The code is kept and can be switched back on.']},
   { v: '0.99.20', title: 'Big card preview follows the pointer again', notes: ['FIXED: the enlarged card preview in the right column now leans toward the pointer in a soft 3D tilt with a light spot, and settles back when the pointer leaves it. It had only moved for foil cards. It stays still if your system asks for reduced motion.']},
@@ -12385,6 +12386,30 @@ function incubateOptions(tx, obj) {
   }
   return null;
 }
+// ---- v0.99.23 News-ticker text: a top-bar chip whose text is too long for its space scrolls sideways (and back) instead of being cut off.
+(function () {
+  const sel = '#topbar .status .chip';
+  const wrap = el => {
+    if (el.firstElementChild && el.firstElementChild.classList.contains('mqw')) return;
+    const txt = el.textContent; if (!txt) return;
+    el.textContent = ''; const w = document.createElement('span'), t = document.createElement('span');
+    w.className = 'mqw'; t.className = 'mqt'; t.textContent = txt; w.append(t); el.append(w);
+  };
+  const fit = el => {
+    const w = el.querySelector('.mqw'), t = el.querySelector('.mqt'); if (!w || !t) return;
+    el.classList.remove('mq'); const dist = Math.ceil(t.offsetWidth - w.clientWidth);
+    if (dist > 2) { el.style.setProperty('--mq-dist', dist + 'px'); el.style.setProperty('--mq-dur', Math.max(5, dist / 22 + 3).toFixed(1) + 's'); el.classList.add('mq'); }
+  };
+  const all = () => document.querySelectorAll(sel);
+  const obs = new MutationObserver(() => { obs.takeRecords(); all().forEach(el => { wrap(el); }); obs.takeRecords(); requestAnimationFrame(() => all().forEach(fit)); });
+  const start = () => {
+    all().forEach(el => { wrap(el); obs.observe(el, { childList: true }); });
+    obs.takeRecords(); requestAnimationFrame(() => all().forEach(fit));
+    window.addEventListener('resize', () => requestAnimationFrame(() => all().forEach(fit)));
+    if (window.ResizeObserver) { const ro = new ResizeObserver(() => requestAnimationFrame(() => all().forEach(fit))); all().forEach(el => ro.observe(el)); }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else setTimeout(start, 0);
+})();
 init();
 
 })();
