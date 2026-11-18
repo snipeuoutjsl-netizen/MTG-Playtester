@@ -682,6 +682,13 @@ const { setup } = require('./common.js');
       for (const nm of ['Flagstones of Trokair', 'Mock Dier']) for (const k in routes) out[nm + '/' + k] = probe(nm, routes[k]);
       return out; });
     return { ok: Object.values(r).every(Boolean), why: JSON.stringify(r) }; });
+  await T('611.3 + 613.4c', 'rules-text conditional statics: "gets +2/+2 as long as there are three or more land cards in your graveyard", "gets +2/+0 for every seven cards in your graveyard", "as long as it\'s your turn, has first strike"; wording the app cannot read is reported as a gap, never guessed', async () => { await reset();
+    const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const rec = mk('Elvish Reclaimer'), br = mk('Mock Graveyard Brute'), fan = mk('Mock Fanatic'), moody = mk('Mock Moody'); s.battlefield.push(rec, br, fan, moody);
+      const pt = c => __d.ptCalc(c).p + '/' + __d.ptCalc(c).t; const out = { rec0: pt(rec), br0: pt(br) };
+      s.graveyard.push(mk('Island'), mk('Island'), mk('Grizzly Bears')); out.rec2 = pt(rec); s.graveyard.push(mk('Forest')); out.rec3 = pt(rec);
+      for (let i = 0; i < 3; i++) s.graveyard.push(mk('Grizzly Bears')); out.br7 = pt(br); for (let i = 0; i < 7; i++) s.graveyard.push(mk('Grizzly Bears')); out.br14 = pt(br);
+      out.fs = __d.hasKw(fan, 'first strike'); out.moody = { unknown: __d.ptCalc(moody).unknown, gaps: __d.ruleGaps(moody).length }; out.recGaps = __d.ruleGaps(rec).length; return out; });
+    return { ok: r.rec0 === '1/2' && r.rec2 === '1/2' && r.rec3 === '3/4' && r.br0 === '1/1' && r.br7 === '3/1' && r.br14 === '5/1' && r.fs === true && r.moody.unknown === true && r.moody.gaps === 1 && r.recGaps === 0, why: JSON.stringify(r) }; });
   // ---- v0.96.23 keyword batch 7
   await T('702.125a', 'undaunted: costs {1} less for each opponent', async () => { await reset();
     const r = await ev(() => { const c = Object.assign(__d.newCard('Mock Undaunted'), { id: __d.state.nextId++ }); const e = __d.effectiveCost(c); return { base: e.base, cost: e.cost, cut: e.cut }; });

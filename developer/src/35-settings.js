@@ -5,7 +5,7 @@ const SET_DEFAULT = {
   anim: { on: true, move: true, spell: true, life: true, turn: true, fan: true, hand3d: true, bfFloat: true, handFloat: true, cardDrag: true, speed: 1, fanAmt: 1, spark: 1, spotSize: 1 }, foil: 'off', foilStr: 0.6, cursor: 'default', cursorSize: 32, cursorHot: 'tl', cursorImg: '',
   sound: { on: true, vol: 0.5, music: true, musicStyle: 'ambient', musicBeat: true, musicVol: 0.4, draw: true, cast: true, enter: true, land: true, resolve: true, counter: true },
   teaching: { master: true, playability: true, phasePopups: true, phasePauses: true, stackGuidance: true,
-    triggerPrompts: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
+    triggerPrompts: true, gapNotes: true, gapBadges: true, dredgePrompts: true, replaceNotes: true, libraryPreview: true, combatHelper: true, rulesHints: true, phaseBar: true,
     keywordTips: true, autoResolve: true, vaultPrompt: true, keywordIcons: true, stateIcons: true, durationHints: true, replaceNotes: true, costGuidance: true, preGame: true, autoStart: true, summoningSick: true, libraryMenu: true }
 };
 let settings = Object.assign({}, SET_DEFAULT, lsGet('mtgpt.settings', {}));
@@ -232,6 +232,8 @@ function openSettings() {
     ['replaceNotes','Replacement-effect notes','Log line showing which replacement effects changed an event and in what order (the order choice itself is always asked when it matters)'],
     ['costGuidance','Cost explanations','Explains alternative costs, taxes and Delve/Convoke when you cast (the cost windows themselves always appear)'],
     ['triggerPrompts','Triggered ability prompts','Stops to show detected triggered abilities'],
+    ['gapBadges','Warning badge on cards with rules the app cannot apply','A small \u26a0 on a permanent when part of its rules text is only a reminder (hover it to see which lines)'],
+    ['gapNotes','Log rules the app cannot apply','When a card enters, logs any of its rules the app only reminds you of'],
     ['dredgePrompts','Dredge prompt','When you would draw and have a dredge card in your graveyard, asks whether to dredge instead (the dredge rule itself is always correct)'],
     ['replaceNotes','Replacement effect notes','Logs how a replacement effect changed an event, for example Hardened Scales adding a counter'],
     ['libraryPreview','Library card previews','Large card preview while hovering library lists'],

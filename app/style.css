@@ -1665,3 +1665,6 @@ body.bffloat #mat .cardrow .card.act-ready { animation: bfFloat 5.2s ease-in-out
 /* v0.98.3 game tools menu sits beside the gear */
 .game-wrap { margin-right: 4px; }
 .game-wrap .utility-menu { left: auto; right: 0; }
+
+/* v0.98.5 rules-gap warning badge */
+.gapbadge { position: absolute; bottom: 4px; left: 4px; z-index: 6; font-size: 11px; line-height: 1; padding: 2px 4px; border-radius: 6px; background: rgba(0,0,0,.72); color: #ffcc4d; box-shadow: 0 0 0 1px rgba(255,204,77,.5); cursor: help; }
