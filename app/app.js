@@ -3731,16 +3731,23 @@ function loadDecks() { return lsGet('mtgpt.decks', {}); }
 function saveDecks(d) { lsSet('mtgpt.decks', d); }
 function currentDeckName() { return lsGet('mtgpt.current', null); }
 
+// v0.99.29 game modes: Commander decks (a Commander section in the list) live in their own tab and are only listed in Commander mode; the mode is chosen on the deck selection screen.
+function deckIsCommander(d) { try { return !!d && parseDeck(d.text).main.some(x => x.cmd); } catch (e) { return false; } }
+function gameMode() { return FEATURES.commander && lsGet('mtgpt.mode', 'standard') === 'commander' ? 'commander' : 'standard'; }
+function setGameMode(m) { lsSet('mtgpt.mode', m === 'commander' ? 'commander' : 'standard'); }
+function decksInMode(decks, mode) { return Object.keys(decks).filter(n => (FEATURES.commander && deckIsCommander(decks[n]) ? 'commander' : 'standard') === mode); }
 function refreshDeckSelect() {
   const sel = $('#deckSelect');
   const decks = loadDecks();
-  const names = Object.keys(decks).sort((a, b) => a.localeCompare(b));
+  { const cn = currentDeckName(); if (FEATURES.commander && cn && decks[cn]) { const k = deckIsCommander(decks[cn]) ? 'commander' : 'standard'; if (k !== gameMode() && lsGet('mtgpt.modeKeep', false) !== true) setGameMode(k); } }   // saving or importing a deck of the other kind switches to that mode so it is visible
+  const names = decksInMode(decks, gameMode()).sort((a, b) => a.localeCompare(b));
   sel.replaceChildren();
   if (!names.length) sel.append(h('option', { value: '', text: '(no decks yet)' }));
   for (const n of names) sel.append(h('option', { value: n, text: n }));
   const cur = currentDeckName();
-  if (cur && decks[cur]) sel.value = cur;
+  if (cur && names.includes(cur)) sel.value = cur;
   else if (names.length) { sel.value = names[0]; lsSet('mtgpt.current', names[0]); }
+  else if (cur && decks[cur]) lsSet('mtgpt.current', '');   // the chosen deck belongs to the other mode
   if (typeof applyUiTheme === 'function' && settings.uiTheme === 'deck') applyUiTheme();
   const dc = $('#deckCur'); if (dc) dc.textContent = names.length ? (sel.value || names[0]) : 'No decks yet';
 }
@@ -6160,6 +6167,7 @@ function openDeckEditor(opts) {
       cardCount
         ? (unknown.length ? h('div', { class: 'bad', text: 'Not found in card data: ' + unknown.join(', ') }) : (d.main.length ? h('div', { class: 'ok', text: 'All cards found in card data.' }) : null))
         : h('div', { class: 'muted', text: 'Load card data to check names, see card text, and detect lands.' }),
+      (() => { const cm = d.main.filter(x => x.cmd); return cm.length ? h('div', { class: 'ok', text: 'Commander: ' + cm.map(x => x.name).join(' + ') + ' (this deck is listed under Commander mode)' }) : (gameMode() === 'commander' ? h('div', { class: 'bad', text: 'No commander yet: put it under a “Commander” heading.' }) : null); })(),
       h('div', { class: 'muted', text: 'Tip: put a “Sideboard” line before your sideboard (or leave one blank line).' })
     );
   }
@@ -6436,7 +6444,7 @@ function openWelcome(onDone) {
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('The deck button at the top left lists your saved decks and switches between them.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). A ', B('Commander'), ' switch then appears beside ', B('On the play'), ': it gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
+      P('The deck button at the top left lists your saved decks and switches between them.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
@@ -6490,8 +6498,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.29';
+const APP_VERSION = '0.99.30';
 const CHANGELOG = [
+  { v: '0.99.30', title: 'Commander decks have their own tab', notes: ['Click the deck name: the deck screen now has a Decks | Commander switch. Commander mode is chosen there; Commander decks (a Commander section in the list) are only listed in Commander mode and normal decks only in normal mode. In Commander mode a gold Commander mode chip shows beside On the play; click it to go back to the deck screen.','Saving or importing a deck of the other kind switches to its mode so you can see it. Importing in Commander mode starts with a Commander heading ready.'] },
   { v: '0.99.29', title: 'Commander mode (goldfish)', notes: ['Put your commander under a Commander heading in the deck list (or mark it *CMDR*). A Commander switch appears beside On the play.','Rules enforced: 40 life, 99-card library, a command zone pile, casting it from there costs {2} more per previous cast, a free first mulligan, and the choice to put it back into the command zone when it would go to the graveyard, exile, hand or library (CR 903.9). Commander combat damage to your opponent is tracked (21 is lethal).','A deck check at the start of a game reports the card count, singleton and colour identity problems.'] },
   { v: '0.99.28', title: 'Accessibility tab, mulligan fix, centred pop-ups', notes: ['Mulligan hand fixed: it stays inside the table layout (the fixed-position version could land off-screen on some windows). A test now checks it at several window sizes.','Pop-ups now all open at the same place, the centre of the window; only the stack and resolving panels keep their own spots, and the mulligan steps sit above the hand.','The One Ring and other "for each counter" text: Always Yield now still recognises the action while the live count changes.','⚙ → Settings → Accessibility: interface size (100–175%), high contrast, calm motion (no animation, tilt, fan or scrolling text), larger click targets, strong keyboard focus, and screen-reader announcements of the game log. More options are planned (colour-blind markers, full keyboard play, a text view of each zone).'] },
   { v: '0.99.27', title: 'Bigger opening hand; Ancient Stirrings read in full', notes: ['The opening-hand screen (Keep / Draw / Mulligan) now shows your hand large and centred so every card can be read.','"Look at the top N cards. You may reveal a [type or colorless] card from among them and put it into your hand. Put the rest on the bottom" is now read in full (Ancient Stirrings and similar): at most one card, only cards of that kind.'] },
@@ -7715,18 +7724,21 @@ function openSideboarding(deckName, after) {
 function openDeckPicker() {
   const m = modal('Your decks', { width: 940 });
   const draw = () => {
-    const decks = loadDecks(), names = Object.keys(decks).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
-    m.body.replaceChildren(names.length
+    const decks = loadDecks(), mode = gameMode(), names = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
+    const pick = md => { if (md === gameMode()) return; setGameMode(md); const first = decksInMode(loadDecks(), md).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); prepareImages(); render(); draw(); };
+    const seg = FEATURES.commander ? h('div', { class: 'modeseg', role: 'tablist', 'aria-label': 'Game mode' },
+      ...[['standard', 'Decks', 'Normal goldfish games'], ['commander', 'Commander', 'Commander decks and Commander rules (40 life, command zone, commander tax)']].map(([k, lab, tip]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: tip, text: lab, onclick: () => pick(k) }))) : null;
+    m.body.replaceChildren(seg, names.length
       ? h('div', { class: 'dbx-shelf' }, names.map(n => deckBoxEl(n, n === cur,
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
         () => openDeckArtPicker(n, draw),
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
         () => openCustomArt(n, draw),
         () => openSideboarding(n, draw))))
-      : h('div', { class: 'muted', text: 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
+      : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();
-  m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor({ blank: true }); } }), h('button', { text: 'Scan decks & save report', title: 'Reads every card in every saved deck and saves a text file you can send for review', onclick: saveDeckScanReport }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+  m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor(gameMode() === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }); } }), h('button', { text: 'Scan decks & save report', title: 'Reads every card in every saved deck and saves a text file you can send for review', onclick: saveDeckScanReport }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
   const decks = loadDecks(); loadCachedImages(Object.keys(decks).map(n => deckArtName(n, parseDeck(decks[n].text)))).then(n => { if (n) draw(); });
 }
 // ---- Deck scan report (v0.63): reads every card of every saved deck and writes one text file to send for review.
@@ -9701,6 +9713,7 @@ function init() {
   if (!settings.kitchenSeen) { settings.kitchenSeen = true; if (!settings.matPreset) settings.matPreset = 'kitchen'; if (!settings.sleevePreset) settings.sleevePreset = 'worn'; saveSettings(); try { applySettings(); applySleeve(); } catch (e) { /* ignore */ } }   // v0.69.3: the new table and card back become the look once; change them in Settings > Graphics
   $('#deckSelect').addEventListener('change', e => { lsSet('mtgpt.current', e.target.value); prepareImages(); });
   $('#btnDecks').addEventListener('click', openDeckPicker);
+  { const cm = $('#cmdWrap'); if (cm) cm.addEventListener('click', openDeckPicker); }
   $('#btnTools').addEventListener('click', e => { e.stopPropagation(); toggleUtilityMenu(); });
   $('#utilityMenu').addEventListener('click', e => e.stopPropagation());
   $('#btnGameTools').addEventListener('click', e => { e.stopPropagation(); toggleGameMenu(); });
@@ -12559,8 +12572,7 @@ applyA11y();
 //  903.9        if it would go to graveyard, exile, hand or library you may put it in the command zone instead   903.10a  21 commander combat damage is lethal
 //  103.5c       the first mulligan is free        903.5  deck: 100 cards, singleton, colour identity of the commander
 function commanderModeOn(deck) {
-  if (!FEATURES.commander || !deck) return false; const box = document.getElementById('chkCmd');
-  return !!deck.main.some(x => x.cmd) && !!(box ? box.checked : true);
+  return !!FEATURES.commander && !!deck && gameMode() === 'commander' && deck.main.some(x => x.cmd);   // the mode is chosen on the deck selection screen
 }
 function startCommanderState() {
   state.cmdMode = true; state.life = 40; state.oppLife = 40; state.cmdDealt = {}; state.freeMullUsed = false;
@@ -12625,7 +12637,7 @@ function commanderDamage(dealers) {
 }
 function commanderRender() {
   const pile = document.getElementById('pile-command'); if (pile) pile.hidden = !(state && state.cmdMode);
-  const cb = document.getElementById('cmdWrap'); if (cb) { const d = (typeof getCurrentDeck === 'function') ? getCurrentDeck() : null; cb.hidden = !(FEATURES.commander && d && d.main.some(x => x.cmd)); }
+  const cb = document.getElementById('cmdWrap'); if (cb) cb.hidden = !(FEATURES.commander && gameMode() === 'commander');
   if (state && state.cmdMode) { const el = document.getElementById('pile-command'); if (el) { const tax = state.command.length ? (state.command[0].cmdCasts || 0) * 2 : 0; el.title = state.command.length ? `Command zone: click to cast your commander${tax ? ` (+{${tax}} commander tax)` : ''}` : 'Your commander is not in the command zone'; } setTimeout(commanderSBA, 0); }
 }
 init();

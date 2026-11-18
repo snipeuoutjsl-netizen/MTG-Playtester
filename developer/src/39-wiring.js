@@ -7,6 +7,7 @@ function init() {
   if (!settings.kitchenSeen) { settings.kitchenSeen = true; if (!settings.matPreset) settings.matPreset = 'kitchen'; if (!settings.sleevePreset) settings.sleevePreset = 'worn'; saveSettings(); try { applySettings(); applySleeve(); } catch (e) { /* ignore */ } }   // v0.69.3: the new table and card back become the look once; change them in Settings > Graphics
   $('#deckSelect').addEventListener('change', e => { lsSet('mtgpt.current', e.target.value); prepareImages(); });
   $('#btnDecks').addEventListener('click', openDeckPicker);
+  { const cm = $('#cmdWrap'); if (cm) cm.addEventListener('click', openDeckPicker); }
   $('#btnTools').addEventListener('click', e => { e.stopPropagation(); toggleUtilityMenu(); });
   $('#utilityMenu').addEventListener('click', e => e.stopPropagation());
   $('#btnGameTools').addEventListener('click', e => { e.stopPropagation(); toggleGameMenu(); });

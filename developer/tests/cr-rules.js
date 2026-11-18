@@ -1154,7 +1154,7 @@ const { setup } = require('./common.js');
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();
       const decks = JSON.parse(localStorage.getItem('mtgpt.decks') || '{}'); decks.CmdTest = { text: 'Commander\n1 Mock Commander\n\nDeck\n99 Forest' }; localStorage.setItem('mtgpt.decks', JSON.stringify(decks)); localStorage.setItem('mtgpt.current', JSON.stringify('CmdTest'));
-      const old = window.confirm; window.confirm = () => true; document.getElementById('chkCmd').checked = true; __d.startGame(); await new Promise(r => setTimeout(r, 400)); const s = __d.state;
+      const old = window.confirm; window.confirm = () => true; localStorage.setItem('mtgpt.mode', JSON.stringify('commander')); __d.startGame(); await new Promise(r => setTimeout(r, 400)); const s = __d.state;
       const start = { cmd: s.cmdMode, life: s.life, command: s.command.map(c => c.name).join(), lib: s.library.length, hand: s.hand.length, flagged };
       __d.doMulligan(); const free = { mulls: s.mulls, hand: s.hand.length, used: s.freeMullUsed };
       const c = s.command[0]; c.cmdCasts = 2; c.fromCmd = true; const cost = __d.effectiveCost(c).cost; delete c.fromCmd;
@@ -1164,6 +1164,12 @@ const { setup } = require('./common.js');
       c.isCommander = true; s.cmdDealt = {}; s.battlefield.push(c); c.counters = { plus: 0, minus: 0 }; c.tapped = false; __d.commanderDamage([c]); const dealt = s.cmdDealt[c.name];
       window.confirm = old; return { start, free, cost, asked, back, dealt }; });
     return { ok: r.start.cmd && r.start.life === 40 && r.start.command === 'Mock Commander' && r.start.lib + r.start.hand === 99 && r.start.flagged === 'Mock Commander' && r.free.mulls === 0 && r.free.used && r.cost === '{5}{G}' && r.asked && r.back && r.dealt === 2, why: JSON.stringify(r) }; });
+  await T('903 + UI', 'Commander mode is chosen on the deck screen: Commander decks (a Commander section) are listed only in Commander mode, standard decks only in standard mode; the picker shows a Decks | Commander switch', async () => {
+    const r = await ev(async () => { const d = { A: { text: '20 Forest' }, C: { text: 'Commander\n1 Mock Commander\n\nDeck\n99 Forest' } };
+      const std = (__d.setGameMode('standard'), __d.decksInMode(d, __d.gameMode())), cmd = (__d.setGameMode('commander'), __d.decksInMode(d, __d.gameMode()));
+      __d.openDeckPicker(); await new Promise(r => setTimeout(r, 300)); const tabs = [...document.querySelectorAll('.modeseg .modetab')].map(b => b.textContent + ':' + b.classList.contains('on')); document.querySelectorAll('.backdrop').forEach(x => x.remove()); __d.setGameMode('standard');
+      return { std: std.join(), cmd: cmd.join(), tabs: tabs.join() }; });
+    return { ok: r.std === 'A' && r.cmd === 'C' && r.tabs === 'Decks:false,Commander:true', why: JSON.stringify(r) }; });
   console.log('\nRULES CHECK (Comprehensive Rules, 19 June 2026)\n');
   for (const t of out) console.log((t.ok ? 'PASS' : 'FAIL') + '  CR ' + t.rule.padEnd(14) + t.name + (t.ok ? '' : '\n        -> ' + t.why));
   console.log(`\n${out.filter(t => t.ok).length}/${out.length} pass`);

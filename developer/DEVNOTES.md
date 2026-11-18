@@ -1,4 +1,6 @@
 
+**v0.99.30** Game modes: `gameMode()/setGameMode()` (`mtgpt.mode`), `deckIsCommander`, `decksInMode`; `refreshDeckSelect` lists only the current mode's decks and follows the chosen deck's kind; the deck picker (`27-deck-boxes.js`) has the Decks | Commander switch; `#cmdWrap` is a chip, not a checkbox. `commanderModeOn` = mode is commander and the deck has a `cmd` entry.
+
 **v0.99.29** Commander mode, `src/75-commander.js` (CR 903). `parseDeck` flags `cmd:true` for cards under a Commander header or marked *CMDR* (they stay in `main`, so Commander-off behaves as before). `commanderModeOn(deck)` (FEATURES.commander + `#chkCmd`), `state.command` zone (in `ZONES`), `state.cmdMode`, `startCommanderState` (40 life, deck check), `castFromCommand` (lifts to hand with `c.fromCmd`; tax from `costAdjustments`; `c.cmdCasts` incremented when the cast commits in `castSpell0`; a cancelled cast returns it), `commanderSBA` (903.9 prompt when a commander sits in graveyard/exile/hand/library), `commanderDamage` (21), free first mulligan (`state.freeMullUsed`). Not done yet: partner/background UI beyond the deck check, commander damage received, multiplayer.
 
 ## Lessons: things we broke once, do not repeat
