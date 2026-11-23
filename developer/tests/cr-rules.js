@@ -1557,6 +1557,10 @@ const { setup } = require('./common.js');
       const exp = T / N, chi = cnt.reduce((x, c) => x + (c - exp) ** 2 / exp, 0);
       return { scryOk, shownFirst, kept, chi: Math.round(chi * 10) / 10 }; });
     return { ok: r.scryOk && r.shownFirst && r.kept && r.chi < 43.8, why: JSON.stringify(r) }; });
+  await T('UI library reopen', 'Library hall: after closing with its fade-out, opening it again shows it (opacity 1), not an invisible screen; the top-bar button reads "Return to the Library"', async () => { await reset();
+    const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); __d.openHall(); await W(200); __d.closeHall(true); await W(900); document.getElementById('btnDecks').click(); await W(300);
+      const op = getComputedStyle(document.getElementById('hall')).opacity, on = document.body.classList.contains('hall-on'), lab = document.getElementById('btnDecks').textContent.trim(); __d.closeHall(false); return { op, on, lab }; });
+    return { ok: r.op === '1' && r.on && /Return to the Library/.test(r.lab), why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

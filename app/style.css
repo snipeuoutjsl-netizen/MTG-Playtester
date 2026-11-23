@@ -2211,3 +2211,32 @@ body.a11y-calm #hall .hall-spread { animation: none; }
 .bk-face.fore { left: 0; width: var(--T); height: var(--H); transform: rotateY(180deg) translateZ(calc(var(--D) / 2)); filter: brightness(.9); border-radius: 2px; }
 #hall .hall-tome.deck-open > .hall-page, #hall .hall-tome.deck-open > .hall-spine { visibility: visible; }
 #hall .hall-tome.deck-open > .hall-page > * { visibility: hidden; }
+/* v0.99.52 the top-bar button goes back to the Library */
+button.deckpick.libret { gap: 8px; padding: 0 14px 0 12px; }
+button.deckpick.libret b { max-width: none; font-family: 'Cinzel Decorative', Georgia, serif; font-size: 13px; letter-spacing: .03em; color: #f0d48c; }
+button.deckpick.libret .ic { color: #e3b95c; }
+button.deckpick.libret:hover { border-color: #e3b95c; background: rgba(227,185,92,.10); }
+/* hovering a card on the desk: a small lift, no zoom (the open book shows it) */
+#hall .ds-card:hover, #hall .ds-card:focus-visible { transform: translateY(-5px); box-shadow: 0 0 0 2px #e3b95c, 0 10px 18px rgba(0,0,0,.6); }
+/* the card's own pages in the open book */
+#hall .tome-card { position: absolute; inset: 0; z-index: 3; display: grid; grid-template-columns: 1fr 1fr; column-gap: 44px; padding: 14px 20px; box-sizing: border-box; border-radius: 10px; overflow: hidden;
+  color: #2c1d0e; font-family: Georgia, 'Times New Roman', serif;
+  background: linear-gradient(90deg, transparent calc(50% - 22px), rgba(90,55,20,.25) calc(50% - 7px), #6e4f26 50%, rgba(90,55,20,.25) calc(50% + 7px), transparent calc(50% + 22px)), linear-gradient(180deg, #f2e6c8, #e6d4ab); }
+#hall .tome-card .tc-page { min-width: 0; min-height: 0; }
+#hall .tome-card .tc-pic { display: flex; align-items: center; justify-content: center; }
+#hall .tome-card .tc-pic img { max-height: 298px; max-width: 100%; border-radius: 10px; box-shadow: 0 4px 10px rgba(60,30,5,.45); display: block; }
+#hall .tome-card .tc-noimg { width: 200px; height: 280px; border-radius: 10px; border: 2px solid rgba(122,79,29,.5); display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; font: 700 18px Georgia, serif; color: #4a250c; box-sizing: border-box; }
+#hall .tome-card .tc-txt { overflow: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+#hall .tome-card .tc-face + .tc-face { border-top: 1px solid rgba(122,79,29,.35); padding-top: 6px; margin-top: 4px; }
+#hall .tome-card .tc-title { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+#hall .tome-card .tc-title b { font-size: 17px; color: #4a250c; }
+#hall .tome-card .tc-type { font-style: italic; font-size: 12.5px; color: #6a4d28; border-bottom: 1px solid rgba(122,79,29,.35); padding-bottom: 3px; margin-bottom: 2px; }
+#hall .tome-card p { margin: 0 0 4px; font-size: 13px; line-height: 1.32; }
+#hall .tome-card .tc-pt { font-weight: 700; text-align: right; font-size: 13px; }
+#hall .tome-card .tc-foot { margin-top: auto; font-size: 11.5px; color: #6a4d28; font-style: italic; }
+#hall .hall-tome.card-open .tome-info { visibility: hidden; }
+/* the turning leaf */
+#hall .tome-leaf { position: absolute; top: 0; bottom: 0; width: 50%; z-index: 6; pointer-events: none; backface-visibility: visible;
+  background: linear-gradient(90deg, rgba(90,55,20,.22), transparent 18%, transparent 82%, rgba(90,55,20,.18)), linear-gradient(180deg, #f4e9cd, #e4d1a6); box-shadow: 0 0 18px rgba(60,30,5,.35); }
+#hall .tome-leaf.from-right { left: 50%; transform-origin: 0 50%; border-radius: 0 10px 10px 0; }
+#hall .tome-leaf.from-left { left: 0; transform-origin: 100% 50%; border-radius: 10px 0 0 10px; }
