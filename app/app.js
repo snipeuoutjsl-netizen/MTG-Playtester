@@ -6385,7 +6385,10 @@ function openDeckEditor(opts) {
 function openZone(zone) {
   if (!state) return;
   const names = { library: 'Library', graveyard: 'Graveyard', exile: 'Exile', sideboard: 'Sideboard', hand: 'Hand', command: 'Command zone' };
-  const shuffleChk = h('input', { type: 'checkbox', checked: true });
+  // v0.99.49 just looking through the library no longer shuffles it (that undid scry and other ordering); taking a card out
+  // of it ticks "Shuffle when closed", since a search ends with a shuffle (CR 701.23 / 701.20).
+  const shuffleChk = h('input', { type: 'checkbox', checked: false });
+  let libOrder = false;
   const m = modal(names[zone], {
     width: 680,
     onClose: () => {
@@ -6408,7 +6411,11 @@ function openZone(zone) {
       m.body.append(box);
     }
     let list = state[zone].slice();
-    if (zone === 'library' || zone === 'sideboard') list.sort((a, b) => a.name.localeCompare(b.name));
+    if (zone === 'library') m.body.append(h('div', { class: 'row lib-order' }, h('span', { class: 'muted small', text: 'Show:' }),
+      h('button', { class: libOrder ? '' : 'primary', text: 'A–Z', title: 'Sorted by name, like searching for a card', onclick: () => { libOrder = false; draw(); } }),
+      h('button', { class: libOrder ? 'primary' : '', text: 'Library order (top first)', title: 'The real order: the first card is the one you draw next, the last is the bottom card', onclick: () => { libOrder = true; draw(); } })));
+    if ((zone === 'library' && !libOrder) || zone === 'sideboard') list.sort((a, b) => a.name.localeCompare(b.name));
+    else if (zone === 'library') { /* top first, as stored */ }
     else list.reverse();
     if (!list.length) m.body.append(h('div', { class: 'muted', text: 'Empty.' }));
     for (const c of list) {
@@ -6419,6 +6426,7 @@ function openZone(zone) {
         c.timeCounters > 0 ? h('span', { class: 'ok', title: 'Suspended: one time counter is removed at each of your upkeeps', text: `\u23F3 ${c.timeCounters} time counter${c.timeCounters === 1 ? '' : 's'}` }) : null
       );
       const act = (label, to, pos) => h('button', { text: label, onclick: () => {
+        if (zone === 'library' && to !== 'library') shuffleChk.checked = true;
         moveCard(c.id, to, pos);
         if (to === 'hand') { /* keep window open for multi-pick */ }
         draw();
@@ -6679,8 +6687,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.48';
+const APP_VERSION = '0.99.49';
 const CHANGELOG = [
+  { v: '0.99.49', title: 'Floating shelves', notes: ['The Library is redrawn: your decks stand on floating wooden shelves hung on a plastered wall, seen from a little below, and the menu book lies open on a wooden desk. The wood grain is drawn by the app itself, so it needs no downloads.', 'Click any book to take it down, even while another one is on the desk: the two swap places, one floating back to its slot as the other comes down. No need to press "Put it back" first.', 'The book now floats from its slot to the desk in one smooth arc, turning to its cover on the way and settling onto its shadow. Putting it back plays the same path in reverse, even if you change your mind mid-flight.', 'The candle has been taken off the desk.', 'Library viewer: just looking through your library no longer shuffles it, so a scry (or any card you put on top or bottom) stays where you put it. Taking a card out of the library still ticks "Shuffle when closed", as a search should. A new "Library order (top first)" view shows the real order, next draw first and the bottom card last.', 'Checked by the tests: scry sends cards to the bottom in the order chosen and keeps the rest on top, and the shuffle puts every card in every position equally often.'] },
   { v: '0.99.48', title: 'The Library', notes: ['NEW: every session opens in the Library. Your decks stand as books on the shelves; on the reading desk an open book is the menu (Continue your game, New game, Standard or Commander, who goes first, Import a deck, Settings, Accessibility, Rules & help, What\'s new), lit by a flickering candle.', 'Click a book to lay it on the desk: it turns to its cover and shows its colours, curve, key cards and the librarian\'s notes, then "Begin a game with this deck" starts the game and the Library fades into the table.', 'Librarian\'s notes: each deck remembers how often you opened it, when you last did, the average lands in the hands you kept, mulligans per game, and the turn your goldfish kills come on. All of it comes from your own games.', 'The deck button at the top left now takes you back to the Library; Esc (or "Back to the table") returns to your game. You can turn off "Open the Library when the app starts" on the desk.'] },
   { v: '0.99.47', title: 'Prepared, and a New Game reminder', notes: ['RULES (CR 722, prepared): preparation cards such as Carnivorous Cultivator // Enroot now work. From your hand you cast only the creature. When it becomes prepared ("enters prepared", or an effect that prepares it) a copy of its spell waits in exile, marked PREPARED on the creature. Cast it from the creature\'s menu or the exile zone for the spell\'s own cost and timing; casting it unprepares the creature, even if the copy is countered, and the copy never goes to your graveyard. A creature can\'t be prepared twice, and leaving the battlefield ends it.', 'When you pick a different deck, the New Game button glows until you start a game with it, so you know the table still has the old deck.'] },
   { v: '0.99.46', title: 'Deck scan report includes your full lists', notes: ['The deck scan report (deck screen \u2192 Scan decks & save report) now ends with the full list of every deck, including sideboards and any sideboarded list in use, so your decks can be rebuilt exactly for testing.', 'FIXED: the report always said "Card data loaded: NONE" even when your card data was loaded.'] },
@@ -7940,10 +7949,13 @@ function deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, on
 }
 // Take a book off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
 function pullDeckBox(m, tile, d) {
-  if (m.el.querySelector('.dbx-pull')) return;
+  if (tile.classList.contains('out')) return;
+  // v0.99.49 clicking another book swaps them: the one on the desk floats back to its slot while the new one comes down.
+  if (m.el._dbxPut) m.el._dbxPut();
   const src = tile.querySelector('.bk-stage'), sr = src.getBoundingClientRect();
   const big = bookModel(d.deckName, d.deck, d.cols, d.im, true);
-  const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big); tiltWith(turn, big);
+  const shadow = h('i', { class: 'dbx-shadow', 'aria-hidden': 'true' });
+  const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big, shadow); tiltWith(turn, big);
   const sm = deckSummary(d.deck), maxC = Math.max(1, ...sm.curve);
   const btn = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => { putBack(true); fn(); } });
   const info = h('div', { class: 'dbx-info' },
@@ -7963,23 +7975,35 @@ function pullDeckBox(m, tile, d) {
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
-  // v0.99.45 a smoother take-off: the book first slides up out of its slot spine-first, then flies to the middle while it turns to show its cover.
-  const fly = (rev) => { const tr = turn.getBoundingClientRect(); const dx = sr.left + sr.width / 2 - (tr.left + tr.width / 2), dy = sr.top + sr.height / 2 - (tr.top + tr.height / 2), k = Math.max(0.2, sr.height / (big.offsetHeight || 330));
-    const lift = Math.min(60, sr.height * 0.28);
-    const moveK = [{ transform: `translate(${dx}px, ${dy}px) scale(${k})`, easing: 'cubic-bezier(.3,0,.4,1)' }, { offset: 0.28, transform: `translate(${dx}px, ${dy - lift}px) scale(${k * 1.06})`, easing: 'cubic-bezier(.22,1,.36,1)' }, { transform: 'none' }];
-    const endT = getComputedStyle(big).transform, turnK = [{ transform: 'rotateY(0deg)' }, { offset: 0.3, transform: 'rotateY(0deg)', easing: 'cubic-bezier(.3,.7,.2,1)' }, { transform: endT === 'none' ? 'rotateY(62deg)' : endT }];
-    const o = { duration: rev ? 560 : 760, fill: 'both' };
-    wa(big, rev ? turnK.slice().reverse().map((f, ix, arr) => ({ ...f, offset: f.offset !== undefined ? 1 - f.offset : undefined })) : turnK, o);
-    const a = wa(turn, rev ? moveK.slice().reverse().map(f => ({ ...f, offset: f.offset !== undefined ? 1 - f.offset : undefined })) : moveK, o);
-    if (!rev) a.onfinish = () => { try { turn.getAnimations().forEach(x => x.cancel()); big.getAnimations().forEach(x => x.cancel()); } catch (e) {} };   // hand the book back to the mouse-turn styles
+  // v0.99.49 one continuous float: the book slides forward out of its slot, then travels along a gentle arc to the desk,
+  // turning to show its cover on the way, and settles onto its shadow. Putting it back plays the same path in reverse.
+  const fly = (rev) => {
+    const tr = turn.getBoundingClientRect();
+    const dx = sr.left + sr.width / 2 - (tr.left + tr.width / 2), dy = sr.top + sr.height / 2 - (tr.top + tr.height / 2), k = Math.max(0.2, sr.height / (big.offsetHeight || 330));
+    const lift = Math.min(40, sr.height * 0.2), out = 0.2, N = 14;
+    const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const p0 = [dx, dy - lift], p2 = [0, 0], p1 = [dx * 0.35, Math.min(p0[1], 0) - 90];
+    const moveK = [{ offset: 0, transform: `translate(${dx}px, ${dy}px) scale(${k})` }, { offset: out, transform: `translate(${p0[0]}px, ${p0[1]}px) scale(${k * 1.1})` }];
+    for (let i = 1; i <= N; i++) { const u = ease(i / N), x = (1 - u) * (1 - u) * p0[0] + 2 * (1 - u) * u * p1[0] + u * u * p2[0], y = (1 - u) * (1 - u) * p0[1] + 2 * (1 - u) * u * p1[1] + u * u * p2[1], sc = k * 1.1 + (1 - k * 1.1) * u;
+      moveK.push({ offset: out + (1 - out) * i / N, transform: i === N ? 'none' : `translate(${x}px, ${y}px) scale(${sc})` }); }
+    const endT = getComputedStyle(big).transform, turnK = [{ offset: 0, transform: 'rotateY(0deg)' }, { offset: 0.3, transform: 'rotateY(0deg)', easing: 'cubic-bezier(.45,0,.25,1)' }, { offset: 0.9, transform: endT === 'none' ? 'rotateY(62deg)' : endT }, { offset: 1, transform: endT === 'none' ? 'rotateY(62deg)' : endT }];
+    const shK = [{ offset: 0, opacity: 0, transform: 'scale(.5)' }, { offset: 0.6, opacity: 0, transform: 'scale(.5)' }, { offset: 1, opacity: 1, transform: 'none' }];
+    const flip = fr => fr.slice().reverse().map(f => ({ ...f, offset: 1 - f.offset }));
+    const o = { duration: rev ? 640 : 900, fill: 'both' };
+    fwd.forEach(x => { try { x.cancel(); } catch (e) {} }); fwd = [];   // a put-back starting mid-flight takes over from the take-off
+    const set = [wa(big, rev ? flip(turnK) : turnK, o), wa(shadow, rev ? flip(shK) : shK, o)], a = wa(turn, rev ? flip(moveK) : moveK, o); set.push(a);
+    if (!rev) { fwd = set; a.onfinish = () => { set.forEach(x => { try { x.cancel(); } catch (e) {} }); fwd = []; }; }   // hand the book back to the mouse-turn styles
     return a; };
+  let fwd = [];
   if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: 420, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); putBack(); } };
   document.addEventListener('keydown', esc, true);
   setTimeout(() => { const f = info.querySelector('button.primary'); if (f) f.focus(); }, 30);
   let gone = false;
+  m.el._dbxPut = () => putBack(); m.el._dbxPutOv = ov;
   function putBack(now) {
     if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
+    ov.style.pointerEvents = 'none'; ov.classList.add('leaving'); if (m.el._dbxPut && m.el._dbxPutOv === ov) { m.el._dbxPut = null; m.el._dbxPutOv = null; }
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
     info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });
@@ -8032,7 +8056,7 @@ function openDeckPicker() {   // v0.99.44 if the bookcase itself fails, a plain 
 // v0.99.48 the shelves are shared by the deck window and the Library hall: cb.pick(name), cb.edit(name), cb.redraw(), cb.host ({ el }: where a pulled book lands), cb.beginLabel
 function bookcaseEl(names, cur, mode, cb) {
   if (!names.length) return h('div', { class: 'muted bk-empty', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' });
-  return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / BOOKS_PER_SHELF)) }, (_, r) => h('div', { class: 'bk-shelf' }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
+  return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / BOOKS_PER_SHELF)) }, (_, r) => h('div', { class: 'bk-shelf', style: `--sk:${r}` }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
     () => cb.pick(n), () => openDeckArtPicker(n, cb.redraw), () => cb.edit(n), () => openCustomArt(n, cb.redraw), () => openSideboarding(n, cb.redraw),
     (tile, d) => pullDeckBox(cb.host, tile, Object.assign(d, { redraw: cb.redraw, beginLabel: cb.beginLabel }))))), h('div', { class: 'bk-plank' }))));
 }
@@ -13501,7 +13525,7 @@ function preparedOptions(tx, obj) {
   return null;
 }
 // ---- v0.99.48 The Library hall: the start screen. Your decks are books on the shelves (left); the reading desk (right) holds an open book
-// whose pages are the menu, and a candle. Pulling a book lays it on the desk with its details and "Begin". Shown at every launch unless switched off.
+// whose pages are the menu. Pulling a book lays it on the desk with its details and "Begin". Shown at every launch unless switched off.
 const HALL_KEY = 'mtgpt.hallStart', NOTES_KEY = 'mtgpt.deckNotes';
 // Librarian's notes: real numbers from games played in the app (never invented).
 function deckNotes(name) { const a = lsGet(NOTES_KEY, {}) || {}; return a[name] || null; }
@@ -13561,8 +13585,7 @@ function drawHall() {
     btn(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }),
     h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
     h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
-  const candle = h('div', { class: 'candle', 'aria-hidden': 'true' }, h('div', { class: 'candle-glow' }), h('div', { class: 'candle-flame' }, h('i')), h('div', { class: 'candle-wick' }), h('div', { class: 'candle-wax' }), h('div', { class: 'candle-dish' }));
-  desk.append(h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right), candle, h('div', { class: 'hall-hint', text: names.length ? 'Pull a book from the shelves to lay it on the desk.' : '' }));
+  desk.append(h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right), h('div', { class: 'hall-hint', text: names.length ? 'Pull a book from the shelves to lay it on the desk.' : '' }));
   el.replaceChildren(
     h('header', { class: 'hall-top' }, h('div', { class: 'hall-title' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' })), inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null),
     h('div', { class: 'hall-room' }, h('div', { class: 'hall-shelves' }, shelf), desk));
