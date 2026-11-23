@@ -1740,7 +1740,9 @@ body.hand3d #mat .attstack.hosttap > .card.tapped:not(.dragging):hover { transfo
 /* ---- v0.99.28 mulligan / opening hand: the hand stays IN the normal layout (no position:fixed, no transforms, no viewport maths).
    It only grows (bigger cards), rises above a dim layer, and the prompt sits in a centred rounded box above the cards.
    LESSON (see developer/DEVNOTES.md): v0.99.25-27 used position:fixed + left:calc(100vw...) + translate(-50%), which put the hand off-screen on some real windows. */
-body.mullpick::after, body.mullhand::after { content: ''; position: fixed; inset: 0; background: rgba(5,10,18,.55); z-index: 39; pointer-events: none; }
+/* v0.99.45 only the game board dims during the opening hand; the top bar and the side panel stay bright (they still work) */
+body.mullpick #mat::after, body.mullhand #mat::after { content: ''; position: absolute; inset: 0; background: rgba(5,10,18,.55); z-index: 39; pointer-events: none; border-radius: inherit; }
+body.mullpick #mat, body.mullhand #mat { position: relative; }
 body.mullhand #handWrap { --cw: 176px; --ch: 138px; }
 body.mullpick #handWrap, body.mullhand #handWrap { z-index: 60; height: auto; min-height: calc(var(--ch) + 56px); display: flex; flex-direction: column; align-items: center; gap: 16px; padding-bottom: 14px; }
 body.imgmode.mullhand #handWrap { --cw: 176px; --ch: 246px; }   /* v0.99.36 large only for the Keep / Mulligan decision */
@@ -1920,7 +1922,7 @@ body.a11y-targets .setgrid .teachopt { min-height: 44px; }
 .bk-tile.out .bk { visibility: hidden; }
 .bk-tile.out + .bk-tile, .bk-tile.out { }
 /* the book taken off the shelf */
-.dbx-turn .bk.big { transform: rotateX(calc(var(--ry, 0) * -12deg)) rotateY(calc(62deg + var(--rx, 0) * 40deg)); transition: transform .25s ease-out; }
+.dbx-turn .bk.big { transform: rotateX(calc(var(--ry, 0) * -12deg)) rotateY(calc(62deg + var(--rx, 0) * 40deg)); transition: transform .35s cubic-bezier(.22,1,.36,1); }
 .bk.big .bk-title { font-size: 19px; }
 .bk.big .dbx-label b { font-size: 18px; } .bk.big .dbx-label span { font-size: 13px; }
 .bk.big .bk-pips .dbx-pip { width: 11px; height: 11px; }
@@ -1935,3 +1937,7 @@ body.a11y-calm .bk, body.a11y-calm .bk.big { transition: none; }
 .peek-yes { color: var(--gold, #e3b95c); font-weight: 600; }
 
 .bk-fixbtn { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); font-size: 10px; padding: 1px 6px; z-index: 4; }
+
+/* v0.99.45 the stack window keeps its place: its top edge is fixed and it grows downward (scrolling if it gets tall), instead of re-centring as cards are added */
+#stackStage { top: max(14px, calc((100% - var(--handcover, 0px)) * 0.1)); transform: translate(-50%, 0) scale(var(--ss, 1)); transform-origin: 50% 0; max-height: calc(100% - var(--handcover, 0px) - 28px); overflow-y: auto; }
+body.mullpick #overlay, body.mullhand #overlay { z-index: 62; }   /* v0.99.45 the Keep / Mulligan prompt sits above the dimmed board */

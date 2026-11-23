@@ -56,10 +56,10 @@ function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onP
 function deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
   const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
   const bk = bookModel(deckName, deck, cols, im, false);
-  const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf, double-click to use it` }, bk);
+  const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf` }, bk);
   let clickT = 0;
-  stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
-  stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
+  // v0.99.45 a click takes the book off the shelf at once (no waiting to see whether it becomes a double-click); "Use this deck" is in the view it opens
+  stage.addEventListener('click', () => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick());
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
   // v0.99.44 no tilt on the shelf: hovering only lifts the book
   const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
@@ -83,15 +83,23 @@ function pullDeckBox(m, tile, d) {
       btn(d.isCur ? 'Keep using this deck' : 'Use this deck', d.onPick, 'primary'),
       btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
       btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
-      h('button', { text: 'Put it back', onclick: () => putBack() })));
+      h('button', { text: 'Put it back', onclick: () => putBack() }),
+      h('button', { class: 'danger', text: 'Delete deck\u2026', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
   const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
-  const fly = (rev) => { const br = big.getBoundingClientRect(); const dx = sr.left + sr.width / 2 - (br.left + br.width / 2), dy = sr.top + sr.height / 2 - (br.top + br.height / 2), k = sr.width / br.width;
-    const from = { transform: `translate(${dx}px, ${dy}px) scale(${k})` }, to = { transform: 'none' };
-    return wa(turn, rev ? [to, from] : [from, to], { duration: 460, easing: 'cubic-bezier(.2,.8,.25,1)' }); };
-  if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: 140, easing: 'ease-out', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
+  // v0.99.45 a smoother take-off: the book first slides up out of its slot spine-first, then flies to the middle while it turns to show its cover.
+  const fly = (rev) => { const tr = turn.getBoundingClientRect(); const dx = sr.left + sr.width / 2 - (tr.left + tr.width / 2), dy = sr.top + sr.height / 2 - (tr.top + tr.height / 2), k = Math.max(0.2, sr.height / (big.offsetHeight || 330));
+    const lift = Math.min(60, sr.height * 0.28);
+    const moveK = [{ transform: `translate(${dx}px, ${dy}px) scale(${k})`, easing: 'cubic-bezier(.3,0,.4,1)' }, { offset: 0.28, transform: `translate(${dx}px, ${dy - lift}px) scale(${k * 1.06})`, easing: 'cubic-bezier(.22,1,.36,1)' }, { transform: 'none' }];
+    const endT = getComputedStyle(big).transform, turnK = [{ transform: 'rotateY(0deg)' }, { offset: 0.3, transform: 'rotateY(0deg)', easing: 'cubic-bezier(.3,.7,.2,1)' }, { transform: endT === 'none' ? 'rotateY(62deg)' : endT }];
+    const o = { duration: rev ? 560 : 760, fill: 'both' };
+    wa(big, rev ? turnK.slice().reverse().map((f, ix, arr) => ({ ...f, offset: f.offset !== undefined ? 1 - f.offset : undefined })) : turnK, o);
+    const a = wa(turn, rev ? moveK.slice().reverse().map(f => ({ ...f, offset: f.offset !== undefined ? 1 - f.offset : undefined })) : moveK, o);
+    if (!rev) a.onfinish = () => { try { turn.getAnimations().forEach(x => x.cancel()); big.getAnimations().forEach(x => x.cancel()); } catch (e) {} };   // hand the book back to the mouse-turn styles
+    return a; };
+  if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: 420, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); putBack(); } };
   document.addEventListener('keydown', esc, true);
   setTimeout(() => { const f = info.querySelector('button.primary'); if (f) f.focus(); }, 30);
@@ -100,7 +108,7 @@ function pullDeckBox(m, tile, d) {
     if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
-    info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 400, fill: 'forwards' });
+    info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });
   }
 }
 // v0.90.2 Sideboarding lives on the deck screen. The saved decklist is never changed: swaps are stored as a separate "sideboarded" list that the
@@ -161,7 +169,7 @@ function openDeckPicker0() {
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
         () => openCustomArt(n, draw),
         () => openSideboarding(n, draw),
-        (tile, d) => pullDeckBox(m, tile, d)))), h('div', { class: 'bk-plank' }))))
+        (tile, d) => pullDeckBox(m, tile, Object.assign(d, { redraw: draw }))))), h('div', { class: 'bk-plank' }))))
       : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();
@@ -171,7 +179,7 @@ function openDeckPicker0() {
 // ---- Deck scan report (v0.63): reads every card of every saved deck and writes one text file to send for review.
 function deckScanReportText() {
   const decks = loadDecks(), names = Object.keys(decks).sort((a, b) => a.localeCompare(b));
-  const L = [`MTG Playtester deck scan report (v${APP_VERSION})`, `Created ${new Date().toISOString()}`, `Card data loaded: ${cardCount ? cardCount.toLocaleString() + ' cards' : 'NONE (import the Oracle file first, otherwise nothing can be read)'}`, `Decks scanned: ${names.length}`, ''];
+  const L = [`Library of Alexandria deck scan report (v${APP_VERSION})`, `Created ${new Date().toISOString()}`, `Card data loaded: ${cardCount ? cardCount.toLocaleString() + ' cards' : 'NONE (import the Oracle file first, otherwise nothing can be read)'}`, `Decks scanned: ${names.length}`, ''];
   const agg = new Map(), tot = { ok: 0, part: 0, unk: 0 }, missingAll = new Set(); const seenCard = new Set();
   for (const n of names) {
     const deck = parseDeck(decks[n].text), list = deckNameList(deck), cards = [];
@@ -292,4 +300,15 @@ function openDeckArtPicker(deckName, after) {
       return h('button', { class: 'dbx-artopt' + (n === cur ? ' on' : ''), title: n, onclick: () => { const all = loadDecks(); if (all[deckName]) { all[deckName].art = n; saveDecks(all); } m.close(); if (after) after(); } },
         h('span', { class: 'dbx-art mini' + (im ? '' : ' none'), style: artStyle(im) }), h('span', { class: 'artlbl', text: n })); })));
   draw(); loadCachedImages(names).then(n => { if (n) draw(); });
+}
+
+// v0.99.45 Delete a deck from the deck screen: asks first (inside the app), then removes the list, its sideboard, box art and chosen printings.
+function confirmDeleteDeck(name, after) {
+  const c = modal(`Delete "${name}"?`, { width: 440 });
+  c.body.append(h('div', { class: 'psub', text: 'This removes the deck list, its sideboard, its box art and the printings you chose for it. It cannot be undone.' }));
+  c.foot.append(h('button', { text: 'Keep it', onclick: () => c.close() }), h('button', { class: 'danger', text: 'Delete deck', onclick: () => {
+    const all = loadDecks(); if (!all[name]) { c.close(); return; } delete all[name]; saveDecks(all);
+    try { clearDeckArt(name); } catch (e) {} try { forgetDeckPrints(name); } catch (e) {}
+    if (lsGet('mtgpt.current', '') === name) { const rest = Object.keys(all).sort((x, y) => x.localeCompare(y)); lsSet('mtgpt.current', rest[0] || null); prepareImages(); }
+    refreshDeckSelect(); c.close(); toast('Deck deleted', `"${name}" was removed from your library.`); render(); if (after) after(); } }));
 }

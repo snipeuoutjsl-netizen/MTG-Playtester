@@ -353,6 +353,7 @@ function gyCastOptions(c) {
     else if ((m = line.match(/^Flashback\s*[\u2014-]\s*(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); out.push({ kind: 'flashback', label: 'Flashback \u2014 ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), fi: null }); }
     else if ((m = line.match(/^Escape\s*[\u2014-]\s*(.+?)\.?$/i))) { const cs = parseCostComps(m[1], c.name); out.push({ kind: 'escape', label: 'Escape \u2014 ' + m[1], mana: manaOf(cs), comps: cs.filter(k => k.k !== 'mana'), fi: null }); }
   }
+  if (/^you may cast (?:this card|~|[^.\n]+?) from your graveyard\.?$/im.test(tx.replace(new RegExp(c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '~')) && info.mc && !info.land) out.push({ kind: 'static', label: 'Cast from your graveyard', mana: info.mc.split(' // ')[0], comps: [], fi: null });   // v0.99.45 Hogaak, Arisen Necropolis (CR 601.3: a permission to cast it from there)
   if (/you may cast this card from your graveyard using its warp ability/i.test(tx)) { for (const w of altCostsFor(c).filter(a => a.kind === 'warp')) out.push({ kind: 'warp', label: w.label + ' (from your graveyard)', mana: w.mana, comps: w.comps, fi: null }); }
   { const gm = tx.match(/you may cast (?:this card|~|[^.\n]*?) from your graveyard as long as you control an? ([a-z]+)/i);   // v0.94.1 Gravecrawler
     if (gm && info.mc && !info.land) { const sub = gm[1].toLowerCase(); if (state.battlefield.some(b => { const pi = permTypeInfo(b); return pi.types.has(sub) || (pi.subs && [...pi.subs].some(x => String(x).toLowerCase() === sub)); })) out.push({ kind: 'static', label: `Cast from your graveyard (you control a ${gm[1]})`, mana: info.mc.split(' // ')[0], comps: [], fi: null }); } }
@@ -948,6 +949,8 @@ function runDelayed(when) {
     else if (e.action === 'returnHand') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} returned to its owner's hand at the beginning of the ${where}`); leaveBattlefield(f.card, 'hand'); } }
     else if (e.action === 'returnBf') {
       if (f && f.zone === 'exile') { state.exile.splice(f.idx, 1); f.card.counters = { plus: 0, minus: 0 }; enterBattlefield(f.card, { from: 'exile', logMsg: `${e.srcName}: ${nm} returns to the battlefield at the beginning of the ${where}` }); }
+      else if (f && f.zone === 'graveyard' && e.fromGy) { const gi = state.graveyard.findIndex(x => x.id === f.card.id); state.graveyard.splice(gi, 1); f.card.counters = { plus: 0, minus: 0 }; enterBattlefield(f.card, { from: 'graveyard', tapped: e.tapped ? true : undefined, logMsg: `${e.srcName}: ${nm} returns from your graveyard to the battlefield${e.tapped ? ' tapped' : ''} at the beginning of the ${where}` }); }   // Prized Amalgam
+      else if (e.fromGy) log(`${e.srcName}: ${nm} is no longer in your graveyard, so it does not return`);
       else log(`${e.srcName}: ${nm} is not in exile, so it cannot return`);
     } else if (e.draw && !teach('triggerPrompts')) { const n = drawCards(e.draw); log(`${e.srcName}: delayed trigger, drew ${n}`); }
     else queueTrigger({ kind: 'ability', cardId: 0, cardName: e.srcName, text: e.text, effect: e.text, special: null, optional: false, why: `${e.srcName} created a delayed trigger earlier: it fires at the beginning of this ${where}.` });
@@ -1229,7 +1232,11 @@ function frontType(c) {
   return t;
 }
 // "Whenever a permanent you control enters tapped" (Amulet of Vigor) / "enters untapped": the permanent's state as it entered decides (CR 603.6a + 614.1c).
-function enterStateOk(t, e) { const l = String(t.line || t.cond || ''); if (/\benters? (?:the battlefield )?tapped\b/i.test(l)) return !!e.tapped; if (/\benters? (?:the battlefield )?untapped\b/i.test(l)) return !e.tapped; return true; }
+function enterStateOk(t, e) { const l = String(t.line || t.cond || '');
+  const fromGy = !!(e && (e.enteredFrom === 'graveyard' || e.enteredCastFromGy));
+  if (/\benters? (?:the battlefield )?from (?:your|a) graveyard\b/i.test(l) && !fromGy) return false;   // Flayer of the Hatebound
+  if (/\bif it entered from your graveyard or you cast it from your graveyard\b/i.test(l) && !fromGy) return false;   // Prized Amalgam (CR 603.4 intervening if)
+   if (/\benters? (?:the battlefield )?tapped\b/i.test(l)) return !!e.tapped; if (/\benters? (?:the battlefield )?untapped\b/i.test(l)) return !e.tapped; return true; }
 function filterMatches(filter, card) {
   const f = filter.toLowerCase();
   if (card && card.token && /\bnon-?token\b/.test(f)) return false;   // CR 111.1: a "nontoken" filter never matches a token (Weapons Manufacturing must not trigger on its own Munitions)
@@ -1260,7 +1267,7 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id && (!t.test || t.test(c))) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
   } else if (ev === 'etb') {
     const e = ctx.card; soulbondOnEnter(e); noteGapsOnEnter(e);
-    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
+    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && enterStateOk(t, e) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
       else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e)) && enterStateOk(t, e)) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
@@ -1324,7 +1331,10 @@ function fireTrigger(ev, ctx = {}) {
     for (const x of bf) if (x.att === a.id) for (const t of parseTriggers(x)) if (t.ev === 'host-combat-damage') add(x, t, `${a.name} (equipped or enchanted by ${x.name}) dealt combat damage to the opponent.`);
   }
 }
-function flushTriggers() { if (state && state.pendingTriggers.length && !state.phasePause && !state.discarding && !costHold) resolvePendingTrigger(); }
+function flushTriggers() { if (state && state.pendingTriggers.length && !state.phasePause && !state.discarding && !costHold && !(state.trigHold > 0)) resolvePendingTrigger(); }
+// v0.99.45 CR 603.3b: abilities that trigger during ONE event (milling five cards, sacrificing two lands, two lands entering) are put on the stack
+// together, in the order you choose. Events that move several cards run inside simultaneously(), which holds the triggers until the event is over.
+function simultaneously(fn) { if (!state) return fn(); state.trigHold = (state.trigHold || 0) + 1; try { return fn(); } finally { state.trigHold--; if (!state.trigHold) flushTriggers(); } }
 function permanentEntered(c) {
   if (!state || !c) return;
   c.enteredTurn = state.turn;
@@ -2087,6 +2097,7 @@ function enterBattlefield(c, o = {}) {
   if (cageBlocksEnter(c, o.from)) { const g = globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i); log(`${g.g.name}: ${c.name} can't enter the battlefield from your ${o.from}; it stays there`); toast("It can't enter", `${g.g.name}: creature cards in graveyards and libraries can't enter the battlefield.`); if (o.from === 'graveyard' && !state.graveyard.includes(c)) state.graveyard.push(c); else if (o.from === 'library' && !state.library.includes(c)) state.library.unshift(c); return c; }
   { const pr = priestExiles(c, o.from); if (pr) { log(`${pr.name}: ${c.name} would enter without being cast, so it is exiled instead`); toast('Exiled instead', `${pr.name}: a nontoken creature that would enter and wasn't cast is exiled instead.`); for (const z of ['hand', 'library', 'graveyard']) { const k = state[z].indexOf(c); if (k >= 0) state[z].splice(k, 1); } state.exile.push(c); render(); return c; } }
   c.counters = c.counters || { plus: 0, minus: 0 };
+  c.enteredFrom = o.from || 'effect'; c.enteredCastFromGy = o.from === 'stack' && !!(c.fromGy || c.castFrom === 'graveyard');   // v0.99.45 "enters from your graveyard" (Prized Amalgam, Flayer of the Hatebound)
   c.echoDue = true;   // CR 702.30a echo: it came under your control since your last upkeep
   sfx(!c.token && isLandName(c.name) ? 'land' : 'enter');
   if (o.logMsg) log(o.logMsg);
@@ -2553,11 +2564,25 @@ function castRoutes(c, extra) {
   const routes = [];
   for (const ch of chs) routes.push(mk(alts.length || ad.optional.length || ch ? 'Normal cost' : 'Cast', ec.cost, null, '', ch));
   for (const a of alts) for (const ch of chs) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond, ch));
+  // v0.99.45 CR 118.9 + 601.2f: a permanent that lets you cast spells from your hand "without paying their mana costs" (Omniscience) is another way to cast them.
+  { const fp = c.fromGy || c.fromExile ? null : freeCastPermission(c); if (fp) for (const ch of chs) routes.push(mk(`Without paying its mana cost (${fp})`, '', { kind: 'free', label: `Without paying its mana cost (${fp})`, mana: '', comps: [] }, '', ch)); }
+  // CR 118.6: a card with no mana cost (Ancestral Vision, Lotus Bloom, Living End) can't be cast by paying its mana cost; only suspend or another effect casts it.
+  if (noManaCost(c)) for (const r of routes) if (!r.alt) { r.ok = false; r.why = 'nocost'; r.detail = 'it has no mana cost, so it cannot be cast normally (CR 118.6)' + (suspendFor(c) ? '; suspend it instead' : ''); }
   const lim = routeLimits(c, routes); return lim.length ? lim : routes;
 }
+function noManaCost(c) { const i = c && !c.token ? cardInfo(c.name) : null; return !!i && !i.land && !String(i.mc || '').split(' // ')[0].trim() && !/\bLand\b/.test(frontType(c) || ''); }
+function freeCastPermission(c) {
+  if (!state) return null; const ty = frontType(c) || '';
+  for (const p of state.battlefield) { if (p.opp) continue; const tx = cardText(p) || ''; let m;
+    for (const line of tx.split('\n')) if ((m = line.trim().match(/^you may cast (?:(.+?) )?spells from your hand without paying their mana costs\.?$/i))) { const f = (m[1] || '').toLowerCase(); if (!f || filterMatches(f.replace(/s$/, ''), c) || new RegExp('\\b' + f.replace(/s$/, ''), 'i').test(ty)) return p.name; } }
+  return null;
+}
+// v0.99.45 Hogaak: "You can't spend mana to cast this spell." The whole cost must be paid by convoke, delve and the like (CR 601.2g-h).
+const noManaSpend = c => /\byou can'?t spend mana to cast this spell\b/i.test(cardText(c) || '');
 function manaFeasible(c, mana) {
   let cost = mana || '';
   for (const k of reducerKinds(c)) cost = reduceCost(cost, k, reducerCands(k));
+  if (noManaSpend(c)) return symCmc(mergeGeneric(cost)) === 0 && !/\{[WUBRGCSP]/i.test(cost);
   return manaPaymentAllocation(manaCostParts(cost), (state && state.manaPool) || {}, withCtx(c, manaSources), null).ok;
 }
 
@@ -2570,12 +2595,13 @@ function reducerCands(kind) {
   return state.battlefield.filter(x => !x.tapped && permTypeInfo(x).types.has('artifact'));
 }
 function reduceCost(cost, kind, cards) {
-  const p = manaCostParts(cost); let g = p.generic; const cols = p.colors.slice();
+  const p = manaCostParts(cost); let g = p.generic; const cols = p.colors.slice(), flex = p.flexible.slice();
   for (const card of cards) {
-    if (kind === 'convoke') { const cc = effColors(card), ix = cols.findIndex(x => cc.includes(x)); if (ix >= 0) { cols.splice(ix, 1); continue; } }
+    if (kind === 'convoke') { const cc = effColors(card), ix = cols.findIndex(x => cc.includes(x)); if (ix >= 0) { cols.splice(ix, 1); continue; }
+      const fx = flex.findIndex(x => String(x).split('/').some(y => cc.includes(y))); if (fx >= 0) { flex.splice(fx, 1); continue; } }   // CR 702.51a: a creature pays one mana of a colour it has, so a black or green creature pays {B/G}
     if (g > 0) g--;
   }
-  return (g ? `{${g}}` : '') + cols.map(x => `{${x}}`).join('') + p.flexible.map(x => `{${x}}`).join('');
+  return (g ? `{${g}}` : '') + cols.map(x => `{${x}}`).join('') + flex.map(x => `{${x}}`).join('');
 }
 const costKey = s => JSON.stringify(manaCostParts(s));
 const REDUCER_TEXT = {
@@ -2746,6 +2772,7 @@ function runCast(c, reopen, modes, route, kicks) {
       const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke'), splice: kicks.filter(k => k.splice).map(k => k.splice) };
       const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
+      if (noManaSpend(c) && (symCmc(full) > 0 || /\{[WUBRGCSP]/i.test(full))) { toast("You can't spend mana on this spell", `${c.name} must be paid for entirely by tapping creatures (convoke) and exiling cards from your graveyard (delve). ${full} is still unpaid, so it is not cast.`); return; }
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }
       if (teach('stackGuidance')) { openManaPayment(c, finish, full); return; }
       const plan = manaPaymentAllocation(manaCostParts(full), state.manaPool || {}, manaSources(), null);
@@ -3128,6 +3155,10 @@ function castSpell0(id,reopen=true,modes) {
       if(ho.length===1) go(ho[0]); else if(canCastNow(f.card)||ho.some(o=>withHalf(f.card,o.fi,()=>canCastNow(f.card)))) openHalfChooser(f.card,ho,go);
       else toast(state.stack.length ? 'Stack is active' : 'Wrong phase', state.stack.length ? 'Only instants and cards with flash can be cast while the stack is active.' : 'This card can only be cast during your main phase, unless it has flash.');
       return; } }
+  if(noManaCost(f.card) && !castRoutes(f.card).some(r=>r.ok)) {   // v0.99.45 CR 118.6: nothing lets it be cast, so the click suspends it when it can be suspended
+    const su=suspendFor(f.card); if(su){ suspendCard(id); return; }
+    toast('No mana cost', `${f.card.name} has no mana cost, so it can't be cast unless an effect lets you cast it without paying its mana cost (CR 118.6).`); return;
+  }
   if(!canCastNow(f.card)) {
     toast(state.stack.length ? 'Stack is active' : 'Wrong phase',
       state.stack.length ? 'Only instants and cards with flash can be cast while the stack is active.' :
@@ -3926,6 +3957,9 @@ function replacementEffectHints(){
 }
 function skipDrawSource() { return !!state && state.battlefield.some(x => !x.token && /If you would draw a card, you may skip that draw instead/i.test(((cardInfo(x.name) || {}).tx || '').replace(/\s+/g, ' '))); }
 function drawCards(n, silent) {
+  // v0.99.45 CR 702.52a + 121.6: dredge replaces ANY draw (a spell, cycling, a trigger), not only the draw step. While a dredge card could
+  // replace it, the draws are handed to the dredge prompt, which asks once per card drawn.
+  if (!silent && n > 0 && !state.inDredge && state.phase !== 'mull' && teach('dredgePrompts') && dredgeOptions().length) { setTimeout(() => askDredge(n), 0); return n; }
   let drawn = 0, skipped = 0;
   const skipOn = !!(state.gs && state.gs.skipDraw) && skipDrawSource();   // v0.90 Necrodominance: you may skip each draw (the Skip draws switch)
   for (let i = 0; i < n; i++) {
@@ -4262,7 +4296,7 @@ function millCards(n) {
   if (!state || !n) return;
   snap();
   const names = [];
-  for (let i = 0; i < n && state.library.length; i++) { const c = state.library[0]; names.push(c.name); moveCardQuiet(c.id, 'graveyard'); }
+  simultaneously(() => { for (let i = 0; i < n && state.library.length; i++) { const c = state.library[0]; names.push(c.name); moveCardQuiet(c.id, 'graveyard'); } });   // one event (CR 701.17a)
   log(names.length ? `Milled ${names.length}: ${names.join(', ')}` : 'Library is empty!');
   render();
 }
@@ -6570,12 +6604,12 @@ async function runBulkDownload(onProgress) {
 function openWelcome(onDone) {
   const P = (...x) => h('p', null, ...x), B = t => h('b', { text: t });
   const pages = [
-    ['Welcome to MTG Playtester', [P('A solo "goldfish" table for Magic: The Gathering. Load your deck, draw a hand, and practise sequencing your turns with no opponent needed. It runs fully offline once your card data is loaded.'),
+    ['Welcome to the Library of Alexandria', [P('A solo "goldfish" table for Magic: The Gathering. Load your deck, draw a hand, and practise sequencing your turns with no opponent needed. It runs fully offline once your card data is loaded.'),
       P('This short tour covers getting set up, how a turn works, and how to make the table look the way you like. You can skip it now and reopen it any time from the ', B('⚙ menu → Welcome tour'), '.')]],
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('The deck button at the top left opens your deck bookcase: each deck is a book with its name on the spine, ten to a shelf. Hover a book to pull it out and see its cover; click it to take it off the shelf and see its colours, mana curve and key cards, with ', B('Use this deck'), ', Edit, Sideboard and art buttons; double-click a box to use it straight away.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
+      P('The deck button at the top left opens your deck bookcase: each deck is a book with its name on the spine, ten to a shelf. Click a book to take it off the shelf: it turns to show its cover, with its colours, mana curve and key cards and the ', B('Use this deck'), ', Edit, Sideboard and art buttons. ', B('Put it back'), ' (or Escape) returns it.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
@@ -6631,8 +6665,18 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.44';
+const APP_VERSION = '0.99.45';
 const CHANGELOG = [
+  { v: '0.99.45', title: 'Library of Alexandria: dredge, Omniscience, suspend, Hogaak', notes: [
+    'The app is now called Library of Alexandria. Your decks, settings and updates are untouched (it keeps the same data folder and update channel).',
+    'RULES (dredge, CR 702.52): dredge now replaces ANY draw (cycling Street Wraith, Gitaxian Probe, a trigger), not only the draw step. Cards milled together are one event, so Narcomoeba, Creeping Chill and the like trigger together and you choose their order (CR 603.3b).',
+    'RULES (graveyard creatures): Prized Amalgam and Flayer of the Hatebound trigger only for a creature that entered from your graveyard (or was cast from it); Amalgam returns tapped at the next end step. Bloodghast returns itself on landfall. Ichorid exiles another black creature card to come back. Golgari Thug puts a creature card on top of your library.',
+    'RULES (Hogaak): "You may cast this card from your graveyard" now gives it a Cast button in the graveyard, and "You can\'t spend mana to cast this spell" is enforced: it is paid only by convoke and delve. Convoke now pays hybrid mana ({B/G}) with a black or green creature (CR 702.51a).',
+    'RULES (Omniscience, CR 118.9): "You may cast spells from your hand without paying their mana costs" adds a free way to cast each spell in your hand.',
+    'RULES (no mana cost, CR 118.6): Ancestral Vision, Lotus Bloom, Living End and other cards with no mana cost can no longer be cast for free from your hand; clicking one suspends it, and it is cast when its last time counter is removed.',
+    'FIXED: a card with no mana cost or a split card (Fire // Ice) made the app loop forever when its mana value was needed, which could freeze the deck screen.',
+    'Deck screen: a click takes a book off the shelf straight away, with a smoother take-off (it slides out of its slot, then turns to its cover as it flies to the middle). New Delete deck button (it asks first).',
+    'The stack window stays in one place as spells are added (it grows downward). During the opening hand only the game board is dimmed; the top bar, life totals and side panel stay bright.'] },
   { v: '0.99.44', title: 'Amulet Titan rules check, New Game clean-up, deck shelf by click', notes: [
     'RULES (Amulet Titan check): Amulet of Vigor now triggers only for a permanent that enters tapped (CR 603.6a) and untaps that permanent. Bounce lands return a land you choose as the ability resolves (CR 608.2c). Lotus Field sacrifices the two lands you choose. Explore gives a real extra land play this turn. Scapeshift and Genesis Device sacrifice any number of lands, then search for that many. Spelunking puts a land from your hand onto the battlefield (a Cave gains you 4 life), and Cultivator Colossus repeats while you keep putting lands.',
     'RULES: Vesuva and Echoing Deeps are read from their current wording ("this land enter tapped as a copy"); Echoing Deeps copies a land card in a graveyard and is also a Cave. Cards that say "this land", "this creature" and so on are now always understood to mean themselves.',
@@ -7868,10 +7912,10 @@ function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onP
 function deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
   const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
   const bk = bookModel(deckName, deck, cols, im, false);
-  const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf, double-click to use it` }, bk);
+  const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf` }, bk);
   let clickT = 0;
-  stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
-  stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
+  // v0.99.45 a click takes the book off the shelf at once (no waiting to see whether it becomes a double-click); "Use this deck" is in the view it opens
+  stage.addEventListener('click', () => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick());
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
   // v0.99.44 no tilt on the shelf: hovering only lifts the book
   const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
@@ -7895,15 +7939,23 @@ function pullDeckBox(m, tile, d) {
       btn(d.isCur ? 'Keep using this deck' : 'Use this deck', d.onPick, 'primary'),
       btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
       btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
-      h('button', { text: 'Put it back', onclick: () => putBack() })));
+      h('button', { text: 'Put it back', onclick: () => putBack() }),
+      h('button', { class: 'danger', text: 'Delete deck\u2026', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
   const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
-  const fly = (rev) => { const br = big.getBoundingClientRect(); const dx = sr.left + sr.width / 2 - (br.left + br.width / 2), dy = sr.top + sr.height / 2 - (br.top + br.height / 2), k = sr.width / br.width;
-    const from = { transform: `translate(${dx}px, ${dy}px) scale(${k})` }, to = { transform: 'none' };
-    return wa(turn, rev ? [to, from] : [from, to], { duration: 460, easing: 'cubic-bezier(.2,.8,.25,1)' }); };
-  if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: 140, easing: 'ease-out', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
+  // v0.99.45 a smoother take-off: the book first slides up out of its slot spine-first, then flies to the middle while it turns to show its cover.
+  const fly = (rev) => { const tr = turn.getBoundingClientRect(); const dx = sr.left + sr.width / 2 - (tr.left + tr.width / 2), dy = sr.top + sr.height / 2 - (tr.top + tr.height / 2), k = Math.max(0.2, sr.height / (big.offsetHeight || 330));
+    const lift = Math.min(60, sr.height * 0.28);
+    const moveK = [{ transform: `translate(${dx}px, ${dy}px) scale(${k})`, easing: 'cubic-bezier(.3,0,.4,1)' }, { offset: 0.28, transform: `translate(${dx}px, ${dy - lift}px) scale(${k * 1.06})`, easing: 'cubic-bezier(.22,1,.36,1)' }, { transform: 'none' }];
+    const endT = getComputedStyle(big).transform, turnK = [{ transform: 'rotateY(0deg)' }, { offset: 0.3, transform: 'rotateY(0deg)', easing: 'cubic-bezier(.3,.7,.2,1)' }, { transform: endT === 'none' ? 'rotateY(62deg)' : endT }];
+    const o = { duration: rev ? 560 : 760, fill: 'both' };
+    wa(big, rev ? turnK.slice().reverse().map((f, ix, arr) => ({ ...f, offset: f.offset !== undefined ? 1 - f.offset : undefined })) : turnK, o);
+    const a = wa(turn, rev ? moveK.slice().reverse().map(f => ({ ...f, offset: f.offset !== undefined ? 1 - f.offset : undefined })) : moveK, o);
+    if (!rev) a.onfinish = () => { try { turn.getAnimations().forEach(x => x.cancel()); big.getAnimations().forEach(x => x.cancel()); } catch (e) {} };   // hand the book back to the mouse-turn styles
+    return a; };
+  if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: 420, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); putBack(); } };
   document.addEventListener('keydown', esc, true);
   setTimeout(() => { const f = info.querySelector('button.primary'); if (f) f.focus(); }, 30);
@@ -7912,7 +7964,7 @@ function pullDeckBox(m, tile, d) {
     if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
-    info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 400, fill: 'forwards' });
+    info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });
   }
 }
 // v0.90.2 Sideboarding lives on the deck screen. The saved decklist is never changed: swaps are stored as a separate "sideboarded" list that the
@@ -7973,7 +8025,7 @@ function openDeckPicker0() {
         () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
         () => openCustomArt(n, draw),
         () => openSideboarding(n, draw),
-        (tile, d) => pullDeckBox(m, tile, d)))), h('div', { class: 'bk-plank' }))))
+        (tile, d) => pullDeckBox(m, tile, Object.assign(d, { redraw: draw }))))), h('div', { class: 'bk-plank' }))))
       : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
   };
   draw();
@@ -7983,7 +8035,7 @@ function openDeckPicker0() {
 // ---- Deck scan report (v0.63): reads every card of every saved deck and writes one text file to send for review.
 function deckScanReportText() {
   const decks = loadDecks(), names = Object.keys(decks).sort((a, b) => a.localeCompare(b));
-  const L = [`MTG Playtester deck scan report (v${APP_VERSION})`, `Created ${new Date().toISOString()}`, `Card data loaded: ${cardCount ? cardCount.toLocaleString() + ' cards' : 'NONE (import the Oracle file first, otherwise nothing can be read)'}`, `Decks scanned: ${names.length}`, ''];
+  const L = [`Library of Alexandria deck scan report (v${APP_VERSION})`, `Created ${new Date().toISOString()}`, `Card data loaded: ${cardCount ? cardCount.toLocaleString() + ' cards' : 'NONE (import the Oracle file first, otherwise nothing can be read)'}`, `Decks scanned: ${names.length}`, ''];
   const agg = new Map(), tot = { ok: 0, part: 0, unk: 0 }, missingAll = new Set(); const seenCard = new Set();
   for (const n of names) {
     const deck = parseDeck(decks[n].text), list = deckNameList(deck), cards = [];
@@ -8104,6 +8156,17 @@ function openDeckArtPicker(deckName, after) {
       return h('button', { class: 'dbx-artopt' + (n === cur ? ' on' : ''), title: n, onclick: () => { const all = loadDecks(); if (all[deckName]) { all[deckName].art = n; saveDecks(all); } m.close(); if (after) after(); } },
         h('span', { class: 'dbx-art mini' + (im ? '' : ' none'), style: artStyle(im) }), h('span', { class: 'artlbl', text: n })); })));
   draw(); loadCachedImages(names).then(n => { if (n) draw(); });
+}
+
+// v0.99.45 Delete a deck from the deck screen: asks first (inside the app), then removes the list, its sideboard, box art and chosen printings.
+function confirmDeleteDeck(name, after) {
+  const c = modal(`Delete "${name}"?`, { width: 440 });
+  c.body.append(h('div', { class: 'psub', text: 'This removes the deck list, its sideboard, its box art and the printings you chose for it. It cannot be undone.' }));
+  c.foot.append(h('button', { text: 'Keep it', onclick: () => c.close() }), h('button', { class: 'danger', text: 'Delete deck', onclick: () => {
+    const all = loadDecks(); if (!all[name]) { c.close(); return; } delete all[name]; saveDecks(all);
+    try { clearDeckArt(name); } catch (e) {} try { forgetDeckPrints(name); } catch (e) {}
+    if (lsGet('mtgpt.current', '') === name) { const rest = Object.keys(all).sort((x, y) => x.localeCompare(y)); lsSet('mtgpt.current', rest[0] || null); prepareImages(); }
+    refreshDeckSelect(); c.close(); toast('Deck deleted', `"${name}" was removed from your library.`); render(); if (after) after(); } }));
 }
 // ---------------------------------------------------------------- animations and effects (v0.58)
 // Everything here only decorates: it never changes the game state. Each part has its own switch (Settings → Animations).
@@ -8506,19 +8569,20 @@ function dredgeOptions() {
   for (const c of state.graveyard) { const m = (cardText(c) || '').match(/\bDredge (\d+)/i); if (m && state.library.length >= +m[1]) out.push({ card: c, n: +m[1] }); }
   return out;
 }
+const drawNoDredge = n => { state.inDredge = true; try { return drawCards(n); } finally { state.inDredge = false; } };
 function askDredge(n, after) {
   const opts = teach('dredgePrompts') ? dredgeOptions() : [];
   if (n <= 0) { if (after) after(); return; }
-  if (!opts.length) { const d = drawCards(n); log(`Drew ${d}`); render(); if (after) after(); return; }
+  if (!opts.length) { const d = drawNoDredge(n); log(`Drew ${d}`); render(); if (after) after(); return; }
   const m = modal(`Draw ${n > 1 ? '(' + n + ' left)' : 'a card'}: dredge instead?`, { width: 560, sticky: true, noClose: true });
   m.body.append(h('div', { class: 'psub', text: 'If you would draw a card, you may instead mill that many cards and return the dredge card from your graveyard to your hand (rule 702.52). It replaces the draw, so “whenever you draw” abilities do not trigger. You need at least that many cards in your library.' }));
   const next = () => { m.close(); render(); askDredge(n - 1, after); };
   for (const o of opts) m.body.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: `${o.card.name} - Dredge ${o.n}` }), h('button', { class: 'primary', text: `Dredge (mill ${o.n})`, onclick: () => { snap(); const id = o.card.id; millCards(o.n); const i = state.graveyard.findIndex(x => x.id === id); if (i >= 0) { const [d] = state.graveyard.splice(i, 1); state.hand.push(d); } log(`Dredged ${o.card.name}: milled ${o.n} and returned it to your hand instead of drawing`); next(); } })));
-  m.foot.append(h('button', { class: 'primary', text: 'Draw normally', onclick: () => { snap(); const d = drawCards(1); log(`Drew ${d}`); next(); } }));
+  m.foot.append(h('button', { class: 'primary', text: 'Draw normally', onclick: () => { snap(); const d = drawNoDredge(1); log(`Drew ${d}`); next(); } }));
 }
 
 // v0.96.12 CR 202.3: a card's mana value is worked out from its mana cost symbols (X counts as 0 outside the stack); two-faced costs fall back to the stored value
-function mvOf(info) { if (!info) return 0; const mc = info.mc || ''; return mc && !/\/\//.test(mc) ? symCmc(mc) : mvOf(info); }
+function mvOf(info) { if (!info) return 0; const mc = info.mc || ''; return mc && !/\/\//.test(mc) ? symCmc(mc) : (+info.cmc || 0); }   // v0.99.45 a card with no mana cost (or a split card) used to call itself forever (deck screen crash)
 // ---------------------------------------------------------------- generic zone effects (v0.63)
 // Tutors, "return cards from your graveyard", coin flips and similar effects that used to be done by hand.
 // Hidden-zone rule 701.19b: you may search for a card with qualities, but you are never forced to find one, so every card is shown
@@ -9088,7 +9152,7 @@ const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', '
 const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged: lanes, zone rail, piles and board effects'], mat: ['🖼', 'Playmat picture, colour and motion, and the frame around the board'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
-  ['Fan content', ['MTG Playtester is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
+  ['Fan content', ['Library of Alexandria (MTG Playtester) is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
   ['What is and is not included', ['This program contains no card images, no card artwork, no Oracle card database and no Wizards logos or set symbols. Mana and tap symbols are drawn by the app itself as plain coloured text circles. The icon, playmats, sleeves and cursors are original artwork made for this project.', 'Card data and card images are downloaded by you, onto your own computer, from Scryfall (scryfall.com), or card text from MTGJSON (mtgjson.com), when you choose to. They stay on your computer and are never uploaded anywhere by this app. Card images and text remain the property of their owners. The app does not sell them or put watermarks on them.', 'Scryfall is a separate service with its own terms (scryfall.com/docs/api). Data is provided by Scryfall. This app is not affiliated with Scryfall and Scryfall does not endorse it. Please keep the delay between requests the app uses.']],
   ['Rules', ['Game rules are implemented from the Magic: The Gathering Comprehensive Rules and official Oracle text and rulings. The app is a goldfish practice tool and is not a judge. It can be wrong or incomplete. For tournament play, the Comprehensive Rules, Oracle and the judges at your event are the authority.']],
   ['Privacy', ['There are no accounts, no tracking and no advertising. Your decks, settings, card data and images are stored only on your own computer. The app connects to the internet only to download card data and images from Scryfall or MTGJSON and to check for and download new versions from GitHub. Downloads happen when you ask for them. The update check also runs when the app starts; you can switch that off in the update window.']],
@@ -9545,6 +9609,8 @@ const KW_ENFORCED = { has(n) {
   return kwEnfMemo.has(n);
 } };
 const STATIC_PATTERNS = [
+  [/^you can'?t spend mana to cast this spell\.?$/i, "Can't spend mana (CR 601.2h): the whole cost has to be paid by convoke, delve and the like; the app refuses mana for it."],
+  [/^you may cast (?:this card|~) from your graveyard\.?$/i, 'Cast from the graveyard (CR 601.3): the graveyard shows a Cast button for it, with the normal timing and cost.'],
   [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
   [/^if you would draw a card, you may skip that draw instead\.?$/i, 'A "Skip draws" icon appears in the top bar while this is on the battlefield. Switch it on and every card you would draw is skipped (rule 614.1a); switch it off to draw normally.'],
   [/^if you would begin your turn while (?:this artifact|~) is tapped, you may skip that turn instead\. If you do, untap (?:this artifact|~)\.?$/i, 'When you press Next turn while it is tapped, a window asks whether to skip that turn. Skipping untaps it. (Turn off under Tutor mode \u2192 Time Vault prompt.)'],
@@ -9937,7 +10003,7 @@ function coverageReportText(res, opts) {
   const top = (map, n) => [...map.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, n);
   const L = [];
   const all = res.lines.ok + res.lines.part + res.lines.unk || 1;
-  L.push(`MTG Playtester coverage scan (v${APP_VERSION})${opts.format ? ' - ' + ({ s: 'Standard', p: 'Pioneer', m: 'Modern', l: 'Legacy', v: 'Vintage', u: 'Pauper', c: 'Commander' }[opts.format] || opts.format) + '-legal cards only' : opts.modernOnly ? ' - Modern-legal cards only' : ''}`);
+  L.push(`Library of Alexandria coverage scan (v${APP_VERSION})${opts.format ? ' - ' + ({ s: 'Standard', p: 'Pioneer', m: 'Modern', l: 'Legacy', v: 'Vintage', u: 'Pauper', c: 'Commander' }[opts.format] || opts.format) + '-legal cards only' : opts.modernOnly ? ' - Modern-legal cards only' : ''}`);
   L.push(`${res.cards} cards, ${all} rules lines. Understood ${res.lines.ok} (${Math.round(100 * res.lines.ok / all)}%), partly ${res.lines.part} (${Math.round(100 * res.lines.part / all)}%), not understood ${res.lines.unk} (${Math.round(100 * res.lines.unk / all)}%).`);
   L.push(`Cards fully handled: ${res.full} of ${res.cards} (${Math.round(100 * res.full / (res.cards || 1))}%).`, '');
   L.push('BY KIND (understood / partly / not understood)');
@@ -13251,6 +13317,7 @@ function permChoiceOptions(tx, obj) {   // one sentence is read here; the senten
   const sents = MASS_SENTS(tx); if (!sents.length) return null;
   const sc = scapeshiftOptions(sents, obj); if (sc) return sc;
   const po = payOrElseOptions(sents, obj); if (po) return po;
+  const gz = graveyardSelfOptions(sents.join(' '), obj); if (gz) return gz;
   if (sents.length > 1 && /^If you (?:do|don't)\b/i.test(sents[1])) return null;   // "Sacrifice X. If you do, ..." is read by the if-you-do reader (CR 608.2c)
   const one = permChoiceOne(sents[0], obj); if (!one) return null;
   if (sents.length === 1) return one; return [...one.map(o => ({ ...o, full: false })), ...massRest(sents, 1, obj)];
@@ -13263,7 +13330,7 @@ function scapeshiftOptions(sents, obj) {
   return [{ full: true, label: `Sacrifice any number of ${desc}, then search for that many land cards`, fn: () => {
     const cands = state.battlefield.filter(c => !c.opp && pcMatches(desc, c));
     openPickCards({ title: `${src}: sacrifice any number of ${desc}`, note: 'Then you search your library for up to that many land cards.', cards: cands, max: cands.length, nothing: 'Sacrifice none', done: picked => {
-      snap(); for (const p of picked) { const f = findCard(p.id); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed ${f.card.name}`); leaveBattlefield(f.card, 'graveyard'); } }
+      snap(); simultaneously(() => { for (const p of picked) { const f = findCard(p.id); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed ${f.card.name}`); leaveBattlefield(f.card, 'graveyard'); } } });
       const n = picked.length; render(); if (!n) { log(`${src}: no lands sacrificed, so it searches for none`); shuffleLib && shuffleLib(); return; }
       const se = searchEffect(rest.replace(/up to that many/i, `up to ${n}`), src, obj); if (se && se.fn) se.fn(); else toast('Search', `Search your library for up to ${n} land cards by hand.`); } });
   } }];
@@ -13312,7 +13379,7 @@ function permChoiceOne(tx, obj) {
       const cands = state.battlefield.filter(c => !c.opp && pcMatches(desc, c));
       if (!cands.length) { log(`${src}: you control no ${desc}, so nothing is ${back ? 'returned' : 'sacrificed'}`); return; }
       const need = Math.min(n, cands.length);
-      const act = picked => { if (!picked.length) return; snap(); for (const p of picked) { const f = findCard(p.id); if (!f || f.zone !== 'battlefield') continue; log(`${src}: ${back ? 'returned' : 'sacrificed'} ${f.card.name}${back ? ' to your hand' : ''}`); leaveBattlefield(f.card, back ? 'hand' : 'graveyard'); }
+      const act = picked => { if (!picked.length) return; snap(); simultaneously(() => { for (const p of picked) { const f = findCard(p.id); if (!f || f.zone !== 'battlefield') continue; log(`${src}: ${back ? 'returned' : 'sacrificed'} ${f.card.name}${back ? ' to your hand' : ''}`); leaveBattlefield(f.card, back ? 'hand' : 'graveyard'); } });
         render(); if (state.pendingTriggers.length) flushTriggers(); };
       if (cands.length <= need && new Set(cands.map(c => c.name)).size <= 1 && cands.length === need) { act(cands); return; }   // no real choice
       openPickCards({ title: `${src}: ${back ? 'return' : 'sacrifice'} ${need === 1 ? `a ${desc.replace(/s$/, '')}` : `${need} ${desc}`}`, cards: cands, min: need, max: need,
@@ -13327,6 +13394,43 @@ const selfShuffleRe = name => new RegExp("\\bshuffle (?:~|this card|" + String(n
 function shuffleSelfOnResolve(c) {
   if (!c || c.copy || c.token || !selfShuffleRe(c.name).test(cardText(c) || '')) return null;
   state.library.push(c); try { shuffleLib(); } catch (e) { /* no animation */ } return 'library (shuffled in, CR 608.2n)';
+}
+
+// ---- v0.99.45 graveyard creatures (manaless dredge). "~"/"this card" is the card itself (obj.sourceId).
+function graveyardSelfOptions(t, obj) {
+  if (!obj) return null; const src = obj.sourceName || 'It', me = () => { const f = obj.sourceId !== undefined ? findCard(obj.sourceId) : null; return f; };
+  const SELF = "(?:~|this card|this creature|it|" + String(src).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ")";
+  t = String(t).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); let m;
+  // Prized Amalgam: "if it entered from your graveyard or you cast it from your graveyard, return this card from your graveyard to the battlefield tapped at the beginning of the next end step."
+  if ((m = t.match(new RegExp('^(?:if it entered from your graveyard or you cast it from your graveyard, )?return ' + SELF + ' from your graveyard to the battlefield( tapped)? at the beginning of the next end step\\.?$', 'i'))))
+    return [{ full: true, label: `Return ${src} from your graveyard to the battlefield${m[1] ? ' tapped' : ''} at the beginning of the next end step`, fn: () => { const f = me(); if (!f || f.zone !== 'graveyard') { log(`${src}: not in your graveyard, so nothing will return`); return; }
+      if (state.fx.some(e => e.kind === 'delayed' && e.action === 'returnBf' && e.targetId === f.card.id)) { log(`${src}: already returning at the next end step`); return; }   // several triggers: it can only return once (CR 400.7)
+      addFx({ kind: 'delayed', when: 'end', action: 'returnBf', fromGy: true, tapped: !!m[1], targetId: f.card.id, targetName: src, srcName: src, text: `Return ${src} to the battlefield${m[1] ? ' tapped' : ''}.` }); log(`${src}: it will return to the battlefield${m[1] ? ' tapped' : ''} at the beginning of the next end step`); render(); } }];
+  // Bloodghast: "you may return this card from your graveyard to the battlefield."
+  if ((m = t.match(new RegExp('^(?:you may )?return ' + SELF + ' from your graveyard to the battlefield( tapped)?\\.?$', 'i'))))
+    return [{ full: !/^you may/i.test(t), label: `Return ${src} from your graveyard to the battlefield${m[1] ? ' tapped' : ''}`, fn: () => { const f = me(); if (!f || f.zone !== 'graveyard') { log(`${src}: no longer in your graveyard`); return; } snap(); const gi = state.graveyard.findIndex(x => x.id === f.card.id); state.graveyard.splice(gi, 1); enterBattlefield(f.card, { from: 'graveyard', tapped: m[1] ? true : undefined, logMsg: `${src} returned from your graveyard to the battlefield` }); render(); flushTriggers(); } }];
+  // Ichorid: "if this card is in your graveyard, you may exile a black creature card other than this card from your graveyard. If you do, return this card to the battlefield."
+  if ((m = t.match(new RegExp('^(?:if ' + SELF + ' is in your graveyard, )?you may exile an? (.+?) card other than ' + SELF + ' from your graveyard\\. If you do, return ' + SELF + ' to the battlefield\\.?$', 'i')))) {
+    const desc = m[1];
+    return [{ full: false, label: `Exile ${/^[aeiou]/i.test(desc) ? 'an' : 'a'} ${desc} card from your graveyard to return ${src} to the battlefield`, fn: () => {
+      const f = me(); if (!f || f.zone !== 'graveyard') { log(`${src}: no longer in your graveyard`); return; }
+      const cands = state.graveyard.filter(x => x.id !== f.card.id && filterMatches(desc.replace(/\bcard\b/, '').trim() || desc, x)); if (!cands.length) { toast('Nothing to exile', `There is no other ${desc} card in your graveyard.`); return; }
+      openPickCards({ title: `${src}: exile ${desc} card`, cards: cands, max: 1, done: picked => { const k = picked[0]; if (!k) return; snap(); simultaneously(() => { moveCardQuiet(k.id, 'exile'); const g = findCard(f.card.id); if (g && g.zone === 'graveyard') { const gi = state.graveyard.findIndex(x => x.id === g.card.id); state.graveyard.splice(gi, 1); enterBattlefield(g.card, { from: 'graveyard', logMsg: `${src}: exiled ${k.name}, so ${src} returns to the battlefield` }); } }); render(); } }); } }];
+  }
+  // Golgari Thug: "put target creature card from your graveyard on top of your library."
+  if ((m = t.match(/^put target (.+?) card from your graveyard on top of your library\.?$/i))) { const desc = m[1];
+    return [{ full: true, label: `Put ${/^[aeiou]/i.test(desc) ? 'an' : 'a'} ${desc} card from your graveyard on top of your library`, fn: () => {
+      const tg = (obj.targets || []).find(q => q.id !== undefined); const go = k => { const i = state.graveyard.findIndex(x => x.id === k.id); if (i < 0) { toast('Target gone', `${k.name} is no longer in your graveyard.`); return; } snap(); const [x] = state.graveyard.splice(i, 1); state.library.unshift(x); log(`${src}: put ${x.name} on top of your library`); render(); };
+      if (tg) { const g = findCard(tg.id); if (g && g.zone === 'graveyard') go(g.card); else toast('Target gone', 'The target is no longer in your graveyard.'); return; }
+      const cands = state.graveyard.filter(x => filterMatches(desc, x)); if (!cands.length) { toast('No target', `There is no ${desc} card in your graveyard.`); return; }
+      openPickCards({ title: `${src}: put a ${desc} card on top of your library`, cards: cands, max: 1, done: p => { if (p[0]) go(p[0]); } }); } }];
+  }
+  // Flayer of the Hatebound: "that creature deals damage equal to its power to any target." In a goldfish game the target is the opponent.
+  if (/^that creature deals damage equal to its power to any target\.?$/i.test(t)) {
+    const who = obj.otherId !== undefined ? obj.otherId : obj.sourceId;
+    return [{ full: false, label: 'That creature deals damage equal to its power to the opponent', fn: () => { const f = findCard(who); if (!f) { toast('Gone', 'That creature is no longer on the battlefield; use its last known power by hand.'); return; } const p = (ptCalc(f.card) || {}).p || 0; snap(); changeOppLife(-p); log(`${src}: ${f.card.name} dealt ${p} damage to the opponent`); render(); } }];
+  }
+  return null;
 }
 init();
 

@@ -1392,11 +1392,11 @@ const { setup } = require('./common.js');
       const vis = [...document.querySelectorAll('.setmain .teachopt, .setmain .setrow')].filter(e => e.offsetParent).map(e => e.querySelector('b, label') ? (e.querySelector('b, label').textContent) : '');
       document.getElementById('modalRoot').innerHTML = ''; return { tabs, n: labels.length, dup, vis }; });
     return { ok: r.tabs.includes('mat') && r.tabs.includes('a11y') && r.n >= 20 && r.dup === 0 && r.vis.length === 1 && /Dredge/.test(r.vis[0]), why: JSON.stringify(r) }; });
-  await T('UI decks', 'deck bookcase (books, ten to a shelf): a click takes a deck off the shelf into a details view (Use this deck, Edit, Sideboard, art), Escape puts it back, and a double-click still picks the deck at once', async () => { await reset();
+  await T('UI decks', 'deck bookcase (books, ten to a shelf): a click takes a deck off the shelf into a details view (Use this deck, Edit, Sideboard, art), Escape puts it back, and Use this deck picks it', async () => { await reset();
     const r = await ev(async () => { document.getElementById('modalRoot').innerHTML = ''; __d.openDeckPicker(); const W = ms => new Promise(r => setTimeout(r, ms)); await W(200);
       const st = document.querySelector('.bk-shelf .bk-stage'); st.click(); await W(900); const pull = document.querySelector('.dbx-pull'); const btns = pull ? [...pull.querySelectorAll('button')].map(b => b.textContent) : [];
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(800); const back = !document.querySelector('.dbx-pull') && !!document.querySelector('.dbx-modal');
-      document.querySelector('.bk-shelf .bk-stage').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await W(300); const picked = !document.querySelector('.dbx-modal');
+      document.querySelector('.bk-shelf .bk-stage').click(); await W(900); const ub = [...document.querySelectorAll('.dbx-pull button')].find(b => /Use this deck|Keep using/.test(b.textContent)); if (ub) ub.click(); await W(300); const picked = !document.querySelector('.dbx-modal');
       document.getElementById('modalRoot').innerHTML = ''; return { btns, back, picked }; });
     return { ok: r.btns.some(b => /Use this deck|Keep using/.test(b)) && r.btns.includes('Edit list') && r.btns.some(b => /Sideboard/.test(b)) && r.back && r.picked, why: JSON.stringify(r) }; });
   await T('716.2 + 716.3', "Class (Stormchaser's Talent): enters at level 1 with only its level-1 ability; the level-3 \"whenever you cast an instant or sorcery\" makes no token before level 3; Level N is offered only from level N-1 at sorcery speed; becoming level 2 triggers its level-2 ability; leaving the battlefield resets the level", async () => { await reset(); await toMain();
@@ -1467,6 +1467,47 @@ const { setup } = require('./common.js');
       __d.startGame(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); await new Promise(r => setTimeout(r, 100)); const ghosts = document.querySelectorAll('body > .ghost').length;
       await new Promise(r => setTimeout(r, 3500)); __d.keepHand(); if (__d.state.bottomPhase) __d.finishMulligan(); return { n0, ghosts, anim: __d.settings.anim && __d.settings.anim.on !== false }; });
     return { ok: !r.anim || r.ghosts === r.n0, why: JSON.stringify(r) }; });
+  await T('118.9 + 118.6 + 702.62', "Omniscience adds a 'without paying its mana cost' way to cast spells from your hand; a card with no mana cost (Ancestral Vision, Lotus Bloom, Living End) cannot be cast normally (clicking it suspends it) but can be cast through Omniscience; mana value of a card with no mana cost or a split card is read without looping", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['Omniscience'],['Grizzly Bears','Ancestral Vision']); const free = s.hand.map(c => __d.castRoutes(c).some(r => r.ok && /Without paying/.test(r.label)));
+      setup([],['Ancestral Vision','Living End']); const blocked = s.hand.map(c => { const rs = __d.castRoutes(c); return !rs.some(r => r.ok) && rs[0].why === 'nocost'; });
+      const mv = [__d.mvOf(__d.cardInfo('Ancestral Vision')), __d.mvOf(__d.cardInfo('Forest')), __d.mvOf(__d.cardInfo('Fire // Ice') || { mc: '{1}{R} // {1}{U}', cmc: 4 })];
+      return { free, blocked, mv };})()`));
+    return { ok: r.free.every(Boolean) && r.blocked.every(Boolean) && r.mv[0] === 0 && r.mv[1] === 0 && r.mv[2] === 4, why: JSON.stringify(r) }; });
+  await T('601.3 + 601.2h + 702.51a', "Hogaak: 'You may cast this card from your graveyard' gives a graveyard cast; 'You can't spend mana' means the cost must be paid fully by convoke and delve (a black or green creature pays {B/G}); with too few creatures and cards it cannot be cast", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['Narcomoeba','Golgari Thug','Ichorid'],[]); s.graveyard=['Stinkweed Imp','Creeping Chill','Cabal Therapy','Gitaxian Probe','Street Wraith'].map(mk); const hg=mk('Hogaak, Arisen Necropolis'); s.graveyard.push(hg);
+      const opts = __d.gyCastOptions(hg).map(o => o.label); hg.fromGy = { kind: 'static', label: 'x', mana: '{5}{B/G}{B/G}', comps: [] }; const okFull = __d.castRoutes(hg).some(r => r.ok);
+      s.graveyard = s.graveyard.slice(0, 2).concat([hg]); s.manaPool = { B: 3, G: 3, C: 5 }; const okShort = __d.castRoutes(hg).some(r => r.ok); s.manaPool = {};
+      return { opts, okFull, okShort };})()`));
+    return { ok: r.opts.includes('Cast from your graveyard') && r.okFull && !r.okShort, why: JSON.stringify(r) }; });
+  await T('702.52a + 603.3b', 'Dredge replaces any draw (not only the draw step); the cards milled by one dredge are one event, so Narcomoeba and Creeping Chill trigger together and you order them', async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup([],[]); s.graveyard=[mk('Stinkweed Imp')]; s.library=['Narcomoeba','Creeping Chill','Forest','Prized Amalgam','Bridge from Below','Island'].map(mk).concat(s.library);
+      __d.drawCards(1); await W(250); const asked = [...document.querySelectorAll('#modalRoot button')].some(b => /^Dredge/.test(b.textContent)); clickFirst('Dredge'); await W(400);
+      const order = /2 triggered abilities: choose the order/.test((document.querySelector('#modalRoot .modal')||{}).innerText||''); const hand = s.hand.map(c=>c.name);
+      document.querySelectorAll('.backdrop').forEach(x=>x.remove()); s.pendingTriggers=[]; return { asked, order, hand };})()`));
+    return { ok: r.asked && r.order && r.hand.includes('Stinkweed Imp'), why: JSON.stringify(r) }; });
+  await T('603.4 + 603.7 + 702.52', 'graveyard creatures: Prized Amalgam and Flayer of the Hatebound trigger only for a creature that entered from your graveyard; Amalgam returns tapped at the next end step; Bloodghast returns itself on landfall; Ichorid exiles another black creature card to return; Golgari Thug puts a creature card on top of your library', async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['Flayer of the Hatebound'],[]); const am=mk('Prized Amalgam'), nar=mk('Narcomoeba'); s.graveyard=[am]; __d.enterBattlefield(nar,{from:'graveyard'}); const fromGy = s.pendingTriggers.map(t=>t.cardName).sort().join(',');
+      s.pendingTriggers=[]; __d.enterBattlefield(mk('Grizzly Bears'),{from:'hand'}); const fromHand = s.pendingTriggers.length; s.pendingTriggers=[];
+      opt(am, __d.parseTriggers(am)[0].effect)[0].fn(); s.step=__d.stepIndex('end'); s.fx.forEach(e=>{ if(e.action==='returnBf') { e.turn=s.turn-1; } }); __d.runDelayed('end'); const amBack = s.battlefield.find(c=>c.name==='Prized Amalgam');
+      setup([],[]); const bg=mk('Bloodghast'); s.graveyard=[bg]; const bo=opt(bg, __d.parseTriggers(bg)[0].effect); bo[0].fn(); const bgBack = s.battlefield.some(c=>c.id===bg.id);
+      setup([],[]); const ich=mk('Ichorid'); s.graveyard=[ich, mk('Golgari Thug')]; const io=opt(ich, __d.parseTriggers(ich).find(t=>/upkeep/.test(t.ev)).effect); io[0].fn(); await W(200); const row=document.querySelector('#modalRoot .frow'); if(row) row.click(); await W(50); clickFirst('Confirm'); await W(150); const ichBack = s.battlefield.some(c=>c.id===ich.id) && s.exile.some(c=>c.name==='Golgari Thug');
+      setup([],[]); const th=mk('Golgari Thug'); const tgt=mk('Stinkweed Imp'); s.graveyard=[tgt]; opt(th, __d.parseTriggers(th)[0].effect, { targets: [{ kind: 'gy', id: tgt.id, name: tgt.name }] })[0].fn(); const top = s.library[0].name;
+      return { fromGy, fromHand, amBack: !!amBack && !!amBack.tapped, bgBack, ichBack, top };})()`));
+    return { ok: r.fromGy === 'Flayer of the Hatebound,Prized Amalgam' && r.fromHand === 0 && r.amBack && r.bgBack && r.ichBack && r.top === 'Stinkweed Imp', why: JSON.stringify(r) }; });
+  await T('UI decks + stack', 'deck screen: Delete deck asks first, then removes the deck (Keep it leaves it); the stack window keeps its top edge in place as spells are added; during the opening hand the top bar is not dimmed', async () => { await reset();
+    const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); const d = JSON.parse(localStorage.getItem('mtgpt.decks') || '{}'); d['Zz Delete Me'] = { text: '4 Lightning Bolt\n20 Mountain' }; localStorage.setItem('mtgpt.decks', JSON.stringify(d));
+      document.getElementById('modalRoot').innerHTML = ''; __d.openDeckPicker(); await W(200); const st = [...document.querySelectorAll('.bk-shelf .bk-tile')].find(t => /Zz Delete Me/.test(t.textContent)).querySelector('.bk-stage'); st.click(); await W(900);
+      const del = () => [...document.querySelectorAll('.dbx-pull button')].find(b => /^Delete deck/.test(b.textContent)); del().click(); await W(150); const keep = [...document.querySelectorAll('#modalRoot button')].find(b => b.textContent === 'Keep it'); keep.click(); await W(100);
+      const stillThere = 'Zz Delete Me' in JSON.parse(localStorage.getItem('mtgpt.decks')); del().click(); await W(150); [...document.querySelectorAll('#modalRoot button')].find(b => b.textContent === 'Delete deck').click(); await W(300);
+      const gone = !('Zz Delete Me' in JSON.parse(localStorage.getItem('mtgpt.decks'))); document.getElementById('modalRoot').innerHTML = '';
+      const s = __d.state; const tops = []; for (const n of [1, 4]) { s.stack = []; for (let i = 0; i < n; i++) s.stack.push(Object.assign(__d.newCard('Lightning Bolt'), { id: s.nextId++ })); __d.render(); await W(250); tops.push(Math.round(document.getElementById('stackStage').getBoundingClientRect().top)); } s.stack = []; __d.render();
+      document.body.classList.add('mullhand'); const tb = getComputedStyle(document.getElementById('topbar')); const dimBody = getComputedStyle(document.body, '::after').content; document.body.classList.remove('mullhand');
+      return { stillThere, gone, tops, dimBody }; });
+    return { ok: r.stillThere && r.gone && Math.abs(r.tops[0] - r.tops[1]) <= 1 && (r.dimBody === 'none' || r.dimBody === 'normal'), why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

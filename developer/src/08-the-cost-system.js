@@ -230,11 +230,25 @@ function castRoutes(c, extra) {
   const routes = [];
   for (const ch of chs) routes.push(mk(alts.length || ad.optional.length || ch ? 'Normal cost' : 'Cast', ec.cost, null, '', ch));
   for (const a of alts) for (const ch of chs) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond, ch));
+  // v0.99.45 CR 118.9 + 601.2f: a permanent that lets you cast spells from your hand "without paying their mana costs" (Omniscience) is another way to cast them.
+  { const fp = c.fromGy || c.fromExile ? null : freeCastPermission(c); if (fp) for (const ch of chs) routes.push(mk(`Without paying its mana cost (${fp})`, '', { kind: 'free', label: `Without paying its mana cost (${fp})`, mana: '', comps: [] }, '', ch)); }
+  // CR 118.6: a card with no mana cost (Ancestral Vision, Lotus Bloom, Living End) can't be cast by paying its mana cost; only suspend or another effect casts it.
+  if (noManaCost(c)) for (const r of routes) if (!r.alt) { r.ok = false; r.why = 'nocost'; r.detail = 'it has no mana cost, so it cannot be cast normally (CR 118.6)' + (suspendFor(c) ? '; suspend it instead' : ''); }
   const lim = routeLimits(c, routes); return lim.length ? lim : routes;
 }
+function noManaCost(c) { const i = c && !c.token ? cardInfo(c.name) : null; return !!i && !i.land && !String(i.mc || '').split(' // ')[0].trim() && !/\bLand\b/.test(frontType(c) || ''); }
+function freeCastPermission(c) {
+  if (!state) return null; const ty = frontType(c) || '';
+  for (const p of state.battlefield) { if (p.opp) continue; const tx = cardText(p) || ''; let m;
+    for (const line of tx.split('\n')) if ((m = line.trim().match(/^you may cast (?:(.+?) )?spells from your hand without paying their mana costs\.?$/i))) { const f = (m[1] || '').toLowerCase(); if (!f || filterMatches(f.replace(/s$/, ''), c) || new RegExp('\\b' + f.replace(/s$/, ''), 'i').test(ty)) return p.name; } }
+  return null;
+}
+// v0.99.45 Hogaak: "You can't spend mana to cast this spell." The whole cost must be paid by convoke, delve and the like (CR 601.2g-h).
+const noManaSpend = c => /\byou can'?t spend mana to cast this spell\b/i.test(cardText(c) || '');
 function manaFeasible(c, mana) {
   let cost = mana || '';
   for (const k of reducerKinds(c)) cost = reduceCost(cost, k, reducerCands(k));
+  if (noManaSpend(c)) return symCmc(mergeGeneric(cost)) === 0 && !/\{[WUBRGCSP]/i.test(cost);
   return manaPaymentAllocation(manaCostParts(cost), (state && state.manaPool) || {}, withCtx(c, manaSources), null).ok;
 }
 
@@ -247,12 +261,13 @@ function reducerCands(kind) {
   return state.battlefield.filter(x => !x.tapped && permTypeInfo(x).types.has('artifact'));
 }
 function reduceCost(cost, kind, cards) {
-  const p = manaCostParts(cost); let g = p.generic; const cols = p.colors.slice();
+  const p = manaCostParts(cost); let g = p.generic; const cols = p.colors.slice(), flex = p.flexible.slice();
   for (const card of cards) {
-    if (kind === 'convoke') { const cc = effColors(card), ix = cols.findIndex(x => cc.includes(x)); if (ix >= 0) { cols.splice(ix, 1); continue; } }
+    if (kind === 'convoke') { const cc = effColors(card), ix = cols.findIndex(x => cc.includes(x)); if (ix >= 0) { cols.splice(ix, 1); continue; }
+      const fx = flex.findIndex(x => String(x).split('/').some(y => cc.includes(y))); if (fx >= 0) { flex.splice(fx, 1); continue; } }   // CR 702.51a: a creature pays one mana of a colour it has, so a black or green creature pays {B/G}
     if (g > 0) g--;
   }
-  return (g ? `{${g}}` : '') + cols.map(x => `{${x}}`).join('') + p.flexible.map(x => `{${x}}`).join('');
+  return (g ? `{${g}}` : '') + cols.map(x => `{${x}}`).join('') + flex.map(x => `{${x}}`).join('');
 }
 const costKey = s => JSON.stringify(manaCostParts(s));
 const REDUCER_TEXT = {
@@ -423,6 +438,7 @@ function runCast(c, reopen, modes, route, kicks) {
       const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke'), splice: kicks.filter(k => k.splice).map(k => k.splice) };
       const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
+      if (noManaSpend(c) && (symCmc(full) > 0 || /\{[WUBRGCSP]/i.test(full))) { toast("You can't spend mana on this spell", `${c.name} must be paid for entirely by tapping creatures (convoke) and exiling cards from your graveyard (delve). ${full} is still unpaid, so it is not cast.`); return; }
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }
       if (teach('stackGuidance')) { openManaPayment(c, finish, full); return; }
       const plan = manaPaymentAllocation(manaCostParts(full), state.manaPool || {}, manaSources(), null);
@@ -805,6 +821,10 @@ function castSpell0(id,reopen=true,modes) {
       if(ho.length===1) go(ho[0]); else if(canCastNow(f.card)||ho.some(o=>withHalf(f.card,o.fi,()=>canCastNow(f.card)))) openHalfChooser(f.card,ho,go);
       else toast(state.stack.length ? 'Stack is active' : 'Wrong phase', state.stack.length ? 'Only instants and cards with flash can be cast while the stack is active.' : 'This card can only be cast during your main phase, unless it has flash.');
       return; } }
+  if(noManaCost(f.card) && !castRoutes(f.card).some(r=>r.ok)) {   // v0.99.45 CR 118.6: nothing lets it be cast, so the click suspends it when it can be suspended
+    const su=suspendFor(f.card); if(su){ suspendCard(id); return; }
+    toast('No mana cost', `${f.card.name} has no mana cost, so it can't be cast unless an effect lets you cast it without paying its mana cost (CR 118.6).`); return;
+  }
   if(!canCastNow(f.card)) {
     toast(state.stack.length ? 'Stack is active' : 'Wrong phase',
       state.stack.length ? 'Only instants and cards with flash can be cast while the stack is active.' :

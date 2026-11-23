@@ -126,14 +126,15 @@ function dredgeOptions() {
   for (const c of state.graveyard) { const m = (cardText(c) || '').match(/\bDredge (\d+)/i); if (m && state.library.length >= +m[1]) out.push({ card: c, n: +m[1] }); }
   return out;
 }
+const drawNoDredge = n => { state.inDredge = true; try { return drawCards(n); } finally { state.inDredge = false; } };
 function askDredge(n, after) {
   const opts = teach('dredgePrompts') ? dredgeOptions() : [];
   if (n <= 0) { if (after) after(); return; }
-  if (!opts.length) { const d = drawCards(n); log(`Drew ${d}`); render(); if (after) after(); return; }
+  if (!opts.length) { const d = drawNoDredge(n); log(`Drew ${d}`); render(); if (after) after(); return; }
   const m = modal(`Draw ${n > 1 ? '(' + n + ' left)' : 'a card'}: dredge instead?`, { width: 560, sticky: true, noClose: true });
   m.body.append(h('div', { class: 'psub', text: 'If you would draw a card, you may instead mill that many cards and return the dredge card from your graveyard to your hand (rule 702.52). It replaces the draw, so “whenever you draw” abilities do not trigger. You need at least that many cards in your library.' }));
   const next = () => { m.close(); render(); askDredge(n - 1, after); };
   for (const o of opts) m.body.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: `${o.card.name} - Dredge ${o.n}` }), h('button', { class: 'primary', text: `Dredge (mill ${o.n})`, onclick: () => { snap(); const id = o.card.id; millCards(o.n); const i = state.graveyard.findIndex(x => x.id === id); if (i >= 0) { const [d] = state.graveyard.splice(i, 1); state.hand.push(d); } log(`Dredged ${o.card.name}: milled ${o.n} and returned it to your hand instead of drawing`); next(); } })));
-  m.foot.append(h('button', { class: 'primary', text: 'Draw normally', onclick: () => { snap(); const d = drawCards(1); log(`Drew ${d}`); next(); } }));
+  m.foot.append(h('button', { class: 'primary', text: 'Draw normally', onclick: () => { snap(); const d = drawNoDredge(1); log(`Drew ${d}`); next(); } }));
 }
 

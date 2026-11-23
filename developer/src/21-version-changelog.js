@@ -1,6 +1,16 @@
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.44';
+const APP_VERSION = '0.99.45';
 const CHANGELOG = [
+  { v: '0.99.45', title: 'Library of Alexandria: dredge, Omniscience, suspend, Hogaak', notes: [
+    'The app is now called Library of Alexandria. Your decks, settings and updates are untouched (it keeps the same data folder and update channel).',
+    'RULES (dredge, CR 702.52): dredge now replaces ANY draw (cycling Street Wraith, Gitaxian Probe, a trigger), not only the draw step. Cards milled together are one event, so Narcomoeba, Creeping Chill and the like trigger together and you choose their order (CR 603.3b).',
+    'RULES (graveyard creatures): Prized Amalgam and Flayer of the Hatebound trigger only for a creature that entered from your graveyard (or was cast from it); Amalgam returns tapped at the next end step. Bloodghast returns itself on landfall. Ichorid exiles another black creature card to come back. Golgari Thug puts a creature card on top of your library.',
+    'RULES (Hogaak): "You may cast this card from your graveyard" now gives it a Cast button in the graveyard, and "You can\'t spend mana to cast this spell" is enforced: it is paid only by convoke and delve. Convoke now pays hybrid mana ({B/G}) with a black or green creature (CR 702.51a).',
+    'RULES (Omniscience, CR 118.9): "You may cast spells from your hand without paying their mana costs" adds a free way to cast each spell in your hand.',
+    'RULES (no mana cost, CR 118.6): Ancestral Vision, Lotus Bloom, Living End and other cards with no mana cost can no longer be cast for free from your hand; clicking one suspends it, and it is cast when its last time counter is removed.',
+    'FIXED: a card with no mana cost or a split card (Fire // Ice) made the app loop forever when its mana value was needed, which could freeze the deck screen.',
+    'Deck screen: a click takes a book off the shelf straight away, with a smoother take-off (it slides out of its slot, then turns to its cover as it flies to the middle). New Delete deck button (it asks first).',
+    'The stack window stays in one place as spells are added (it grows downward). During the opening hand only the game board is dimmed; the top bar, life totals and side panel stay bright.'] },
   { v: '0.99.44', title: 'Amulet Titan rules check, New Game clean-up, deck shelf by click', notes: [
     'RULES (Amulet Titan check): Amulet of Vigor now triggers only for a permanent that enters tapped (CR 603.6a) and untaps that permanent. Bounce lands return a land you choose as the ability resolves (CR 608.2c). Lotus Field sacrifices the two lands you choose. Explore gives a real extra land play this turn. Scapeshift and Genesis Device sacrifice any number of lands, then search for that many. Spelunking puts a land from your hand onto the battlefield (a Cave gains you 4 life), and Cultivator Colossus repeats while you keep putting lands.',
     'RULES: Vesuva and Echoing Deeps are read from their current wording ("this land enter tapped as a copy"); Echoing Deeps copies a land card in a graveyard and is also a Cave. Cards that say "this land", "this creature" and so on are now always understood to mean themselves.',
