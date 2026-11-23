@@ -121,12 +121,13 @@ function checkNoCounterTriggers() {
 // Vesuva: "You may have it enter the battlefield tapped as a copy of any land on the battlefield."
 function openVesuva(id) {
   const f = findCard(id); if (!f || f.zone !== 'battlefield') return; const c = f.card;
-  const lands = []; for (const x of state.battlefield) if (x.id !== c.id && isLandName(x.name) && !lands.some(l => l.name === x.name)) lands.push(x);
+  const lc = entersAsLandCopy(c) || { from: 'battlefield', addType: '' }, pool = lc.from === 'graveyard' ? state.graveyard : state.battlefield;
+  const lands = []; for (const x of pool) if (x.id !== c.id && isLandName(x.name) && !lands.some(l => l.name === x.name)) lands.push(x);
   const m = modal(c.name + ': copy a land?', { width: 520, sticky: true, noClose: true });
-  m.body.append(h('div', { class: 'psub', text: 'You may have it enter the battlefield tapped as a copy of any land on the battlefield. As a copy it has that land’s name, types and abilities. It goes back to being itself if it leaves the battlefield.' }));
+  m.body.append(h('div', { class: 'psub', text: `You may have it enter tapped as a copy of any land ${lc.from === 'graveyard' ? 'card in a graveyard' : 'on the battlefield'}. As a copy it has that land’s name, types and abilities${lc.addType ? `, and it is also a ${lc.addType}` : ''}. It goes back to being itself if it leaves the battlefield.` }));
   const done = () => { m.close(); render(); if (state.pendingTriggers.length) resolvePendingTrigger(); };
   for (const l of lands) m.body.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: l.name }), h('button', { class: 'primary', text: 'Copy it', onclick: () => {
-    snap(); c.origName = c.name; c.name = l.name; c.tapped = true; c.counters = { plus: 0, minus: 0 }; log(`${c.origName} entered tapped as a copy of ${l.name}`);
+    snap(); c.origName = c.name; c.name = l.name; c.tapped = true; c.counters = { plus: 0, minus: 0 }; if (lc.addType) c.extraTypes = [lc.addType]; log(`${c.origName} entered tapped as a copy of ${l.name}${lc.addType ? ` (also a ${lc.addType})` : ''}`);
     etbCounters(c); const etb = landETBTrigger(c); if (etb) queueTrigger(etb); fireTrigger('etb', { card: c }); done(); } })));
   m.foot.append(h('button', { text: 'Enter as itself (no copy)', onclick: done }));
 }

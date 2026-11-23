@@ -1097,11 +1097,12 @@ function attackBlock(c) {   // why this creature cannot attack right now ('' = i
 }
 function eligibleAttackers() { return state ? state.battlefield.filter(c => permZone(c) === 'creatures' && !attackBlock(c)) : []; }
 // CR 103.6a: "If ~ is in your opening hand, you may begin the game with it on the battlefield."  CR 103.5b: "Any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards."
-const selfTxt = c => String(cardText(c) || '').replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(selfNameRe(c.name), '~').replace(/\bthis card\b/gi, '~');
+const SELF_THIS = /\bthis (?:land|creature|artifact|enchantment|permanent|planeswalker|battle|saga|class|equipment|aura|vehicle|spacecraft)\b/gi;
+const selfTxt = c => String(cardText(c) || '').replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(selfNameRe(c.name), '~').replace(/\bthis card\b/gi, '~').replace(SELF_THIS, '~');   // v0.99.44 current Oracle text says "this land", "this creature" ... for the card itself
 function beginsOnBattlefield(c) { return /if ~ is in your opening hand, you may begin the game with it on the battlefield/i.test(selfTxt(c)); }
 function mulliganHandSwap(c) { return /any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards/i.test(selfTxt(c)); }
 // "Enter tapped as a copy of any land on the battlefield" is a clone-style replacement effect (CR 614.12, 707.2).
-function entersAsLandCopy(c) { return /you may have ~ enter (?:the battlefield )?tapped as a copy of any land on the battlefield/i.test(selfTxt(c)); }   // v0.96.26 current Oracle wording drops "the battlefield"
+function entersAsLandCopy(c) { const m = selfTxt(c).match(/you may have ~ enter (?:the battlefield )?tapped as a copy of any land (?:(card) in a graveyard|on the battlefield)(?:, except (?:it's|it is) an? (\w+) in addition to its other types)?/i); return m ? { from: m[1] ? 'graveyard' : 'battlefield', addType: m[2] || '' } : null; }   // Vesuva; Echoing Deeps copies a land card in a graveyard and is also a Cave   // v0.96.26 current Oracle wording drops "the battlefield"
 function landETBTrigger(c) {
   const tx=cardText(c); let m=tx.match(/enters(?: the battlefield)?[^.]*\bscry\s+(\d+)/i);
   if(m) return {kind:'ability',cardId:c.id,cardName:c.name,special:'scry',n:+m[1],optional:false,why:'A land with an enters-the-battlefield trigger.',text:`When ${c.name} enters, scry ${m[1]}.`,effect:`Scry ${m[1]}.`};
@@ -1227,6 +1228,8 @@ function frontType(c) {
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
+// "Whenever a permanent you control enters tapped" (Amulet of Vigor) / "enters untapped": the permanent's state as it entered decides (CR 603.6a + 614.1c).
+function enterStateOk(t, e) { const l = String(t.line || t.cond || ''); if (/\benters? (?:the battlefield )?tapped\b/i.test(l)) return !!e.tapped; if (/\benters? (?:the battlefield )?untapped\b/i.test(l)) return !e.tapped; return true; }
 function filterMatches(filter, card) {
   const f = filter.toLowerCase();
   if (card && card.token && /\bnon-?token\b/.test(f)) return false;   // CR 111.1: a "nontoken" filter never matches a token (Weapons Manufacturing must not trigger on its own Munitions)
@@ -1249,7 +1252,7 @@ function fireTrigger(ev, ctx = {}) {
   const inGy = x => state.graveyard.some(g => g.id === x.id);
   // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
   const extraTimes = src => { let n = 0; if (!src || !state || !/\bCreature\b/.test(permTypeLine(src))) return 0; for (const g of state.battlefield) { if (g.id === src.id || !g.chosen) continue; if (!/If a triggered ability of another creature you control of the chosen type triggers, it triggers an additional time/i.test(cardText(g) || '')) continue; if (permTypeInfo(src).subs.has(String(g.chosen).toLowerCase()) || permTypeInfo(src).changeling) n++; } return n; };
-  const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount }); };
+  const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount, otherId: ctx.card && ctx.card.id !== src.id ? ctx.card.id : undefined }); };
   const add = (src, t, why) => { const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
@@ -1260,7 +1263,7 @@ function fireTrigger(ev, ctx = {}) {
     for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
-      else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e))) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
+      else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e)) && enterStateOk(t, e)) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
     }
   } else if (ev === 'cast') {
     const sp = ctx.card;
@@ -1732,7 +1735,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = classLevelOptions(tx, obj) || exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = classLevelOptions(tx, obj) || permChoiceOptions(tx, obj) || exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -1866,7 +1869,7 @@ function effectOptionsBase(tx, obj) {
   if (!bound.length && (mm = tx.match(/\b(?:each opponent|target opponent|an opponent) loses (\d+) life/i))) { const v = +mm[1]; opts.push({ label: `Opponent loses ${v} life`, fn: () => changeOppLife(-v) }); }
   if (!bound.length && (mm = tx.match(/\bdeals? (\d+) damage to (?:any target|target (?:opponent|player)|each opponent|target creature or player|target player or planeswalker)/i))) { const v = +mm[1]; opts.push({ label: `Deal ${v} damage to the opponent`, fn: () => changeOppLife(-v) }); }
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
-  for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/)) { if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
+  for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+(?!If you don't\b)/)) {   /* "pay X. If you don't, ..." stays one instruction */ if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
   if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
@@ -2255,7 +2258,7 @@ function shockLandChoice(c) { return shockLife(c) > 0; }
 // the shockland question and "When this enters, surveil/scry N". Tapped-ness is decided by etbTapped().
 function landEntryTriggers(c, fetched) {
   if(!state||!c||!isLandName(c.name)) return;
-  if(entersAsLandCopy(c) && state.battlefield.some(x=>x.id!==c.id&&isLandName(x.name))) queueTrigger({kind:'vesuva',cardId:c.id});
+  { const lc=entersAsLandCopy(c); if(lc && (lc.from==='graveyard' ? state.graveyard.some(x=>isLandName(x.name)) : state.battlefield.some(x=>x.id!==c.id&&isLandName(x.name)))) queueTrigger({kind:'vesuva',cardId:c.id}); }
   if(shockLandChoice(c)) queueTrigger({kind:'shock',cardId:c.id,fetched:!!fetched});
   const etb=landETBTrigger(c); if(etb) queueTrigger(etb);
 }
@@ -3454,7 +3457,7 @@ function finishAbilityResolving() {
 function finishResolving() {   // the spell whose effect was just applied (or skipped) now leaves the stack
   const c = state && state.resolving; if (!c) return;
   if (state.discarding || handPick) { state.resolvingWait = true; render(); return; }   // wait until the chosen cards have been discarded
-  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
+  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
 }
 function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();
@@ -3492,7 +3495,7 @@ function resolveTopOfStack() {
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
     if(eff && !adv0 && layoutOn('resolveFirst')){ state.resolving=c; log(`${nm0} is resolving`); }
     else if(c.copy){ log(`Resolved a copy of ${nm0}; the copy ceases to exist`); }
-    else { const where=adv0?exileOnAdventure(c):(reboundOnResolve(c)||gyPush(c,'stack')); log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`); }
+    else { const where=adv0?exileOnAdventure(c):(reboundOnResolve(c)||shuffleSelfOnResolve(c)||gyPush(c,'stack')); log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`); }
   }
   if(!state.resolving) restoreHalf(c);
   render();
@@ -3946,6 +3949,7 @@ function startGame() {
   const deck = getCurrentDeck();
   if (!deck || !deck.main.length) { alert('Import a deck first (Import / edit deck).'); return; }
   state = freshState();
+  state.newGameReset = true;   // v0.99.44 on screen every card of the old game goes back into the library before the new seven are dealt (card ids start again, so an old card must never be mistaken for a new one)
   undoStack = []; selected = null; bottomSel.clear();
   const unknown = new Set();
   const cmdOn = commanderModeOn(deck);   // v0.99.29 Commander mode (CR 903)
@@ -4131,6 +4135,7 @@ function enterStep(i, quiet) {
   } else if (id === 'cleanup') {
     for (const x of state.battlefield) { if (x.dmg) delete x.dmg; }
     endFx(e => e.until === 'eot', 'end of turn');   // "until end of turn" effects end
+    for (const x of state.battlefield) if (x.copyEot) { log(`${x.name} is ${x.origName} again (its copy effect ended)`); x.name = x.origName; delete x.origName; delete x.copyEot; }   // CR 514.2 (Shifting Woodland)
     const lim = staticFx().maxHand;
     if (state.hand.length > lim) { state.discarding = state.hand.length - lim; bottomSel.clear(); }
   }
@@ -4151,7 +4156,11 @@ function startTurn() {
     state.phasePause = true;
     toast(`Turn ${state.turn}`, 'Untap complete. Continue to the next step when ready.');
   } else if (teach('autoStart')) {
-    enterStep(1, true); enterStep(2, true); enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.');
+    // v0.99.44 CR 503.1 + 117.3: an upkeep (or draw-step) trigger is put on the stack and resolves in that step, so the turn stops there
+    // instead of running on to the draw and Main 1 (Summoner's Pact's "pay or lose" used to wait until after the draw).
+    const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding;
+    enterStep(1, true); if (busy()) { toast(`Turn ${state.turn}`, 'Upkeep: a triggered ability needs you first.'); }
+    else { enterStep(2, true); if (busy()) toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); else { enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.'); } }
   } else toast(`Turn ${state.turn}`, 'Untap step. Press Next phase to continue.');
   render(); turnBanner();
   flushTriggers();
@@ -5125,12 +5134,13 @@ function checkNoCounterTriggers() {
 // Vesuva: "You may have it enter the battlefield tapped as a copy of any land on the battlefield."
 function openVesuva(id) {
   const f = findCard(id); if (!f || f.zone !== 'battlefield') return; const c = f.card;
-  const lands = []; for (const x of state.battlefield) if (x.id !== c.id && isLandName(x.name) && !lands.some(l => l.name === x.name)) lands.push(x);
+  const lc = entersAsLandCopy(c) || { from: 'battlefield', addType: '' }, pool = lc.from === 'graveyard' ? state.graveyard : state.battlefield;
+  const lands = []; for (const x of pool) if (x.id !== c.id && isLandName(x.name) && !lands.some(l => l.name === x.name)) lands.push(x);
   const m = modal(c.name + ': copy a land?', { width: 520, sticky: true, noClose: true });
-  m.body.append(h('div', { class: 'psub', text: 'You may have it enter the battlefield tapped as a copy of any land on the battlefield. As a copy it has that land’s name, types and abilities. It goes back to being itself if it leaves the battlefield.' }));
+  m.body.append(h('div', { class: 'psub', text: `You may have it enter tapped as a copy of any land ${lc.from === 'graveyard' ? 'card in a graveyard' : 'on the battlefield'}. As a copy it has that land’s name, types and abilities${lc.addType ? `, and it is also a ${lc.addType}` : ''}. It goes back to being itself if it leaves the battlefield.` }));
   const done = () => { m.close(); render(); if (state.pendingTriggers.length) resolvePendingTrigger(); };
   for (const l of lands) m.body.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: l.name }), h('button', { class: 'primary', text: 'Copy it', onclick: () => {
-    snap(); c.origName = c.name; c.name = l.name; c.tapped = true; c.counters = { plus: 0, minus: 0 }; log(`${c.origName} entered tapped as a copy of ${l.name}`);
+    snap(); c.origName = c.name; c.name = l.name; c.tapped = true; c.counters = { plus: 0, minus: 0 }; if (lc.addType) c.extraTypes = [lc.addType]; log(`${c.origName} entered tapped as a copy of ${l.name}${lc.addType ? ` (also a ${lc.addType})` : ''}`);
     etbCounters(c); const etb = landETBTrigger(c); if (etb) queueTrigger(etb); fireTrigger('etb', { card: c }); done(); } })));
   m.foot.append(h('button', { text: 'Enter as itself (no copy)', onclick: done }));
 }
@@ -6077,6 +6087,7 @@ function activatedAbilitiesFor(c){
     let line=raw.trim(), boast=false;
     if(/^Boast\s*[\u2014-]\s*/i.test(line)){ line=line.replace(/^Boast\s*[\u2014-]\s*/i,''); boast=true; }   // CR 702.142a: "Boast \u2014 [Cost]: [Effect]" means "[Cost]: [Effect]. Activate only if this creature attacked this turn and only once each turn."
     if(!line || /^(When|Whenever|At)\b/i.test(line) || /^[+−–-]?\d+:/.test(line) || SAGA_CH_RE.test(line)) continue;
+    { const ci=line.indexOf(':'); if(ci>=0 && (line.slice(0,ci).split('"').length-1)%2===1) continue; }   // v0.99.44 the colon is inside a quoted ability a token or permanent gets (Malevolent Rumble's Spawn), not this card's own ability
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }
@@ -6620,8 +6631,16 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.43';
+const APP_VERSION = '0.99.44';
 const CHANGELOG = [
+  { v: '0.99.44', title: 'Amulet Titan rules check, New Game clean-up, deck shelf by click', notes: [
+    'RULES (Amulet Titan check): Amulet of Vigor now triggers only for a permanent that enters tapped (CR 603.6a) and untaps that permanent. Bounce lands return a land you choose as the ability resolves (CR 608.2c). Lotus Field sacrifices the two lands you choose. Explore gives a real extra land play this turn. Scapeshift and Genesis Device sacrifice any number of lands, then search for that many. Spelunking puts a land from your hand onto the battlefield (a Cave gains you 4 life), and Cultivator Colossus repeats while you keep putting lands.',
+    'RULES: Vesuva and Echoing Deeps are read from their current wording ("this land enter tapped as a copy"); Echoing Deeps copies a land card in a graveyard and is also a Cave. Cards that say "this land", "this creature" and so on are now always understood to mean themselves.',
+    'RULES: Summoner\'s Pact sets up "pay {2}{G}{G}; if you don\'t, you lose the game" at your next upkeep, with Pay and Don\'t pay buttons. A turn now stops in the upkeep (or draw step) while a triggered ability there is waiting, instead of running on to Main 1 (CR 503.1).',
+    'RULES: Green Sun\'s Zenith is shuffled into your library as it resolves (CR 608.2n). Shifting Woodland and The Mycosynth Gardens become copies of the card you choose (the Woodland only until end of turn). Malevolent Rumble no longer shows the Spawn token\'s mana ability as its own.',
+    'FIXED: pressing New Game could leave old cards on screen. Every card of the old game now flies back into the library before the new seven are dealt.',
+    'Deck shelf: hovering only lifts a book a little; click a book to take it off the shelf and see its cover (Put it back returns it). A deck that cannot be drawn no longer stops the deck screen from opening: it shows as a plain book, and if the whole shelf ever fails you get a simple list instead.',
+    'Linux: the AppImage no longer shows a black window on systems where Chromium cannot use /dev/shm (GitHub issue #83).'] },
   { v: '0.99.43', title: 'Delver: look before you reveal; transformed cards show their back art', notes: ['CHANGED (rules, CR 701.16a): Delver of Secrets and cards like it now show you the top card of your library first. Then you choose Reveal it or Keep it hidden. Only a revealed instant or sorcery transforms it, and the card stays on top of your library either way.', 'FIXED: a transformed card (Delver of Secrets \u2192 Insectile Aberration) could keep showing its front picture. The back face now always shows the back of the card. If you chose a printing for a two-faced card, its back face uses the same printing; Use the default art resets both faces.', 'Mulligan check: watched frame by frame, all seven cards of the old hand fly back into the library (including any that are drawn again) before the new seven is dealt. This needs v0.99.42 or later.'] },
   { v: '0.99.42', title: 'Decks are books on a bookshelf', notes: ['The deck screen is now a real bookshelf: each deck is a book standing spine out with its name and colours on the spine, ten books to a shelf. Hover a book (or move to it with Tab) and it slides out and turns so you can see its front cover with the deck art. Click it to take it off the shelf (details, mana curve, Use this deck, Edit, Sideboard, art), Escape to put it back, double-click to use it straight away. The deck in use has a gold bookmark ribbon.', 'Each book is the deck\'s main colour (the colour with the most mana symbols in the deck; a deck with no coloured spells goes by its basic lands): white, blue, black, red, green, or grey for colourless.', 'FIXED: after a mulligan, a card that was drawn again in the new seven looked as if it had never left your hand. The rules were already right (CR 103.5: the whole hand goes back, the library is shuffled, a new seven is drawn); now the screen shows it too: all seven cards fly back into the library before the new hand is dealt.'] },
   { v: '0.99.41', title: 'Class enchantments have levels', notes: ['FIXED (rules, CR 716): Class enchantments such as Stormchaser\'s Talent had all of their abilities at once, so the level-3 "whenever you cast an instant or sorcery spell, create an Otter" made tokens from the start. A Class now enters at level 1 and has only the abilities of the levels it has reached. "{cost}: Level N" is offered as an ability, at sorcery speed, only from level N-1; "When this Class becomes level N" triggers when it levels up; a Class that leaves the battlefield starts again at level 1.', 'The same "only what it has reached" reading now also decides the triggered and static abilities of Spacecraft (station levels).'] },
@@ -7836,7 +7855,17 @@ function deckSummary(deck) {
   const top = deck.main.filter(x => !isLandName(x.name)).slice().sort((x, y) => y.qty - x.qty).slice(0, 6);
   return { types, curve, top };
 }
+// v0.99.44 one deck that cannot be drawn (unusual list, missing card data, ...) must never stop the whole deck screen from opening:
+// it gets a plain book that still opens, edits and plays the deck, and the reason goes to the log.
 function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
+  try { return deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull); }
+  catch (e) { console.error('deck book', deckName, e); try { log(`Deck screen: could not draw "${deckName}" (${e.message}); shown as a plain book`); } catch (e2) {}
+    const plain = h('div', { class: 'bk', 'data-col': 'C', style: '--ca:#8b9099;--cad:#2a2d33;--cb:#8b9099;--cbd:#2a2d33;--T:48px;--H:210px;--D:146px' }, h('div', { class: 'bk-face spine' }, h('i', { class: 'bk-band' }), h('span', { class: 'bk-title', text: deckName }), h('i', { class: 'bk-band low' })));
+    const st = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, title: `${deckName} — click to use it, or edit it`, onclick: () => onPick() }, plain);
+    return h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: 'width:48px' }, st, h('button', { class: 'bk-fixbtn', text: 'Edit', title: 'Edit this deck list', onclick: e => { e.stopPropagation(); onEdit(); } }));
+  }
+}
+function deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
   const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
   const bk = bookModel(deckName, deck, cols, im, false);
   const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf, double-click to use it` }, bk);
@@ -7844,7 +7873,7 @@ function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onP
   stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
   stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
-  tiltWith(stage, bk);
+  // v0.99.44 no tilt on the shelf: hovering only lifts the book
   const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
   return tile;
 }
@@ -7920,7 +7949,17 @@ function openSideboarding(deckName, after) {
   } }));
   draw();
 }
-function openDeckPicker() {
+function openDeckPicker() {   // v0.99.44 if the bookcase itself fails, a plain list still lets you pick, edit and import decks
+  try { return openDeckPicker0(); } catch (e) {
+    console.error('deck screen', e); try { log(`Deck screen error: ${e.message}`); } catch (e2) {}
+    document.querySelectorAll('.dbx-modal').forEach(x => { const b = x.closest('.backdrop'); if (b) b.remove(); });
+    const m = modal('Your decks', { width: 520 }); const names = Object.keys(loadDecks()).sort((a, b) => a.localeCompare(b));
+    m.body.append(h('div', { class: 'muted small', text: `The deck shelf could not be drawn (${e.message}). Your decks are safe; here they are as a list.` }),
+      ...names.map(n => h('div', { class: 'setrow' }, h('label', { text: n }), h('button', { class: 'primary', text: 'Use', onclick: () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); } }), h('button', { text: 'Edit', onclick: () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); } }))));
+    m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor(); } }), h('button', { text: 'Close', onclick: () => m.close() }));
+  }
+}
+function openDeckPicker0() {
   const m = modal('Your decks', { width: 940 }); m.el.classList.add('dbx-modal');
   const draw = () => {
     const decks = loadDecks(), mode = gameMode(), names = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
@@ -8128,7 +8167,7 @@ function sparks(x, y, col, n, dist, dur) {
   }
 }
 function animApply() {
-  const prev = animPrev; animPrev = null; const mullReset = !!(state && state.mullReset); if (state) delete state.mullReset; if (!prev || !state || !animOn('move')) return;
+  const prev = animPrev; animPrev = null; const newGame = !!(state && state.newGameReset), mullReset = newGame || !!(state && state.mullReset); if (state) { delete state.mullReset; delete state.newGameReset; } if (!prev || !state || !animOn('move')) return;
   // v0.99.42 CR 103.5: after a mulligan EVERY card of the old hand is shown going back into the library, even one that is drawn again
   // in the new seven (same card object, so it would otherwise just stay where it was); the new hand is then dealt from the library.
   const now = [...document.querySelectorAll(CARD_SEL)], seen = new Set(), lib = centerOf('#libstack'), jobs = [];
@@ -8138,7 +8177,7 @@ function animApply() {
   const dealBase = opening ? (state && state.dealDelay ? state.dealDelay * aspd() : returning ? 420 : 0) : 0,   /* animation units: wa() divides by the speed setting, and dealDelay is real time */ dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
   for (const el of now) {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
-    let p = mullReset && el.closest('#row-hand') ? null : prev.cards.get(id); const ff = mullReset ? null : flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
+    let p = newGame || (mullReset && el.closest('#row-hand')) ? null : prev.cards.get(id); const ff = mullReset ? null : flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2, t = getComputedStyle(el).transform;
     if (p) {
       const dx = p.cx - cx, dy = p.cy - cy; if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5 && p.t === t) continue;
@@ -8154,7 +8193,8 @@ function animApply() {
         const col = (SPOT_COL[spotKey(el)] || SPOT_COL['']); sparks(cx, cy, col[0], 7, 46, 520); });
     }
   }
-  const gone = [...prev.cards.keys()].filter(id => !seen.has(id) || (mullReset && prev.cards.get(id).hand));
+  const gone = [...prev.cards.keys()].filter(id => newGame || !seen.has(id) || (mullReset && prev.cards.get(id).hand));
+  if (newGame && gone.length > 30) gone.splice(0, gone.length - 30);   // a big old board: only the last 30 cards fly back, the rest simply go
   if (jobs.length + gone.length > 45) return;
   jobs.forEach(j => j());
   if (opening && newHand) {   // hold the Opening hand prompt back until the last card has landed, then check the fit once more
@@ -8166,7 +8206,7 @@ function animApply() {
   for (const id of gone) {
     const p = prev.cards.get(id), node = prev.nodes.get(id); if (!node) continue;
     const f = findCard(+id); let dest = null;
-    if (mullReset && p.hand) dest = centerOf('#libstack'); else if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
+    if (newGame || (mullReset && p.hand)) dest = centerOf('#libstack'); else if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
     if (!dest && state.stack.some(s => s.id === +id)) dest = centerOf('#stackBox');
     node.removeAttribute('data-id'); node.removeAttribute('title'); node.classList.add('ghost');
     if (flightCounter.has(+id)) { node.style.filter = 'sepia(1) hue-rotate(-35deg) saturate(3.2) brightness(.85)'; flightCounter.delete(+id); }
@@ -9529,7 +9569,7 @@ const STATIC_PATTERNS = [
   [/^If ~ would enter the battlefield, you may discard an? \w+ card instead/i, 'Replacement effect: when it would enter, a window asks you to discard or sends it to the graveyard (rule 614.1).'],
   [/counters? would be put on .*(?:that many plus (?:one|two|\d+)|twice that many)|would put one or more counters on .*twice that many/i, 'Replacement effect: whenever counters are put on a matching permanent (including as it enters) the app adds the extra counters and logs it. Manual +/- counter buttons are not changed.'],
   [/^Activated abilities of sources with the chosen name can't be activated/i, 'Ability lock: the app refuses to activate abilities of sources with the chosen name.'],
-  [/you may have ~ enter the battlefield tapped as a copy of any land/i, 'Vesuva: a window asks which land to copy as it enters; it enters tapped (the Vesuva window handles the name swap).'],
+  [/you may have (?:~|this land) enter (?:the battlefield )?tapped as a copy of any land/i, 'Vesuva: a window asks which land to copy as it enters; it enters tapped (the Vesuva window handles the name swap).'],
   [/\bdraw a card\b.*\bcycling\b/i, null]
 ];
 const EVENT_DESC = { 'etb-self': 'this enters the battlefield', 'etb-other': 'another permanent enters', landfall: 'a land enters under your control', 'cast-self': 'you cast this spell', cast: 'you cast a matching spell', 'attack-self': 'this attacks', 'attack-any': 'you attack with creatures', 'dies-self': 'this dies', 'dies-other': 'another creature dies', draw: 'you draw a card', 'leaves-self': 'this leaves the battlefield', lifegain: 'you gain life', 'combat-damage-self': 'this deals combat damage', 'combat-damage-any': 'a creature you control deals combat damage' };
@@ -9653,6 +9693,7 @@ function compileCardOne(c) {
       const t = trig[trigIx++];
       if (t && t.ev) { const eff = recognizedEffects(t.effect); push(text, 'triggered', eff.length ? 'ok' : 'part', `Triggered ability: the app notices the trigger event (${EVENT_DESC[t.ev] || t.ev.replace(/-/g, ' ').replace(':', ': ')}) and puts it on the stack.` + (eff.length ? ` It can apply: ${eff.join('; ')}.` : ' Its effect is applied by hand.'), { ev: t.ev }); }
       else if (/^(?:when|whenever) ~ has no [a-z+\/-]+ counters on it/i.test(norml)) push(text, 'triggered', 'ok', 'State trigger (rule 603.8): the app watches the counters and puts this on the stack once, each time the last one is removed.');
+      else if (/^At the beginning of (?:your|the) next\b/i.test(text) && /\b(?:Instant|Sorcery)\b/.test(frontType(c) || '')) push(text, 'triggered', 'ok', 'Delayed triggered ability (CR 603.7): the spell sets it up as it resolves, and it triggers at that time.');
       else { const rl = rulingFor(norml) || triggerRuling(norml); if (rl) push(text, 'triggered', 'part', rl); else push(text, 'triggered', 'unk', 'Triggered ability, but the app does not recognise when it triggers, so it will not fire automatically.'); }
       continue;
     }
@@ -9768,7 +9809,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 // A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
 // Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
 const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
@@ -12297,6 +12338,24 @@ function handRefillOptions(tx, obj) {
         openOrderList(`${src}: order the cards`, picked, ordered => { snap(); for (const c of ordered) { const i = state.hand.findIndex(x => x.id === c.id); if (i >= 0) state.hand.splice(i, 1); }
           if (top) state.library.unshift(...ordered); else state.library.push(...ordered); log(`${src}: drew ${nd}, put ${ordered.map(c => c.name).join(', ')} ${top ? 'on top of' : 'on the bottom of'} the library`); render(); }); } }); } }, ...massRest(sents, 1, obj)];
   }
+  // v0.99.44 Spelunking: "Draw a card, then you may put a land card from your hand onto the battlefield. If you put a Cave onto the battlefield this way, you gain 4 life."
+  // Cultivator Colossus: "You may put a land card from your hand onto the battlefield tapped. If you do, draw a card. Repeat this process until you put no land card onto the battlefield this way."
+  { const dm = /^(?:draw (a|one|two|three|\d+) cards?,? then )?you may put (?:a|an|one) (land) cards? from your hand onto the battlefield( tapped)?$/i.exec(s0);
+    const rest = sents.slice(1).map(x => x.replace(/\.$/, ''));
+    const ifType = dm && rest[0] && /^If you put an? (\w+) onto the battlefield this way, you gain (\d+) life$/i.exec(rest[0]);
+    const ifDo = dm && rest[0] && /^If you do, draw (a|one|two|\d+) cards?(?: and repeat this process)?$/i.test(rest[0]), repeat = ifDo && (/and repeat this process$/i.test(rest[0]) || (rest[1] && /^Repeat this process until you put no land card onto the battlefield this way$/i.test(rest[1])));
+    if (dm && (dm[1] || ifType || ifDo)) {
+      const nd = dm[1] ? MASS_NUM(dm[1]) : 0, tapped = !!dm[3], used = 1 + (ifType ? 1 : 0) + (ifDo ? 1 : 0) + (repeat && rest[1] && /^Repeat/i.test(rest[1]) ? 1 : 0);
+      const one = (again) => { const cands = state.hand.filter(c => /\bLand\b/.test((cardInfo(c.name) || {}).t || '')); if (!cands.length) { if (!again) toast('Nothing to put', 'You have no land card in your hand.'); render(); return; }
+        openPickCards({ title: `${src}: put a land card onto the battlefield${tapped ? ' tapped' : ''}?`, note: repeat ? 'Each time you put one, you draw a card and may put another. Choose none to stop.' : 'Choose a land card, or none.', cards: cands, max: 1, nothing: 'Put none', done: picked => {
+          const c = picked[0]; if (!c) { if (again) log(`${src}: stopped putting lands`); render(); flushTriggers(); return; }
+          const i = state.hand.findIndex(x => x.id === c.id); if (i < 0) return; snap(); const [x] = state.hand.splice(i, 1); enterBattlefield(x, { from: 'hand', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped: tapped ? true : undefined });
+          if (ifType && new RegExp('\\b' + ifType[1] + '\\b', 'i').test(frontType(x) || '')) { changeLife(+ifType[2], true); log(`${src}: it is a ${ifType[1]}, so you gain ${ifType[2]} life`); }
+          if (ifDo) drawCards(1);
+          render(); flushTriggers(); if (repeat) setTimeout(() => one(true), 60); } }); };
+      return [{ full: sents.length === used, label: `${nd ? `Draw ${nd}, then you` : 'You'} may put a land card from your hand onto the battlefield${tapped ? ' tapped' : ''}${ifType ? ` (a ${ifType[1]}: gain ${ifType[2]} life)` : ''}${ifDo ? '; if you do, draw a card' : ''}${repeat ? ', and repeat until you put none' : ''}`,
+        fn: () => { if (nd) drawCards(nd); one(false); } }, ...massRest(sents, used, obj)];
+    } }
   // Growth Spiral: "You may put a land card from your hand onto the battlefield."
   if ((m = /^you may put (?:a|an|one) (.+?) cards? from your hand onto the battlefield( tapped)?$/i.exec(s0))) {
     const kind = m[1].toLowerCase(), tapped = !!m[2];
@@ -13177,6 +13236,97 @@ function openBuyDeck(deck) {
       m.close(); } }),
     h('button', { text: 'Close', onclick: () => m.close() }));
   draw();
+}
+// ---- v0.99.44 effects that pick permanents you control as they resolve (no targets), and effects on the object that caused a trigger.
+// "Return a land you control to its owner's hand." (bounce lands)   "Sacrifice two lands." (Lotus Field)   CR 608.2c / 701.21a: the choice is made
+// on resolution, it is not targeted, and you must choose as many as you can (the permanent itself counts if it matches).
+// "Untap it." / "Tap that creature." in a triggered ability means the object the trigger event was about (CR 603.2 + 608.2c), kept as obj.otherId.
+const PCHOICE_TYPES = ['land', 'creature', 'artifact', 'enchantment', 'planeswalker', 'permanent', 'nonland permanent', 'battle'];
+function pcMatches(desc, c) {
+  const d = String(desc).toLowerCase().replace(/s$/, '').trim(); if (d === 'permanent') return true;
+  if (d === 'nonland permanent') return !isLandName(c.name);
+  return filterMatches(d, c);
+}
+function permChoiceOptions(tx, obj) {   // one sentence is read here; the sentences after it are read as usual (massRest)
+  const sents = MASS_SENTS(tx); if (!sents.length) return null;
+  const sc = scapeshiftOptions(sents, obj); if (sc) return sc;
+  const po = payOrElseOptions(sents, obj); if (po) return po;
+  if (sents.length > 1 && /^If you (?:do|don't)\b/i.test(sents[1])) return null;   // "Sacrifice X. If you do, ..." is read by the if-you-do reader (CR 608.2c)
+  const one = permChoiceOne(sents[0], obj); if (!one) return null;
+  if (sents.length === 1) return one; return [...one.map(o => ({ ...o, full: false })), ...massRest(sents, 1, obj)];
+}
+// Scapeshift: "Sacrifice any number of lands. Search your library for up to that many land cards, put them onto the battlefield tapped, then shuffle."
+// Genesis Device: "Sacrifice any number of lands you control, then search your library for up to that many land cards, ..." (CR 608.2c: "that many" is how many were sacrificed)
+function scapeshiftOptions(sents, obj) {
+  const all = sents.join(' '), m = all.match(/^sacrifice any number of ([a-z ]+?)(?: you control)?(?:\.|, then) (search your library for up to that many .+)$/i); if (!m) return null;
+  const desc = m[1], rest = m[2].replace(/^search/, 'Search'), src = (obj && obj.sourceName) || 'It';
+  return [{ full: true, label: `Sacrifice any number of ${desc}, then search for that many land cards`, fn: () => {
+    const cands = state.battlefield.filter(c => !c.opp && pcMatches(desc, c));
+    openPickCards({ title: `${src}: sacrifice any number of ${desc}`, note: 'Then you search your library for up to that many land cards.', cards: cands, max: cands.length, nothing: 'Sacrifice none', done: picked => {
+      snap(); for (const p of picked) { const f = findCard(p.id); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed ${f.card.name}`); leaveBattlefield(f.card, 'graveyard'); } }
+      const n = picked.length; render(); if (!n) { log(`${src}: no lands sacrificed, so it searches for none`); shuffleLib && shuffleLib(); return; }
+      const se = searchEffect(rest.replace(/up to that many/i, `up to ${n}`), src, obj); if (se && se.fn) se.fn(); else toast('Search', `Search your library for up to ${n} land cards by hand.`); } });
+  } }];
+}
+// Summoner's Pact's delayed trigger: "Pay {2}{G}{G}. If you don't, you lose the game." (CR 117.3 + 104.3a)
+function payOrElseOptions(sents, obj) {
+  if (sents.length !== 2) return null; const a = sents[0].match(/^pay ((?:\{[^}]+\})+)\.?$/i), b = sents[1].match(/^If you don't, (.+?)\.?$/i); if (!a || !b) return null;
+  const cost = a[1], src = (obj && obj.sourceName) || 'It', lose = /^you lose the game$/i.test(b[1]);
+  const fail = () => { if (lose) { log(`${src}: you did not pay ${cost}, so you lose the game (CR 104.3a)`); state.lossShown = 'pact'; lethalFx('you', `${src}: did not pay ${cost}`, 'In a real game you would lose here.'); } else { log(`${src}: you did not pay ${cost}: ${b[1]}`); toast('Not paid', `${src}: ${b[1]}. Carry it out by hand.`); } render(); };
+  return [{ full: false, label: `Pay ${cost}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; if (!payManaThen(card, cost, `${src}: pay ${cost}`, () => log(`${src}: paid ${cost}`))) {} } },
+    { full: false, label: `Don't pay (${lose ? 'you lose the game' : b[1]})`, fn: fail }];
+}
+function permChoiceOne(tx, obj) {
+  const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); let m;
+  if (obj && obj.sourceName && selfShuffleRe(obj.sourceName).test(t) && /^shuffle /i.test(t)) return [{ full: true, label: `${obj.sourceName} is shuffled into your library as it finishes resolving (CR 608.2n)`, fn: () => {} }];
+  // CR 707.2 + 613.2: "This land becomes a copy of target nontoken artifact you control with mana value X." (The Mycosynth Gardens)
+  // "This land becomes a copy of target permanent card in your graveyard until end of turn." (Shifting Woodland). It keeps its tapped state and counters.
+  if (obj && obj.sourceId && (m = t.match(/^(?:~|this \w+) becomes a copy of target (.+?)(?: you control)?( in your graveyard)?( with mana value X)?( until end of turn)?\.?$/i)) && !/land, except it has this ability/i.test(t)) {
+    const desc = m[1].toLowerCase(), gy = !!m[2], wantX = !!m[3], eot = !!m[4], src = obj.sourceName || 'It';
+    return [{ full: true, label: `${src} becomes a copy of ${gy ? 'a permanent card in your graveyard' : 'a ' + desc + ' you control'}${eot ? ' until end of turn' : ''}`, fn: () => {
+      const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; }
+      const c = f.card, x = obj.xValue !== undefined ? +obj.xValue : null;
+      const ok = k => { const ty = (cardInfo(k.name) || {}).t || ''; if (gy) return !/\b(?:Instant|Sorcery)\b/.test(ty) && !!ty; if (/nontoken/.test(desc) && k.token) return false; const core = desc.replace(/^nontoken\s+/, ''); return k.id !== c.id && filterMatches(core, k) && (!wantX || x === null || mvOf(cardInfo(k.name)) === x); };
+      const doCopy = k => { snap(); if (!c.origName) c.origName = c.name; c.name = k.name; if (eot) c.copyEot = true; log(`${c.origName} became a copy of ${k.name}${eot ? ' until end of turn' : ''}`); render(); };
+      const tg = (obj.targets || []).find(q => !q.gone && q.id !== undefined); if (tg) { const g = findCard(tg.id); if (g && (gy ? g.zone === 'graveyard' : g.zone === 'battlefield')) { doCopy(g.card); return; } toast('Target gone', `${tg.name || 'The target'} is no longer there, so ${src} does not change.`); return; }   // the target chosen as it was activated (CR 601.2c)
+      const cands = (gy ? state.graveyard : state.battlefield.filter(k => !k.opp)).filter(ok); const seen = new Set(), list = cands.filter(k => !seen.has(k.name) && seen.add(k.name));
+      if (!list.length) { toast('No target', gy ? 'There is no permanent card in your graveyard.' : `You control no ${desc}${wantX && x !== null ? ' with mana value ' + x : ''}.`); return; }
+      openPickCards({ title: `${src}: copy which card?`, note: `${src} becomes a copy of it${eot ? ' until end of turn' : ''}. It stays tapped or untapped and keeps its counters; it does not enter the battlefield again, so no enters abilities trigger.${wantX ? ' Its mana value must equal the X you paid.' : ''}`, cards: list, max: 1, done: picked => {
+        const k = picked[0]; if (k) doCopy(k); } }); } }];
+  }
+  const src = (obj && obj.sourceName) || 'It';
+  if (obj && (obj.otherId !== undefined || obj.sourceId === -1) && (m = t.match(/^(?:then )?(?:you may )?(untap|tap) (?:it|that (?:permanent|creature|land|artifact))\.?$/i))) {
+    const up = m[1].toLowerCase() === 'untap', may = /\byou may\b/i.test(t);
+    return [{ full: !may, label: `${up ? 'Untap' : 'Tap'} the permanent that triggered ${src}`, fn: () => {
+      const f = findCard(obj.otherId); if (!f || f.zone !== 'battlefield') { log(`${src}: that permanent is no longer on the battlefield`); return; }
+      snap(); f.card.tapped = !up; log(`${src}: ${up ? 'untapped' : 'tapped'} ${f.card.name}`); render(); } }];
+  }
+  // Explore: "You may play an additional land this turn." (CR 305.2: an allowance for this turn)
+  if ((m = t.match(/^(?:you may )?play (an|one|two|three|\d+) additional lands? this turn\.?$/i))) { const n = wordN(m[1]);
+    return [{ full: true, label: `You may play ${n === 1 ? 'an additional land' : n + ' additional lands'} this turn`, fn: () => { snap(); state.extraLandDrops = (state.extraLandDrops || 0) + n; log(`${src}: you may play ${n === 1 ? 'an additional land' : n + ' additional lands'} this turn (${landDropsAllowed()} in all)`); render(); } }];
+  }
+  const verb = (m = t.match(/^(?:then )?(return|sacrifice) (a|an|one|two|three|four|five|\d+) ([a-z ,-]+?)(?: you control)?(?: to (?:its|their) owner'?s'? hands?)?\.?$/i));
+  if (verb && PCHOICE_TYPES.includes(m[3].toLowerCase().replace(/s$/, '')) && (m[1].toLowerCase() === 'sacrifice' || /to (?:its|their) owner/i.test(t))) {
+    const back = m[1].toLowerCase() === 'return', n = wordN(m[2]), desc = m[3];
+    return [{ full: true, label: `${back ? 'Return' : 'Sacrifice'} ${m[2]} ${desc} you control${back ? ' to your hand' : ''} (you choose as it resolves)`, fn: () => {
+      const cands = state.battlefield.filter(c => !c.opp && pcMatches(desc, c));
+      if (!cands.length) { log(`${src}: you control no ${desc}, so nothing is ${back ? 'returned' : 'sacrificed'}`); return; }
+      const need = Math.min(n, cands.length);
+      const act = picked => { if (!picked.length) return; snap(); for (const p of picked) { const f = findCard(p.id); if (!f || f.zone !== 'battlefield') continue; log(`${src}: ${back ? 'returned' : 'sacrificed'} ${f.card.name}${back ? ' to your hand' : ''}`); leaveBattlefield(f.card, back ? 'hand' : 'graveyard'); }
+        render(); if (state.pendingTriggers.length) flushTriggers(); };
+      if (cands.length <= need && new Set(cands.map(c => c.name)).size <= 1 && cands.length === need) { act(cands); return; }   // no real choice
+      openPickCards({ title: `${src}: ${back ? 'return' : 'sacrifice'} ${need === 1 ? `a ${desc.replace(/s$/, '')}` : `${need} ${desc}`}`, cards: cands, min: need, max: need,
+        note: `${back ? 'Choose' : 'Choose'} ${need} you control (it can be ${src} itself if it qualifies). This is not targeted, and you must choose ${need === 1 ? 'one' : 'that many'} if you can.`, done: act });
+    } }];
+  }
+  return null;
+}
+
+// CR 608.2n: "Shuffle Green Sun's Zenith into its owner's library." The spell's last instruction puts it into the library instead of the graveyard.
+const selfShuffleRe = name => new RegExp("\\bshuffle (?:~|this card|" + String(name || '~').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ") into its owner's library\\b", 'i');
+function shuffleSelfOnResolve(c) {
+  if (!c || c.copy || c.token || !selfShuffleRe(c.name).test(cardText(c) || '')) return null;
+  state.library.push(c); try { shuffleLib(); } catch (e) { /* no animation */ } return 'library (shuffled in, CR 608.2n)';
 }
 init();
 

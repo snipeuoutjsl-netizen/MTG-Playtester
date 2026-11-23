@@ -1896,8 +1896,9 @@ body.a11y-targets .setgrid .teachopt { min-height: 44px; }
 .bk-tile { position: relative; flex: none; padding: 0; background: none !important; display: block; }
 .bk-tile:hover, .bk-tile:focus-within { z-index: 5; }
 .bk-stage { width: 100%; height: auto; display: block; cursor: pointer; outline: none; perspective: none; }
-.bk { position: relative; width: var(--T); height: var(--H); transform-style: preserve-3d; transform: rotateY(calc(var(--rx, 0) * 3deg)); transition: transform .38s cubic-bezier(.2,.8,.25,1); }
-.bk-stage:hover .bk, .bk-stage:focus-visible .bk { transform: translateZ(calc(var(--D) * .55)) translateY(-6px) rotateY(calc(66deg + var(--rx, 0) * 10deg)) rotateX(calc(var(--ry, 0) * -5deg)); transition-duration: .3s; }
+.bk { position: relative; width: var(--T); height: var(--H); transform-style: preserve-3d; transform: none; transition: transform .38s cubic-bezier(.2,.8,.25,1); }
+/* v0.99.44 hovering only lifts a book a little; a click takes it off the shelf (the cover turns toward you there) */
+.bk-stage:hover .bk, .bk-stage:focus-visible .bk { transform: translateY(-8px); transition-duration: .2s; filter: brightness(1.15); }
 .bk-face { position: absolute; top: 0; overflow: hidden; backface-visibility: hidden; }
 .bk-face.spine { left: 0; width: var(--T); height: var(--H); transform: translateZ(calc(var(--D) / 2)); border-radius: 3px 3px 2px 2px;
   background: linear-gradient(90deg, rgba(0,0,0,.45), rgba(255,255,255,.14) 22%, rgba(0,0,0,.05) 45%, rgba(0,0,0,.4)), linear-gradient(180deg, var(--ca), var(--cad));
@@ -1932,3 +1933,5 @@ body.a11y-calm .bk, body.a11y-calm .bk.big { transition: none; }
 .peek-wrap img.peek-card { height: auto; display: block; }
 .peek-txt { flex: 1; min-width: 0; }
 .peek-yes { color: var(--gold, #e3b95c); font-weight: 600; }
+
+.bk-fixbtn { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); font-size: 10px; padding: 1px 6px; z-index: 4; }

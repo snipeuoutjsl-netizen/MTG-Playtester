@@ -40,6 +40,7 @@ function activatedAbilitiesFor(c){
     let line=raw.trim(), boast=false;
     if(/^Boast\s*[\u2014-]\s*/i.test(line)){ line=line.replace(/^Boast\s*[\u2014-]\s*/i,''); boast=true; }   // CR 702.142a: "Boast \u2014 [Cost]: [Effect]" means "[Cost]: [Effect]. Activate only if this creature attacked this turn and only once each turn."
     if(!line || /^(When|Whenever|At)\b/i.test(line) || /^[+−–-]?\d+:/.test(line) || SAGA_CH_RE.test(line)) continue;
+    { const ci=line.indexOf(':'); if(ci>=0 && (line.slice(0,ci).split('"').length-1)%2===1) continue; }   // v0.99.44 the colon is inside a quoted ability a token or permanent gets (Malevolent Rumble's Spawn), not this card's own ability
     { const eq=line.match(/^Equip\b\s*(?:(legendary creature|[a-z]+ creature)\s+)?((?:\{[^}]+\})+|\u2014.+)$/i);   // Equip (v0.64): a sorcery-speed ability that attaches to a creature you control
       if(eq){ const cs=eq[2].replace(/^\u2014\s*/,'').replace(/\.$/,''), pc=parseAbilityCost(cs,short);
         res.push({cost:'Equip '+eq[2].replace(/^\u2014\s*/,'\u2014 '),effect:`Attach ~ to target ${eq[1]?eq[1].toLowerCase():'creature'} you control. Activate only as a sorcery.`,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length,equip:true}); continue; } }

@@ -137,6 +137,7 @@ function startGame() {
   const deck = getCurrentDeck();
   if (!deck || !deck.main.length) { alert('Import a deck first (Import / edit deck).'); return; }
   state = freshState();
+  state.newGameReset = true;   // v0.99.44 on screen every card of the old game goes back into the library before the new seven are dealt (card ids start again, so an old card must never be mistaken for a new one)
   undoStack = []; selected = null; bottomSel.clear();
   const unknown = new Set();
   const cmdOn = commanderModeOn(deck);   // v0.99.29 Commander mode (CR 903)
@@ -322,6 +323,7 @@ function enterStep(i, quiet) {
   } else if (id === 'cleanup') {
     for (const x of state.battlefield) { if (x.dmg) delete x.dmg; }
     endFx(e => e.until === 'eot', 'end of turn');   // "until end of turn" effects end
+    for (const x of state.battlefield) if (x.copyEot) { log(`${x.name} is ${x.origName} again (its copy effect ended)`); x.name = x.origName; delete x.origName; delete x.copyEot; }   // CR 514.2 (Shifting Woodland)
     const lim = staticFx().maxHand;
     if (state.hand.length > lim) { state.discarding = state.hand.length - lim; bottomSel.clear(); }
   }
@@ -342,7 +344,11 @@ function startTurn() {
     state.phasePause = true;
     toast(`Turn ${state.turn}`, 'Untap complete. Continue to the next step when ready.');
   } else if (teach('autoStart')) {
-    enterStep(1, true); enterStep(2, true); enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.');
+    // v0.99.44 CR 503.1 + 117.3: an upkeep (or draw-step) trigger is put on the stack and resolves in that step, so the turn stops there
+    // instead of running on to the draw and Main 1 (Summoner's Pact's "pay or lose" used to wait until after the draw).
+    const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding;
+    enterStep(1, true); if (busy()) { toast(`Turn ${state.turn}`, 'Upkeep: a triggered ability needs you first.'); }
+    else { enterStep(2, true); if (busy()) toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); else { enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.'); } }
   } else toast(`Turn ${state.turn}`, 'Untap step. Press Next phase to continue.');
   render(); turnBanner();
   flushTriggers();

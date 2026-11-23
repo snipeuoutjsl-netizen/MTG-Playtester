@@ -224,11 +224,12 @@ function attackBlock(c) {   // why this creature cannot attack right now ('' = i
 }
 function eligibleAttackers() { return state ? state.battlefield.filter(c => permZone(c) === 'creatures' && !attackBlock(c)) : []; }
 // CR 103.6a: "If ~ is in your opening hand, you may begin the game with it on the battlefield."  CR 103.5b: "Any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards."
-const selfTxt = c => String(cardText(c) || '').replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(selfNameRe(c.name), '~').replace(/\bthis card\b/gi, '~');
+const SELF_THIS = /\bthis (?:land|creature|artifact|enchantment|permanent|planeswalker|battle|saga|class|equipment|aura|vehicle|spacecraft)\b/gi;
+const selfTxt = c => String(cardText(c) || '').replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(selfNameRe(c.name), '~').replace(/\bthis card\b/gi, '~').replace(SELF_THIS, '~');   // v0.99.44 current Oracle text says "this land", "this creature" ... for the card itself
 function beginsOnBattlefield(c) { return /if ~ is in your opening hand, you may begin the game with it on the battlefield/i.test(selfTxt(c)); }
 function mulliganHandSwap(c) { return /any time you could mulligan and ~ is in your hand, you may exile all the cards from your hand, then draw that many cards/i.test(selfTxt(c)); }
 // "Enter tapped as a copy of any land on the battlefield" is a clone-style replacement effect (CR 614.12, 707.2).
-function entersAsLandCopy(c) { return /you may have ~ enter (?:the battlefield )?tapped as a copy of any land on the battlefield/i.test(selfTxt(c)); }   // v0.96.26 current Oracle wording drops "the battlefield"
+function entersAsLandCopy(c) { const m = selfTxt(c).match(/you may have ~ enter (?:the battlefield )?tapped as a copy of any land (?:(card) in a graveyard|on the battlefield)(?:, except (?:it's|it is) an? (\w+) in addition to its other types)?/i); return m ? { from: m[1] ? 'graveyard' : 'battlefield', addType: m[2] || '' } : null; }   // Vesuva; Echoing Deeps copies a land card in a graveyard and is also a Cave   // v0.96.26 current Oracle wording drops "the battlefield"
 function landETBTrigger(c) {
   const tx=cardText(c); let m=tx.match(/enters(?: the battlefield)?[^.]*\bscry\s+(\d+)/i);
   if(m) return {kind:'ability',cardId:c.id,cardName:c.name,special:'scry',n:+m[1],optional:false,why:'A land with an enters-the-battlefield trigger.',text:`When ${c.name} enters, scry ${m[1]}.`,effect:`Scry ${m[1]}.`};
