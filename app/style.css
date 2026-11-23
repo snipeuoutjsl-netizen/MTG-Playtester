@@ -1941,3 +1941,10 @@ body.a11y-calm .bk, body.a11y-calm .bk.big { transition: none; }
 /* v0.99.45 the stack window keeps its place: its top edge is fixed and it grows downward (scrolling if it gets tall), instead of re-centring as cards are added */
 #stackStage { top: max(14px, calc((100% - var(--handcover, 0px)) * 0.1)); transform: translate(-50%, 0) scale(var(--ss, 1)); transform-origin: 50% 0; max-height: calc(100% - var(--handcover, 0px) - 28px); overflow-y: auto; }
 body.mullpick #overlay, body.mullhand #overlay { z-index: 62; }   /* v0.99.45 the Keep / Mulligan prompt sits above the dimmed board */
+/* v0.99.47 a prepared creature (CR 722): a small gold scroll marker */
+.card.prepared::after { content: 'PREPARED'; position: absolute; top: 4px; right: 4px; z-index: 6; padding: 1px 5px; border-radius: 4px; font: 700 8px/12px var(--font, system-ui); letter-spacing: .08em; color: #2a1a05; background: linear-gradient(180deg, #f5d27a, #c99536); box-shadow: 0 1px 3px rgba(0,0,0,.5); pointer-events: none; }
+/* v0.99.47 New Game glows while the selected deck is not the one on the table */
+#btnNew.pending { box-shadow: 0 0 0 2px #ffd36b, 0 0 18px 4px rgba(255, 196, 64, .55); animation: ngPulse 1.6s ease-in-out infinite; }
+@keyframes ngPulse { 0%, 100% { box-shadow: 0 0 0 2px #ffd36b, 0 0 10px 2px rgba(255,196,64,.35); } 50% { box-shadow: 0 0 0 2px #ffe39b, 0 0 22px 7px rgba(255,196,64,.65); } }
+body.a11y-calm #btnNew.pending { animation: none; }
+@media (prefers-reduced-motion: reduce) { #btnNew.pending { animation: none; } }

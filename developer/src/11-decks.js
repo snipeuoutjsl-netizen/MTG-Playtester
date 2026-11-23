@@ -83,6 +83,13 @@ function refreshDeckSelect() {
   else if (cur && decks[cur]) lsSet('mtgpt.current', '');   // the chosen deck belongs to the other mode
   if (typeof applyUiTheme === 'function' && settings.uiTheme === 'deck') applyUiTheme();
   const dc = $('#deckCur'); if (dc) dc.textContent = names.length ? (sel.value || names[0]) : 'No decks yet';
+  newGameCue();
+}
+// v0.99.47 the deck you picked is not the one on the table yet: the New Game button glows until you start a game with it
+function newGameCue() {
+  const b = $('#btnNew'); if (!b) return; const cur = currentDeckName(), on = !!(state && state.deckName && cur && cur !== state.deckName);
+  b.classList.toggle('pending', on);
+  b.title = on ? `Start a new game with ${cur} (the game on the table is using ${state.deckName})` : 'Start a new game with the selected deck';
 }
 
 function getCurrentDeck() {

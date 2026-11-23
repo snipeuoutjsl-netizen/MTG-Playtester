@@ -79,6 +79,7 @@ function normFaces(c) {
     if (adv) c.tx = txs[0];
     return regFaces(c);
   }
+  if (c.lo === 'prepare') { c.prep = true; c.kind = 'prepare'; }   // CR 722: a preparation card (creature + prepare spell); only the creature is cast from hand
   const backCost = mls ? !!mls[1] : String(c.mc || '').split(' // ').filter(Boolean).length >= c.faces.length;
   c.mdfc = c.lo ? c.lo === 'modal_dfc' : (backCost || /^(?:Instant|Sorcery)\b/.test(ts[0]));
   c.fc = c.faces.map((n, i) => {
@@ -226,7 +227,7 @@ function transformPerm(id, to) {
 function halfParent(c) { const p = c && !c.token ? cardInfo(c.faceOf || c.name) : null; return p && p.fc && p.kind ? p : null; }
 function halfOptions(c) {   // the ways this card in your hand can be cast: fi null = the card itself
   if (!c || c.token || c.faceOf || c.fromExile || c.fromGy) return [];
-  const p = cardInfo(c.name); if (!p || !p.fc || !p.kind) return [];
+  const p = cardInfo(c.name); if (!p || !p.fc || !p.kind || p.kind === 'prepare') return [];
   if (p.kind === 'adventure') return [{ fi: null, rec: p.fc[0], label: p.fc[0].name }, { fi: 1, rec: p.fc[1], label: p.fc[1].name + ' (adventure)' }];
   if (p.kind === 'aftermath') return [{ fi: 0, rec: p.fc[0], label: p.fc[0].name }];   // the other half can only be cast from the graveyard
   return p.fc.map((r, i) => ({ fi: i, rec: r, label: r.name }));
@@ -244,7 +245,7 @@ function healHalves() {
   if (!state) return;
   for (const c of state.hand.slice()) {
     if (state.halfChosen === c.id) continue;
-    if (c.half) restoreHalf(c);
+    if (c.half && c.prepCopy === undefined) restoreHalf(c);   // a prepared spell's copy stays the spell half
     if (c.fromExile) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromExile; state.exile.push(c); } }
     if (c.fromCmd) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromCmd; state.command.push(c); } }   // a cancelled cast from the command zone goes back there
     if (c.fromGy) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); if (c.fromGy.kind === 'disturb' && c.face) setFace(c, 0); delete c.fromGy; state.graveyard.push(c); } }
@@ -254,7 +255,7 @@ function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.fac
 // v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
 function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways && !preparedCastable(c)) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
