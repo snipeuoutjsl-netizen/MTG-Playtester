@@ -37,6 +37,7 @@ function enterBattlefield(c, o = {}) {
     else if ((cm = tx0.match(/^As .+? enters(?: the battlefield)?(?: tapped)?, choose an? ([^.\n]+)\./im)) && !/\bfrom among\b/i.test(cm[1])) queueTrigger({ kind: 'choose', cardId: c.id, what: cm[1].trim().toLowerCase() }); }
   memNote('entered', c);
   if (o.afterPlace) o.afterPlace(c);
+  if (!c.prepared && prepSpellOf(c) && entersPrepared(c)) becomePrepared(c, 'it enters prepared');   // CR 722.3c
   landEntryTriggers(c, o.from !== 'hand');   // a land you played can be taken back; one put there by an effect cannot
   permanentEntered(c);
   return c;
@@ -58,6 +59,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.origName) { c.name = c.origName; delete c.origName; }
   const _mp = c.mutParts ? c : null;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
+  if (c.prepared) unprepare(c, 'it left the battlefield');   // CR 722.3c
   delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
     // CR 701.37b: monstrous lasts until it leaves the battlefield
   if (_mp) mutSpawnParts(c, dest);

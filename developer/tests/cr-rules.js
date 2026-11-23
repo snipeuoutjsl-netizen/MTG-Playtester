@@ -1508,6 +1508,21 @@ const { setup } = require('./common.js');
       document.body.classList.add('mullhand'); const tb = getComputedStyle(document.getElementById('topbar')); const dimBody = getComputedStyle(document.body, '::after').content; document.body.classList.remove('mullhand');
       return { stillThere, gone, tops, dimBody }; });
     return { ok: r.stillThere && r.gone && Math.abs(r.tops[0] - r.tops[1]) <= 1 && (r.dimBody === 'none' || r.dimBody === 'normal'), why: JSON.stringify(r) }; });
+  await T('722.3a + 722.3c', 'Prepared (Carnivorous Cultivator // Enroot): only the creature is cast from hand; it enters prepared and a copy of Enroot appears in exile; it cannot become prepared twice; casting the copy (its own cost, normal timing) unprepares it as it is cast; the copy ceases to exist instead of going to the graveyard; leaving the battlefield removes the designation and the copy', async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup([],['Carnivorous Cultivator // Enroot']); const cc=s.hand[0]; const routes=__d.castRoutes(cc).length; s.hand.splice(0,1); __d.enterBattlefield(cc,{from:'stack'});
+      const prep=!!cc.prepared, copyInExile=s.exile.filter(x=>x.prepCopy===cc.id).map(x=>x.name).join(','), twice=__d.becomePrepared(cc);
+      s.manaPool={G:1}; __d.castPrepared(cc); await W(300); const pay=[...document.querySelectorAll('#modalRoot .modal button.primary')].pop(); if(pay) pay.click(); await W(300);
+      const unprepped=!cc.prepared, onStack=s.stack.map(x=>x.name).join(','); document.querySelectorAll('.backdrop').forEach(x=>x.remove()); __d.resolveTopOfStack(); await W(200); document.querySelectorAll('.backdrop').forEach(x=>x.remove());
+      const inGy=s.graveyard.some(x=>x.prepCopy!==undefined);
+      __d.becomePrepared(cc); const re=s.exile.filter(x=>x.prepCopy===cc.id).length; __d.leaveBattlefield(cc,'graveyard'); const gone=!s.exile.some(x=>x.prepCopy===cc.id) && !cc.prepared;
+      return { routes, prep, copyInExile, twice, unprepped, onStack, inGy, re, gone };})()`));
+    return { ok: r.routes === 1 && r.prep && r.copyInExile === 'Enroot' && r.twice === false && r.unprepped && r.onStack === 'Enroot' && !r.inGy && r.re === 1 && r.gone, why: JSON.stringify(r) }; });
+  await T('UI new game', 'picking a different deck makes the New Game button glow until a game is started with it', async () => { await reset();
+    const r = await ev(async () => { const s = __d.state; const d = JSON.parse(localStorage.getItem('mtgpt.decks') || '{}'); d['Zz Other'] = { text: '4 Lightning Bolt\n20 Mountain' }; localStorage.setItem('mtgpt.decks', JSON.stringify(d));
+      const was = s.deckName; __d.lsSet('mtgpt.current', 'Zz Other'); __d.refreshDeckSelect(); const lit = document.getElementById('btnNew').classList.contains('pending');
+      __d.lsSet('mtgpt.current', was); __d.refreshDeckSelect(); const off = !document.getElementById('btnNew').classList.contains('pending'); return { was, lit, off }; });
+    return { ok: !!r.was && r.lit && r.off, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

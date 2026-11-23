@@ -162,6 +162,7 @@ function normFaces(c) {
     if (adv) c.tx = txs[0];
     return regFaces(c);
   }
+  if (c.lo === 'prepare') { c.prep = true; c.kind = 'prepare'; }   // CR 722: a preparation card (creature + prepare spell); only the creature is cast from hand
   const backCost = mls ? !!mls[1] : String(c.mc || '').split(' // ').filter(Boolean).length >= c.faces.length;
   c.mdfc = c.lo ? c.lo === 'modal_dfc' : (backCost || /^(?:Instant|Sorcery)\b/.test(ts[0]));
   c.fc = c.faces.map((n, i) => {
@@ -309,7 +310,7 @@ function transformPerm(id, to) {
 function halfParent(c) { const p = c && !c.token ? cardInfo(c.faceOf || c.name) : null; return p && p.fc && p.kind ? p : null; }
 function halfOptions(c) {   // the ways this card in your hand can be cast: fi null = the card itself
   if (!c || c.token || c.faceOf || c.fromExile || c.fromGy) return [];
-  const p = cardInfo(c.name); if (!p || !p.fc || !p.kind) return [];
+  const p = cardInfo(c.name); if (!p || !p.fc || !p.kind || p.kind === 'prepare') return [];
   if (p.kind === 'adventure') return [{ fi: null, rec: p.fc[0], label: p.fc[0].name }, { fi: 1, rec: p.fc[1], label: p.fc[1].name + ' (adventure)' }];
   if (p.kind === 'aftermath') return [{ fi: 0, rec: p.fc[0], label: p.fc[0].name }];   // the other half can only be cast from the graveyard
   return p.fc.map((r, i) => ({ fi: i, rec: r, label: r.name }));
@@ -327,7 +328,7 @@ function healHalves() {
   if (!state) return;
   for (const c of state.hand.slice()) {
     if (state.halfChosen === c.id) continue;
-    if (c.half) restoreHalf(c);
+    if (c.half && c.prepCopy === undefined) restoreHalf(c);   // a prepared spell's copy stays the spell half
     if (c.fromExile) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromExile; state.exile.push(c); } }
     if (c.fromCmd) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); delete c.fromCmd; state.command.push(c); } }   // a cancelled cast from the command zone goes back there
     if (c.fromGy) { const i = state.hand.indexOf(c); if (i >= 0) { state.hand.splice(i, 1); if (c.fromGy.kind === 'disturb' && c.face) setFace(c, 0); delete c.fromGy; state.graveyard.push(c); } }
@@ -337,7 +338,7 @@ function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.fac
 // v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
 function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways && !preparedCastable(c)) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
@@ -1745,7 +1746,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = classLevelOptions(tx, obj) || permChoiceOptions(tx, obj) || exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = classLevelOptions(tx, obj) || preparedOptions(tx, obj) || permChoiceOptions(tx, obj) || exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -2114,6 +2115,7 @@ function enterBattlefield(c, o = {}) {
     else if ((cm = tx0.match(/^As .+? enters(?: the battlefield)?(?: tapped)?, choose an? ([^.\n]+)\./im)) && !/\bfrom among\b/i.test(cm[1])) queueTrigger({ kind: 'choose', cardId: c.id, what: cm[1].trim().toLowerCase() }); }
   memNote('entered', c);
   if (o.afterPlace) o.afterPlace(c);
+  if (!c.prepared && prepSpellOf(c) && entersPrepared(c)) becomePrepared(c, 'it enters prepared');   // CR 722.3c
   landEntryTriggers(c, o.from !== 'hand');   // a land you played can be taken back; one put there by an effect cannot
   permanentEntered(c);
   return c;
@@ -2135,6 +2137,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.origName) { c.name = c.origName; delete c.origName; }
   const _mp = c.mutParts ? c : null;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
+  if (c.prepared) unprepare(c, 'it left the battlefield');   // CR 722.3c
   delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
     // CR 701.37b: monstrous lasts until it leaves the battlefield
   if (_mp) mutSpawnParts(c, dest);
@@ -3048,6 +3051,7 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   const fromC=centerOf(`#row-hand .card[data-id="${id}"]`); noteFlightFrom(id,`#row-hand .card[data-id="${id}"]`);
   snap(); const [c]=state.hand.splice(f.idx,1); sfx('cast'); spotlight(c,'cast',fromC);
   state.halfChosen=null; delete c.preAlt; delete c.miracleNow; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':c.fromCmd?'command zone':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
+  if(c.prepCopy!==undefined){ const pf=findCard(c.prepCopy); if(pf&&pf.card.prepared){ delete pf.card.prepared; log(`${pf.card.name}: cast its prepared spell, so it is no longer prepared (CR 722.3c + 601.2i)`); } }
   if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.warpExile; delete c.plotted; delete c.foretold; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
   if(c.fromCmd){ delete c.fromCmd; c.cmdCasts=(c.cmdCasts||0)+1; log(`${c.name}: cast from the command zone (cast ${c.cmdCasts} time${c.cmdCasts===1?'':'s'}; it will cost {${2*c.cmdCasts}} more next time)`); }
   c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
@@ -3830,6 +3834,13 @@ function refreshDeckSelect() {
   else if (cur && decks[cur]) lsSet('mtgpt.current', '');   // the chosen deck belongs to the other mode
   if (typeof applyUiTheme === 'function' && settings.uiTheme === 'deck') applyUiTheme();
   const dc = $('#deckCur'); if (dc) dc.textContent = names.length ? (sel.value || names[0]) : 'No decks yet';
+  newGameCue();
+}
+// v0.99.47 the deck you picked is not the one on the table yet: the New Game button glows until you start a game with it
+function newGameCue() {
+  const b = $('#btnNew'); if (!b) return; const cur = currentDeckName(), on = !!(state && state.deckName && cur && cur !== state.deckName);
+  b.classList.toggle('pending', on);
+  b.title = on ? `Start a new game with ${cur} (the game on the table is using ${state.deckName})` : 'Start a new game with the selected deck';
 }
 
 function getCurrentDeck() {
@@ -4002,6 +4013,7 @@ function startGame() {
   drawCards(7, true);
   state.phase = 'mull';
   state.onPlay = $('#chkPlay').checked;
+  state.deckName = deck.name;   // v0.99.47 which deck this game is using (the New Game button lights up when you pick another)
   state.log.push(`New game: ${deck.name} (${sum(deck.main)} cards, ${state.onPlay ? 'on the play' : 'on the draw'})`);
   if (unknown.size) state.log.push('Not found in card data: ' + [...unknown].join(', '));
   render();
@@ -5298,7 +5310,7 @@ function cardEl(c, zone) {
   const ptc = ((!pw || selfBecomes(c)) && zone === 'battlefield' && permZone(c) === 'creatures' && (c.token || info)) ? ptCalc(c) : null;
   const pt = pw && !selfBecomes(c) ? null : ptc ? ptText(c) : (c.token ? c.tk.pt : info && info.pt);
   const e = h('div', {
-    class: `card c-${colorClass(c)}${isFoil(c) ? ' foil' : ''}${pt ? ' haspt' : ''}${c.tapped ? ' tapped' : ''}${selected === c.id ? ' sel' : ''}${bottomSel.has(c.id) ? ' bsel' : ''}${zone === 'hand' && state && (state.discarding || (state.phase === 'mull' && state.bottomPhase)) ? (!handPick || !handPick.ok || handPick.ok(c) ? ' pickable' : ' nopick') : ''}${zone === 'hand' && teach('playability') ? ' cast-' + handInteraction(c) : ''}${zone === 'hand' && isInstantSpeed(c) && teach('playability') ? ' instant-speed' : ''}${zone === 'battlefield' && teach('playability') && activationReady(c) ? ' cast-ready act-ready' : ''}${zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' sick' : ''}`,
+    class: `card c-${colorClass(c)}${isFoil(c) ? ' foil' : ''}${pt ? ' haspt' : ''}${c.tapped ? ' tapped' : ''}${c.prepared ? ' prepared' : ''}${selected === c.id ? ' sel' : ''}${bottomSel.has(c.id) ? ' bsel' : ''}${zone === 'hand' && state && (state.discarding || (state.phase === 'mull' && state.bottomPhase)) ? (!handPick || !handPick.ok || handPick.ok(c) ? ' pickable' : ' nopick') : ''}${zone === 'hand' && teach('playability') ? ' cast-' + handInteraction(c) : ''}${zone === 'hand' && isInstantSpeed(c) && teach('playability') ? ' instant-speed' : ''}${zone === 'battlefield' && teach('playability') && activationReady(c) ? ' cast-ready act-ready' : ''}${zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' sick' : ''}`,
     draggable: 'true', 'data-id': c.id, title: c.name + (!c.token && cardInfo(c.name) && cardInfo(c.name).mc ? '  ' + cardInfo(c.name).mc : '') + (zone === 'hand' ? handTip(c) : '') + (zone === 'battlefield' && teach('playability') && activationReady(c) ? ' — ' + activationReady(c) : '') + (zone === 'battlefield' && teach('summoningSick') && isSick(c) ? ' — ' + SICK_TEXT : '')
   },
     isFoil(c) ? foilEl() : null,
@@ -5778,7 +5790,7 @@ function renderManaPool() {
 // (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
 let renderCache = null, layoutQueued = false;
 function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
-function render() { const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } }
+function render() { try { newGameCue(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } }
 function layoutPass() {
   layoutQueued = false;
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
@@ -6215,6 +6227,7 @@ function showCardMenu(c, zone, x, y) {
   if (!state) return;
   const items = [];
   if (zone === 'battlefield') {
+    { const sp = prepSpellOf(c); if (sp && c.prepared && !c.opp) items.push({ label: `Cast ${sp.name} ${sp.mc || ''} (prepared)`, fn: () => castPrepared(c) }); }   // CR 722.3c
     if (isManaPermanent(c) && !c.tapped && !isSacManaSource(c) && !(isLandName(c.name) && fetchInfo(c))) items.push({ label: 'Tap for mana…', fn: () => tapForMana(c.id) });
     else { items.push({ label: c.tapped ? 'Untap' : 'Tap', fn: () => toggleTap(c.id) }); if (c.tapped) items.push({ label: 'Untap (a card effect untaps it)', fn: () => untapByEffect(c.id) }); }
     if (isLandName(c.name) && !c.tapped) items.push({ label: 'Tap without floating mana', fn: () => { snap(); c.tapped=true; render(); } });
@@ -6414,6 +6427,7 @@ function openZone(zone) {
       if (zone === 'command' && c.isCommander) row.append(h('button', { class: 'primary', text: `Cast${(c.cmdCasts || 0) ? ' (+{' + 2 * c.cmdCasts + '} tax)' : ''}`, title: 'Cast your commander from the command zone (CR 903.8): it costs {2} more for each time you have cast it from there', onclick: () => { m.close(); castFromCommand(c.id); } }));
       if (zone === 'exile' && (c.mayPlayTurn === state.turn || c.mayPlayAlways)) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
       if (zone === 'exile' && c.freeCastTurn === state.turn && !isLandName(c.name)) row.append(h('button', { class: 'primary', text: 'Cast free (this turn)', title: 'An effect lets you cast this exiled card without paying its mana cost until end of turn', onclick: () => { m.close(); suspendCastFree(c.id, null, 'Free cast'); } }));
+      if (zone === 'exile' && c.prepCopy !== undefined && preparedCastable(c)) row.append(h('button', { class: 'primary', text: `Cast (prepared by ${c.prepSource})`, title: 'A copy of a prepared creature\'s spell: cast it for its own mana cost, with its normal timing. Casting it unprepares the creature (CR 722.3c).', onclick: () => { m.close(); castPrepared(c); } }));
       if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && stashReady(c)) row.append(h('button', { class: 'primary', text: c.plotted ? 'Cast free (plotted)' : 'Cast (foretold)', title: c.plotted ? 'You plotted this on an earlier turn: cast it without paying its mana cost, at sorcery speed' : 'You foretold this on an earlier turn: cast it for its foretell cost', onclick: () => { m.close(); castFromExile(c.id); } }));
       if (zone === 'exile' && c.onAdv) row.append(h('button', { class: 'primary', text: 'Cast creature', title: 'This card was exiled on an adventure: you may cast it from exile', onclick: () => { m.close(); castFromExile(c.id); } }));
@@ -6665,8 +6679,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.46';
+const APP_VERSION = '0.99.47';
 const CHANGELOG = [
+  { v: '0.99.47', title: 'Prepared, and a New Game reminder', notes: ['RULES (CR 722, prepared): preparation cards such as Carnivorous Cultivator // Enroot now work. From your hand you cast only the creature. When it becomes prepared ("enters prepared", or an effect that prepares it) a copy of its spell waits in exile, marked PREPARED on the creature. Cast it from the creature\'s menu or the exile zone for the spell\'s own cost and timing; casting it unprepares the creature, even if the copy is countered, and the copy never goes to your graveyard. A creature can\'t be prepared twice, and leaving the battlefield ends it.', 'When you pick a different deck, the New Game button glows until you start a game with it, so you know the table still has the old deck.'] },
   { v: '0.99.46', title: 'Deck scan report includes your full lists', notes: ['The deck scan report (deck screen \u2192 Scan decks & save report) now ends with the full list of every deck, including sideboards and any sideboarded list in use, so your decks can be rebuilt exactly for testing.', 'FIXED: the report always said "Card data loaded: NONE" even when your card data was loaded.'] },
   { v: '0.99.45', title: 'Library of Alexandria: dredge, Omniscience, suspend, Hogaak', notes: [
     'The app is now called Library of Alexandria. Your decks, settings and updates are untouched (it keeps the same data folder and update channel).',
@@ -9613,6 +9628,7 @@ const KW_ENFORCED = { has(n) {
   return kwEnfMemo.has(n);
 } };
 const STATIC_PATTERNS = [
+  [/^(?:~|this creature) enters prepared\.?$/i, 'Prepared (CR 722.3c): it enters prepared, so a copy of its prepare spell waits in exile; cast it from the creature\'s menu or the exile zone. Casting it unprepares the creature.'],
   [/^you can'?t spend mana to cast this spell\.?$/i, "Can't spend mana (CR 601.2h): the whole cost has to be paid by convoke, delve and the like; the app refuses mana for it."],
   [/^you may cast (?:this card|~) from your graveyard\.?$/i, 'Cast from the graveyard (CR 601.3): the graveyard shows a Cast button for it, with the normal timing and cost.'],
   [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
@@ -13433,6 +13449,49 @@ function graveyardSelfOptions(t, obj) {
   if (/^that creature deals damage equal to its power to any target\.?$/i.test(t)) {
     const who = obj.otherId !== undefined ? obj.otherId : obj.sourceId;
     return [{ full: false, label: 'That creature deals damage equal to its power to the opponent', fn: () => { const f = findCard(who); if (!f) { toast('Gone', 'That creature is no longer on the battlefield; use its last known power by hand.'); return; } const p = (ptCalc(f.card) || {}).p || 0; snap(); changeOppLife(-p); log(`${src}: ${f.card.name} dealt ${p} damage to the opponent`); render(); } }];
+  }
+  return null;
+}
+// ---- v0.99.47 Preparation cards (CR 722, Secrets of Strixhaven / Reality Fracture). Scryfall layout "prepare": face 0 is the creature, face 1 its prepare spell.
+// 722.3a "Prepared" is a designation (a marker, like monstrous). A permanent without a prepare spell can't become prepared, and one that is prepared can't become prepared again.
+// 722.3c As it becomes prepared, its controller creates a copy of its prepare spell in exile. That copy stays there while the permanent stays on the battlefield
+//        and prepared; its controller may cast it (paying its own mana cost, normal timing). The permanent stops being prepared as the copy becomes cast (601.2i),
+//        so a countered copy still leaves it unprepared. Leaving the battlefield or an "unprepare" effect ends the designation and the copy ceases to exist.
+function prepSpellOf(c) { if (!c || c.token && !c.tk) return null; const i = cardInfo(c.faceOf || c.origName || c.name); return i && i.lo === 'prepare' && i.fc && i.fc[1] ? i.fc[1] : (i && i.prep && i.fc && i.fc[1] ? i.fc[1] : null); }
+function prepCopyOf(c) { return state ? state.exile.find(x => x.prepCopy === c.id) || state.hand.find(x => x.prepCopy === c.id) : null; }
+function becomePrepared(c, why) {
+  if (!state || !c) return false; const sp = prepSpellOf(c);
+  if (!sp) { log(`${c.name} has no prepare spell, so it can't become prepared (CR 722.3a)`); return false; }
+  if (c.prepared) { log(`${c.name} is already prepared (CR 722.3a)`); return false; }
+  c.prepared = true;
+  const parent = (cardInfo(c.faceOf || c.origName || c.name) || {}).name || c.name;   // the copy is the prepare half of the same card (like a split card's half)
+  const cp = Object.assign(newCard(parent), { id: state.nextId++, copy: true, prepCopy: c.id, prepSource: c.name }); castAsHalf(cp, 1);
+  state.exile.push(cp); log(`${c.name} became prepared${why ? ' (' + why + ')' : ''}: a copy of ${sp.name} is in exile; you may cast it (CR 722.3c)`); render(); return true;
+}
+function unprepare(c, why) {
+  if (!state || !c || !c.prepared) return; delete c.prepared;
+  for (const z of ['exile', 'hand']) { const i = state[z].findIndex(x => x.prepCopy === c.id); if (i >= 0) state[z].splice(i, 1); }
+  log(`${c.name} is no longer prepared${why ? ' (' + why + ')' : ''}; the copy of its spell ceases to exist`);
+}
+const entersPrepared = c => /(?:^|[\s.])(?:~|this creature|this permanent) enters prepared\b/im.test(selfTxt(c) || '');
+function preparedCastable(cp) { const f = cp && findCard(cp.prepCopy); return !!(f && f.zone === 'battlefield' && f.card.prepared && !f.card.opp); }
+function castPrepared(c) {   // from the prepared creature (its menu) or from the copy in exile
+  const cp = c.prepCopy !== undefined ? c : state.exile.find(x => x.prepCopy === c.id); if (!cp) { toast('Not prepared', `${c.name} is not prepared.`); return; }
+  if (!canCastNow(cp)) { toast('Wrong timing', `${cp.name} follows its own timing: ${/\bInstant\b/.test(frontType(cp) || '') ? 'any time you have priority' : 'your main phase with an empty stack'}.`); return; }
+  const i = state.exile.indexOf(cp); if (i < 0) return; state.exile.splice(i, 1); cp.fromExile = true; state.hand.push(cp); state.halfChosen = cp.id; castSpell(cp.id);
+}
+// "~ becomes prepared." / "target creature you control becomes prepared." / "prepare target creature" / "~ becomes unprepared"
+function preparedOptions(tx, obj) {
+  const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); let m; const src = (obj && obj.sourceName) || 'It';
+  if ((m = t.match(/^(?:if you do, )?(?:~|this creature|it) becomes (un)?prepared\.?$/i)) && obj && obj.sourceId !== undefined)
+    return [{ full: true, label: `${src} becomes ${m[1] ? 'unprepared' : 'prepared'}`, fn: () => { const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { log(`${src} is no longer on the battlefield`); return; } snap(); if (m[1]) unprepare(f.card, src); else becomePrepared(f.card, src); render(); } }];
+  if ((m = t.match(/^(?:(?:up to one )?target creature(?: you control)? becomes (un)?prepared|(un)?prepare (?:up to one )?target creature(?: you control)?)\.?$/i))) { const un = !!(m[1] || m[2]);
+    return [{ full: true, label: `${un ? 'Unprepare' : 'Prepare'} a creature`, fn: () => {
+      const tg = (obj && obj.targets || []).find(q => q.id !== undefined); const go = k => { snap(); if (un) unprepare(k, src); else becomePrepared(k, src); render(); };
+      if (tg) { const g = findCard(tg.id); if (g && g.zone === 'battlefield') go(g.card); return; }
+      const cands = state.battlefield.filter(k => !k.opp && permTypeInfo(k).types.has('creature') && (un ? k.prepared : prepSpellOf(k) && !k.prepared));
+      if (!cands.length) { toast('No creature', un ? 'None of your creatures is prepared.' : 'None of your creatures has a prepare spell that is not already prepared.'); return; }
+      openPickCards({ title: `${src}: ${un ? 'unprepare' : 'prepare'} a creature`, cards: cands, max: 1, done: p => { if (p[0]) go(p[0]); } }); } }];
   }
   return null;
 }

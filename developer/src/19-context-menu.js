@@ -134,6 +134,7 @@ function showCardMenu(c, zone, x, y) {
   if (!state) return;
   const items = [];
   if (zone === 'battlefield') {
+    { const sp = prepSpellOf(c); if (sp && c.prepared && !c.opp) items.push({ label: `Cast ${sp.name} ${sp.mc || ''} (prepared)`, fn: () => castPrepared(c) }); }   // CR 722.3c
     if (isManaPermanent(c) && !c.tapped && !isSacManaSource(c) && !(isLandName(c.name) && fetchInfo(c))) items.push({ label: 'Tap for mana…', fn: () => tapForMana(c.id) });
     else { items.push({ label: c.tapped ? 'Untap' : 'Tap', fn: () => toggleTap(c.id) }); if (c.tapped) items.push({ label: 'Untap (a card effect untaps it)', fn: () => untapByEffect(c.id) }); }
     if (isLandName(c.name) && !c.tapped) items.push({ label: 'Tap without floating mana', fn: () => { snap(); c.tapped=true; render(); } });

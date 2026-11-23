@@ -159,6 +159,7 @@ function startGame() {
   drawCards(7, true);
   state.phase = 'mull';
   state.onPlay = $('#chkPlay').checked;
+  state.deckName = deck.name;   // v0.99.47 which deck this game is using (the New Game button lights up when you pick another)
   state.log.push(`New game: ${deck.name} (${sum(deck.main)} cards, ${state.onPlay ? 'on the play' : 'on the draw'})`);
   if (unknown.size) state.log.push('Not found in card data: ' + [...unknown].join(', '));
   render();

@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.46';
+const APP_VERSION = '0.99.47';
 const CHANGELOG = [
+  { v: '0.99.47', title: 'Prepared, and a New Game reminder', notes: ['RULES (CR 722, prepared): preparation cards such as Carnivorous Cultivator // Enroot now work. From your hand you cast only the creature. When it becomes prepared ("enters prepared", or an effect that prepares it) a copy of its spell waits in exile, marked PREPARED on the creature. Cast it from the creature\'s menu or the exile zone for the spell\'s own cost and timing; casting it unprepares the creature, even if the copy is countered, and the copy never goes to your graveyard. A creature can\'t be prepared twice, and leaving the battlefield ends it.', 'When you pick a different deck, the New Game button glows until you start a game with it, so you know the table still has the old deck.'] },
   { v: '0.99.46', title: 'Deck scan report includes your full lists', notes: ['The deck scan report (deck screen \u2192 Scan decks & save report) now ends with the full list of every deck, including sideboards and any sideboarded list in use, so your decks can be rebuilt exactly for testing.', 'FIXED: the report always said "Card data loaded: NONE" even when your card data was loaded.'] },
   { v: '0.99.45', title: 'Library of Alexandria: dredge, Omniscience, suspend, Hogaak', notes: [
     'The app is now called Library of Alexandria. Your decks, settings and updates are untouched (it keeps the same data folder and update channel).',

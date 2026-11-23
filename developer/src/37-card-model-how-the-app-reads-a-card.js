@@ -18,6 +18,7 @@ const KW_ENFORCED = { has(n) {
   return kwEnfMemo.has(n);
 } };
 const STATIC_PATTERNS = [
+  [/^(?:~|this creature) enters prepared\.?$/i, 'Prepared (CR 722.3c): it enters prepared, so a copy of its prepare spell waits in exile; cast it from the creature\'s menu or the exile zone. Casting it unprepares the creature.'],
   [/^you can'?t spend mana to cast this spell\.?$/i, "Can't spend mana (CR 601.2h): the whole cost has to be paid by convoke, delve and the like; the app refuses mana for it."],
   [/^you may cast (?:this card|~) from your graveyard\.?$/i, 'Cast from the graveyard (CR 601.3): the graveyard shows a Cast button for it, with the normal timing and cost.'],
   [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
