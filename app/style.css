@@ -2050,3 +2050,118 @@ body.a11y-targets .hall-btn { min-height: 44px; }
 .hall-desk { z-index: 3; }
 .hall-desk::before { height: 66%; transform: perspective(900px) rotateX(38deg); }
 #hall .hall-tome { width: min(620px, 88%); }
+
+/* ===== v0.99.50 The Library as one room seen through one camera =====
+   Stage: 1600 x 900 units, scaled to the window. Camera: perspective 1400, eye at (800, 470).
+   Wall at z = 0. Shelves hang at plank tops y = 200 and y = 410 (both above or near the eye line), 110 deep.
+   Desk top: the plane y = 560 coming towards you; the menu book leans on a stand at its back. */
+#hall .hall-view { position: absolute; inset: 0; overflow: hidden; }
+#hall .hall-stage { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; margin: -450px 0 0 -800px; transform: scale(var(--hs, 1)); transform-origin: 50% 50%;
+  background: radial-gradient(ellipse 50% 45% at 50% 30%, rgba(255,214,160,.10), transparent 70%), linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.05) 35%, rgba(0,0,0,.35) 62%), var(--wall-plaster) 0 0 / 256px 256px, #3a2a20; }
+#hall .hall-world { position: absolute; inset: 0; perspective: 1400px; perspective-origin: 800px 470px; }
+#hall .hall-world > * { transform-style: preserve-3d; }
+/* name plate on the wall */
+#hall .hall-plaque { position: absolute; left: 600px; top: 46px; width: 400px; height: 116px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  font-family: Georgia, 'Times New Roman', serif; border-radius: 6px; text-shadow: 0 2px 6px rgba(0,0,0,.7);
+  background: linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.45)), var(--wood-plank) 0 30% / 700px auto; box-shadow: 0 10px 22px rgba(0,0,0,.55), inset 0 0 0 2px rgba(227,185,92,.55), inset 0 0 0 6px rgba(0,0,0,.35), inset 0 1px 0 8px rgba(255,220,170,.08); }
+#hall .hall-plaque b { font-size: 40px; letter-spacing: .14em; color: #f3d58e; }
+#hall .hall-plaque span { font-size: 13px; letter-spacing: .5em; text-transform: uppercase; color: #d9c08e; }
+#hall .hall-pager { display: flex; align-items: center; gap: 8px; font: 12px Georgia, serif; color: #e7cf9e; letter-spacing: 0; text-transform: none; }
+#hall .hall-pager button { padding: 0 8px; min-height: 0; line-height: 18px; }
+/* the shelves */
+#hall .bk-case { position: absolute; inset: 0; display: block; padding: 0; margin: 0; background: none; box-shadow: none; border-radius: 0; min-height: 0; transform-style: preserve-3d; }
+#hall .bk-shelf { position: absolute; width: 440px; height: 164px; padding: 0; transform-style: preserve-3d; }
+#hall .bk-shelf:nth-child(1) { left: 40px; top: 50px; }   #hall .bk-shelf:nth-child(2) { left: 1120px; top: 50px; }
+#hall .bk-shelf:nth-child(3) { left: 40px; top: 260px; }  #hall .bk-shelf:nth-child(4) { left: 1120px; top: 260px; }
+#hall .bk-shelf::before { content: none; }
+#hall .bk-shelf::after { content: ''; position: absolute; left: 3%; right: 3%; top: 160px; height: 70px; pointer-events: none; border-radius: 50%;
+  background: radial-gradient(ellipse 50% 60% at 50% 10%, rgba(0,0,0,.5), rgba(0,0,0,0) 75%); filter: blur(5px); }
+#hall .bk-row { position: absolute; left: 0; right: 0; bottom: 14px; height: 150px; min-height: 0; margin: 0; padding: 0 22px; display: flex; align-items: flex-end; justify-content: center; gap: 3px; perspective: none; transform-style: preserve-3d; z-index: auto; }
+#hall .bk-row::after { content: none; }
+#hall .bk-tile, #hall .bk-stage { transform-style: preserve-3d; }
+#hall .bk-stage { transform: translateZ(52px); }
+#hall .bk-stage .bk { filter: none; }
+#hall .bk-stage:hover .bk, #hall .bk-stage:focus-visible .bk { transform: translateY(-6px); filter: none; }
+#hall .bk-stage:hover .bk-face.spine, #hall .bk-stage:focus-visible .bk-face.spine { filter: brightness(1.18); }
+#hall .bk-ribbon { transform: translateX(-50%) translateZ(102px); }
+#hall .bk-plank { position: absolute; left: 0; right: 0; top: 150px; height: 14px; margin: 0; border-radius: 2px; transform: translateZ(110px); transform-style: preserve-3d; box-shadow: none;
+  background: linear-gradient(180deg, rgba(255,225,185,.35) 0, rgba(255,225,185,0) 3px, rgba(0,0,0,0) 8px, rgba(0,0,0,.25) 100%), var(--wood-plank) 0 40% / 900px auto; }
+/* top surface and underside, each running from the front edge back to the wall */
+#hall .bk-plank::before, #hall .bk-plank::after { content: ''; position: absolute; left: 0; right: 0; height: 110px; transform-origin: 50% 0; transform: rotateX(-90deg); clip-path: none; filter: none; z-index: auto; border-radius: 0; }
+#hall .bk-plank::before { top: 0; background: linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,0) 60%), var(--wood-plank) 0 10% / 900px auto; }
+#hall .bk-plank::after { top: 14px; background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(15,8,3,.35)), var(--wood-plank) 0 70% / 900px auto; }
+#hall .bk-empty { position: absolute; left: 40px; top: 120px; width: 440px; text-align: center; color: #e7cf9e; font: italic 15px Georgia, serif; }
+/* the desk */
+#hall .hall-desktop { position: absolute; left: -500px; width: 2600px; top: 560px; height: 1000px; transform-origin: 50% 0; transform: rotateX(90deg);
+  background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.12) 18%, rgba(0,0,0,0) 40%), var(--wood-desk) 0 0 / 1300px 650px; }
+#hall .hall-deskfront { position: absolute; left: -500px; width: 2600px; top: 560px; height: 240px; transform: translateZ(1000px);
+  background: linear-gradient(180deg, rgba(255,215,165,.35) 0, rgba(255,215,165,0) 4px, rgba(0,0,0,.45) 60%, rgba(0,0,0,.7)), var(--wood-plank) 0 30% / 1100px auto; }
+#hall .hall-tome-shadow { position: absolute; left: 470px; width: 660px; top: 559px; height: 170px; transform-origin: 50% 0; transform: rotateX(90deg); pointer-events: none;
+  background: radial-gradient(ellipse 50% 45% at 50% 55%, rgba(0,0,0,.6), rgba(0,0,0,0) 75%); }
+#hall .hall-stand { position: absolute; left: 492px; width: 616px; top: 544px; height: 16px; border-radius: 3px; transform: translateZ(104px);
+  background: linear-gradient(180deg, rgba(255,225,185,.4) 0, rgba(255,225,185,0) 3px, rgba(0,0,0,.35)), var(--wood-plank) 0 60% / 800px auto; box-shadow: 0 2px 3px rgba(0,0,0,.5); }
+/* the menu book, leaning back on its stand */
+#hall .hall-tome { position: absolute; left: 510px; top: 230px; width: 580px; height: 326px; margin: 0; transform-origin: 50% 100%; transform: translateZ(92px) rotateX(14deg); filter: none; opacity: 1; pointer-events: auto;
+  display: grid; grid-template-columns: 1fr 14px 1fr; box-shadow: 0 -2px 0 rgba(0,0,0,.25); border-radius: 10px; }
+#hall .hall-desk, #hall .hall-room { display: contents; }
+#hall .hall-tome .hall-page { min-height: 0; height: 100%; box-sizing: border-box; padding: 18px 20px 16px; overflow: hidden; }
+#hall .hall-tome .hall-btn { padding: 5px 8px; font-size: 15px; }
+#hall .hall-tome.deck-open > .hall-page, #hall .hall-tome.deck-open > .hall-spine { visibility: hidden; }
+#hall .hall-hint { position: absolute; left: 0; right: 0; bottom: 26px; text-align: center; font: italic 15px Georgia, serif; color: #f0dcae; text-shadow: 0 1px 4px #000; opacity: .9; z-index: 2; }
+#hall .hall-stage:has(.dbx-pull) .hall-hint { opacity: 0; }
+#hall .hall-close { position: absolute; right: 18px; top: 14px; z-index: 5; }
+/* a book taken down stands on the desk to the left of the open book */
+#hall .dbx-pull { position: absolute; inset: 0; display: block; background: none; border-radius: 0; pointer-events: none; transform-style: preserve-3d; z-index: auto; padding: 0; }
+#hall .dbx-pull-in { position: absolute; inset: 0; display: block; padding: 0; transform-style: preserve-3d; }
+#hall .dbx-turn { position: absolute; left: 330px; top: 300px; width: 200px; height: 260px; display: flex; align-items: flex-end; justify-content: center; perspective: none; transform-style: preserve-3d; transform: translateZ(200px); pointer-events: auto; }
+#hall .bk.big { --T: 40px !important; --H: 170px !important; --D: 124px !important; }
+#hall .bk.big .bk-title { font-size: 13px; }
+#hall .dbx-shadow { left: 50%; bottom: 0; width: 220px; height: 120px; margin-left: -110px; transform-origin: 50% 100%; transform: translateY(60px) rotateX(90deg); z-index: auto;
+  background: radial-gradient(ellipse 45% 40%, rgba(0,0,0,.6), rgba(0,0,0,0) 72%); }
+/* its details fill the open book's pages */
+#hall .tome-info { position: absolute; inset: 0; width: auto; max-height: none; margin: 0; box-sizing: border-box; padding: 16px 22px 14px; border: 0; border-radius: 10px; overflow: hidden;
+  display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: min-content; column-gap: 52px; row-gap: 5px; align-content: start;
+  color: #2c1d0e; font-family: Georgia, 'Times New Roman', serif; box-shadow: none;
+  background: linear-gradient(90deg, transparent calc(50% - 22px), rgba(90,55,20,.25) calc(50% - 7px), #6e4f26 50%, rgba(90,55,20,.25) calc(50% + 7px), transparent calc(50% + 22px)), linear-gradient(180deg, #f2e6c8, #e6d4ab); }
+#hall .tome-info > * { grid-column: 1; min-width: 0; }
+#hall .tome-info > .dbx-top { grid-column: 2; grid-row: 1 / span 3; }
+#hall .tome-info > .dbx-acts { grid-column: 2; grid-row: 4 / span 8; align-self: start; display: flex; flex-wrap: wrap; gap: 5px; }
+#hall .tome-info h3 { margin: 0; font-size: 21px; color: #4a250c; }
+#hall .tome-info .muted, #hall .tome-info .fhead { color: #6a4d28; }
+#hall .tome-info .fhead { font-size: 11px; letter-spacing: .2em; text-transform: uppercase; border-bottom: 1px solid rgba(122,79,29,.35); margin-bottom: 2px; }
+#hall .tome-info .dbx-types span { background: rgba(122,79,29,.14); color: #3a2814; border: 0; }
+#hall .tome-info .dbx-curve { height: 54px; }
+#hall .tome-info .dbx-cbar i { background: linear-gradient(180deg, #a0662a, #6e4219); }
+#hall .tome-info .dbx-cbar b, #hall .tome-info .dbx-cbar span { color: #4a3218; }
+#hall .tome-info .lib-notes { font-size: 12px; color: #3a2814; background: rgba(122,79,29,.08); border-left: 2px solid rgba(122,79,29,.5); padding: 4px 7px; }
+#hall .tome-info .dbx-top div { font-size: 13px; }
+#hall .tome-info button { font: 13px Georgia, serif; color: #2c1d0e; background: rgba(122,79,29,.10); border: 1px solid rgba(122,79,29,.4); border-radius: 5px; padding: 4px 9px; min-height: 0; }
+#hall .tome-info button:hover, #hall .tome-info button:focus-visible { background: rgba(122,79,29,.22); }
+#hall .tome-info button.primary { width: 100%; font-weight: 700; color: #fff4dc; background: linear-gradient(180deg, #9a3a1c, #6e220c); border-color: #5a1a08; padding: 7px 10px; }
+#hall .tome-info button.danger { color: #8a1c0c; }
+/* v0.99.50 sizes: books at 80%; shelf boxes 470 x 194 (180 for books + 14 plank); plank tops at y = 214 and 444 */
+#hall .bk-shelf { width: 470px; height: 194px; }
+#hall .bk-shelf:nth-child(1) { left: 30px; top: 20px; }   #hall .bk-shelf:nth-child(2) { left: 1100px; top: 20px; }
+#hall .bk-shelf:nth-child(3) { left: 30px; top: 250px; }  #hall .bk-shelf:nth-child(4) { left: 1100px; top: 250px; }
+#hall .bk-row { height: 180px; padding: 0 16px; }
+#hall .bk-plank { top: 180px; transform: translateZ(124px); }
+#hall .bk-plank::before, #hall .bk-plank::after { height: 124px; }
+#hall .bk-shelf::after { top: 190px; }
+#hall .bk-stage { transform: translateZ(62px); }
+#hall .bk-ribbon { transform: translateX(-50%) translateZ(122px); }
+#hall .bk-empty { left: 30px; width: 470px; top: 110px; }
+#hall .hall-desktop { height: 1300px; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.12) 14%, rgba(0,0,0,0) 32%), var(--wood-desk) 0 0 / 2600px 1300px no-repeat, #7a4a28; }
+#hall .hall-deskfront { display: none; }
+#hall .hall-tome { left: 520px; width: 560px; }
+#hall .hall-stand { left: 502px; width: 596px; }
+#hall .hall-tome-shadow { left: 480px; width: 640px; }
+/* v0.99.50 camera further back (less stretch at the edges), shelves drawn in, the room lowered a little */
+#hall .hall-world { perspective: 1800px; top: 22px; bottom: -22px; }
+#hall .bk-shelf:nth-child(1) { left: 60px; }   #hall .bk-shelf:nth-child(2) { left: 1070px; }
+#hall .bk-shelf:nth-child(3) { left: 60px; }   #hall .bk-shelf:nth-child(4) { left: 1070px; }
+#hall .bk-empty { left: 60px; }
+#hall .hall-desktop { height: 1650px; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.12) 11%, rgba(0,0,0,0) 26%), var(--wood-desk) 0 0 / 2600px 1650px no-repeat, #7a4a28; }
+#hall .dbx-shadow { transform-origin: 50% 100%; transform: translateZ(50px) rotateX(90deg); }
+#hall .hall-stage { background: none; }
+#hall .hall-view { background: radial-gradient(ellipse 50% 40% at 50% 25%, rgba(255,214,160,.10), transparent 70%), linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.05) 35%, rgba(0,0,0,.35) 62%), var(--wall-plaster) 0 0 / 256px 256px, #3a2a20; }
+#hall .bk:not(.big) .bk-title { font-size: 11.5px; margin: 8px 0 5px; max-height: calc(var(--H) - 48px); }
