@@ -78,9 +78,10 @@ function pullDeckBox(m, tile, d) {
     h('div', { class: 'dbx-pips' }, d.cols.length ? d.cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}`, title: c })) : h('span', { class: 'muted small', text: 'Colourless' })),
     h('div', { class: 'dbx-types' }, Object.entries(sm.types).filter(e => e[1]).map(([k, n]) => h('span', { text: `${n} ${n === 1 ? k : k === 'Sorcery' ? 'Sorceries' : k + 's'}` }))),
     h('div', { class: 'dbx-curve', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i}${i === 6 ? '+' : ''}`).join(', ') }, sm.curve.map((n, i) => h('div', { class: 'dbx-cbar' }, h('i', { style: `height:${Math.round(100 * n / maxC)}%` }), h('b', { text: n || '' }), h('span', { text: i === 6 ? '6+' : String(i) })))),
+    libraryNotesEl(d.deckName),
     sm.top.length ? h('div', { class: 'dbx-top' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { text: `${x.qty} × ${x.name}` }))) : null,
     h('div', { class: 'dbx-acts' },
-      btn(d.isCur ? 'Keep using this deck' : 'Use this deck', d.onPick, 'primary'),
+      btn(d.beginLabel || (d.isCur ? 'Keep using this deck' : 'Use this deck'), d.onPick, 'primary'),
       btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
       btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
       h('button', { text: 'Put it back', onclick: () => putBack() }),
@@ -155,6 +156,13 @@ function openDeckPicker() {   // v0.99.44 if the bookcase itself fails, a plain 
     m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor(); } }), h('button', { text: 'Close', onclick: () => m.close() }));
   }
 }
+// v0.99.48 the shelves are shared by the deck window and the Library hall: cb.pick(name), cb.edit(name), cb.redraw(), cb.host ({ el }: where a pulled book lands), cb.beginLabel
+function bookcaseEl(names, cur, mode, cb) {
+  if (!names.length) return h('div', { class: 'muted bk-empty', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' });
+  return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / BOOKS_PER_SHELF)) }, (_, r) => h('div', { class: 'bk-shelf' }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
+    () => cb.pick(n), () => openDeckArtPicker(n, cb.redraw), () => cb.edit(n), () => openCustomArt(n, cb.redraw), () => openSideboarding(n, cb.redraw),
+    (tile, d) => pullDeckBox(cb.host, tile, Object.assign(d, { redraw: cb.redraw, beginLabel: cb.beginLabel }))))), h('div', { class: 'bk-plank' }))));
+}
 function openDeckPicker0() {
   const m = modal('Your decks', { width: 940 }); m.el.classList.add('dbx-modal');
   const draw = () => {
@@ -162,15 +170,10 @@ function openDeckPicker0() {
     const pick = md => { if (md === gameMode()) return; setGameMode(md); const first = decksInMode(loadDecks(), md).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); prepareImages(); render(); draw(); };
     const seg = FEATURES.commander ? h('div', { class: 'modeseg', role: 'tablist', 'aria-label': 'Game mode' },
       ...[['standard', 'Decks', 'Normal goldfish games'], ['commander', 'Commander', 'Commander decks and Commander rules (40 life, command zone, commander tax)']].map(([k, lab, tip]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: tip, text: lab, onclick: () => pick(k) }))) : null;
-    m.body.replaceChildren(seg, names.length
-      ? h('div', { class: 'bk-case' }, Array.from({ length: Math.ceil(names.length / BOOKS_PER_SHELF) }, (_, r) => h('div', { class: 'bk-shelf' }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
-        () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
-        () => openDeckArtPicker(n, draw),
-        () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
-        () => openCustomArt(n, draw),
-        () => openSideboarding(n, draw),
-        (tile, d) => pullDeckBox(m, tile, Object.assign(d, { redraw: draw }))))), h('div', { class: 'bk-plank' }))))
-      : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
+    m.body.replaceChildren(seg, bookcaseEl(names, cur, mode, {
+      pick: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
+      edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
+      redraw: draw, host: m }));
   };
   draw();
   m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor(gameMode() === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }); } }), h('button', { text: 'Scan decks & save report', title: 'Reads every card in every saved deck and saves a text file you can send for review', onclick: saveDeckScanReport }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));

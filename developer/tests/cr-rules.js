@@ -1523,6 +1523,16 @@ const { setup } = require('./common.js');
       const was = s.deckName; __d.lsSet('mtgpt.current', 'Zz Other'); __d.refreshDeckSelect(); const lit = document.getElementById('btnNew').classList.contains('pending');
       __d.lsSet('mtgpt.current', was); __d.refreshDeckSelect(); const off = !document.getElementById('btnNew').classList.contains('pending'); return { was, lit, off }; });
     return { ok: !!r.was && r.lit && r.off, why: JSON.stringify(r) }; });
+  await T('UI library', 'the Library hall: shows the shelves, the open book menu (Continue, New game, Settings, Accessibility...) and the candle; hides the table while open; a pulled book offers "Begin a game with this deck", which starts a game with it and returns to the table; Escape goes back to the table; librarian\'s notes record the game', async () => { await reset();
+    const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); document.getElementById('modalRoot').innerHTML = ''; window.confirm = () => true; __d.openHall(); await W(300);
+      const on = document.body.classList.contains('hall-on'), tableHidden = getComputedStyle(document.getElementById('table')).display === 'none', candle = !!document.querySelector('#hall .candle-flame'), menu = [...document.querySelectorAll('#hall .hall-btn')].map(b => b.textContent);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(600); const escClosed = !document.body.classList.contains('hall-on');
+      __d.openHall(); await W(300); const st = document.querySelector('#hall .bk-stage'); const nm = st.closest('.bk-tile').textContent; st.click(); await W(1000);
+      const begin = [...document.querySelectorAll('#hall .dbx-pull button')].find(b => /^Begin a game/.test(b.textContent)); begin.click(); await W(1200);
+      const closed = !document.body.classList.contains('hall-on'), dn = __d.state.deckName; const notes = JSON.parse(localStorage.getItem('mtgpt.deckNotes') || '{}')[dn];
+      if (__d.state.phase === 'mull') { __d.keepHand(); if (__d.state.bottomPhase) __d.finishMulligan(); }
+      return { on, tableHidden, candle, menu: menu.length, hasCont: menu.some(t => /^Continue/.test(t)), hasSettings: menu.includes('Settings') && menu.includes('Accessibility'), escClosed, closed, dn, games: notes && notes.games }; });
+    return { ok: r.on && r.tableHidden && r.candle && r.hasCont && r.hasSettings && r.escClosed && r.closed && !!r.dn && r.games >= 1, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();
