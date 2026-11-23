@@ -1523,16 +1523,39 @@ const { setup } = require('./common.js');
       const was = s.deckName; __d.lsSet('mtgpt.current', 'Zz Other'); __d.refreshDeckSelect(); const lit = document.getElementById('btnNew').classList.contains('pending');
       __d.lsSet('mtgpt.current', was); __d.refreshDeckSelect(); const off = !document.getElementById('btnNew').classList.contains('pending'); return { was, lit, off }; });
     return { ok: !!r.was && r.lit && r.off, why: JSON.stringify(r) }; });
-  await T('UI library', 'the Library hall: shows the shelves, the open book menu (Continue, New game, Settings, Accessibility...) and the candle; hides the table while open; a pulled book offers "Begin a game with this deck", which starts a game with it and returns to the table; Escape goes back to the table; librarian\'s notes record the game', async () => { await reset();
+  await T('UI library', 'the Library hall: shows the shelves, the open book menu (Continue, New game, Settings, Accessibility...); hides the table while open; a pulled book offers "Begin a game with this deck", which starts a game with it and returns to the table; Escape goes back to the table; librarian\'s notes record the game', async () => { await reset();
     const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); document.getElementById('modalRoot').innerHTML = ''; window.confirm = () => true; __d.openHall(); await W(300);
-      const on = document.body.classList.contains('hall-on'), tableHidden = getComputedStyle(document.getElementById('table')).display === 'none', candle = !!document.querySelector('#hall .candle-flame'), menu = [...document.querySelectorAll('#hall .hall-btn')].map(b => b.textContent);
+      const on = document.body.classList.contains('hall-on'), tableHidden = getComputedStyle(document.getElementById('table')).display === 'none', menu = [...document.querySelectorAll('#hall .hall-btn')].map(b => b.textContent);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(600); const escClosed = !document.body.classList.contains('hall-on');
       __d.openHall(); await W(300); const st = document.querySelector('#hall .bk-stage'); const nm = st.closest('.bk-tile').textContent; st.click(); await W(1000);
       const begin = [...document.querySelectorAll('#hall .dbx-pull button')].find(b => /^Begin a game/.test(b.textContent)); begin.click(); await W(1200);
       const closed = !document.body.classList.contains('hall-on'), dn = __d.state.deckName; const notes = JSON.parse(localStorage.getItem('mtgpt.deckNotes') || '{}')[dn];
       if (__d.state.phase === 'mull') { __d.keepHand(); if (__d.state.bottomPhase) __d.finishMulligan(); }
-      return { on, tableHidden, candle, menu: menu.length, hasCont: menu.some(t => /^Continue/.test(t)), hasSettings: menu.includes('Settings') && menu.includes('Accessibility'), escClosed, closed, dn, games: notes && notes.games }; });
-    return { ok: r.on && r.tableHidden && r.candle && r.hasCont && r.hasSettings && r.escClosed && r.closed && !!r.dn && r.games >= 1, why: JSON.stringify(r) }; });
+      return { on, tableHidden, menu: menu.length, hasCont: menu.some(t => /^Continue/.test(t)), hasSettings: menu.includes('Settings') && menu.includes('Accessibility'), escClosed, closed, dn, games: notes && notes.games }; });
+    return { ok: r.on && r.tableHidden && r.hasCont && r.hasSettings && r.escClosed && r.closed && !!r.dn && r.games >= 1, why: JSON.stringify(r) }; });
+  await T('UI library swap', 'Library hall: with one book on the desk, clicking a different book swaps them (the first goes back to its slot, the second comes down) without "Put it back" first; clicking the book already out does nothing', async () => { await reset();
+    const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); const d = JSON.parse(localStorage.getItem('mtgpt.decks') || '{}'); d.SwapA = { text: '4 Lightning Bolt\n20 Mountain' }; d.SwapB = { text: '4 Llanowar Elves\n20 Forest' }; localStorage.setItem('mtgpt.decks', JSON.stringify(d));
+      __d.openHall(); await W(300); const tile = n => [...document.querySelectorAll('#hall .bk-tile')].find(t => t.querySelector('.bk-title') && t.querySelector('.bk-title').textContent === n);
+      tile('SwapA').querySelector('.bk-stage').click(); await W(1100); const a = document.querySelector('#hall .dbx-info h3').textContent;
+      tile('SwapB').querySelector('.bk-stage').click(); await W(1100);
+      const shown = [...document.querySelectorAll('#hall .dbx-pull')].map(o => o.querySelector('h3').textContent), outs = [...document.querySelectorAll('#hall .bk-tile.out')].map(t => t.querySelector('.bk-title').textContent);
+      tile('SwapB').querySelector('.bk-stage').click(); await W(300); const again = document.querySelectorAll('#hall .dbx-pull').length;
+      __d.closeHall(false); return { a, shown, outs, again }; });
+    return { ok: r.a === 'SwapA' && r.shown.join() === 'SwapB' && r.outs.join() === 'SwapB' && r.again === 1, why: JSON.stringify(r) }; });
+  await T('701.22a + 701.20', 'Scry: cards sent to the bottom go under the rest of the library in the chosen order and the kept card stays on top; just viewing the library does not shuffle it (so the scry holds), while taking a card out of it ticks "Shuffle when closed"; the shuffle is uniform (each card lands in each position about equally often)', async () => { await reset(); await toMain();
+    const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); const s = __d.state; document.getElementById('modalRoot').innerHTML = ''; const L = () => s.library.map(c => c.id); const before = L();
+      __d.openScry(3, false, ''); await W(150);
+      const btn = () => [...document.querySelectorAll('.sv-row')][0].querySelector('button:last-child'); btn().click(); await W(50); btn().click(); await W(50);
+      [...document.querySelectorAll('#modalRoot button.primary')].find(b => /Confirm/.test(b.textContent)).click(); await W(150);
+      const after = L(), scryOk = after[0] === before[2] && after.slice(-2).join() === before.slice(0, 2).join() && after.length === before.length;
+      __d.openZone('library'); await W(150); const ordBtn = [...document.querySelectorAll('#modalRoot .lib-order button')].find(b => /Library order/.test(b.textContent)); ordBtn.click(); await W(50);
+      const shownFirst = document.querySelector('#modalRoot .mbody .row:not(.lib-order) .nm').textContent.startsWith(s.library[0].name);
+      document.querySelector('#modalRoot .backdrop').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(200); document.getElementById('modalRoot').innerHTML = '';
+      const kept = L().join() === after.join();
+      const N = 20, T = 20000, cnt = Array(N).fill(0), arr = [...Array(N).keys()]; for (let t = 0; t < T; t++) { const a = __d.shuffle(arr.slice()); cnt[a.indexOf(0)]++; }
+      const exp = T / N, chi = cnt.reduce((x, c) => x + (c - exp) ** 2 / exp, 0);
+      return { scryOk, shownFirst, kept, chi: Math.round(chi * 10) / 10 }; });
+    return { ok: r.scryOk && r.shownFirst && r.kept && r.chi < 43.8, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

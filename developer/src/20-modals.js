@@ -108,7 +108,10 @@ function openDeckEditor(opts) {
 function openZone(zone) {
   if (!state) return;
   const names = { library: 'Library', graveyard: 'Graveyard', exile: 'Exile', sideboard: 'Sideboard', hand: 'Hand', command: 'Command zone' };
-  const shuffleChk = h('input', { type: 'checkbox', checked: true });
+  // v0.99.49 just looking through the library no longer shuffles it (that undid scry and other ordering); taking a card out
+  // of it ticks "Shuffle when closed", since a search ends with a shuffle (CR 701.23 / 701.20).
+  const shuffleChk = h('input', { type: 'checkbox', checked: false });
+  let libOrder = false;
   const m = modal(names[zone], {
     width: 680,
     onClose: () => {
@@ -131,7 +134,11 @@ function openZone(zone) {
       m.body.append(box);
     }
     let list = state[zone].slice();
-    if (zone === 'library' || zone === 'sideboard') list.sort((a, b) => a.name.localeCompare(b.name));
+    if (zone === 'library') m.body.append(h('div', { class: 'row lib-order' }, h('span', { class: 'muted small', text: 'Show:' }),
+      h('button', { class: libOrder ? '' : 'primary', text: 'A–Z', title: 'Sorted by name, like searching for a card', onclick: () => { libOrder = false; draw(); } }),
+      h('button', { class: libOrder ? 'primary' : '', text: 'Library order (top first)', title: 'The real order: the first card is the one you draw next, the last is the bottom card', onclick: () => { libOrder = true; draw(); } })));
+    if ((zone === 'library' && !libOrder) || zone === 'sideboard') list.sort((a, b) => a.name.localeCompare(b.name));
+    else if (zone === 'library') { /* top first, as stored */ }
     else list.reverse();
     if (!list.length) m.body.append(h('div', { class: 'muted', text: 'Empty.' }));
     for (const c of list) {
@@ -142,6 +149,7 @@ function openZone(zone) {
         c.timeCounters > 0 ? h('span', { class: 'ok', title: 'Suspended: one time counter is removed at each of your upkeeps', text: `\u23F3 ${c.timeCounters} time counter${c.timeCounters === 1 ? '' : 's'}` }) : null
       );
       const act = (label, to, pos) => h('button', { text: label, onclick: () => {
+        if (zone === 'library' && to !== 'library') shuffleChk.checked = true;
         moveCard(c.id, to, pos);
         if (to === 'hand') { /* keep window open for multi-pick */ }
         draw();

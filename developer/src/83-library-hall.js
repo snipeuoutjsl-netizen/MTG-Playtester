@@ -1,5 +1,5 @@
 // ---- v0.99.48 The Library hall: the start screen. Your decks are books on the shelves (left); the reading desk (right) holds an open book
-// whose pages are the menu, and a candle. Pulling a book lays it on the desk with its details and "Begin". Shown at every launch unless switched off.
+// whose pages are the menu. Pulling a book lays it on the desk with its details and "Begin". Shown at every launch unless switched off.
 const HALL_KEY = 'mtgpt.hallStart', NOTES_KEY = 'mtgpt.deckNotes';
 // Librarian's notes: real numbers from games played in the app (never invented).
 function deckNotes(name) { const a = lsGet(NOTES_KEY, {}) || {}; return a[name] || null; }
@@ -59,8 +59,7 @@ function drawHall() {
     btn(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }),
     h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
     h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
-  const candle = h('div', { class: 'candle', 'aria-hidden': 'true' }, h('div', { class: 'candle-glow' }), h('div', { class: 'candle-flame' }, h('i')), h('div', { class: 'candle-wick' }), h('div', { class: 'candle-wax' }), h('div', { class: 'candle-dish' }));
-  desk.append(h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right), candle, h('div', { class: 'hall-hint', text: names.length ? 'Pull a book from the shelves to lay it on the desk.' : '' }));
+  desk.append(h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right), h('div', { class: 'hall-hint', text: names.length ? 'Pull a book from the shelves to lay it on the desk.' : '' }));
   el.replaceChildren(
     h('header', { class: 'hall-top' }, h('div', { class: 'hall-title' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' })), inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null),
     h('div', { class: 'hall-room' }, h('div', { class: 'hall-shelves' }, shelf), desk));
