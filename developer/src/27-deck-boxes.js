@@ -31,7 +31,7 @@ function bookModel(deckName, deck, cols, im, big) {
       h('div', { class: 'dbx-gloss' }),
       h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...pips))),
     h('div', { class: 'bk-face back' }),
-    h('div', { class: 'bk-face top' }));
+    h('div', { class: 'bk-face top' }), h('div', { class: 'bk-face bottom' }), h('div', { class: 'bk-face fore' }));   // v0.99.51 a closed book: page block on top, bottom and fore-edge
 }
 const tiltWith = (zone, box) => {
   zone.addEventListener('mousemove', e => { const r = zone.getBoundingClientRect(); box.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); box.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
@@ -94,7 +94,11 @@ function pullDeckBox(m, tile, d) {
   const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, sc3 ? null : info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
-  if (sc3) { info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }
+  if (sc3) {   // two pages: the deck on the left, key cards and the buttons on the right
+    const R = [...info.children].filter(x => x.classList.contains('dbx-top') || x.classList.contains('dbx-acts')), Lp = [...info.children].filter(x => !R.includes(x));
+    info.replaceChildren(h('div', { class: 'ti-page' }, ...Lp), h('div', { class: 'ti-page' }, ...R));
+    info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }
+  const spread = sc3 && sc3.spread && sc3.layer ? sc3.spread(d.deck, d.deckName) : null; if (spread) sc3.layer.append(spread);
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
   // v0.99.49 one continuous float: the book slides forward out of its slot, then travels along a gentle arc to the desk,
   // turning to show its cover on the way, and settles onto its shadow. Putting it back plays the same path in reverse.
@@ -150,7 +154,7 @@ function pullDeckBox(m, tile, d) {
   function putBack(now) {
     if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
     ov.style.pointerEvents = 'none'; ov.classList.add('leaving'); if (m.el._dbxPut && m.el._dbxPutOv === ov) { m.el._dbxPut = null; m.el._dbxPutOv = null; }
-    if (sc3) { info.remove(); if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
+    if (sc3) { info.remove(); if (spread) spread.remove(); if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
     info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });

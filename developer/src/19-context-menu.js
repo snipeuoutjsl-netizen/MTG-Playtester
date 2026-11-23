@@ -13,7 +13,7 @@ function showMenu(x, y, items) {
 }
 function hideMenu() { menu.hidden = true; }
 document.addEventListener('click', hideMenu);
-document.addEventListener('contextmenu', e => { if (!e.target.closest('.card')) hideMenu(); });
+document.addEventListener('contextmenu', e => { if (!(e.target.closest && e.target.closest('.card'))) hideMenu(); });
 window.addEventListener('blur', hideMenu);
 
 // Finds the first non-mana activated ability ("cost: effect") of a permanent.
