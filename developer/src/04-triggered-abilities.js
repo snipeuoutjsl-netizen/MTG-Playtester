@@ -111,7 +111,11 @@ function frontType(c) {
   return t;
 }
 // "Whenever a permanent you control enters tapped" (Amulet of Vigor) / "enters untapped": the permanent's state as it entered decides (CR 603.6a + 614.1c).
-function enterStateOk(t, e) { const l = String(t.line || t.cond || ''); if (/\benters? (?:the battlefield )?tapped\b/i.test(l)) return !!e.tapped; if (/\benters? (?:the battlefield )?untapped\b/i.test(l)) return !e.tapped; return true; }
+function enterStateOk(t, e) { const l = String(t.line || t.cond || '');
+  const fromGy = !!(e && (e.enteredFrom === 'graveyard' || e.enteredCastFromGy));
+  if (/\benters? (?:the battlefield )?from (?:your|a) graveyard\b/i.test(l) && !fromGy) return false;   // Flayer of the Hatebound
+  if (/\bif it entered from your graveyard or you cast it from your graveyard\b/i.test(l) && !fromGy) return false;   // Prized Amalgam (CR 603.4 intervening if)
+   if (/\benters? (?:the battlefield )?tapped\b/i.test(l)) return !!e.tapped; if (/\benters? (?:the battlefield )?untapped\b/i.test(l)) return !e.tapped; return true; }
 function filterMatches(filter, card) {
   const f = filter.toLowerCase();
   if (card && card.token && /\bnon-?token\b/.test(f)) return false;   // CR 111.1: a "nontoken" filter never matches a token (Weapons Manufacturing must not trigger on its own Munitions)
@@ -142,7 +146,7 @@ function fireTrigger(ev, ctx = {}) {
     for (const c of bf) for (const t of parseTriggers(c)) if (t.ev === 'step:' + ctx.id && (!t.test || t.test(c))) add(c, t, `It is the ${label.toLowerCase()} of your turn, so this "at the beginning of…" ability triggers now.`);
   } else if (ev === 'etb') {
     const e = ctx.card; soulbondOnEnter(e); noteGapsOnEnter(e);
-    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
+    for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && enterStateOk(t, e) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
       else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e)) && enterStateOk(t, e)) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
@@ -206,7 +210,10 @@ function fireTrigger(ev, ctx = {}) {
     for (const x of bf) if (x.att === a.id) for (const t of parseTriggers(x)) if (t.ev === 'host-combat-damage') add(x, t, `${a.name} (equipped or enchanted by ${x.name}) dealt combat damage to the opponent.`);
   }
 }
-function flushTriggers() { if (state && state.pendingTriggers.length && !state.phasePause && !state.discarding && !costHold) resolvePendingTrigger(); }
+function flushTriggers() { if (state && state.pendingTriggers.length && !state.phasePause && !state.discarding && !costHold && !(state.trigHold > 0)) resolvePendingTrigger(); }
+// v0.99.45 CR 603.3b: abilities that trigger during ONE event (milling five cards, sacrificing two lands, two lands entering) are put on the stack
+// together, in the order you choose. Events that move several cards run inside simultaneously(), which holds the triggers until the event is over.
+function simultaneously(fn) { if (!state) return fn(); state.trigHold = (state.trigHold || 0) + 1; try { return fn(); } finally { state.trigHold--; if (!state.trigHold) flushTriggers(); } }
 function permanentEntered(c) {
   if (!state || !c) return;
   c.enteredTurn = state.turn;

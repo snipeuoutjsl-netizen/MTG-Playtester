@@ -75,6 +75,8 @@ function runDelayed(when) {
     else if (e.action === 'returnHand') { if (f && f.zone === 'battlefield') { log(`${e.srcName}: ${nm} returned to its owner's hand at the beginning of the ${where}`); leaveBattlefield(f.card, 'hand'); } }
     else if (e.action === 'returnBf') {
       if (f && f.zone === 'exile') { state.exile.splice(f.idx, 1); f.card.counters = { plus: 0, minus: 0 }; enterBattlefield(f.card, { from: 'exile', logMsg: `${e.srcName}: ${nm} returns to the battlefield at the beginning of the ${where}` }); }
+      else if (f && f.zone === 'graveyard' && e.fromGy) { const gi = state.graveyard.findIndex(x => x.id === f.card.id); state.graveyard.splice(gi, 1); f.card.counters = { plus: 0, minus: 0 }; enterBattlefield(f.card, { from: 'graveyard', tapped: e.tapped ? true : undefined, logMsg: `${e.srcName}: ${nm} returns from your graveyard to the battlefield${e.tapped ? ' tapped' : ''} at the beginning of the ${where}` }); }   // Prized Amalgam
+      else if (e.fromGy) log(`${e.srcName}: ${nm} is no longer in your graveyard, so it does not return`);
       else log(`${e.srcName}: ${nm} is not in exile, so it cannot return`);
     } else if (e.draw && !teach('triggerPrompts')) { const n = drawCards(e.draw); log(`${e.srcName}: delayed trigger, drew ${n}`); }
     else queueTrigger({ kind: 'ability', cardId: 0, cardName: e.srcName, text: e.text, effect: e.text, special: null, optional: false, why: `${e.srcName} created a delayed trigger earlier: it fires at the beginning of this ${where}.` });

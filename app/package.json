@@ -1,7 +1,7 @@
 {
   "name": "mtg-playtester",
   "productName": "MTG Playtester",
-  "version": "0.99.44",
+  "version": "0.99.45",
   "license": "UNLICENSED",
   "description": "Offline solo playtester for Magic: The Gathering decks",
   "main": "main.js",
@@ -45,6 +45,7 @@
       "runAfterFinish": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
+      "shortcutName": "Library of Alexandria",
       "artifactName": "MTG-Playtester-Setup-${version}.${ext}"
     },
     "portable": {
@@ -58,7 +59,10 @@
       "category": "Game",
       "executableName": "mtg-playtester",
       "artifactName": "MTG-Playtester-${version}-x86_64.${ext}",
-      "maintainer": "MTG Playtester"
+      "maintainer": "MTG Playtester",
+      "desktop": {
+        "Name": "Library of Alexandria"
+      }
     }
   }
 }

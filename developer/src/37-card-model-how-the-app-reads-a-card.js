@@ -18,6 +18,8 @@ const KW_ENFORCED = { has(n) {
   return kwEnfMemo.has(n);
 } };
 const STATIC_PATTERNS = [
+  [/^you can'?t spend mana to cast this spell\.?$/i, "Can't spend mana (CR 601.2h): the whole cost has to be paid by convoke, delve and the like; the app refuses mana for it."],
+  [/^you may cast (?:this card|~) from your graveyard\.?$/i, 'Cast from the graveyard (CR 601.3): the graveyard shows a Cast button for it, with the normal timing and cost.'],
   [/don'?t lose unspent (?:white |blue |black |red |green )?mana as steps and phases end|mana pools? (?:don'?t|doesn'?t) empty|(?:white|blue|black|red|green) mana doesn'?t empty from/i, 'Mana stays in your pool when a step or phase ends (rule 106.4): the app skips emptying the pool for those colours.'],
   [/^if you would draw a card, you may skip that draw instead\.?$/i, 'A "Skip draws" icon appears in the top bar while this is on the battlefield. Switch it on and every card you would draw is skipped (rule 614.1a); switch it off to draw normally.'],
   [/^if you would begin your turn while (?:this artifact|~) is tapped, you may skip that turn instead\. If you do, untap (?:this artifact|~)\.?$/i, 'When you press Next turn while it is tapped, a window asks whether to skip that turn. Skipping untaps it. (Turn off under Tutor mode \u2192 Time Vault prompt.)'],
@@ -410,7 +412,7 @@ function coverageReportText(res, opts) {
   const top = (map, n) => [...map.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, n);
   const L = [];
   const all = res.lines.ok + res.lines.part + res.lines.unk || 1;
-  L.push(`MTG Playtester coverage scan (v${APP_VERSION})${opts.format ? ' - ' + ({ s: 'Standard', p: 'Pioneer', m: 'Modern', l: 'Legacy', v: 'Vintage', u: 'Pauper', c: 'Commander' }[opts.format] || opts.format) + '-legal cards only' : opts.modernOnly ? ' - Modern-legal cards only' : ''}`);
+  L.push(`Library of Alexandria coverage scan (v${APP_VERSION})${opts.format ? ' - ' + ({ s: 'Standard', p: 'Pioneer', m: 'Modern', l: 'Legacy', v: 'Vintage', u: 'Pauper', c: 'Commander' }[opts.format] || opts.format) + '-legal cards only' : opts.modernOnly ? ' - Modern-legal cards only' : ''}`);
   L.push(`${res.cards} cards, ${all} rules lines. Understood ${res.lines.ok} (${Math.round(100 * res.lines.ok / all)}%), partly ${res.lines.part} (${Math.round(100 * res.lines.part / all)}%), not understood ${res.lines.unk} (${Math.round(100 * res.lines.unk / all)}%).`);
   L.push(`Cards fully handled: ${res.full} of ${res.cards} (${Math.round(100 * res.full / (res.cards || 1))}%).`, '');
   L.push('BY KIND (understood / partly / not understood)');

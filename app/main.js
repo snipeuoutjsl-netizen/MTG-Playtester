@@ -175,7 +175,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: saved.width || 1500, height: saved.height || 900, x: saved.x, y: saved.y,
     minWidth: 1000, minHeight: 640,
-    backgroundColor: '#0d1013', title: 'MTG Playtester', autoHideMenuBar: true,
+    backgroundColor: '#0d1013', title: 'Library of Alexandria', autoHideMenuBar: true,
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: { backgroundThrottling: false, contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.js') }
   });

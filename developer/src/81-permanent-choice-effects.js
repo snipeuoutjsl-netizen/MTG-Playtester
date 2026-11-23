@@ -12,6 +12,7 @@ function permChoiceOptions(tx, obj) {   // one sentence is read here; the senten
   const sents = MASS_SENTS(tx); if (!sents.length) return null;
   const sc = scapeshiftOptions(sents, obj); if (sc) return sc;
   const po = payOrElseOptions(sents, obj); if (po) return po;
+  const gz = graveyardSelfOptions(sents.join(' '), obj); if (gz) return gz;
   if (sents.length > 1 && /^If you (?:do|don't)\b/i.test(sents[1])) return null;   // "Sacrifice X. If you do, ..." is read by the if-you-do reader (CR 608.2c)
   const one = permChoiceOne(sents[0], obj); if (!one) return null;
   if (sents.length === 1) return one; return [...one.map(o => ({ ...o, full: false })), ...massRest(sents, 1, obj)];
@@ -24,7 +25,7 @@ function scapeshiftOptions(sents, obj) {
   return [{ full: true, label: `Sacrifice any number of ${desc}, then search for that many land cards`, fn: () => {
     const cands = state.battlefield.filter(c => !c.opp && pcMatches(desc, c));
     openPickCards({ title: `${src}: sacrifice any number of ${desc}`, note: 'Then you search your library for up to that many land cards.', cards: cands, max: cands.length, nothing: 'Sacrifice none', done: picked => {
-      snap(); for (const p of picked) { const f = findCard(p.id); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed ${f.card.name}`); leaveBattlefield(f.card, 'graveyard'); } }
+      snap(); simultaneously(() => { for (const p of picked) { const f = findCard(p.id); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed ${f.card.name}`); leaveBattlefield(f.card, 'graveyard'); } } });
       const n = picked.length; render(); if (!n) { log(`${src}: no lands sacrificed, so it searches for none`); shuffleLib && shuffleLib(); return; }
       const se = searchEffect(rest.replace(/up to that many/i, `up to ${n}`), src, obj); if (se && se.fn) se.fn(); else toast('Search', `Search your library for up to ${n} land cards by hand.`); } });
   } }];
@@ -73,7 +74,7 @@ function permChoiceOne(tx, obj) {
       const cands = state.battlefield.filter(c => !c.opp && pcMatches(desc, c));
       if (!cands.length) { log(`${src}: you control no ${desc}, so nothing is ${back ? 'returned' : 'sacrificed'}`); return; }
       const need = Math.min(n, cands.length);
-      const act = picked => { if (!picked.length) return; snap(); for (const p of picked) { const f = findCard(p.id); if (!f || f.zone !== 'battlefield') continue; log(`${src}: ${back ? 'returned' : 'sacrificed'} ${f.card.name}${back ? ' to your hand' : ''}`); leaveBattlefield(f.card, back ? 'hand' : 'graveyard'); }
+      const act = picked => { if (!picked.length) return; snap(); simultaneously(() => { for (const p of picked) { const f = findCard(p.id); if (!f || f.zone !== 'battlefield') continue; log(`${src}: ${back ? 'returned' : 'sacrificed'} ${f.card.name}${back ? ' to your hand' : ''}`); leaveBattlefield(f.card, back ? 'hand' : 'graveyard'); } });
         render(); if (state.pendingTriggers.length) flushTriggers(); };
       if (cands.length <= need && new Set(cands.map(c => c.name)).size <= 1 && cands.length === need) { act(cands); return; }   // no real choice
       openPickCards({ title: `${src}: ${back ? 'return' : 'sacrifice'} ${need === 1 ? `a ${desc.replace(/s$/, '')}` : `${need} ${desc}`}`, cards: cands, min: need, max: need,
@@ -88,4 +89,41 @@ const selfShuffleRe = name => new RegExp("\\bshuffle (?:~|this card|" + String(n
 function shuffleSelfOnResolve(c) {
   if (!c || c.copy || c.token || !selfShuffleRe(c.name).test(cardText(c) || '')) return null;
   state.library.push(c); try { shuffleLib(); } catch (e) { /* no animation */ } return 'library (shuffled in, CR 608.2n)';
+}
+
+// ---- v0.99.45 graveyard creatures (manaless dredge). "~"/"this card" is the card itself (obj.sourceId).
+function graveyardSelfOptions(t, obj) {
+  if (!obj) return null; const src = obj.sourceName || 'It', me = () => { const f = obj.sourceId !== undefined ? findCard(obj.sourceId) : null; return f; };
+  const SELF = "(?:~|this card|this creature|it|" + String(src).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ")";
+  t = String(t).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); let m;
+  // Prized Amalgam: "if it entered from your graveyard or you cast it from your graveyard, return this card from your graveyard to the battlefield tapped at the beginning of the next end step."
+  if ((m = t.match(new RegExp('^(?:if it entered from your graveyard or you cast it from your graveyard, )?return ' + SELF + ' from your graveyard to the battlefield( tapped)? at the beginning of the next end step\\.?$', 'i'))))
+    return [{ full: true, label: `Return ${src} from your graveyard to the battlefield${m[1] ? ' tapped' : ''} at the beginning of the next end step`, fn: () => { const f = me(); if (!f || f.zone !== 'graveyard') { log(`${src}: not in your graveyard, so nothing will return`); return; }
+      if (state.fx.some(e => e.kind === 'delayed' && e.action === 'returnBf' && e.targetId === f.card.id)) { log(`${src}: already returning at the next end step`); return; }   // several triggers: it can only return once (CR 400.7)
+      addFx({ kind: 'delayed', when: 'end', action: 'returnBf', fromGy: true, tapped: !!m[1], targetId: f.card.id, targetName: src, srcName: src, text: `Return ${src} to the battlefield${m[1] ? ' tapped' : ''}.` }); log(`${src}: it will return to the battlefield${m[1] ? ' tapped' : ''} at the beginning of the next end step`); render(); } }];
+  // Bloodghast: "you may return this card from your graveyard to the battlefield."
+  if ((m = t.match(new RegExp('^(?:you may )?return ' + SELF + ' from your graveyard to the battlefield( tapped)?\\.?$', 'i'))))
+    return [{ full: !/^you may/i.test(t), label: `Return ${src} from your graveyard to the battlefield${m[1] ? ' tapped' : ''}`, fn: () => { const f = me(); if (!f || f.zone !== 'graveyard') { log(`${src}: no longer in your graveyard`); return; } snap(); const gi = state.graveyard.findIndex(x => x.id === f.card.id); state.graveyard.splice(gi, 1); enterBattlefield(f.card, { from: 'graveyard', tapped: m[1] ? true : undefined, logMsg: `${src} returned from your graveyard to the battlefield` }); render(); flushTriggers(); } }];
+  // Ichorid: "if this card is in your graveyard, you may exile a black creature card other than this card from your graveyard. If you do, return this card to the battlefield."
+  if ((m = t.match(new RegExp('^(?:if ' + SELF + ' is in your graveyard, )?you may exile an? (.+?) card other than ' + SELF + ' from your graveyard\\. If you do, return ' + SELF + ' to the battlefield\\.?$', 'i')))) {
+    const desc = m[1];
+    return [{ full: false, label: `Exile ${/^[aeiou]/i.test(desc) ? 'an' : 'a'} ${desc} card from your graveyard to return ${src} to the battlefield`, fn: () => {
+      const f = me(); if (!f || f.zone !== 'graveyard') { log(`${src}: no longer in your graveyard`); return; }
+      const cands = state.graveyard.filter(x => x.id !== f.card.id && filterMatches(desc.replace(/\bcard\b/, '').trim() || desc, x)); if (!cands.length) { toast('Nothing to exile', `There is no other ${desc} card in your graveyard.`); return; }
+      openPickCards({ title: `${src}: exile ${desc} card`, cards: cands, max: 1, done: picked => { const k = picked[0]; if (!k) return; snap(); simultaneously(() => { moveCardQuiet(k.id, 'exile'); const g = findCard(f.card.id); if (g && g.zone === 'graveyard') { const gi = state.graveyard.findIndex(x => x.id === g.card.id); state.graveyard.splice(gi, 1); enterBattlefield(g.card, { from: 'graveyard', logMsg: `${src}: exiled ${k.name}, so ${src} returns to the battlefield` }); } }); render(); } }); } }];
+  }
+  // Golgari Thug: "put target creature card from your graveyard on top of your library."
+  if ((m = t.match(/^put target (.+?) card from your graveyard on top of your library\.?$/i))) { const desc = m[1];
+    return [{ full: true, label: `Put ${/^[aeiou]/i.test(desc) ? 'an' : 'a'} ${desc} card from your graveyard on top of your library`, fn: () => {
+      const tg = (obj.targets || []).find(q => q.id !== undefined); const go = k => { const i = state.graveyard.findIndex(x => x.id === k.id); if (i < 0) { toast('Target gone', `${k.name} is no longer in your graveyard.`); return; } snap(); const [x] = state.graveyard.splice(i, 1); state.library.unshift(x); log(`${src}: put ${x.name} on top of your library`); render(); };
+      if (tg) { const g = findCard(tg.id); if (g && g.zone === 'graveyard') go(g.card); else toast('Target gone', 'The target is no longer in your graveyard.'); return; }
+      const cands = state.graveyard.filter(x => filterMatches(desc, x)); if (!cands.length) { toast('No target', `There is no ${desc} card in your graveyard.`); return; }
+      openPickCards({ title: `${src}: put a ${desc} card on top of your library`, cards: cands, max: 1, done: p => { if (p[0]) go(p[0]); } }); } }];
+  }
+  // Flayer of the Hatebound: "that creature deals damage equal to its power to any target." In a goldfish game the target is the opponent.
+  if (/^that creature deals damage equal to its power to any target\.?$/i.test(t)) {
+    const who = obj.otherId !== undefined ? obj.otherId : obj.sourceId;
+    return [{ full: false, label: 'That creature deals damage equal to its power to the opponent', fn: () => { const f = findCard(who); if (!f) { toast('Gone', 'That creature is no longer on the battlefield; use its last known power by hand.'); return; } const p = (ptCalc(f.card) || {}).p || 0; snap(); changeOppLife(-p); log(`${src}: ${f.card.name} dealt ${p} damage to the opponent`); render(); } }];
+  }
+  return null;
 }

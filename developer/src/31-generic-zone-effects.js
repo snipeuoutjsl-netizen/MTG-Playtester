@@ -1,5 +1,5 @@
 // v0.96.12 CR 202.3: a card's mana value is worked out from its mana cost symbols (X counts as 0 outside the stack); two-faced costs fall back to the stored value
-function mvOf(info) { if (!info) return 0; const mc = info.mc || ''; return mc && !/\/\//.test(mc) ? symCmc(mc) : mvOf(info); }
+function mvOf(info) { if (!info) return 0; const mc = info.mc || ''; return mc && !/\/\//.test(mc) ? symCmc(mc) : (+info.cmc || 0); }   // v0.99.45 a card with no mana cost (or a split card) used to call itself forever (deck screen crash)
 // ---------------------------------------------------------------- generic zone effects (v0.63)
 // Tutors, "return cards from your graveyard", coin flips and similar effects that used to be done by hand.
 // Hidden-zone rule 701.19b: you may search for a card with qualities, but you are never forced to find one, so every card is shown
