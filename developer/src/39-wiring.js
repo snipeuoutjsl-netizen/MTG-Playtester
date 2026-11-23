@@ -66,7 +66,7 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('keydown', e => {
-    if (e.target.closest('input, textarea, select')) return;
+    if (e.target.closest && e.target.closest('input, textarea, select')) return;
     if ($('#modalRoot').children.length) { if (e.key === 'Escape' && !$('#modalRoot').lastElementChild.querySelector('.modal[data-noclose]')) $('#modalRoot').lastElementChild.querySelector('header button').click(); return; }
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }

@@ -44,3 +44,17 @@ def tile(n, s):
 t = .5 * tile(8, 6) + .3 * tile(32, 2) + .2 * tile(128, .6); t = (t - t.mean()) * 1.1 + .5
 Image.fromarray(np.clip(np.array((58, 42, 32.))[None, None] * (0.82 + 0.36 * t[..., None]), 0, 255).astype(np.uint8)).save('plaster.jpg', quality=72)
 # Embed as data URIs in app/style.css (in-app updates only ship index.html, app.js, style.css and package.json).
+# v0.99.51 the desk top pre-rendered in perspective with the Library's camera (perspective 1800, eye at x 800, 90 units above the
+# desk top, which meets the wall 560 units down the stage). Drawing it as a flat picture keeps a huge 3D plane off the GPU.
+def desk_persp(src='desk.jpg', out='desk_persp.jpg', P=1800., eye=(800., 470.), y0=560, y1=1040, W=1600, depth=1650., left=-500., width=2600.):
+    tex = np.asarray(Image.open(src).convert('RGB'), float); th, tw = tex.shape[:2]
+    Y, X = np.mgrid[y0:y1, 0:W].astype(float) + .5
+    m = np.maximum((Y - eye[1]) / (y0 - eye[1]), 1.0)          # magnification at that row (1 at the wall)
+    z = P * (1 - 1 / m)                                         # depth of the desk point seen there
+    u = eye[0] + (X - eye[0]) / m                               # its x on the desk
+    tx = np.clip((u - left) / width * (tw - 1), 0, tw - 1).astype(int); ty = np.clip(z / depth * (th - 1), 0, th - 1).astype(int)
+    img = tex[ty, tx]
+    shade = np.clip(0.45 + 0.55 * np.minimum(1, z / 420.), 0, 1)[..., None]   # darker against the wall
+    img = img * shade
+    Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(.6)).save(out, quality=80)
+desk_persp()

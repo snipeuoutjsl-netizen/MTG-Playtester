@@ -37,7 +37,41 @@ function closeHall(anim) {
   if (anim && animOn('ui') !== false && !reducedMotion() && !document.body.classList.contains('a11y-calm')) { const a = wa(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(1.04)' }], { duration: 420, easing: 'ease-in', fill: 'forwards' }); a.onfinish = () => { done(); const t = document.getElementById('table'); if (t) wa(t, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' }); }; }
   else done();
 }
-function beginWith(name) { lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true); setTimeout(() => startGame(), reducedMotion() ? 0 : 200); }
+function beginWith(name) {
+  lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true);
+  // v0.99.51 a new game from the Library while one is in progress: windows left open by the old game (a trigger, the stack, a search)
+  // belong to it, so they are cleared before the new game is dealt; if starting fails, the table is shown with a message, not a blank screen.
+  setTimeout(() => { try { const mr = document.getElementById('modalRoot'); if (mr) mr.replaceChildren(); try { hideMenu(); } catch (e) {} startGame(); }
+    catch (err) { console.error(err); toast('Could not start the game', String(err && err.message || err)); try { render(); } catch (e) {} } }, reducedMotion() ? 0 : 200);
+}
+// v0.99.51 the deck taken down is laid out on the desk: one column per mana value (lands last), each card once with its count,
+// fanned so every name shows; hovering a card lifts it to full size.
+function deckSpreadEl(deck, deckName) {
+  const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
+  const build = () => {
+    const by = new Map();
+    for (const x of deck.main) {
+      const rec = resolve(x.name), land = rec ? !!rec.land : BASIC_LANDS.has(norm(x.name)), k = land ? 99 : Math.min(7, Math.floor((rec && +rec.cmc) || 0));
+      const nm = rec ? rec.name : x.name, col = by.get(k) || new Map(); col.set(nm, { name: nm, rec, qty: (col.get(nm) ? col.get(nm).qty : 0) + (x.qty || x.n || 1) }); by.set(k, col);
+    }
+    const STRIP = 24;
+    const cols = [...by.keys()].sort((a, b) => a - b).map(k => {
+      const list = [...by.get(k).values()].sort((a, b) => a.name.localeCompare(b.name)), n = list.reduce((a, c) => a + c.qty, 0);
+      const stack = h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + 153}px` }, list.map((c, i) => {
+        const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
+          im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
+          h('em', { class: 'ds-qty', text: '×' + c.qty }));
+        const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
+        return card; }));
+      return h('div', { class: 'ds-col' }, h('div', { class: 'ds-h', text: `${k === 99 ? 'Lands' : k === 7 ? '7+' : k}  ·  ${n}` }), stack);
+    });
+    el.replaceChildren(...cols);
+    requestAnimationFrame(() => { const W = 1520, H = 262, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
+  };
+  build();
+  try { loadCachedImages(deck.main.map(x => x.name)).then(n => { if (n && el.isConnected) build(); }); } catch (e) {}
+  return el;
+}
 const HALL_W = 1600, HALL_H = 900, HALL_PER_PAGE = 40;
 let hallPage = 0;
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
@@ -71,7 +105,8 @@ function drawHall() {
     h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
     h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
   const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
-  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: { tome, shelfZ: 62, deskZ: 200 } });
+  const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: deckSpreadEl, layer: null };
+  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: hallScene });
   const pager = pages > 1 ? h('div', { class: 'hall-pager' },
     h('button', { text: '‹', title: 'Previous shelves', disabled: hallPage === 0, onclick: () => { hallPage--; drawHall(); } }),
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
@@ -83,6 +118,7 @@ function drawHall() {
     h('div', { class: 'hall-stand', 'aria-hidden': 'true' }), h('div', { class: 'hall-tome-shadow', 'aria-hidden': 'true' }),
     tome);
   const stage = h('div', { class: 'hall-stage' }, world, h('div', { class: 'hall-hint', text: all.length ? 'Click a book to take it down to the desk.' : '' }));
+  hallScene.layer = stage;
   el.replaceChildren(h('div', { class: 'hall-view' }, stage),
     inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null);
   hallFit(); requestAnimationFrame(hallFit);

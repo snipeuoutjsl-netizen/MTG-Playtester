@@ -6106,7 +6106,7 @@ function showMenu(x, y, items) {
 }
 function hideMenu() { menu.hidden = true; }
 document.addEventListener('click', hideMenu);
-document.addEventListener('contextmenu', e => { if (!e.target.closest('.card')) hideMenu(); });
+document.addEventListener('contextmenu', e => { if (!(e.target.closest && e.target.closest('.card'))) hideMenu(); });
 window.addEventListener('blur', hideMenu);
 
 // Finds the first non-mana activated ability ("cost: effect") of a permanent.
@@ -6687,8 +6687,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.50';
+const APP_VERSION = '0.99.51';
 const CHANGELOG = [
+  { v: '0.99.51', title: 'The deck on the desk', notes: ['When you take a book down, its main deck is laid out on the desk below: one column per mana value (0 to 7+, lands last), each card once with its count, fanned so every name shows. Hover a card (or tab to it) to lift it to full size.', 'The deck details on the open book are now set as two proper pages: the deck on the left; key cards and the buttons on the right.', 'Books are solid now: a page block shows at the top, the bottom and the fore-edge, so a book taken down from a high shelf no longer looks hollow from underneath.', 'The title plate is lettered in Cinzel Decorative with a gold finish.', 'Clicking a book on the shelves always takes that book: the side of the book next to it, seen at an angle, could catch the click before.', 'Starting a game from the Library while one is in progress first clears any windows the old game left open. If the game cannot start, you get a message on the table instead of a blank screen.', 'The desk top is now a picture already drawn in the room\'s perspective. It looks the same but is much lighter on the graphics card than the huge 3D surface it replaces.'] },
   { v: '0.99.50', title: 'One room, one view', notes: ['The Library is now drawn as a real room seen from one spot: you sit at a desk facing a wall. Everything shares the same eye line, so the high shelves show their undersides, the lower ones sit near eye level, and the desk top runs towards you. Nothing is drawn from two different angles any more.', 'Four floating shelves of ten books hang on the wall, two on each side of a wooden name plate. With more than 40 decks, arrows on the plate turn to the next shelves.', 'The menu book leans on a stand in the middle of the desk. When you take a book down, it stands on the desk beside it and its details (colours, curve, key cards, notes and the buttons) fill the open book\'s pages.', 'The flight from shelf to desk is worked out in the room itself: the book slides forward out of its slot, arcs over and comes down onto the desk, growing as it comes closer. The neighbouring books show the gap it leaves.', 'The whole scene scales to fit the window.'] },
   { v: '0.99.49', title: 'Floating shelves', notes: ['The Library is redrawn: your decks stand on floating wooden shelves hung on a plastered wall, seen from a little below, and the menu book lies open on a wooden desk. The wood grain is drawn by the app itself, so it needs no downloads.', 'Click any book to take it down, even while another one is on the desk: the two swap places, one floating back to its slot as the other comes down. No need to press "Put it back" first.', 'The book now floats from its slot to the desk in one smooth arc, turning to its cover on the way and settling onto its shadow. Putting it back plays the same path in reverse, even if you change your mind mid-flight.', 'The candle has been taken off the desk.', 'Library viewer: just looking through your library no longer shuffles it, so a scry (or any card you put on top or bottom) stays where you put it. Taking a card out of the library still ticks "Shuffle when closed", as a search should. A new "Library order (top first)" view shows the real order, next draw first and the bottom card last.', 'Checked by the tests: scry sends cards to the bottom in the order chosen and keeps the rest on top, and the shuffle puts every card in every position equally often.'] },
   { v: '0.99.48', title: 'The Library', notes: ['NEW: every session opens in the Library. Your decks stand as books on the shelves; on the reading desk an open book is the menu (Continue your game, New game, Standard or Commander, who goes first, Import a deck, Settings, Accessibility, Rules & help, What\'s new), lit by a flickering candle.', 'Click a book to lay it on the desk: it turns to its cover and shows its colours, curve, key cards and the librarian\'s notes, then "Begin a game with this deck" starts the game and the Library fades into the table.', 'Librarian\'s notes: each deck remembers how often you opened it, when you last did, the average lands in the hands you kept, mulligans per game, and the turn your goldfish kills come on. All of it comes from your own games.', 'The deck button at the top left now takes you back to the Library; Esc (or "Back to the table") returns to your game. You can turn off "Open the Library when the app starts" on the desk.'] },
@@ -7914,7 +7915,7 @@ function bookModel(deckName, deck, cols, im, big) {
       h('div', { class: 'dbx-gloss' }),
       h('div', { class: 'dbx-label' }, h('b', { text: deckName }), h('span', {}, `${sum(deck.main)} cards`, ' ', ...pips))),
     h('div', { class: 'bk-face back' }),
-    h('div', { class: 'bk-face top' }));
+    h('div', { class: 'bk-face top' }), h('div', { class: 'bk-face bottom' }), h('div', { class: 'bk-face fore' }));   // v0.99.51 a closed book: page block on top, bottom and fore-edge
 }
 const tiltWith = (zone, box) => {
   zone.addEventListener('mousemove', e => { const r = zone.getBoundingClientRect(); box.style.setProperty('--rx', (((e.clientX - r.left) / r.width - 0.5) * 2).toFixed(2)); box.style.setProperty('--ry', (((e.clientY - r.top) / r.height - 0.5) * 2).toFixed(2)); });
@@ -7977,7 +7978,11 @@ function pullDeckBox(m, tile, d) {
   const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, sc3 ? null : info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
-  if (sc3) { info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }
+  if (sc3) {   // two pages: the deck on the left, key cards and the buttons on the right
+    const R = [...info.children].filter(x => x.classList.contains('dbx-top') || x.classList.contains('dbx-acts')), Lp = [...info.children].filter(x => !R.includes(x));
+    info.replaceChildren(h('div', { class: 'ti-page' }, ...Lp), h('div', { class: 'ti-page' }, ...R));
+    info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }
+  const spread = sc3 && sc3.spread && sc3.layer ? sc3.spread(d.deck, d.deckName) : null; if (spread) sc3.layer.append(spread);
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
   // v0.99.49 one continuous float: the book slides forward out of its slot, then travels along a gentle arc to the desk,
   // turning to show its cover on the way, and settles onto its shadow. Putting it back plays the same path in reverse.
@@ -8033,7 +8038,7 @@ function pullDeckBox(m, tile, d) {
   function putBack(now) {
     if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
     ov.style.pointerEvents = 'none'; ov.classList.add('leaving'); if (m.el._dbxPut && m.el._dbxPutOv === ov) { m.el._dbxPut = null; m.el._dbxPutOv = null; }
-    if (sc3) { info.remove(); if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
+    if (sc3) { info.remove(); if (spread) spread.remove(); if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
     info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });
@@ -9551,7 +9556,7 @@ function setupDrop() {
     const m = modal('Card outline key', { width: 520 }), src = $('#handLegend');
     const rows = [...src.querySelectorAll('.kr')].map(r => { const c = r.cloneNode(true); c.classList.add('keyrow'); return c; });
     m.body.append(h('div', { class: 'outline-key' }, ...rows)); m.foot.append(h('button', { class: 'primary', text: 'Close', onclick: () => m.close() })); });
-  document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !e.target.closest('#handLegend') && !e.target.closest('#btnHandKey')) l.classList.remove('open'); });
+  document.addEventListener('click', e => { const l = $('#handLegend'); if (l && l.classList.contains('open') && !(e.target.closest && (e.target.closest('#handLegend') || e.target.closest('#btnHandKey')))) l.classList.remove('open'); });
   document.addEventListener('keydown', e => { const l = $('#handLegend'); if (e.key === 'Escape' && l && l.classList.contains('open')) { l.classList.remove('open'); $('#btnHandKey').setAttribute('aria-expanded', 'false'); } });
   // v0.96.13 the small Hand label (count, Key) can be dragged anywhere over the table; its place is remembered, double-click puts it back. (Sorting is done by dragging cards in the hand.)
   { const lab = $('#handWrap > .zlabel'); if (lab) {
@@ -10222,7 +10227,7 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('keydown', e => {
-    if (e.target.closest('input, textarea, select')) return;
+    if (e.target.closest && e.target.closest('input, textarea, select')) return;
     if ($('#modalRoot').children.length) { if (e.key === 'Escape' && !$('#modalRoot').lastElementChild.querySelector('.modal[data-noclose]')) $('#modalRoot').lastElementChild.querySelector('header button').click(); return; }
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
@@ -13594,7 +13599,41 @@ function closeHall(anim) {
   if (anim && animOn('ui') !== false && !reducedMotion() && !document.body.classList.contains('a11y-calm')) { const a = wa(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(1.04)' }], { duration: 420, easing: 'ease-in', fill: 'forwards' }); a.onfinish = () => { done(); const t = document.getElementById('table'); if (t) wa(t, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' }); }; }
   else done();
 }
-function beginWith(name) { lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true); setTimeout(() => startGame(), reducedMotion() ? 0 : 200); }
+function beginWith(name) {
+  lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true);
+  // v0.99.51 a new game from the Library while one is in progress: windows left open by the old game (a trigger, the stack, a search)
+  // belong to it, so they are cleared before the new game is dealt; if starting fails, the table is shown with a message, not a blank screen.
+  setTimeout(() => { try { const mr = document.getElementById('modalRoot'); if (mr) mr.replaceChildren(); try { hideMenu(); } catch (e) {} startGame(); }
+    catch (err) { console.error(err); toast('Could not start the game', String(err && err.message || err)); try { render(); } catch (e) {} } }, reducedMotion() ? 0 : 200);
+}
+// v0.99.51 the deck taken down is laid out on the desk: one column per mana value (lands last), each card once with its count,
+// fanned so every name shows; hovering a card lifts it to full size.
+function deckSpreadEl(deck, deckName) {
+  const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
+  const build = () => {
+    const by = new Map();
+    for (const x of deck.main) {
+      const rec = resolve(x.name), land = rec ? !!rec.land : BASIC_LANDS.has(norm(x.name)), k = land ? 99 : Math.min(7, Math.floor((rec && +rec.cmc) || 0));
+      const nm = rec ? rec.name : x.name, col = by.get(k) || new Map(); col.set(nm, { name: nm, rec, qty: (col.get(nm) ? col.get(nm).qty : 0) + (x.qty || x.n || 1) }); by.set(k, col);
+    }
+    const STRIP = 24;
+    const cols = [...by.keys()].sort((a, b) => a - b).map(k => {
+      const list = [...by.get(k).values()].sort((a, b) => a.name.localeCompare(b.name)), n = list.reduce((a, c) => a + c.qty, 0);
+      const stack = h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + 153}px` }, list.map((c, i) => {
+        const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
+          im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
+          h('em', { class: 'ds-qty', text: '×' + c.qty }));
+        const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
+        return card; }));
+      return h('div', { class: 'ds-col' }, h('div', { class: 'ds-h', text: `${k === 99 ? 'Lands' : k === 7 ? '7+' : k}  ·  ${n}` }), stack);
+    });
+    el.replaceChildren(...cols);
+    requestAnimationFrame(() => { const W = 1520, H = 262, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
+  };
+  build();
+  try { loadCachedImages(deck.main.map(x => x.name)).then(n => { if (n && el.isConnected) build(); }); } catch (e) {}
+  return el;
+}
 const HALL_W = 1600, HALL_H = 900, HALL_PER_PAGE = 40;
 let hallPage = 0;
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
@@ -13628,7 +13667,8 @@ function drawHall() {
     h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
     h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
   const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
-  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: { tome, shelfZ: 62, deskZ: 200 } });
+  const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: deckSpreadEl, layer: null };
+  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: hallScene });
   const pager = pages > 1 ? h('div', { class: 'hall-pager' },
     h('button', { text: '‹', title: 'Previous shelves', disabled: hallPage === 0, onclick: () => { hallPage--; drawHall(); } }),
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
@@ -13640,6 +13680,7 @@ function drawHall() {
     h('div', { class: 'hall-stand', 'aria-hidden': 'true' }), h('div', { class: 'hall-tome-shadow', 'aria-hidden': 'true' }),
     tome);
   const stage = h('div', { class: 'hall-stage' }, world, h('div', { class: 'hall-hint', text: all.length ? 'Click a book to take it down to the desk.' : '' }));
+  hallScene.layer = stage;
   el.replaceChildren(h('div', { class: 'hall-view' }, stage),
     inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null);
   hallFit(); requestAnimationFrame(hallFit);
