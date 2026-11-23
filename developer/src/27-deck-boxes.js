@@ -19,9 +19,10 @@ function artStyle(im) { return im && im.front ? `background-image:url("${im.fron
 const BOOKS_PER_SHELF = 10;
 const BOOK_COL = { W: ['#8f8566', '#eee6c4'], U: ['#0d2a57', '#3d82d6'], B: ['#0b090e', '#3c3446'], R: ['#4a0f08', '#d4442a'], G: ['#0b2d16', '#3f9f58'], '': ['#2a2d33', '#8b9099'] };
 const strHash = t => { let x = 7; for (const ch of String(t)) x = (x * 31 + ch.charCodeAt(0)) >>> 0; return x; };
+let BOOK_SCALE = 1;   // v0.99.50 the Library draws its shelf books smaller (set while bookcaseEl builds a case)
 function bookModel(deckName, deck, cols, im, big) {
   const a = BOOK_COL[cols[0] || ''], b = BOOK_COL[cols[1] || cols[0] || ''], hs = strHash(deckName);   // the book is the deck's main colour (the colour with the most mana symbols)
-  const T = big ? 70 : 44 + hs % 11, H = big ? 330 : 198 + (hs >> 4) % 26, D = big ? 236 : 146;
+  const q = big ? 1 : BOOK_SCALE, T = Math.round(q * (big ? 70 : 44 + hs % 11)), H = Math.round(q * (big ? 330 : 198 + (hs >> 4) % 26)), D = Math.round(q * (big ? 236 : 146));
   const pips = cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }));
   return h('div', { class: 'bk' + (big ? ' big' : ''), 'data-col': cols[0] || 'C', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]};--T:${T}px;--H:${H}px;--D:${D}px` },
     h('div', { class: 'bk-face spine' }, h('i', { class: 'bk-band' }), h('span', { class: 'bk-title', text: deckName }), h('span', { class: 'bk-pips' }, ...pips.map(x => x.cloneNode())), h('i', { class: 'bk-band low' })),
@@ -89,13 +90,40 @@ function pullDeckBox(m, tile, d) {
       btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
       h('button', { text: 'Put it back', onclick: () => putBack() }),
       h('button', { class: 'danger', text: 'Delete deck\u2026', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
-  const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, info));
+  const sc3 = d.scene || null;   // v0.99.50 the Library: one 3D room; the book stands on the desk and its details fill the pages of the open book
+  const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, sc3 ? null : info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
+  if (sc3) { info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
   // v0.99.49 one continuous float: the book slides forward out of its slot, then travels along a gentle arc to the desk,
   // turning to show its cover on the way, and settles onto its shadow. Putting it back plays the same path in reverse.
+  const posIn = (el, root) => { let x = 0, y = 0; for (let e = el; e && e !== root; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return [x, y]; };
+  // In the 3D room the flight is worked out in room coordinates, so the camera keeps it in perspective the whole way:
+  // out of its slot towards you, up and over in an arc, and down onto the desk, scaled from shelf size to desk size.
+  const fly3 = (rev) => {
+    const [sx, sy] = posIn(src, m.el), [bx, by] = posIn(big, m.el), [tx, ty] = posIn(turn, m.el);
+    const bw = big.offsetWidth, bh = big.offsetHeight, bcx = bx + bw / 2, bcy = by + bh / 2;
+    turn.style.transformOrigin = `${bcx - tx}px ${bcy - ty}px`;
+    const SZ = sc3.shelfZ, TZ = sc3.deskZ, k = Math.max(0.2, src.offsetHeight / (bh || 1));
+    const dx = sx + src.offsetWidth / 2 - bcx, dy = sy + src.offsetHeight / 2 - bcy, out = 0.22, N = 16;
+    const p0 = [dx, dy - 6, SZ + 80], p2 = [0, 0, TZ], p1 = [dx * 0.45, Math.min(dy, 0) - 110, (SZ + TZ) / 2 + 160];
+    const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const T3 = (x, y, z, q) => `translate3d(${x}px, ${y}px, ${z}px) scale3d(${q}, ${q}, ${q})`;
+    const moveK = [{ offset: 0, transform: T3(dx, dy, SZ, k) }, { offset: out, transform: T3(p0[0], p0[1], p0[2], k) }];
+    for (let i = 1; i <= N; i++) { const u = ease(i / N), b = j => (1 - u) * (1 - u) * p0[j] + 2 * (1 - u) * u * p1[j] + u * u * p2[j];
+      moveK.push({ offset: out + (1 - out) * i / N, transform: T3(b(0), b(1), b(2), k + (1 - k) * u) }); }
+    const endT = getComputedStyle(big).transform, endR = endT === 'none' ? 'rotateY(62deg)' : endT;
+    const turnK = [{ offset: 0, transform: 'rotateY(0deg)' }, { offset: 0.35, transform: 'rotateY(0deg)', easing: 'cubic-bezier(.45,0,.25,1)' }, { offset: 0.92, transform: endR }, { offset: 1, transform: endR }];
+    const shK = [{ offset: 0, opacity: 0 }, { offset: 0.7, opacity: 0 }, { offset: 1, opacity: 1 }];
+    const flip = fr => fr.slice().reverse().map(f => ({ ...f, offset: 1 - f.offset }));
+    const o = { duration: rev ? 700 : 1000, fill: 'both' };
+    fwd.forEach(x => { try { x.cancel(); } catch (e) {} }); fwd = [];
+    const set = [wa(big, rev ? flip(turnK) : turnK, o), wa(shadow, rev ? flip(shK) : shK, o)], a = wa(turn, rev ? flip(moveK) : moveK, o); set.push(a);
+    if (!rev) { fwd = set; a.onfinish = () => { set.forEach(x => { try { x.cancel(); } catch (e) {} }); fwd = []; }; }
+    return a; };
   const fly = (rev) => {
+    if (sc3) return fly3(rev);
     const tr = turn.getBoundingClientRect();
     const dx = sr.left + sr.width / 2 - (tr.left + tr.width / 2), dy = sr.top + sr.height / 2 - (tr.top + tr.height / 2), k = Math.max(0.2, sr.height / (big.offsetHeight || 330));
     const lift = Math.min(40, sr.height * 0.2), out = 0.2, N = 14;
@@ -122,6 +150,7 @@ function pullDeckBox(m, tile, d) {
   function putBack(now) {
     if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
     ov.style.pointerEvents = 'none'; ov.classList.add('leaving'); if (m.el._dbxPut && m.el._dbxPutOv === ov) { m.el._dbxPut = null; m.el._dbxPutOv = null; }
+    if (sc3) { info.remove(); if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
     info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });
@@ -174,9 +203,10 @@ function openDeckPicker() {   // v0.99.44 if the bookcase itself fails, a plain 
 // v0.99.48 the shelves are shared by the deck window and the Library hall: cb.pick(name), cb.edit(name), cb.redraw(), cb.host ({ el }: where a pulled book lands), cb.beginLabel
 function bookcaseEl(names, cur, mode, cb) {
   if (!names.length) return h('div', { class: 'muted bk-empty', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' });
-  return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / BOOKS_PER_SHELF)) }, (_, r) => h('div', { class: 'bk-shelf', style: `--sk:${r}` }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
+  BOOK_SCALE = cb.scale || 1;
+  try { return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / BOOKS_PER_SHELF)) }, (_, r) => h('div', { class: 'bk-shelf', style: `--sk:${r}` }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
     () => cb.pick(n), () => openDeckArtPicker(n, cb.redraw), () => cb.edit(n), () => openCustomArt(n, cb.redraw), () => openSideboarding(n, cb.redraw),
-    (tile, d) => pullDeckBox(cb.host, tile, Object.assign(d, { redraw: cb.redraw, beginLabel: cb.beginLabel }))))), h('div', { class: 'bk-plank' }))));
+    (tile, d) => pullDeckBox(cb.host, tile, Object.assign(d, { redraw: cb.redraw, beginLabel: cb.beginLabel, scene: cb.scene }))))), h('div', { class: 'bk-plank' })))); } finally { BOOK_SCALE = 1; }
 }
 function openDeckPicker0() {
   const m = modal('Your decks', { width: 940 }); m.el.classList.add('dbx-modal');

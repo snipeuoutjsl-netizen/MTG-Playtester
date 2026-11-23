@@ -1528,7 +1528,7 @@ const { setup } = require('./common.js');
       const on = document.body.classList.contains('hall-on'), tableHidden = getComputedStyle(document.getElementById('table')).display === 'none', menu = [...document.querySelectorAll('#hall .hall-btn')].map(b => b.textContent);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(600); const escClosed = !document.body.classList.contains('hall-on');
       __d.openHall(); await W(300); const st = document.querySelector('#hall .bk-stage'); const nm = st.closest('.bk-tile').textContent; st.click(); await W(1000);
-      const begin = [...document.querySelectorAll('#hall .dbx-pull button')].find(b => /^Begin a game/.test(b.textContent)); begin.click(); await W(1200);
+      const begin = [...document.querySelectorAll('#hall .tome-info button')].find(b => /^Begin a game/.test(b.textContent)); begin.click(); await W(1200);
       const closed = !document.body.classList.contains('hall-on'), dn = __d.state.deckName; const notes = JSON.parse(localStorage.getItem('mtgpt.deckNotes') || '{}')[dn];
       if (__d.state.phase === 'mull') { __d.keepHand(); if (__d.state.bottomPhase) __d.finishMulligan(); }
       return { on, tableHidden, menu: menu.length, hasCont: menu.some(t => /^Continue/.test(t)), hasSettings: menu.includes('Settings') && menu.includes('Accessibility'), escClosed, closed, dn, games: notes && notes.games }; });
@@ -1538,7 +1538,7 @@ const { setup } = require('./common.js');
       __d.openHall(); await W(300); const tile = n => [...document.querySelectorAll('#hall .bk-tile')].find(t => t.querySelector('.bk-title') && t.querySelector('.bk-title').textContent === n);
       tile('SwapA').querySelector('.bk-stage').click(); await W(1100); const a = document.querySelector('#hall .dbx-info h3').textContent;
       tile('SwapB').querySelector('.bk-stage').click(); await W(1100);
-      const shown = [...document.querySelectorAll('#hall .dbx-pull')].map(o => o.querySelector('h3').textContent), outs = [...document.querySelectorAll('#hall .bk-tile.out')].map(t => t.querySelector('.bk-title').textContent);
+      const shown = [...document.querySelectorAll('#hall .dbx-pull')].map(() => document.querySelector('#hall .tome-info h3').textContent), outs = [...document.querySelectorAll('#hall .bk-tile.out')].map(t => t.querySelector('.bk-title').textContent);
       tile('SwapB').querySelector('.bk-stage').click(); await W(300); const again = document.querySelectorAll('#hall .dbx-pull').length;
       __d.closeHall(false); return { a, shown, outs, again }; });
     return { ok: r.a === 'SwapA' && r.shown.join() === 'SwapB' && r.outs.join() === 'SwapB' && r.again === 1, why: JSON.stringify(r) }; });
