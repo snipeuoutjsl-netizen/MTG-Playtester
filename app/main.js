@@ -2,6 +2,9 @@
 const { app, BrowserWindow, shell, Menu, ipcMain, dialog, net } = require('electron');
 // Linux / Steam Deck: an AppImage cannot use Chromium's setuid sandbox helper, so run without it (the game only loads its own local files).
 if (process.platform === 'linux' && process.env.APPIMAGE) require('electron').app.commandLine.appendSwitch('no-sandbox');
+// v0.99.44 (issue #83) some Linux systems refuse Chromium's shared memory in /dev/shm ("Creating shared memory in /dev/shm ... failed", black window, then a fatal error).
+// This switch makes Chromium use the normal temp folder instead; it costs nothing on systems where /dev/shm works.
+if (process.platform === 'linux') require('electron').app.commandLine.appendSwitch('disable-dev-shm-usage');
 // v0.96.16 smoothness: Chromium already draws at the monitor's refresh rate (120/144 Hz when the display is set to it). These switches make sure the GPU does the painting.
 { const cl = require('electron').app.commandLine; cl.appendSwitch('ignore-gpu-blocklist'); cl.appendSwitch('enable-gpu-rasterization'); cl.appendSwitch('enable-zero-copy'); }
 const vm = require('vm');

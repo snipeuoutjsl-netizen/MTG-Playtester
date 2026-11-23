@@ -94,7 +94,7 @@ function shockLandChoice(c) { return shockLife(c) > 0; }
 // the shockland question and "When this enters, surveil/scry N". Tapped-ness is decided by etbTapped().
 function landEntryTriggers(c, fetched) {
   if(!state||!c||!isLandName(c.name)) return;
-  if(entersAsLandCopy(c) && state.battlefield.some(x=>x.id!==c.id&&isLandName(x.name))) queueTrigger({kind:'vesuva',cardId:c.id});
+  { const lc=entersAsLandCopy(c); if(lc && (lc.from==='graveyard' ? state.graveyard.some(x=>isLandName(x.name)) : state.battlefield.some(x=>x.id!==c.id&&isLandName(x.name)))) queueTrigger({kind:'vesuva',cardId:c.id}); }
   if(shockLandChoice(c)) queueTrigger({kind:'shock',cardId:c.id,fetched:!!fetched});
   const etb=landETBTrigger(c); if(etb) queueTrigger(etb);
 }

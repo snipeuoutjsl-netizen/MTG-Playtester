@@ -303,7 +303,7 @@ function finishAbilityResolving() {
 function finishResolving() {   // the spell whose effect was just applied (or skipped) now leaves the stack
   const c = state && state.resolving; if (!c) return;
   if (state.discarding || handPick) { state.resolvingWait = true; render(); return; }   // wait until the chosen cards have been discarded
-  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
+  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
 }
 function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();
@@ -341,7 +341,7 @@ function resolveTopOfStack() {
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
     if(eff && !adv0 && layoutOn('resolveFirst')){ state.resolving=c; log(`${nm0} is resolving`); }
     else if(c.copy){ log(`Resolved a copy of ${nm0}; the copy ceases to exist`); }
-    else { const where=adv0?exileOnAdventure(c):(reboundOnResolve(c)||gyPush(c,'stack')); log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`); }
+    else { const where=adv0?exileOnAdventure(c):(reboundOnResolve(c)||shuffleSelfOnResolve(c)||gyPush(c,'stack')); log(`Resolved ${nm0} → ${where}${adv0?' (on an adventure)':''}`); }
   }
   if(!state.resolving) restoreHalf(c);
   render();

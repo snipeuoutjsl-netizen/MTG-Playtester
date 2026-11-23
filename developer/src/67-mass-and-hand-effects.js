@@ -116,6 +116,24 @@ function handRefillOptions(tx, obj) {
         openOrderList(`${src}: order the cards`, picked, ordered => { snap(); for (const c of ordered) { const i = state.hand.findIndex(x => x.id === c.id); if (i >= 0) state.hand.splice(i, 1); }
           if (top) state.library.unshift(...ordered); else state.library.push(...ordered); log(`${src}: drew ${nd}, put ${ordered.map(c => c.name).join(', ')} ${top ? 'on top of' : 'on the bottom of'} the library`); render(); }); } }); } }, ...massRest(sents, 1, obj)];
   }
+  // v0.99.44 Spelunking: "Draw a card, then you may put a land card from your hand onto the battlefield. If you put a Cave onto the battlefield this way, you gain 4 life."
+  // Cultivator Colossus: "You may put a land card from your hand onto the battlefield tapped. If you do, draw a card. Repeat this process until you put no land card onto the battlefield this way."
+  { const dm = /^(?:draw (a|one|two|three|\d+) cards?,? then )?you may put (?:a|an|one) (land) cards? from your hand onto the battlefield( tapped)?$/i.exec(s0);
+    const rest = sents.slice(1).map(x => x.replace(/\.$/, ''));
+    const ifType = dm && rest[0] && /^If you put an? (\w+) onto the battlefield this way, you gain (\d+) life$/i.exec(rest[0]);
+    const ifDo = dm && rest[0] && /^If you do, draw (a|one|two|\d+) cards?(?: and repeat this process)?$/i.test(rest[0]), repeat = ifDo && (/and repeat this process$/i.test(rest[0]) || (rest[1] && /^Repeat this process until you put no land card onto the battlefield this way$/i.test(rest[1])));
+    if (dm && (dm[1] || ifType || ifDo)) {
+      const nd = dm[1] ? MASS_NUM(dm[1]) : 0, tapped = !!dm[3], used = 1 + (ifType ? 1 : 0) + (ifDo ? 1 : 0) + (repeat && rest[1] && /^Repeat/i.test(rest[1]) ? 1 : 0);
+      const one = (again) => { const cands = state.hand.filter(c => /\bLand\b/.test((cardInfo(c.name) || {}).t || '')); if (!cands.length) { if (!again) toast('Nothing to put', 'You have no land card in your hand.'); render(); return; }
+        openPickCards({ title: `${src}: put a land card onto the battlefield${tapped ? ' tapped' : ''}?`, note: repeat ? 'Each time you put one, you draw a card and may put another. Choose none to stop.' : 'Choose a land card, or none.', cards: cands, max: 1, nothing: 'Put none', done: picked => {
+          const c = picked[0]; if (!c) { if (again) log(`${src}: stopped putting lands`); render(); flushTriggers(); return; }
+          const i = state.hand.findIndex(x => x.id === c.id); if (i < 0) return; snap(); const [x] = state.hand.splice(i, 1); enterBattlefield(x, { from: 'hand', logMsg: `${src}: ${x.name} put onto the battlefield${tapped ? ' tapped' : ''}`, tapped: tapped ? true : undefined });
+          if (ifType && new RegExp('\\b' + ifType[1] + '\\b', 'i').test(frontType(x) || '')) { changeLife(+ifType[2], true); log(`${src}: it is a ${ifType[1]}, so you gain ${ifType[2]} life`); }
+          if (ifDo) drawCards(1);
+          render(); flushTriggers(); if (repeat) setTimeout(() => one(true), 60); } }); };
+      return [{ full: sents.length === used, label: `${nd ? `Draw ${nd}, then you` : 'You'} may put a land card from your hand onto the battlefield${tapped ? ' tapped' : ''}${ifType ? ` (a ${ifType[1]}: gain ${ifType[2]} life)` : ''}${ifDo ? '; if you do, draw a card' : ''}${repeat ? ', and repeat until you put none' : ''}`,
+        fn: () => { if (nd) drawCards(nd); one(false); } }, ...massRest(sents, used, obj)];
+    } }
   // Growth Spiral: "You may put a land card from your hand onto the battlefield."
   if ((m = /^you may put (?:a|an|one) (.+?) cards? from your hand onto the battlefield( tapped)?$/i.exec(s0))) {
     const kind = m[1].toLowerCase(), tapped = !!m[2];

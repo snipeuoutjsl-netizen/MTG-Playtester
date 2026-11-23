@@ -43,7 +43,17 @@ function deckSummary(deck) {
   const top = deck.main.filter(x => !isLandName(x.name)).slice().sort((x, y) => y.qty - x.qty).slice(0, 6);
   return { types, curve, top };
 }
+// v0.99.44 one deck that cannot be drawn (unusual list, missing card data, ...) must never stop the whole deck screen from opening:
+// it gets a plain book that still opens, edits and plays the deck, and the reason goes to the log.
 function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
+  try { return deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull); }
+  catch (e) { console.error('deck book', deckName, e); try { log(`Deck screen: could not draw "${deckName}" (${e.message}); shown as a plain book`); } catch (e2) {}
+    const plain = h('div', { class: 'bk', 'data-col': 'C', style: '--ca:#8b9099;--cad:#2a2d33;--cb:#8b9099;--cbd:#2a2d33;--T:48px;--H:210px;--D:146px' }, h('div', { class: 'bk-face spine' }, h('i', { class: 'bk-band' }), h('span', { class: 'bk-title', text: deckName }), h('i', { class: 'bk-band low' })));
+    const st = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, title: `${deckName} — click to use it, or edit it`, onclick: () => onPick() }, plain);
+    return h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: 'width:48px' }, st, h('button', { class: 'bk-fixbtn', text: 'Edit', title: 'Edit this deck list', onclick: e => { e.stopPropagation(); onEdit(); } }));
+  }
+}
+function deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onPull) {
   const dk = loadDecks()[deckName], deck = parseDeck(dk.text), cols = deckColorsOf(deck), art = deckArtName(deckName, deck), im = imgFor(art, deckName);
   const bk = bookModel(deckName, deck, cols, im, false);
   const stage = h('div', { class: 'dbx-stage bk-stage', role: 'button', tabindex: 0, 'aria-label': `${deckName}, ${sum(deck.main)} cards${isCur ? ', in use' : ''}. Press Enter to take it off the shelf.`, title: `${deckName}${isCur ? ' (in use)' : ''} — click to take it off the shelf, double-click to use it` }, bk);
@@ -51,7 +61,7 @@ function deckBoxEl(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, onP
   stage.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick(), 230); });
   stage.addEventListener('dblclick', () => { clearTimeout(clickT); onPick(); });
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
-  tiltWith(stage, bk);
+  // v0.99.44 no tilt on the shelf: hovering only lifts the book
   const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
   return tile;
 }
@@ -127,7 +137,17 @@ function openSideboarding(deckName, after) {
   } }));
   draw();
 }
-function openDeckPicker() {
+function openDeckPicker() {   // v0.99.44 if the bookcase itself fails, a plain list still lets you pick, edit and import decks
+  try { return openDeckPicker0(); } catch (e) {
+    console.error('deck screen', e); try { log(`Deck screen error: ${e.message}`); } catch (e2) {}
+    document.querySelectorAll('.dbx-modal').forEach(x => { const b = x.closest('.backdrop'); if (b) b.remove(); });
+    const m = modal('Your decks', { width: 520 }); const names = Object.keys(loadDecks()).sort((a, b) => a.localeCompare(b));
+    m.body.append(h('div', { class: 'muted small', text: `The deck shelf could not be drawn (${e.message}). Your decks are safe; here they are as a list.` }),
+      ...names.map(n => h('div', { class: 'setrow' }, h('label', { text: n }), h('button', { class: 'primary', text: 'Use', onclick: () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); } }), h('button', { text: 'Edit', onclick: () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); } }))));
+    m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor(); } }), h('button', { text: 'Close', onclick: () => m.close() }));
+  }
+}
+function openDeckPicker0() {
   const m = modal('Your decks', { width: 940 }); m.el.classList.add('dbx-modal');
   const draw = () => {
     const decks = loadDecks(), mode = gameMode(), names = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();

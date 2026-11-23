@@ -60,7 +60,7 @@ function sparks(x, y, col, n, dist, dur) {
   }
 }
 function animApply() {
-  const prev = animPrev; animPrev = null; const mullReset = !!(state && state.mullReset); if (state) delete state.mullReset; if (!prev || !state || !animOn('move')) return;
+  const prev = animPrev; animPrev = null; const newGame = !!(state && state.newGameReset), mullReset = newGame || !!(state && state.mullReset); if (state) { delete state.mullReset; delete state.newGameReset; } if (!prev || !state || !animOn('move')) return;
   // v0.99.42 CR 103.5: after a mulligan EVERY card of the old hand is shown going back into the library, even one that is drawn again
   // in the new seven (same card object, so it would otherwise just stay where it was); the new hand is then dealt from the library.
   const now = [...document.querySelectorAll(CARD_SEL)], seen = new Set(), lib = centerOf('#libstack'), jobs = [];
@@ -70,7 +70,7 @@ function animApply() {
   const dealBase = opening ? (state && state.dealDelay ? state.dealDelay * aspd() : returning ? 420 : 0) : 0,   /* animation units: wa() divides by the speed setting, and dealDelay is real time */ dealStep = opening ? 170 : 80, dealDur = opening ? 560 : 480;
   for (const el of now) {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
-    let p = mullReset && el.closest('#row-hand') ? null : prev.cards.get(id); const ff = mullReset ? null : flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
+    let p = newGame || (mullReset && el.closest('#row-hand')) ? null : prev.cards.get(id); const ff = mullReset ? null : flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2, t = getComputedStyle(el).transform;
     if (p) {
       const dx = p.cx - cx, dy = p.cy - cy; if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5 && p.t === t) continue;
@@ -86,7 +86,8 @@ function animApply() {
         const col = (SPOT_COL[spotKey(el)] || SPOT_COL['']); sparks(cx, cy, col[0], 7, 46, 520); });
     }
   }
-  const gone = [...prev.cards.keys()].filter(id => !seen.has(id) || (mullReset && prev.cards.get(id).hand));
+  const gone = [...prev.cards.keys()].filter(id => newGame || !seen.has(id) || (mullReset && prev.cards.get(id).hand));
+  if (newGame && gone.length > 30) gone.splice(0, gone.length - 30);   // a big old board: only the last 30 cards fly back, the rest simply go
   if (jobs.length + gone.length > 45) return;
   jobs.forEach(j => j());
   if (opening && newHand) {   // hold the Opening hand prompt back until the last card has landed, then check the fit once more
@@ -98,7 +99,7 @@ function animApply() {
   for (const id of gone) {
     const p = prev.cards.get(id), node = prev.nodes.get(id); if (!node) continue;
     const f = findCard(+id); let dest = null;
-    if (mullReset && p.hand) dest = centerOf('#libstack'); else if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
+    if (newGame || (mullReset && p.hand)) dest = centerOf('#libstack'); else if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
     if (!dest && state.stack.some(s => s.id === +id)) dest = centerOf('#stackBox');
     node.removeAttribute('data-id'); node.removeAttribute('title'); node.classList.add('ghost');
     if (flightCounter.has(+id)) { node.style.filter = 'sepia(1) hue-rotate(-35deg) saturate(3.2) brightness(.85)'; flightCounter.delete(+id); }

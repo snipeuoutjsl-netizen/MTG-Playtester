@@ -1425,6 +1425,48 @@ const { setup } = require('./common.js');
     const r = await ev(() => { const s = __d.state, k = __d.imgKey; const F = 'data:image/gif;base64,F', B = 'data:image/gif;base64,B'; __d.IMG.set(k('Delver of Secrets'), { front: F, back: B }); __d.IMG.set(k('Insectile Aberration'), { front: F, back: B });
       const c = Object.assign(__d.newCard('Delver of Secrets'), { id: s.nextId++ }); s.battlefield.push(c); const a = __d.imgFor(c.name).front; __d.transformPerm(c.id, 1); const b = __d.imgFor(c.name).front; __d.IMG.delete(k('Delver of Secrets')); const b2 = __d.imgFor(c.name).front; __d.IMG.delete(k('Insectile Aberration')); return { a: a === F, b: b === B, b2: b2 === B, name: c.name }; });
     return { ok: r.a && r.b && r.b2 && r.name === 'Insectile Aberration', why: JSON.stringify(r) }; });
+  const amuSetup = `const s=__d.state; const W=ms=>new Promise(r=>setTimeout(r,ms)); const mk=n=>Object.assign(__d.newCard(n),{id:s.nextId++});
+    const setup=(bf,hand,lib)=>{ document.querySelectorAll('.backdrop').forEach(x=>x.remove()); document.getElementById('modalRoot').innerHTML=''; s.battlefield=bf.map(mk); s.hand=hand.map(mk); if(lib) s.library=lib.map(mk).concat(s.library); s.stack=[]; s.pendingTriggers=[]; s.graveyard=[]; s.landsPlayed=0; s.extraLandDrops=0; __d.render(); };
+    const clickFirst=t=>{const b=[...document.querySelectorAll('#modalRoot button')].find(b=>b.textContent.trim().startsWith(t)); if(b){b.click(); return true;} return false;};
+    const opt=(card,eff,extra)=>__d.effectOptions(eff,Object.assign({sourceName:card.name,sourceId:card.id},extra||{}));`;
+  await T('603.2 + 603.6a', 'Amulet of Vigor: triggers only for a permanent that enters TAPPED, and "untap it" untaps that permanent; a bounce land returns a land you control (your choice as it resolves, CR 608.2c)', async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['Amulet of Vigor'],['Forest']); __d.playLand(s.hand[0].id); await W(250); const forest = s.stack.length + s.pendingTriggers.length;
+      setup(['Amulet of Vigor','Forest'],['Simic Growth Chamber']); __d.playLand(s.hand[0].id); await W(250); clickFirst('Put on the stack'); await W(150); clickFirst('Put on the stack'); await W(250); document.getElementById('modalRoot').innerHTML='';
+      const ch = s.battlefield.find(c=>c.name==='Simic Growth Chamber'); const tappedIn = !!ch.tapped; const am = s.stack.find(x=>/Amulet/.test(x.name)); opt({name:'Amulet of Vigor',id:am.sourceId},am.text,{otherId:am.otherId})[0].fn(); const untapped = !ch.tapped;
+      const bo = s.stack.find(x=>/Chamber/.test(x.name)); opt(ch,bo.text)[0].fn(); await W(200); const row=[...document.querySelectorAll('#modalRoot .frow')].find(r=>/Forest/.test(r.textContent)); if(row) row.click(); await W(50); clickFirst('Confirm'); await W(200);
+      return { forest, tappedIn, untapped, hand: s.hand.map(c=>c.name), bf: s.battlefield.map(c=>c.name) };})()`));
+    return { ok: r.forest === 0 && r.tappedIn && r.untapped && r.hand.includes('Forest') && !r.bf.includes('Forest'), why: JSON.stringify(r) }; });
+  await T('701.21a + 305.2', 'Lotus Field sacrifices two lands you choose; Explore grants an additional land play this turn; Scapeshift sacrifices any number of lands, then searches for that many', async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['Forest','Forest','Forest','Lotus Field'],[]); const lf=s.battlefield[3]; const lt=__d.parseTriggers(lf).find(t=>/sacrifice/i.test(t.effect)); opt(lf,lt.effect)[0].fn(); await W(200);
+      const rows=[...document.querySelectorAll('#modalRoot .frow')].filter(r=>/Forest/.test(r.textContent)).slice(0,2); rows[0].click(); await W(30); (document.querySelector('#modalRoot .frow')||rows[0]).click(); await W(50); clickFirst('Confirm'); await W(150); const lotus = s.battlefield.map(c=>c.name).join(',');
+      setup([],[]); const before=__d.landDropsAllowed(); const ex=mk('Explore'); __d.effectOptions(__d.cardText(ex),{sourceName:'Explore'})[0].fn(); const after=__d.landDropsAllowed();
+      const sc=__d.effectOptions(__d.cardText(mk('Scapeshift')),{sourceName:'Scapeshift'}); return { lotus, before, after, scape: sc.length===1 && sc[0].full && /Sacrifice any number/.test(sc[0].label) };})()`));
+    return { ok: r.lotus === 'Forest,Lotus Field' && r.after === r.before + 1 && r.scape, why: JSON.stringify(r) }; });
+  await T('707.9 + 603.7 + 117.3', 'Vesuva (current wording "this land enter tapped as a copy") asks which land to copy; Summoner\'s Pact sets up "pay {2}{G}{G}. If you don\'t, you lose the game" at your next upkeep, and the turn stops in the upkeep until it is dealt with; Green Sun\'s Zenith is shuffled into the library as it resolves (CR 608.2n)', async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['Simic Growth Chamber'],['Vesuva']); __d.playLand(s.hand[0].id); await W(250); const ves = /copy a land/i.test((document.querySelector('#modalRoot .modal')||{}).innerText||'');
+      setup(['Forest'],[]); const pact=mk("Summoner's Pact"); __d.effectOptions(__d.cardText(pact),{sourceName:pact.name,sourceId:pact.id})[0].fn(); document.getElementById('modalRoot').innerHTML=''; __d.nextTurn(); await W(1200);
+      const top=s.stack[s.stack.length-1]; const po = top ? __d.effectOptions(top.text, top).map(o=>o.label) : []; const step = s.step;
+      document.querySelectorAll('.backdrop').forEach(x=>x.remove()); s.stack=[]; s.step=__d.stepIndex('main1');
+      setup([],[],['Arboreal Grazer']); const g=mk("Green Sun's Zenith"); g.xValue=1; s.stack.push(g); __d.resolveTopOfStack(); await W(250); clickFirst('Done'); await W(200);
+      return { ves, po, step, gszLib: s.library.some(c=>c.id===g.id), gszGy: s.graveyard.some(c=>c.id===g.id) };})()`));
+    return { ok: r.ves && r.po.some(l => /Pay \{2\}\{G\}\{G\}/.test(l)) && r.po.some(l => /lose the game/.test(l)) && r.step === 1 && r.gszLib && !r.gszGy, why: JSON.stringify(r) }; });
+  await T('707.2 + 514.2', 'Shifting Woodland becomes a copy of a permanent card in your graveyard until end of turn and is itself again at cleanup; Malevolent Rumble has no activated ability of its own (the colon is inside the Spawn token\'s quoted ability); Spelunking puts a land from hand onto the battlefield', async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['Shifting Woodland'],[]); const sw=s.battlefield[0]; s.graveyard=[mk('Primeval Titan')]; const ab=__d.activatedAbilitiesFor(sw)[0]; opt(sw,ab.effect)[0].fn(); await W(200); const row=document.querySelector('#modalRoot .frow'); if(row) row.click(); await W(50); clickFirst('Confirm'); await W(100);
+      const copied = sw.name; __d.jumpToStep ? __d.jumpToStep(__d.stepIndex('cleanup')) : null; await W(200); const back = sw.name;
+      const rum = __d.activatedAbilitiesFor(mk('Malevolent Rumble')).length;
+      const sp = __d.effectOptions(__d.parseTriggers(mk('Spelunking'))[0].effect,{sourceName:'Spelunking'}).map(o=>o.label);
+      return { copied, back, rum, sp };})()`));
+    return { ok: r.copied === 'Primeval Titan' && r.back === 'Shifting Woodland' && r.rum === 0 && r.sp.some(l => /put a land card from your hand/.test(l)), why: JSON.stringify(r) }; });
+  await T('103 + UI', 'New Game: every card of the old game is shown going back into the library (ids start again, so no old card may be mistaken for a new one)', async () => { await reset();
+    const r = await ev(async () => { document.querySelectorAll('.backdrop').forEach(x => x.remove()); window.confirm = () => true; __d.startGame(); await new Promise(r => setTimeout(r, 3500)); const s = __d.state; __d.keepHand(); if (s.bottomPhase) __d.finishMulligan();
+      for (const c of s.hand.splice(0, 3)) s.battlefield.push(c); __d.render(); await new Promise(r => setTimeout(r, 600)); const n0 = s.hand.length + s.battlefield.length;
+      __d.startGame(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); await new Promise(r => setTimeout(r, 100)); const ghosts = document.querySelectorAll('body > .ghost').length;
+      await new Promise(r => setTimeout(r, 3500)); __d.keepHand(); if (__d.state.bottomPhase) __d.finishMulligan(); return { n0, ghosts, anim: __d.settings.anim && __d.settings.anim.on !== false }; });
+    return { ok: !r.anim || r.ghosts === r.n0, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

@@ -110,6 +110,8 @@ function frontType(c) {
   if (c && c.impended && t && c.counters && c.counters.time > 0) t = t.replace(/\bCreature\s*/, '').replace(/\s+\u2014/, ' \u2014');   // CR 702.176b not a creature while it has a time counter
   return t;
 }
+// "Whenever a permanent you control enters tapped" (Amulet of Vigor) / "enters untapped": the permanent's state as it entered decides (CR 603.6a + 614.1c).
+function enterStateOk(t, e) { const l = String(t.line || t.cond || ''); if (/\benters? (?:the battlefield )?tapped\b/i.test(l)) return !!e.tapped; if (/\benters? (?:the battlefield )?untapped\b/i.test(l)) return !e.tapped; return true; }
 function filterMatches(filter, card) {
   const f = filter.toLowerCase();
   if (card && card.token && /\bnon-?token\b/.test(f)) return false;   // CR 111.1: a "nontoken" filter never matches a token (Weapons Manufacturing must not trigger on its own Munitions)
@@ -132,7 +134,7 @@ function fireTrigger(ev, ctx = {}) {
   const inGy = x => state.graveyard.some(g => g.id === x.id);
   // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
   const extraTimes = src => { let n = 0; if (!src || !state || !/\bCreature\b/.test(permTypeLine(src))) return 0; for (const g of state.battlefield) { if (g.id === src.id || !g.chosen) continue; if (!/If a triggered ability of another creature you control of the chosen type triggers, it triggers an additional time/i.test(cardText(g) || '')) continue; if (permTypeInfo(src).subs.has(String(g.chosen).toLowerCase()) || permTypeInfo(src).changeling) n++; } return n; };
-  const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount }); };
+  const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount, otherId: ctx.card && ctx.card.id !== src.id ? ctx.card.id : undefined }); };
   const add = (src, t, why) => { const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
@@ -143,7 +145,7 @@ function fireTrigger(ev, ctx = {}) {
     for (let t of parseTriggers(e)) if (t.ev === 'etb-self' && (!t.test || t.test(e)) && !(isLandName(e.name) && /\b(scry|surveil)\s+\d+/i.test(t.effect))) add(e, e.xValue !== undefined ? { ...t, effect: t.effect.replace(/\bX\b/g, String(e.xValue)), line: t.line.replace(/\bX\b/g, String(e.xValue)) } : t, `${e.name} entered the battlefield, so its "enters the battlefield" ability triggers.`);
     for (const c of bf) for (const t of parseTriggers(c)) {
       if (t.ev === 'landfall' && isLandName(e.name)) add(c, t, `A land (${e.name}) entered the battlefield under your control: landfall.`);
-      else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e))) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
+      else if (t.ev === 'etb-other' && c.id !== e.id && filterMatches(t.filter, e) && (!t.test || t.test(c, e)) && enterStateOk(t, e)) add(c, t, `${e.name} entered the battlefield and matches this ability's condition.`);
     }
   } else if (ev === 'cast') {
     const sp = ctx.card;
@@ -615,7 +617,7 @@ function effectOptions(tx, obj) {
   return outList;
 }
 function effectOptionsInner(tx, obj) {
-  { const lk = classLevelOptions(tx, obj) || exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
+  { const lk = classLevelOptions(tx, obj) || permChoiceOptions(tx, obj) || exiledReturnOptions(tx, obj) || massEffectOptions(tx, obj) || handRefillOptions(tx, obj) || playerChoiceOptions(tx, obj) || incubateOptions(tx, obj) || manaCountOptions(tx, obj) || vehicleOptions(tx, obj) || revealTopOptions(tx, obj) || oppHandOptions(tx, obj) || playerClauseOptions(tx, obj) || selfMoveOptions(tx, obj) || lookReorderOptions(tx, obj) || shuffleIntoOptions(tx, obj) || attachAfterCreateOptions(tx, obj) || linkedDependentOptions(tx, obj) || millAmongOptions(tx, obj) || assimilateOptions(tx, obj) || sacUnlessOptions(tx, obj) || ifYouDoOptions(tx, obj); if (lk) return lk; }   // v0.97.6 "destroy X. Its controller creates ..." is one linked effect
   const base = effectOptionsBase(tx, obj);
   try {
     if (!state || (obj && obj.special) || base.some(o => o.full || o.special)) return base;
@@ -749,7 +751,7 @@ function effectOptionsBase(tx, obj) {
   if (!bound.length && (mm = tx.match(/\b(?:each opponent|target opponent|an opponent) loses (\d+) life/i))) { const v = +mm[1]; opts.push({ label: `Opponent loses ${v} life`, fn: () => changeOppLife(-v) }); }
   if (!bound.length && (mm = tx.match(/\bdeals? (\d+) damage to (?:any target|target (?:opponent|player)|each opponent|target creature or player|target player or planeswalker)/i))) { const v = +mm[1]; opts.push({ label: `Deal ${v} damage to the opponent`, fn: () => changeOppLife(-v) }); }
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
-  for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+/)) { if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
+  for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+(?!If you don't\b)/)) {   /* "pay X. If you don't, ..." stays one instruction */ if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
   if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
