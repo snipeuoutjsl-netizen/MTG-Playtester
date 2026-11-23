@@ -27,13 +27,14 @@ let hallHost = null;
 function hallOpen() { return document.body.classList.contains('hall-on'); }
 function openHall() {
   let el = document.getElementById('hall'); if (!el) { el = h('section', { id: 'hall', 'aria-label': 'The Library' }); document.body.insertBefore(el, document.getElementById('modalRoot') || null); }
+  try { el.getAnimations().forEach(x => x.cancel()); } catch (e) {}   // v0.99.52 a finished fade-out (fill: forwards) kept the reopened Library invisible
   document.body.classList.add('hall-on'); el.hidden = false; drawHall();
   const decks = loadDecks(); try { loadCachedImages(Object.keys(decks).map(n => deckArtName(n, parseDeck(decks[n].text)))).then(k => { if (k && hallOpen()) drawHall(); }); } catch (e) {}
   setTimeout(() => { const f = el.querySelector('.bk-stage, .hall-page button'); if (f) f.focus(); }, 60);
 }
 function closeHall(anim) {
   const el = document.getElementById('hall'); if (!el || !hallOpen()) return;
-  const done = () => { document.body.classList.remove('hall-on'); el.hidden = true; el.replaceChildren(); render(); };
+  const done = () => { document.body.classList.remove('hall-on'); el.hidden = true; el.replaceChildren(); try { el.getAnimations().forEach(x => x.cancel()); } catch (e) {} render(); };
   if (anim && animOn('ui') !== false && !reducedMotion() && !document.body.classList.contains('a11y-calm')) { const a = wa(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(1.04)' }], { duration: 420, easing: 'ease-in', fill: 'forwards' }); a.onfinish = () => { done(); const t = document.getElementById('table'); if (t) wa(t, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' }); }; }
   else done();
 }
@@ -46,7 +47,7 @@ function beginWith(name) {
 }
 // v0.99.51 the deck taken down is laid out on the desk: one column per mana value (lands last), each card once with its count,
 // fanned so every name shows; hovering a card lifts it to full size.
-function deckSpreadEl(deck, deckName) {
+function deckSpreadEl(deck, deckName, onCard) {
   const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
   const build = () => {
     const by = new Map();
@@ -62,15 +63,49 @@ function deckSpreadEl(deck, deckName) {
           im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
           h('em', { class: 'ds-qty', text: '×' + c.qty }));
         const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
+        if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 120); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
         return card; }));
       return h('div', { class: 'ds-col' }, h('div', { class: 'ds-h', text: `${k === 99 ? 'Lands' : k === 7 ? '7+' : k}  ·  ${n}` }), stack);
     });
     el.replaceChildren(...cols);
     requestAnimationFrame(() => { const W = 1520, H = 262, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
   };
+  if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 350); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
   build();
   try { loadCachedImages(deck.main.map(x => x.name)).then(n => { if (n && el.isConnected) build(); }); } catch (e) {}
   return el;
+}
+// v0.99.52 hovering a card on the desk turns the open book to a page about that card (picture on the left, its text on the right);
+// leaving the cards turns back to the deck's pages.
+function tomeCard(tome, c, deckName) {
+  if (!tome || !tome.isConnected || !tome.classList.contains('deck-open')) return;
+  const cur = tome._card || null; if ((c && c.name) === (cur && cur.name) || (!c && !cur)) return;
+  tome._card = c;
+  const fill = () => {
+    let pg = tome.querySelector('.tome-card');
+    if (!c) { if (pg) pg.remove(); tome.classList.remove('card-open'); return; }
+    if (!pg) { pg = h('div', { class: 'tome-card' }); tome.append(pg); }
+    const rec = c.rec || resolve(c.name) || {}, im = imgFor(c.name, deckName);
+    const sym = mc => { try { return mc ? symbols(mc) : ''; } catch (e) { return mc || ''; } };
+    const faceEl = f => h('div', { class: 'tc-face' },
+      h('div', { class: 'tc-title' }, h('b', { text: f.name || c.name }), h('span', { class: 'tc-mc' }, sym(f.mc))),
+      h('div', { class: 'tc-type', text: f.t || '' }),
+      ...String(f.tx || '').split('\n').filter(Boolean).map(line => h('p', { text: line })),
+      f.pt ? h('div', { class: 'tc-pt', text: f.pt }) : null);
+    const faces = [rec];
+    pg.replaceChildren(
+      h('div', { class: 'tc-page tc-pic' }, im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : h('div', { class: 'tc-noimg', text: c.name })),
+      h('div', { class: 'tc-page tc-txt' }, ...faces.map(faceEl),
+        h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
+    tome.classList.add('card-open');
+  };
+  const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
+  if (calm) { fill(); return; }
+  // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck
+  tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
+  const back = !c, leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);
+  const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
+  setTimeout(fill, 210 / aspd()); a.onfinish = () => leaf.remove();
 }
 const HALL_W = 1600, HALL_H = 900, HALL_PER_PAGE = 40;
 let hallPage = 0;
@@ -105,7 +140,7 @@ function drawHall() {
     h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
     h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
   const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
-  const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: deckSpreadEl, layer: null };
+  const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: (deck, name) => deckSpreadEl(deck, name, c => tomeCard(tome, c, name)), layer: null };
   const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: hallScene });
   const pager = pages > 1 ? h('div', { class: 'hall-pager' },
     h('button', { text: '‹', title: 'Previous shelves', disabled: hallPage === 0, onclick: () => { hallPage--; drawHall(); } }),

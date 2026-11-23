@@ -154,7 +154,7 @@ function pullDeckBox(m, tile, d) {
   function putBack(now) {
     if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
     ov.style.pointerEvents = 'none'; ov.classList.add('leaving'); if (m.el._dbxPut && m.el._dbxPutOv === ov) { m.el._dbxPut = null; m.el._dbxPutOv = null; }
-    if (sc3) { info.remove(); if (spread) spread.remove(); if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
+    if (sc3) { info.remove(); if (spread) spread.remove(); sc3.tome.querySelectorAll('.tome-card, .tome-leaf').forEach(x => x.remove()); sc3.tome.classList.remove('card-open'); sc3.tome._card = null; if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
     info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });
