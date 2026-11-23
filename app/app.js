@@ -4013,7 +4013,7 @@ function startGame() {
   drawCards(7, true);
   state.phase = 'mull';
   state.onPlay = $('#chkPlay').checked;
-  state.deckName = deck.name;   // v0.99.47 which deck this game is using (the New Game button lights up when you pick another)
+  state.deckName = deck.name; try { noteGameStarted(deck.name); } catch (e) {}   // v0.99.47 which deck this game is using (the New Game button lights up when you pick another)
   state.log.push(`New game: ${deck.name} (${sum(deck.main)} cards, ${state.onPlay ? 'on the play' : 'on the draw'})`);
   if (unknown.size) state.log.push('Not found in card data: ' + [...unknown].join(', '));
   render();
@@ -5790,7 +5790,7 @@ function renderManaPool() {
 // (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
 let renderCache = null, layoutQueued = false;
 function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
-function render() { try { newGameCue(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } }
+function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } }
 function layoutPass() {
   layoutQueued = false;
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
@@ -6623,7 +6623,7 @@ function openWelcome(onDone) {
     ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
       P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
     ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('The deck button at the top left opens your deck bookcase: each deck is a book with its name on the spine, ten to a shelf. Click a book to take it off the shelf: it turns to show its cover, with its colours, mana curve and key cards and the ', B('Use this deck'), ', Edit, Sideboard and art buttons. ', B('Put it back'), ' (or Escape) returns it.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
+      P('Every session opens in the Library: your decks stand on the shelves on the left, and the open book on the reading desk is the menu (continue your game, start a new one, Settings, Accessibility, help). The deck button at the top left brings you back to the Library at any time (Esc returns to the table). In the Library, each deck is a book: each deck is a book with its name on the spine, ten to a shelf. Click a book to lay it on the desk: it turns to show its cover, with its colours, mana curve, key cards and the librarian\'s notes (games played, average lands kept, mulligans and goldfish kill turn, all from your own games), and ', B('Begin a game with this deck'), ', Edit, Sideboard, art and Delete buttons. ', B('Put it back'), ' (or Escape) returns it.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
     ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
       P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
     ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
@@ -6679,8 +6679,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.47';
+const APP_VERSION = '0.99.48';
 const CHANGELOG = [
+  { v: '0.99.48', title: 'The Library', notes: ['NEW: every session opens in the Library. Your decks stand as books on the shelves; on the reading desk an open book is the menu (Continue your game, New game, Standard or Commander, who goes first, Import a deck, Settings, Accessibility, Rules & help, What\'s new), lit by a flickering candle.', 'Click a book to lay it on the desk: it turns to its cover and shows its colours, curve, key cards and the librarian\'s notes, then "Begin a game with this deck" starts the game and the Library fades into the table.', 'Librarian\'s notes: each deck remembers how often you opened it, when you last did, the average lands in the hands you kept, mulligans per game, and the turn your goldfish kills come on. All of it comes from your own games.', 'The deck button at the top left now takes you back to the Library; Esc (or "Back to the table") returns to your game. You can turn off "Open the Library when the app starts" on the desk.'] },
   { v: '0.99.47', title: 'Prepared, and a New Game reminder', notes: ['RULES (CR 722, prepared): preparation cards such as Carnivorous Cultivator // Enroot now work. From your hand you cast only the creature. When it becomes prepared ("enters prepared", or an effect that prepares it) a copy of its spell waits in exile, marked PREPARED on the creature. Cast it from the creature\'s menu or the exile zone for the spell\'s own cost and timing; casting it unprepares the creature, even if the copy is countered, and the copy never goes to your graveyard. A creature can\'t be prepared twice, and leaving the battlefield ends it.', 'When you pick a different deck, the New Game button glows until you start a game with it, so you know the table still has the old deck.'] },
   { v: '0.99.46', title: 'Deck scan report includes your full lists', notes: ['The deck scan report (deck screen \u2192 Scan decks & save report) now ends with the full list of every deck, including sideboards and any sideboarded list in use, so your decks can be rebuilt exactly for testing.', 'FIXED: the report always said "Card data loaded: NONE" even when your card data was loaded.'] },
   { v: '0.99.45', title: 'Library of Alexandria: dredge, Omniscience, suspend, Hogaak', notes: [
@@ -7950,9 +7951,10 @@ function pullDeckBox(m, tile, d) {
     h('div', { class: 'dbx-pips' }, d.cols.length ? d.cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}`, title: c })) : h('span', { class: 'muted small', text: 'Colourless' })),
     h('div', { class: 'dbx-types' }, Object.entries(sm.types).filter(e => e[1]).map(([k, n]) => h('span', { text: `${n} ${n === 1 ? k : k === 'Sorcery' ? 'Sorceries' : k + 's'}` }))),
     h('div', { class: 'dbx-curve', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i}${i === 6 ? '+' : ''}`).join(', ') }, sm.curve.map((n, i) => h('div', { class: 'dbx-cbar' }, h('i', { style: `height:${Math.round(100 * n / maxC)}%` }), h('b', { text: n || '' }), h('span', { text: i === 6 ? '6+' : String(i) })))),
+    libraryNotesEl(d.deckName),
     sm.top.length ? h('div', { class: 'dbx-top' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { text: `${x.qty} × ${x.name}` }))) : null,
     h('div', { class: 'dbx-acts' },
-      btn(d.isCur ? 'Keep using this deck' : 'Use this deck', d.onPick, 'primary'),
+      btn(d.beginLabel || (d.isCur ? 'Keep using this deck' : 'Use this deck'), d.onPick, 'primary'),
       btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
       btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
       h('button', { text: 'Put it back', onclick: () => putBack() }),
@@ -8027,6 +8029,13 @@ function openDeckPicker() {   // v0.99.44 if the bookcase itself fails, a plain 
     m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor(); } }), h('button', { text: 'Close', onclick: () => m.close() }));
   }
 }
+// v0.99.48 the shelves are shared by the deck window and the Library hall: cb.pick(name), cb.edit(name), cb.redraw(), cb.host ({ el }: where a pulled book lands), cb.beginLabel
+function bookcaseEl(names, cur, mode, cb) {
+  if (!names.length) return h('div', { class: 'muted bk-empty', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' });
+  return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / BOOKS_PER_SHELF)) }, (_, r) => h('div', { class: 'bk-shelf' }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
+    () => cb.pick(n), () => openDeckArtPicker(n, cb.redraw), () => cb.edit(n), () => openCustomArt(n, cb.redraw), () => openSideboarding(n, cb.redraw),
+    (tile, d) => pullDeckBox(cb.host, tile, Object.assign(d, { redraw: cb.redraw, beginLabel: cb.beginLabel }))))), h('div', { class: 'bk-plank' }))));
+}
 function openDeckPicker0() {
   const m = modal('Your decks', { width: 940 }); m.el.classList.add('dbx-modal');
   const draw = () => {
@@ -8034,15 +8043,10 @@ function openDeckPicker0() {
     const pick = md => { if (md === gameMode()) return; setGameMode(md); const first = decksInMode(loadDecks(), md).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); prepareImages(); render(); draw(); };
     const seg = FEATURES.commander ? h('div', { class: 'modeseg', role: 'tablist', 'aria-label': 'Game mode' },
       ...[['standard', 'Decks', 'Normal goldfish games'], ['commander', 'Commander', 'Commander decks and Commander rules (40 life, command zone, commander tax)']].map(([k, lab, tip]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: tip, text: lab, onclick: () => pick(k) }))) : null;
-    m.body.replaceChildren(seg, names.length
-      ? h('div', { class: 'bk-case' }, Array.from({ length: Math.ceil(names.length / BOOKS_PER_SHELF) }, (_, r) => h('div', { class: 'bk-shelf' }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
-        () => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
-        () => openDeckArtPicker(n, draw),
-        () => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
-        () => openCustomArt(n, draw),
-        () => openSideboarding(n, draw),
-        (tile, d) => pullDeckBox(m, tile, Object.assign(d, { redraw: draw }))))), h('div', { class: 'bk-plank' }))))
-      : h('div', { class: 'muted', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' }));
+    m.body.replaceChildren(seg, bookcaseEl(names, cur, mode, {
+      pick: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); prepareImages(); m.close(); render(); },
+      edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); m.close(); openDeckEditor(); },
+      redraw: draw, host: m }));
   };
   draw();
   m.foot.append(h('button', { text: 'Import / new deck…', onclick: () => { m.close(); openDeckEditor(gameMode() === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }); } }), h('button', { text: 'Scan decks & save report', title: 'Reads every card in every saved deck and saves a text file you can send for review', onclick: saveDeckScanReport }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
@@ -10103,7 +10107,7 @@ function init() {
   $('#btnTokenGloss').addEventListener('click', () => { toggleUtilityMenu(false); openTokenGlossary(); });
   if (!settings.kitchenSeen) { settings.kitchenSeen = true; if (!settings.matPreset) settings.matPreset = 'kitchen'; if (!settings.sleevePreset) settings.sleevePreset = 'worn'; saveSettings(); try { applySettings(); applySleeve(); } catch (e) { /* ignore */ } }   // v0.69.3: the new table and card back become the look once; change them in Settings > Graphics
   $('#deckSelect').addEventListener('change', e => { lsSet('mtgpt.current', e.target.value); prepareImages(); });
-  $('#btnDecks').addEventListener('click', openDeckPicker);
+  $('#btnDecks').addEventListener('click', openHall);   // v0.99.48 the deck button takes you back to the Library
   { const cm = $('#cmdWrap'); if (cm) cm.addEventListener('click', openDeckPicker); }
   $('#btnTools').addEventListener('click', e => { e.stopPropagation(); toggleUtilityMenu(); });
   $('#utilityMenu').addEventListener('click', e => e.stopPropagation());
@@ -10181,12 +10185,13 @@ document.addEventListener('keydown', e => {
   loadPlaymat();
   loadSleeve();
   render();
+  if (lsGet(HALL_KEY, true) !== false) openHall();   // v0.99.48 every session starts in the Library
   updateDbStatus();
   idbGet('tokens').then(t => { if (Array.isArray(t)) { installTokens(t); updateDbStatus(); } }).catch(() => {}).then(() => setTimeout(() => syncTokens(false), 2500));
   idbGet('cards').then(list => {
     if (Array.isArray(list) && list.length) { installCards(list); render(); }
     else updateDbStatus();
-  }).then(() => { prepareImages(); setTimeout(() => { if (!lsGet('mtgpt.welcomeSeen', false) && !Object.keys(loadDecks()).length && !cardCount) openWelcome(() => setTimeout(promptFirstBoot, 300)); else promptFirstBoot(); }, 600); });
+  }).then(() => { prepareImages(); if (hallOpen()) drawHall(); setTimeout(() => { if (!lsGet('mtgpt.welcomeSeen', false) && !Object.keys(loadDecks()).length && !cardCount) openWelcome(() => setTimeout(promptFirstBoot, 300)); else promptFirstBoot(); }, 600); });
 }
 
 // GENERATED by tests/rules-audit.py --table from the Comprehensive Rules (do not edit by hand).
@@ -11082,7 +11087,7 @@ function showGameEnd(which, title, sub) {
     h('div', { class: 'ge-btns' },
       h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
-      h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { $('#btnDecks').click(); } catch (e) {} } })));
+      h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { openHall(); } catch (e) {} } })));
   m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); } }));
 }
 // ---------------------------------------------------------------- v0.96.22 keyword batch 6 (rules text): Squad, Offspring, Impending
@@ -13495,6 +13500,74 @@ function preparedOptions(tx, obj) {
   }
   return null;
 }
+// ---- v0.99.48 The Library hall: the start screen. Your decks are books on the shelves (left); the reading desk (right) holds an open book
+// whose pages are the menu, and a candle. Pulling a book lays it on the desk with its details and "Begin". Shown at every launch unless switched off.
+const HALL_KEY = 'mtgpt.hallStart', NOTES_KEY = 'mtgpt.deckNotes';
+// Librarian's notes: real numbers from games played in the app (never invented).
+function deckNotes(name) { const a = lsGet(NOTES_KEY, {}) || {}; return a[name] || null; }
+function updateNotes(name, fn) { if (!name) return; const a = lsGet(NOTES_KEY, {}) || {}; const n = a[name] || { games: 0, keeps: 0, mulls: 0, lands: 0, wins: [] }; fn(n); a[name] = n; lsSet(NOTES_KEY, a); }
+function libraryNotesTick() {   // called from render: records a kept hand once, and the turn the opponent first reaches 0 life
+  if (!state || !state.deckName) return;
+  if (state.phase === 'play' && !state.notedKeep) { state.notedKeep = true; const lands = state.hand.filter(c => isLandName(c.name)).length, mu = state.mulls || 0; updateNotes(state.deckName, n => { n.keeps++; n.mulls += mu; n.lands += lands; }); }
+  if (!state.notedWin && state.oppLife !== undefined && state.oppLife <= 0) { state.notedWin = true; const t = state.turn; updateNotes(state.deckName, n => { n.wins.push(t); if (n.wins.length > 50) n.wins.shift(); }); }
+}
+function noteGameStarted(name) { updateNotes(name, n => { n.games++; n.last = Date.now(); }); }
+function libraryNotesEl(name) {
+  const n = deckNotes(name); if (!n || !n.games) return h('div', { class: 'lib-notes empty', text: 'Librarian’s notes: not opened yet. Notes appear here as you play.' });
+  const ago = n.last ? Math.max(0, Math.round((Date.now() - n.last) / 86400000)) : null, avg = (a, b) => b ? (a / b).toFixed(1) : '–';
+  const w = n.wins || [], wt = w.length ? (w.reduce((a, b) => a + b, 0) / w.length).toFixed(1) : null;
+  return h('div', { class: 'lib-notes' }, h('div', { class: 'fhead', text: 'Librarian’s notes' }),
+    h('div', { text: `Opened ${n.games} time${n.games === 1 ? '' : 's'}${ago === null ? '' : ago === 0 ? ', last today' : `, last ${ago} day${ago === 1 ? '' : 's'} ago`}.` }),
+    n.keeps ? h('div', { text: `Kept hands: ${avg(n.lands, n.keeps)} lands on average; ${avg(n.mulls, n.keeps)} mulligans per game.` }) : null,
+    wt ? h('div', { text: `Goldfish kills: ${w.length}, on turn ${wt} on average (fastest turn ${Math.min(...w)}).` }) : null);
+}
+// ---- the hall itself
+let hallHost = null;
+function hallOpen() { return document.body.classList.contains('hall-on'); }
+function openHall() {
+  let el = document.getElementById('hall'); if (!el) { el = h('section', { id: 'hall', 'aria-label': 'The Library' }); document.body.insertBefore(el, document.getElementById('modalRoot') || null); }
+  document.body.classList.add('hall-on'); el.hidden = false; drawHall();
+  const decks = loadDecks(); try { loadCachedImages(Object.keys(decks).map(n => deckArtName(n, parseDeck(decks[n].text)))).then(k => { if (k && hallOpen()) drawHall(); }); } catch (e) {}
+  setTimeout(() => { const f = el.querySelector('.bk-stage, .hall-page button'); if (f) f.focus(); }, 60);
+}
+function closeHall(anim) {
+  const el = document.getElementById('hall'); if (!el || !hallOpen()) return;
+  const done = () => { document.body.classList.remove('hall-on'); el.hidden = true; el.replaceChildren(); render(); };
+  if (anim && animOn('ui') !== false && !reducedMotion() && !document.body.classList.contains('a11y-calm')) { const a = wa(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(1.04)' }], { duration: 420, easing: 'ease-in', fill: 'forwards' }); a.onfinish = () => { done(); const t = document.getElementById('table'); if (t) wa(t, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' }); }; }
+  else done();
+}
+function beginWith(name) { lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true); setTimeout(() => startGame(), reducedMotion() ? 0 : 200); }
+function drawHall() {
+  const el = document.getElementById('hall'); if (!el) return;
+  const decks = loadDecks(), mode = gameMode(), names = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
+  const desk = h('div', { class: 'hall-desk' }); hallHost = { el: desk };
+  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 3 });
+  const btn = (text, fn, cls, title) => h('button', { class: 'hall-btn ' + (cls || ''), text, title: title || '', onclick: fn });
+  const inGame = !!(state && state.deckName);
+  const modeSeg = FEATURES.commander ? h('div', { class: 'modeseg hall-mode', role: 'tablist', 'aria-label': 'Game mode' }, ...[['standard', 'Standard'], ['commander', 'Commander']].map(([k, lab]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), text: lab, onclick: () => { if (mode === k) return; setGameMode(k); const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); drawHall(); } }))) : null;
+  const playChk = document.getElementById('chkPlay'); const onPlay = playChk ? playChk.checked : true;
+  const left = h('div', { class: 'hall-page left' }, h('div', { class: 'hall-h', text: 'Play' }),
+    inGame ? btn(`Continue: ${state.deckName} (turn ${state.turn || 1})`, () => closeHall(true), 'primary', 'Back to the game in progress') : null,
+    btn(cur ? `New game with ${cur}` : 'New game', () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Pull a book from the shelves first.'); }, inGame ? '' : 'primary', 'Start a new game with the selected deck'),
+    modeSeg,
+    h('label', { class: 'hall-chk' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), ' I go first (on the play)'),
+    btn('Import a new deck…', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true })),
+    btn('Scan decks & save report', () => saveDeckScanReport(), '', 'Reads every card in every deck and saves a report'));
+  const right = h('div', { class: 'hall-page right' }, h('div', { class: 'hall-h', text: 'The Library' }),
+    btn('Settings', () => openSettings()),
+    btn('Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }),
+    btn('Rules & help', () => openWelcome()),
+    btn('How the app reads cards', () => { try { $('#btnReading').click(); } catch (e) {} }),
+    btn(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }),
+    h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
+    h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
+  const candle = h('div', { class: 'candle', 'aria-hidden': 'true' }, h('div', { class: 'candle-glow' }), h('div', { class: 'candle-flame' }, h('i')), h('div', { class: 'candle-wick' }), h('div', { class: 'candle-wax' }), h('div', { class: 'candle-dish' }));
+  desk.append(h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right), candle, h('div', { class: 'hall-hint', text: names.length ? 'Pull a book from the shelves to lay it on the desk.' : '' }));
+  el.replaceChildren(
+    h('header', { class: 'hall-top' }, h('div', { class: 'hall-title' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' })), inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null),
+    h('div', { class: 'hall-room' }, h('div', { class: 'hall-shelves' }, shelf), desk));
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull')) { e.preventDefault(); closeHall(true); } });
 init();
 
 })();

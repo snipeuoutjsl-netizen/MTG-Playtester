@@ -3,7 +3,7 @@ const NAMES=["Mock Decayer","Mock Exerter","Mock Monster","Mock Populator","Mock
 exports.setup = async () => {
   const b = await chromium.launch(); const p = await (await b.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
   p.setDefaultTimeout(15000); p.on('pageerror', e => console.log('PAGEERROR', e.message)); p.on('dialog', d => d.accept());
-  await p.addInitScript(()=>{try{localStorage.setItem('mtgpt.welcomeSeen','true');}catch(e){}}); await p.goto('file://'+__dirname+'/pt/index.html');
+  await p.addInitScript(()=>{try{localStorage.setItem('mtgpt.welcomeSeen','true'); localStorage.setItem('mtgpt.hallStart','false');}catch(e){}}); await p.goto('file://'+__dirname+'/pt/index.html');
   await p.setInputFiles('#fileCards', __dirname+'/corpus.json');
   await p.waitForFunction(() => /Card data: \d+/.test(document.querySelector('#dbStatus').textContent));
   await p.waitForTimeout(500);

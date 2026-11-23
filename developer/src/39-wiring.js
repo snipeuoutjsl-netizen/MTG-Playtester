@@ -6,7 +6,7 @@ function init() {
   $('#btnTokenGloss').addEventListener('click', () => { toggleUtilityMenu(false); openTokenGlossary(); });
   if (!settings.kitchenSeen) { settings.kitchenSeen = true; if (!settings.matPreset) settings.matPreset = 'kitchen'; if (!settings.sleevePreset) settings.sleevePreset = 'worn'; saveSettings(); try { applySettings(); applySleeve(); } catch (e) { /* ignore */ } }   // v0.69.3: the new table and card back become the look once; change them in Settings > Graphics
   $('#deckSelect').addEventListener('change', e => { lsSet('mtgpt.current', e.target.value); prepareImages(); });
-  $('#btnDecks').addEventListener('click', openDeckPicker);
+  $('#btnDecks').addEventListener('click', openHall);   // v0.99.48 the deck button takes you back to the Library
   { const cm = $('#cmdWrap'); if (cm) cm.addEventListener('click', openDeckPicker); }
   $('#btnTools').addEventListener('click', e => { e.stopPropagation(); toggleUtilityMenu(); });
   $('#utilityMenu').addEventListener('click', e => e.stopPropagation());
@@ -84,11 +84,12 @@ document.addEventListener('keydown', e => {
   loadPlaymat();
   loadSleeve();
   render();
+  if (lsGet(HALL_KEY, true) !== false) openHall();   // v0.99.48 every session starts in the Library
   updateDbStatus();
   idbGet('tokens').then(t => { if (Array.isArray(t)) { installTokens(t); updateDbStatus(); } }).catch(() => {}).then(() => setTimeout(() => syncTokens(false), 2500));
   idbGet('cards').then(list => {
     if (Array.isArray(list) && list.length) { installCards(list); render(); }
     else updateDbStatus();
-  }).then(() => { prepareImages(); setTimeout(() => { if (!lsGet('mtgpt.welcomeSeen', false) && !Object.keys(loadDecks()).length && !cardCount) openWelcome(() => setTimeout(promptFirstBoot, 300)); else promptFirstBoot(); }, 600); });
+  }).then(() => { prepareImages(); if (hallOpen()) drawHall(); setTimeout(() => { if (!lsGet('mtgpt.welcomeSeen', false) && !Object.keys(loadDecks()).length && !cardCount) openWelcome(() => setTimeout(promptFirstBoot, 300)); else promptFirstBoot(); }, 600); });
 }
 

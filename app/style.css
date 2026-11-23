@@ -1948,3 +1948,73 @@ body.mullpick #overlay, body.mullhand #overlay { z-index: 62; }   /* v0.99.45 th
 @keyframes ngPulse { 0%, 100% { box-shadow: 0 0 0 2px #ffd36b, 0 0 10px 2px rgba(255,196,64,.35); } 50% { box-shadow: 0 0 0 2px #ffe39b, 0 0 22px 7px rgba(255,196,64,.65); } }
 body.a11y-calm #btnNew.pending { animation: none; }
 @media (prefers-reduced-motion: reduce) { #btnNew.pending { animation: none; } }
+
+/* ===== v0.99.48 The Library hall (start screen) ===== */
+body.hall-on #topbar, body.hall-on #table { display: none !important; }
+#hall { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; color: #f1e4c8; position: relative; overflow: hidden;
+  background: radial-gradient(ellipse 70% 60% at 72% 78%, rgba(255,170,70,.10), transparent 70%), repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 3px, transparent 3px 120px), linear-gradient(180deg, #1c120b 0%, #140d08 55%, #0e0805 100%); }
+#hall[hidden] { display: none; }
+.hall-top { display: flex; align-items: center; justify-content: center; position: relative; padding: 18px 20px 6px; }
+.hall-title { display: flex; flex-direction: column; align-items: center; line-height: 1; font-family: Georgia, 'Times New Roman', serif; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
+.hall-title b { font-size: 34px; letter-spacing: .12em; color: #f3d58e; font-weight: 700; }
+.hall-title span { margin-top: 6px; font-size: 13px; letter-spacing: .5em; text-transform: uppercase; color: #c8ad7f; }
+.hall-close { position: absolute; right: 18px; top: 22px; }
+.hall-room { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr); gap: 22px; padding: 10px 22px 22px; }
+.hall-shelves { min-height: 0; overflow: auto; border-radius: 10px; }
+.hall-shelves .bk-case { min-height: 100%; box-sizing: border-box; }
+.hall-shelves .bk-empty { padding: 40px 20px; text-align: center; }
+.hall-desk { position: relative; min-height: 0; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden;
+  background: radial-gradient(ellipse 60% 45% at 78% 70%, rgba(255,180,90,.16), transparent 70%), linear-gradient(180deg, transparent 0 58%, #4a2c16 58%, #3a2211 64%, #2a180c 100%); box-shadow: inset 0 0 60px rgba(0,0,0,.6); }
+.hall-tome { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr 14px 1fr; width: min(640px, 92%); margin-top: -6%; transform: perspective(1200px) rotateX(10deg); transform-origin: 50% 100%;
+  filter: drop-shadow(0 18px 22px rgba(0,0,0,.65)); }
+.hall-page { padding: 22px 22px 20px; min-height: 300px; display: flex; flex-direction: column; gap: 6px; color: #2c1d0e; font-family: Georgia, 'Times New Roman', serif;
+  background: linear-gradient(90deg, rgba(120,80,30,.12), transparent 18%), #efe2c2; }
+.hall-page.left { border-radius: 10px 2px 2px 10px; background: linear-gradient(270deg, rgba(90,55,20,.28), transparent 16%), linear-gradient(180deg, #f2e6c8, #e6d4ab); }
+.hall-page.right { border-radius: 2px 10px 10px 2px; background: linear-gradient(90deg, rgba(90,55,20,.28), transparent 16%), linear-gradient(180deg, #f2e6c8, #e6d4ab); }
+.hall-spine { background: linear-gradient(90deg, #b89a66, #6e4f26 50%, #b89a66); box-shadow: inset 0 0 6px rgba(0,0,0,.5); }
+.hall-h { font-size: 13px; letter-spacing: .28em; text-transform: uppercase; color: #7a4f1d; border-bottom: 1px solid rgba(122,79,29,.35); padding-bottom: 6px; margin-bottom: 4px; }
+.hall-btn { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 8px; border-radius: 6px; font: 15px/1.25 Georgia, 'Times New Roman', serif; color: #2c1d0e; }
+.hall-btn:hover, .hall-btn:focus-visible { background: rgba(122,79,29,.14); text-decoration: underline; text-underline-offset: 3px; }
+.hall-btn:focus-visible { outline: 2px solid #8a5a1c; outline-offset: 1px; }
+.hall-btn.primary { font-weight: 700; color: #5a1f0c; background: linear-gradient(90deg, rgba(190,60,30,.16), transparent); border-left: 3px solid #a0301a; }
+.hall-chk { display: flex; align-items: center; gap: 6px; font: 13.5px Georgia, serif; color: #3a2814; padding: 4px 8px; cursor: pointer; }
+.hall-chk.small { font-size: 12px; margin-top: auto; color: #5a4128; }
+.hall-mode { margin: 4px 8px; }
+.hall-archive { margin-top: 8px; padding: 4px 8px; font-style: italic; font-size: 12.5px; color: #6a4d28; }
+.hall-hint { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font: italic 12.5px Georgia, serif; color: #c8ad7f; opacity: .8; }
+body.a11y-targets .hall-btn { min-height: 44px; }
+/* the candle */
+.candle { position: absolute; right: 7%; bottom: 13%; width: 34px; height: 150px; z-index: 3; pointer-events: none; }
+.candle-dish { position: absolute; bottom: -6px; left: -16px; right: -16px; height: 14px; border-radius: 50%; background: radial-gradient(ellipse at 50% 30%, #d8b56a, #7a5a26 70%); box-shadow: 0 6px 10px rgba(0,0,0,.6); }
+.candle-wax { position: absolute; bottom: 2px; left: 0; right: 0; height: 92px; border-radius: 6px 6px 3px 3px; background: linear-gradient(90deg, #d9c9a3, #fbf1d8 45%, #cdb98d); box-shadow: inset 0 6px 6px -4px rgba(255,220,150,.9); }
+.candle-wax::before { content: ''; position: absolute; top: 4px; left: 6px; width: 7px; height: 22px; border-radius: 4px; background: #f3e6c4; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.candle-wick { position: absolute; bottom: 92px; left: 50%; width: 2px; height: 10px; margin-left: -1px; background: #2a1a0c; border-radius: 1px; }
+.candle-flame { position: absolute; bottom: 98px; left: 50%; width: 16px; height: 38px; margin-left: -8px; transform-origin: 50% 90%; animation: flameFlicker 1.9s ease-in-out infinite; }
+.candle-flame::before { content: ''; position: absolute; inset: 0; border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%; background: radial-gradient(ellipse at 50% 75%, #fff9e0 0%, #ffe07a 30%, #ff9a2a 62%, rgba(255,90,20,0) 78%); filter: blur(.4px); }
+.candle-flame i { position: absolute; left: 50%; bottom: 3px; width: 6px; height: 11px; margin-left: -3px; border-radius: 50%; background: radial-gradient(ellipse, rgba(80,120,255,.75), rgba(80,120,255,0) 70%); }
+.candle-glow { position: absolute; bottom: 40px; left: 50%; width: 360px; height: 360px; margin-left: -180px; border-radius: 50%; background: radial-gradient(circle, rgba(255,190,90,.32) 0%, rgba(255,150,60,.12) 35%, rgba(255,130,40,0) 70%); animation: glowFlicker 2.6s ease-in-out infinite; mix-blend-mode: screen; }
+@keyframes flameFlicker { 0%, 100% { transform: scale(1, 1) skewX(0deg); opacity: 1; } 18% { transform: scale(.94, 1.06) skewX(2deg); } 37% { transform: scale(1.04, .95) skewX(-2deg); opacity: .92; } 55% { transform: scale(.97, 1.08) skewX(1deg); } 73% { transform: scale(1.03, .97) skewX(-1.5deg); opacity: .97; } }
+@keyframes glowFlicker { 0%, 100% { opacity: .9; transform: scale(1); } 30% { opacity: .75; transform: scale(.97); } 52% { opacity: 1; transform: scale(1.03); } 80% { opacity: .82; transform: scale(.99); } }
+body.a11y-calm .candle-flame, body.a11y-calm .candle-glow { animation: none; }
+@media (prefers-reduced-motion: reduce) { .candle-flame, .candle-glow { animation: none; } }
+/* a book laid on the desk */
+#hall .dbx-pull { background: rgba(18,11,6,.72); border-radius: 12px; z-index: 5; }
+#hall .dbx-pull-in { gap: 18px; padding: 14px; }
+#hall .dbx-turn { width: 220px; height: 330px; }
+#hall .bk.big { --T: 58px !important; --H: 270px !important; --D: 192px !important; }
+#hall .dbx-info { width: 300px; max-height: 92%; }
+.lib-notes { font-size: 12.5px; line-height: 1.45; padding: 6px 8px; border-left: 2px solid rgba(227,185,92,.6); background: rgba(255,255,255,.04); border-radius: 4px; }
+.lib-notes.empty { font-style: italic; color: var(--muted); }
+@media (max-width: 980px) { .hall-room { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 1fr) minmax(360px, auto); } .candle { right: 4%; } }
+/* the open menu book makes way for the deck you laid on the desk */
+#hall .hall-tome, #hall .hall-hint { transition: opacity .3s, transform .3s; }
+#hall .hall-desk:has(.dbx-pull) .hall-tome { opacity: 0; transform: perspective(1200px) rotateX(10deg) translateY(30px); pointer-events: none; }
+#hall .hall-desk:has(.dbx-pull) .hall-hint { opacity: 0; }
+#hall .dbx-pull { background: transparent; }
+#hall .dbx-info { background: rgba(20,13,8,.82); border: 1px solid rgba(227,185,92,.25); border-radius: 10px; padding: 12px 14px; box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+#hall .candle { z-index: 6; }
+#hall .dbx-pull-in { padding: 14px 72px 14px 10px; }
+#hall .dbx-turn { width: 190px; height: 300px; }
+#hall .bk.big { --T: 50px !important; --H: 236px !important; --D: 168px !important; }
+#hall .dbx-info { width: 280px; }
+#hall .candle { right: 3%; }

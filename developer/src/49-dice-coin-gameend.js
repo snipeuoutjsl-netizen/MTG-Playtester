@@ -89,6 +89,6 @@ function showGameEnd(which, title, sub) {
     h('div', { class: 'ge-btns' },
       h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
-      h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { $('#btnDecks').click(); } catch (e) {} } })));
+      h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { openHall(); } catch (e) {} } })));
   m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); } }));
 }
