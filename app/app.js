@@ -6665,8 +6665,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.45';
+const APP_VERSION = '0.99.46';
 const CHANGELOG = [
+  { v: '0.99.46', title: 'Deck scan report includes your full lists', notes: ['The deck scan report (deck screen \u2192 Scan decks & save report) now ends with the full list of every deck, including sideboards and any sideboarded list in use, so your decks can be rebuilt exactly for testing.', 'FIXED: the report always said "Card data loaded: NONE" even when your card data was loaded.'] },
   { v: '0.99.45', title: 'Library of Alexandria: dredge, Omniscience, suspend, Hogaak', notes: [
     'The app is now called Library of Alexandria. Your decks, settings and updates are untouched (it keeps the same data folder and update channel).',
     'RULES (dredge, CR 702.52): dredge now replaces ANY draw (cycling Street Wraith, Gitaxian Probe, a trigger), not only the draw step. Cards milled together are one event, so Narcomoeba, Creeping Chill and the like trigger together and you choose their order (CR 603.3b).',
@@ -8035,7 +8036,7 @@ function openDeckPicker0() {
 // ---- Deck scan report (v0.63): reads every card of every saved deck and writes one text file to send for review.
 function deckScanReportText() {
   const decks = loadDecks(), names = Object.keys(decks).sort((a, b) => a.localeCompare(b));
-  const L = [`Library of Alexandria deck scan report (v${APP_VERSION})`, `Created ${new Date().toISOString()}`, `Card data loaded: ${cardCount ? cardCount.toLocaleString() + ' cards' : 'NONE (import the Oracle file first, otherwise nothing can be read)'}`, `Decks scanned: ${names.length}`, ''];
+  const L = [`Library of Alexandria deck scan report (v${APP_VERSION})`, `Created ${new Date().toISOString()}`, `Card data loaded: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards' : 'NONE (import the Oracle file first, otherwise nothing can be read)'}`, `Decks scanned: ${names.length}`, ''];
   const agg = new Map(), tot = { ok: 0, part: 0, unk: 0 }, missingAll = new Set(); const seenCard = new Set();
   for (const n of names) {
     const deck = parseDeck(decks[n].text), list = deckNameList(deck), cards = [];
@@ -8059,6 +8060,9 @@ function deckScanReportText() {
   L.splice(5, 0, `ALL DECKS: ${tot.ok} lines understood (${Math.round(100 * tot.ok / all)}%), ${tot.part} partly (${Math.round(100 * tot.part / all)}%), ${tot.unk} not understood (${Math.round(100 * tot.unk / all)}%).`, `Cards missing from card data: ${missingAll.size}${missingAll.size ? ' -> ' + [...missingAll].join('; ') : ''}`, '');
   L.push('='.repeat(70), 'MOST COMMON PHRASES THE APP DOES NOT FULLY HANDLE (kind | status | phrase | count | example cards)');
   for (const [k, e] of [...agg.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 120)) L.push(`  ${k} | ${e.n} | ${e.ex.join('; ')}`);
+  // v0.99.46 the full lists too, so the decks can be rebuilt exactly for testing (main deck, sideboard, and the sideboarded list in use)
+  L.push('', '='.repeat(70), 'FULL DECK LISTS');
+  for (const n of names) { const dk = decks[n] || {}; L.push('', `----- ${n}${dk.sb ? ' (a sideboarded list is in use; the original is below it)' : ''}`, (dk.sb && dk.sb.main ? [...dk.sb.main.map(x => `${x.qty} ${x.name}`), '', 'Sideboard', ...(dk.sb.side || []).map(x => `${x.qty} ${x.name}`)].join('\n') : String(dk.text || '').trim())); if (dk.sb) L.push('-- original list --', String(dk.text || '').trim()); }
   return L.join('\n');
 }
 function saveDeckScanReport() {

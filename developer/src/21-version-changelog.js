@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.45';
+const APP_VERSION = '0.99.46';
 const CHANGELOG = [
+  { v: '0.99.46', title: 'Deck scan report includes your full lists', notes: ['The deck scan report (deck screen \u2192 Scan decks & save report) now ends with the full list of every deck, including sideboards and any sideboarded list in use, so your decks can be rebuilt exactly for testing.', 'FIXED: the report always said "Card data loaded: NONE" even when your card data was loaded.'] },
   { v: '0.99.45', title: 'Library of Alexandria: dredge, Omniscience, suspend, Hogaak', notes: [
     'The app is now called Library of Alexandria. Your decks, settings and updates are untouched (it keeps the same data folder and update channel).',
     'RULES (dredge, CR 702.52): dredge now replaces ANY draw (cycling Street Wraith, Gitaxian Probe, a trigger), not only the draw step. Cards milled together are one event, so Narcomoeba, Creeping Chill and the like trigger together and you choose their order (CR 603.3b).',
