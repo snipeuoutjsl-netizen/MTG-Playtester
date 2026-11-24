@@ -639,6 +639,13 @@ function effectOptions(tx, obj) {
   let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
     if (b2.out.length) { res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))); for (const o of b2.out) { const same = res.find(r => r && r.label === o.label); if (same) { if (o.covers) same.covers = (same.covers || []).concat(o.covers); } else res.push(o); } } }   // v0.99.77 an option offered twice keeps one copy, with what both say they carry out
+  // v0.99.79 a "Remember …" note is only for a sentence nothing else carries out: when another option already does it, the note goes
+  if (!(obj && obj._noRemCheck) && res.some(o => o && /^Remember \(/.test(o.label || ''))) {
+    res = res.filter(o => { if (!o || !/^Remember \(/.test(o.label || '')) return true; const sen = String(o.label).replace(/^Remember \([^)]*\):\s*/, '').replace(/\u2026$/, '');
+      if (res.some(r => r !== o && r && (r.covers || []).some(cv => String(cv).toLowerCase().startsWith(sen.toLowerCase().slice(0, 40))))) return false;
+      let alt = []; try { alt = effectOptions(sen, Object.assign({}, obj, { _noRemCheck: true })).filter(r => r && typeof r.fn === 'function' && !/^Remember \(/.test(r.label || '') && !r.hidden); } catch (e) { alt = []; }
+      return !alt.length || !alt.every(r => res.some(q => q && q.label === r.label)); });
+  }
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
   const dup = new Set(); if (drawN.length > 1) { const keep = drawN.find(o => !/^Draw /i.test(o.label)) || drawN[0]; for (const o of drawN) if (o !== keep && String(o.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase() === String(keep.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase()) dup.add(o); }
@@ -918,7 +925,7 @@ function openAbilityEffect(obj, done) {
     // v0.99.68 several effects that must all happen ("You gain 3 life and draw a card"): every sentence understood, nothing optional or chosen,
     // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
     if (!one && pre.length > 1 && pre.length <= 4) {
-      const plain = tx.replace(/\([^)]*\)/g, ' '), labs = pre.map(o => String(o.label || '').toLowerCase());
+      const plain = tx.replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target'), labs = pre.map(o => String(o.label || '').toLowerCase());   // v0.99.79 "target player or planeswalker" is the target, chosen already: its "or" is not a choice left (Skullcrack)
       const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain) && !uncoveredClauses(tx).length
         && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
         && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));

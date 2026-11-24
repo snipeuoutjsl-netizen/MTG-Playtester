@@ -33,7 +33,9 @@ function untapWithLimits(pend, held) {
   }
   for (const c of free) { c.tapped = false; delete c.mt; }
 }
-const lifeGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i);
+const fxNoGain = who => state && state.fx ? state.fx.find(e => e.kind === 'nolifegain' && (e.who === 'all' || e.who === who)) : null;   // v0.99.79 Skullcrack: "Players can't gain life this turn" (CR 119.7)
+const lifeGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i) || (fxNoGain('you') ? { g: { name: fxNoGain('you').srcName || 'An effect' } } : null);
+const oppGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i) || (fxNoGain('opp') ? { g: { name: fxNoGain('opp').srcName || 'An effect' } } : null);
 function priestExiles(c, from) {
   if (!c || c.token || from === 'stack' || !/\bCreature\b/.test(frontType(c) || '')) return null;
   const g = globalHas(/^If a nontoken creature would enter and it wasn't cast, exile it instead\.?$/i); return g ? g.g : null;

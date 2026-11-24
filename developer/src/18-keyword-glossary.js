@@ -611,6 +611,7 @@ function dealCombatDamage(){
     total+=pw.n*mult; parts.push(`${f.card.name} ${pw.n*mult}${mult===2?' (double strike)':''}${pw.star?' (* power counted as 0: adjust the opponent life by hand)':''}`);
   }
   cb.dealt=true;
+  { const fog=(state.fx||[]).find(e=>e.kind==='fog'); if(fog && total>0){ log(`Combat damage: ${parts.join(', ')} = ${total}, all prevented (${fog.srcName||'an effect'}: prevent all combat damage this turn)`); toast('Combat damage prevented',`${fog.srcName||'An effect'} prevents all combat damage this turn.`); return; } }   // v0.99.79 Fog (CR 615)
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
@@ -619,11 +620,12 @@ function dealCombatDamage(){
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
   if(state.oppLife<=0) log(`Goldfish kill on turn ${state.turn}`);
+  if(lifeGain>0 && lifeGainBlocked()){ log(`Lifelink: no life gained (${lifeGainBlocked().g.name})`); lifeGain=0; }
   if(lifeGain>0){ state.life+=lifeGain; log(`Lifelink: gained ${lifeGain} life (${lifeParts.join(', ')}) → ${state.life}`); toast(`Lifelink: +${lifeGain} life`, `You are now at ${state.life}.`); fireTrigger('lifegain',{amount:lifeGain}); }
   noteCombatDealers(dealers); commanderDamage(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d, amount:powerOf(d).n});
 }
-function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
+function changeOppLife(d){ if(!state) return; if(d>0 && typeof oppGainBlocked==='function' && oppGainBlocked()){ log(`Opponent life gain prevented: ${oppGainBlocked().g.name}`); toast('No life gained',`${oppGainBlocked().g.name}: your opponent can't gain life this turn.`); return; } snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
 function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});

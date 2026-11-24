@@ -519,6 +519,7 @@ function manaTotal() {
 function manaKeepers() {
   const out = { all: false, colors: new Set(), by: [] };
   if (!state) return out;
+  for (const e of state.fx || []) if (e.kind === 'keepmana') { out.all = true; out.by.push(e.srcName || 'an effect'); }   // v0.99.79 "Until end of turn, you don't lose this mana as steps and phases end" (Grand Warlord Radha)
   for (const x of state.battlefield) {
     if (x.token) continue; const tx = (((cardInfo(x.name) || {}).tx) || '').replace(/\s+/g, ' ');
     if (/mana pools? (?:don'?t|doesn'?t|do not) empty|(?:you )?don'?t lose unspent mana as steps and phases end/i.test(tx)) { out.all = true; out.by.push(x.name); }

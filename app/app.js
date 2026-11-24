@@ -1031,16 +1031,23 @@ function durationOptions(sentence, obj, targets) {
   const until = durKey(s), uw = UNTIL_WORDS[until], isDur = DUR_RE.test(s.replace(/\b(?:who|that|which) (?:lost|gained|has lost|has gained|was dealt|were dealt|attacked|died|entered|cast)\b[^.,;]*?\bthis turn\b/gi, ''));   // v0.99.76 "opponent who lost life this turn" describes what to count, it is not a duration
   let who = (targets && targets.length) ? targets : null, group = null, m;
   if (!who) {
-    if (/^(other )?creatures you control\b/i.test(s)) group = { other: /^other/i.test(s) };
-    else if (obj.sourceId && /^(?:~|this \w+|it)\b/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    // v0.99.79 any group the sentence names ("All creatures get -2/-2", "Attacking creatures get +1/+0", "Creatures you control get +1/+1"): read with the same subject rules as static abilities
+    const gm = /^(?:\u2022\s*)?(.+?) (?:each )?(?:gets?|gains?|have|has) /i.exec(s);
+    if (gm && !/^(?:~|this \w+|it|target|that|those|they|enchanted|equipped)\b/i.test(gm[1])) {
+      if (/\b(?:your opponents control|an opponent controls|you don'?t control)\b/i.test(gm[1])) group = { opp: true, label: gm[1] };
+      else { let sub = null; const g0 = { id: obj.sourceId != null ? obj.sourceId : -1, name: src }; try { sub = parseSubject(gm[1], g0) || (/^(?:other )?(?:attacking|blocking|untapped|tapped) creatures$/i.test(gm[1]) ? parseSubject(gm[1] + ' you control', g0) : null); } catch (e) { sub = null; } if (sub && !sub.self) group = { test: sub.test, label: gm[1], other: /^other\b/i.test(gm[1]) }; }   // in a goldfish game the attackers are yours
+    }
+    if (!group && obj.sourceId && /^(?:~|this \w+|it)\b/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    if (!group && !who && obj.sourceId != null && /^enchanted creature\b/i.test(s)) { const f = findCard(obj.sourceId), host = f && f.card.att != null ? findCard(f.card.att) : null; if (host) who = [{ id: host.card.id, name: host.card.name }]; }   // v0.99.79 an Aura's "Enchanted creature gets +1/+0 until end of turn" (Firebreathing)
   }
   const apply = (mk) => () => {
-    const ids = group ? state.battlefield.filter(c => permZone(c) === 'creatures' && !(group.other && c.id === obj.sourceId)).map(c => c.id) : who.map(t => t.id);
+    if (group && group.opp) { log(`${obj.sourceName || 'Effect'}: ${group.label} — only your opponent's creatures, apply it on the real table`); return; }
+    const ids = group ? state.battlefield.filter(c => permZone(c) === 'creatures' && (!group.test || group.test(c)) && !(group.other && c.id === obj.sourceId)).map(c => c.id) : who.map(t => t.id);
     snap();
     for (const id of ids) { const f = findCard(id); if (f && f.zone === 'battlefield') { addFx(Object.assign({ targetId: id, until, srcName: obj.sourceName || 'effect', srcId: obj.sourceId || null }, mk)); } }
-    log(`${obj.sourceName || 'Effect'}: ${group ? 'creatures you control' : who.map(t => t.name).join(', ')} — ${mk.kind === 'pt' ? sgnN(mk.p) + '/' + sgnN(mk.t) : mk.kw} ${uw}`); render();
+    log(`${obj.sourceName || 'Effect'}: ${group ? group.label || 'creatures you control' : who.map(t => t.name).join(', ')} — ${mk.kind === 'pt' ? sgnN(mk.p) + '/' + sgnN(mk.t) : mk.kw} ${uw}`); render();
   };
-  const nameOf = () => group ? 'Creatures you control' : who.map(t => t.name).join(', ');
+  const nameOf = () => group ? (group.label ? group.label.replace(/^\u2022\s*/, '').replace(/^./, ch => ch.toUpperCase()) + (group.opp ? ' (your opponent\'s side, apply it there)' : '') : 'Creatures you control') : who.map(t => t.name).join(', ');
   let handled = false;
   // v0.99.68 frost: "It doesn't untap during its controller's next untap step" / "Those creatures don't untap …" (CR 502.3)
   if (who && /\b(?:doesn'?t|don'?t) untap during (?:its|their) controllers?'?s? next untap steps?|\b(?:doesn'?t|don'?t) untap during your next untap step/i.test(s)) {
@@ -1136,7 +1143,7 @@ function runToughnessSBA() {
 function attackBlock(c) {   // why this creature cannot attack right now ('' = it can)
   if (c.tapped) return 'It is tapped.';
   if (isSick(c)) return 'Summoning sickness: it came under your control this turn (and has no haste).';
-  if (hasKw(c, 'defender')) return 'Defender: this creature cannot attack.';
+  if (hasKw(c, 'defender') && c.defenderOkTurn !== state.turn) return 'Defender: this creature cannot attack.';
   { const gb = globalAttackBlock(c); if (gb) return gb; }
   { const sb = selfCantUnless(c, 'attack'); if (sb) return sb; }
   { const cb = statics().find(e => e.kind === 'cant' && e.attack && e.subj.test(c)); if (cb) return `${cb.g.name}: this creature can't attack.`; }
@@ -1798,6 +1805,13 @@ function effectOptions(tx, obj) {
   let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
     if (b2.out.length) { res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))); for (const o of b2.out) { const same = res.find(r => r && r.label === o.label); if (same) { if (o.covers) same.covers = (same.covers || []).concat(o.covers); } else res.push(o); } } }   // v0.99.77 an option offered twice keeps one copy, with what both say they carry out
+  // v0.99.79 a "Remember …" note is only for a sentence nothing else carries out: when another option already does it, the note goes
+  if (!(obj && obj._noRemCheck) && res.some(o => o && /^Remember \(/.test(o.label || ''))) {
+    res = res.filter(o => { if (!o || !/^Remember \(/.test(o.label || '')) return true; const sen = String(o.label).replace(/^Remember \([^)]*\):\s*/, '').replace(/\u2026$/, '');
+      if (res.some(r => r !== o && r && (r.covers || []).some(cv => String(cv).toLowerCase().startsWith(sen.toLowerCase().slice(0, 40))))) return false;
+      let alt = []; try { alt = effectOptions(sen, Object.assign({}, obj, { _noRemCheck: true })).filter(r => r && typeof r.fn === 'function' && !/^Remember \(/.test(r.label || '') && !r.hidden); } catch (e) { alt = []; }
+      return !alt.length || !alt.every(r => res.some(q => q && q.label === r.label)); });
+  }
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
   const dup = new Set(); if (drawN.length > 1) { const keep = drawN.find(o => !/^Draw /i.test(o.label)) || drawN[0]; for (const o of drawN) if (o !== keep && String(o.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase() === String(keep.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase()) dup.add(o); }
@@ -2077,7 +2091,7 @@ function openAbilityEffect(obj, done) {
     // v0.99.68 several effects that must all happen ("You gain 3 life and draw a card"): every sentence understood, nothing optional or chosen,
     // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
     if (!one && pre.length > 1 && pre.length <= 4) {
-      const plain = tx.replace(/\([^)]*\)/g, ' '), labs = pre.map(o => String(o.label || '').toLowerCase());
+      const plain = tx.replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target'), labs = pre.map(o => String(o.label || '').toLowerCase());   // v0.99.79 "target player or planeswalker" is the target, chosen already: its "or" is not a choice left (Skullcrack)
       const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain) && !uncoveredClauses(tx).length
         && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
         && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));
@@ -4559,6 +4573,7 @@ function manaTotal() {
 function manaKeepers() {
   const out = { all: false, colors: new Set(), by: [] };
   if (!state) return out;
+  for (const e of state.fx || []) if (e.kind === 'keepmana') { out.all = true; out.by.push(e.srcName || 'an effect'); }   // v0.99.79 "Until end of turn, you don't lose this mana as steps and phases end" (Grand Warlord Radha)
   for (const x of state.battlefield) {
     if (x.token) continue; const tx = (((cardInfo(x.name) || {}).tx) || '').replace(/\s+/g, ' ');
     if (/mana pools? (?:don'?t|doesn'?t|do not) empty|(?:you )?don'?t lose unspent mana as steps and phases end/i.test(tx)) { out.all = true; out.by.push(x.name); }
@@ -5408,7 +5423,8 @@ function applyLandCost(c, k) {
   if (k.life) { state.life -= k.life; log(`${c.name}: paid ${k.life} life for the mana → ${state.life}`); }
   if (k.dmg) { state.life -= k.dmg; log(`${c.name}: dealt ${k.dmg} damage to you → ${state.life}`); }
   if (k.noUntap) { c.noUntapNext = state.turn; log(`${c.name}: it doesn't untap during your next untap step`); }
-  if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }
+  if (k.oppGain && typeof oppGainBlocked === 'function' && oppGainBlocked()) log(`${c.name}: your opponent can't gain life this turn`);
+  else if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }
 }
 // "enters with N <kind> counters on it" (Dark Depths: ten ice counters)
 function etbCounters(c) {
@@ -6314,6 +6330,7 @@ function dealCombatDamage(){
     total+=pw.n*mult; parts.push(`${f.card.name} ${pw.n*mult}${mult===2?' (double strike)':''}${pw.star?' (* power counted as 0: adjust the opponent life by hand)':''}`);
   }
   cb.dealt=true;
+  { const fog=(state.fx||[]).find(e=>e.kind==='fog'); if(fog && total>0){ log(`Combat damage: ${parts.join(', ')} = ${total}, all prevented (${fog.srcName||'an effect'}: prevent all combat damage this turn)`); toast('Combat damage prevented',`${fog.srcName||'An effect'} prevents all combat damage this turn.`); return; } }   // v0.99.79 Fog (CR 615)
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
@@ -6322,11 +6339,12 @@ function dealCombatDamage(){
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
   if(state.oppLife<=0) log(`Goldfish kill on turn ${state.turn}`);
+  if(lifeGain>0 && lifeGainBlocked()){ log(`Lifelink: no life gained (${lifeGainBlocked().g.name})`); lifeGain=0; }
   if(lifeGain>0){ state.life+=lifeGain; log(`Lifelink: gained ${lifeGain} life (${lifeParts.join(', ')}) → ${state.life}`); toast(`Lifelink: +${lifeGain} life`, `You are now at ${state.life}.`); fireTrigger('lifegain',{amount:lifeGain}); }
   noteCombatDealers(dealers); commanderDamage(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d, amount:powerOf(d).n});
 }
-function changeOppLife(d){ if(!state) return; snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
+function changeOppLife(d){ if(!state) return; if(d>0 && typeof oppGainBlocked==='function' && oppGainBlocked()){ log(`Opponent life gain prevented: ${oppGainBlocked().g.name}`); toast('No life gained',`${oppGainBlocked().g.name}: your opponent can't gain life this turn.`); return; } snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
 function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});
@@ -7008,8 +7026,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.78';
+const APP_VERSION = '0.99.79';
 const CHANGELOG = [
+  { v: '0.99.79', title: 'Skullcrack, and \u201cRemember\u201d effects carried out', notes: ['Skullcrack resolves in one go: 3 damage to its target, and \u201cPlayers can\u2019t gain life this turn\u201d is a real effect until end of turn (your life gain, lifelink and your opponent\u2019s life gain are stopped); \u201cDamage can\u2019t be prevented this turn\u201d is recorded too. The \u201cor\u201d in \u201ctarget player or planeswalker\u201d no longer stops a spell from resolving by itself.', 'Far fewer \u201cRemember (until end of turn)\u201d notes: a note is never shown next to an option that already does the same thing, and these are now carried out: group pumps and shrinks (\u201cAll creatures get -2/-2\u201d, \u201cAttacking creatures get +1/+0\u201d, any group the sentence names), an Aura\u2019s \u201cEnchanted creature gets \u2026\u201d, Fog (your combat damage is prevented that turn), mana that stays in your pool until end of turn (Grand Warlord Radha), \u201ccan attack this turn as though it didn\u2019t have defender\u201d. Blocking effects (\u201ccan\u2019t block\u201d, \u201ccan\u2019t be blocked\u201d, \u201cblocks if able\u201d) say plainly that blocking is up to your opponent. Across all cards, Remember notes went from 2,551 to about 1,700; most of the rest are for the opponent\u2019s permanents.', '289 rules tests pass, all with real cards.'] },
   { v: '0.99.78', title: 'Kozilek\u2019s Command on mobile, modal spells, cards that size to the table', notes: ['Kozilek\u2019s Command (and every X spell) with automatic land tapping: after you chose modes and X, pressing Cast did nothing when part of your mana could only be spent on that spell (Eldrazi Temple). X counted that mana but the payment that followed left it out. Payment now happens in the spell\u2019s own context, in the payment window too.', 'On phones a slow tap on a button (Cast, Pay and cast, Choose) is always a tap: press-and-hold only opens menus on cards and the table, never on buttons, fields or choices in a window.', 'Modal spells whose number of modes depends on a condition: Flame of Anor (\u201cIf you control a Wizard as you cast this spell, you may choose two instead\u201d) lets you pick one, or up to two while you control a Wizard; when the app cannot check the condition (Go Nuts!\u2019s teamwork, Inscription of Insight\u2019s kicker, See Double\u2019s opponent graveyard) it asks whether it is met. These spells were not read as modal at all before.', 'Cards size themselves to the table on every screen: lands and artifacts/enchantments share their row by how many cards each holds (a big mana base gets the width, an empty zone shrinks to its label); on an upright phone an empty zone shrinks to its label and the cards in the others grow into the room (up to 1.9\u00d7); on tablets and sideways phones cards may grow to 1.5\u00d7.', '287 rules tests pass, all with real cards.'] },
   { v: '0.99.77', title: 'Reading sweep', notes: ['A sweep over every card the app knows found sentences it skipped; these are now carried out: \u201cYou may pay {1}. If you do, target player loses 1 life\u201d and other payments whose result has a target or several parts (Smolder Initiate, Ruthless Sniper); \u201cUntap those creatures\u201d after a group pump (War Flare, Mob Rule); Proliferate (one more of each counter on your permanents, and energy), also as \u201c\u2026, then proliferate\u201d (Tezzeret\u2019s Gambit, Grim Affliction); \u201cSpend this mana only to \u2026\u201d after an ability adds mana (Lord of the Forsaken), which now floats with that restriction; a spell\u2019s \u201cExile [this spell].\u201d is read; \u201cIt gains indestructible until end of turn\u201d and \u201cTap it\u201d on the source itself (Wicked Wolf).', 'Cards the app fully reads went from 11,704 to 11,777 across all 22,743 cards.', 'The Library book has no more \u201c\u2026\u201d: menu entries and buttons lost their trailing dots, and long names wrap and the page scales its writing down instead of being cut off.', '285 rules tests pass, all with real cards.'] },
   { v: '0.99.76', title: 'Triggers you can see, cards that glow for their abilities, Kaito\u2019s 0', notes: ['Skysovereign and other abilities aimed at an opponent\u2019s permanent: when one resolves, the stack window shows what to do on the real card (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) until you press Done, instead of a toast that was easy to miss. Always yield is no longer offered for these, so the trigger asks for its target every time it enters or attacks.', 'Always yield: \u201cAsk every time\u201d is now the default button (Enter), so pressing Enter no longer silences every later trigger of that card for the rest of the game.', 'A card in your hand glows green whenever an ability of it can be activated from there, not only when it can be cast: Ninjutsu after blockers are declared with an unblocked attacker and the mana available, cycling (Street Wraith in the middle of combat) and reinforce.', 'Kaito, Bane of Nightmares 0: \u201cSurveil 2. Then draw a card for each opponent who lost life this turn.\u201d now draws when the opponent lost life this turn (and nothing otherwise). Before, it was mistaken for an \u201cuntil end of turn\u201d reminder and drew nothing.', '284 rules tests pass, all with real cards.'] },
@@ -13206,7 +13225,9 @@ function untapWithLimits(pend, held) {
   }
   for (const c of free) { c.tapped = false; delete c.mt; }
 }
-const lifeGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i);
+const fxNoGain = who => state && state.fx ? state.fx.find(e => e.kind === 'nolifegain' && (e.who === 'all' || e.who === who)) : null;   // v0.99.79 Skullcrack: "Players can't gain life this turn" (CR 119.7)
+const lifeGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i) || (fxNoGain('you') ? { g: { name: fxNoGain('you').srcName || 'An effect' } } : null);
+const oppGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i) || (fxNoGain('opp') ? { g: { name: fxNoGain('opp').srcName || 'An effect' } } : null);
 function priestExiles(c, from) {
   if (!c || c.token || from === 'stack' || !/\bCreature\b/.test(frontType(c) || '')) return null;
   const g = globalHas(/^If a nontoken creature would enter and it wasn't cast, exile it instead\.?$/i); return g ? g.g : null;
@@ -14595,6 +14616,26 @@ function batch2Options(txs, obj) {
       for (const c of state.battlefield) { const k = c.counters || {}; let any = false; for (const key of Object.keys(k)) { if (key === 'minusApplied' || !(k[key] > 0)) continue; k[key]++; any = true; } if (any) n++; }
       if (state.gs && state.gs.energy > 0) state.gs.energy++;
       log(`${src}: proliferated (${n} permanent${n === 1 ? '' : 's'}${state.gs && state.gs.energy > 0 ? ', energy' : ''})`); fireTrigger && render(); } }); }
+  // v0.99.79 CR 119.7 "Players can't gain life this turn." (Skullcrack, Atarka's Command): a real effect until end of turn, checked whenever life would be gained
+  { const ls = sents.find(x => /^(players|your opponents|each opponent|you) can'?t gain life this turn\.?$/i.test(x));
+    if (ls) { drop.push(/^Remember \(until end of turn\): .*can'?t gain life this turn/i); const w = /^players/i.test(ls) ? 'all' : /^you\b/i.test(ls) ? 'you' : 'opp';
+      out.push({ covers: [ls], full: true, label: w === 'all' ? "Players can't gain life this turn" : w === 'you' ? "You can't gain life this turn" : "Your opponent can't gain life this turn", fn: () => { snap(); addFx({ kind: 'nolifegain', who: w, until: 'eot', text: ls.replace(/\.$/, ''), srcName: src }); log(`${src}: ${ls.replace(/\.$/, '')}`); render(); } }); } }
+  // v0.99.79 CR 615.12 "Damage can't be prevented this turn.": recorded until end of turn; the goldfish table has no prevention shields of its own, so nothing else is needed
+  { const ds = sents.find(x => /^damage can'?t be prevented this turn\.?$/i.test(x));
+    if (ds) drop.push(/^Remember \(until end of turn\): Damage can'?t be prevented/i);
+    if (ds) out.push({ covers: [ds], full: true, label: "Damage can't be prevented this turn", fn: () => { addFx({ kind: 'noprevent', until: 'eot', text: ds.replace(/\.$/, ''), srcName: src }); log(`${src}: damage can't be prevented this turn`); } }); }
+  // v0.99.79 Fog: "Prevent all combat damage that would be dealt this turn." — your attackers deal no combat damage this turn
+  { const fs = sents.find(x => /^prevent all combat damage that would be dealt this turn\.?$/i.test(x));
+    if (fs) { drop.push(/^Remember \(until end of turn\): Prevent all combat damage/i); out.push({ covers: [fs], full: true, label: 'Prevent all combat damage this turn', fn: () => { snap(); addFx({ kind: 'fog', until: 'eot', text: 'Prevent all combat damage this turn', srcName: src }); log(`${src}: all combat damage this turn is prevented`); render(); } }); } }
+  // v0.99.79 "Until end of turn, you don't lose this mana as steps and phases end." (Grand Warlord Radha, Colossal Plow)
+  { const ks = sents.find(x => /^until end of turn, you don'?t lose this mana as steps and phases end\.?$/i.test(x));
+    if (ks) { drop.push(/^Remember \(until end of turn\): Until end of turn, you don'?t lose this mana/i); out.push({ covers: [ks], full: true, label: "Your mana stays in your pool until end of turn", fn: () => { addFx({ kind: 'keepmana', until: 'eot', text: "You don't lose this mana as steps and phases end", srcName: src }); log(`${src}: floating mana stays until end of turn`); render(); } }); } }
+  // v0.99.79 "This creature can attack this turn as though it didn't have defender." (Krotiq Nestguard)
+  { const as2 = sents.find(x => /^(?:~|this creature|it) can attack this turn as though it didn'?t have defender\.?$/i.test(x));
+    if (as2) { drop.push(/^Remember \(until end of turn\): .*as though it didn'?t have defender/i); out.push({ covers: [as2], full: true, label: `${src} can attack this turn as though it didn't have defender`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (f) f.card.defenderOkTurn = state.turn; log(`${src}: can attack this turn despite defender`); render(); } }); } }
+  // v0.99.79 blocking happens on your opponent's side: "can't block", "can't be blocked", "blocks if able" change nothing the goldfish table tracks, so say so instead of asking you to remember it
+  { const bs = sents.find(x => /\b(?:can'?t block|can'?t be blocked|blocks? (?:this creature |~ )?this turn if able|must be blocked)\b[^.]*this turn\.?$/i.test(x) || /^creatures without flying can'?t block this turn\.?$/i.test(x));
+    if (bs) { drop.push(/^Remember \(until end of turn\): .*(?:block|blocked)/i); out.push({ covers: [bs], full: true, label: `${bs.replace(/\.$/, '')} (blocking is up to your opponent: nothing to track here)`, fn: () => { addFx({ kind: 'note', until: 'eot', text: bs.replace(/\.$/, ''), srcName: src }); log(`${src}: ${bs.replace(/\.$/, '')}`); } }); } }
   // v0.99.77 "Tap it." / "Untap ~." with nothing targeted: the source itself (Wicked Wolf)
   { const ts = !/\btarget\b/i.test(t) && sents.find(x => /^(tap|untap) (?:it|~|this (?:creature|artifact|permanent))\.?$/i.test(x));
     if (ts) { const up = /^untap/i.test(ts); out.push({ covers: [ts], label: `${up ? 'Untap' : 'Tap'} ${src}`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } snap(); f.card.tapped = !up; if (up) delete f.card.mt; log(`${src}: ${up ? 'untapped' : 'tapped'}`); render(); } }); } }
