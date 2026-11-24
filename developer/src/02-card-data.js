@@ -259,7 +259,7 @@ function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.fac
 // v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
 function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways && !preparedCastable(c)) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && !mayPlayNow(c) && !preparedCastable(c)) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
@@ -298,12 +298,15 @@ function castFromGraveyard(id, opt) {
 }
 function withGy(c, o, fn) { if (o.fi === null || o.fi === undefined) return fn(); return withHalf(c, o.fi, fn); }
 // ---- v0.82 "may play it this turn" cards in exile (impulse draw): lands use your land drop, other cards are cast normally.
+// v0.99.68 how long an exiled card stays playable: this turn (mayPlayTurn), through a later turn (mayPlayUntil: "until the end of your next turn"), or always
+function mayPlayNow(c) { return !!c && !!state && (c.mayPlayTurn === state.turn || !!c.mayPlayAlways || (c.mayPlayUntil != null && state.turn <= c.mayPlayUntil)); }
 function playFromExile(id) {
   if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i];
-  if (c.mayPlayTurn !== state.turn && !c.mayPlayAlways) { toast('No longer playable', 'This card could only be played in the turn it was exiled.'); return; }
+  if (!mayPlayNow(c)) { toast('No longer playable', 'The time to play this card from exile has ended.'); return; }
   if (isLandName(c.name)) {
+    if (c.mayCastOnly) { toast('Cast only', 'The effect lets you cast this card, and a land cannot be cast.'); return; }
     if (!canPlayLandNow()) { toast(landDropUsed() ? 'Land already played' : 'Wrong phase', 'A land from exile uses your land drop: your main phase, empty stack, and a land play left.'); return; }
-    state.exile.splice(i, 1); delete c.mayPlayTurn; state.hand.push(c); playLand(c.id); return;
+    state.exile.splice(i, 1); delete c.mayPlayTurn; delete c.mayPlayUntil; delete c.mayCastOnly; state.hand.push(c); playLand(c.id); return;
   }
   castFromExile(id);
 }
@@ -355,7 +358,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
   draw(); showPreview(top[0]);
 }
 // Reads "Look at the top N cards of your library. Put one into your hand, put one on the bottom, and exile one. You may play the exiled card this turn."
-function parseLookDistribute(tx) {
+function parseLookDistribute(tx, inner) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = t.split(/(?<=[.!?])\s+/);
   const m0 = /^(?:look at|reveal) the top (a|one|two|three|four|five|six|seven|\d+|x) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
   const n = numOf(m0[1]); let play = false; const slots = []; let ok = true; let alt = null;
@@ -398,7 +401,10 @@ function parseLookDistribute(tx) {
   if (!slots.length) return null;
   for (const sl of slots) if (sl.dest === 'exile') sl.play = play;
   if (slots.some(sl => sl.dest === 'exile') && play) slots.find(sl => sl.dest === 'exile').short = 'Exile (may play)';
-  return { n, slots, full: ok, alt };
+  // v0.99.68 which sentences this sort carries out (the honesty check credits them even when another sentence, like "You gain 3 life", is a separate effect)
+  let covers = [sents[0]];
+  if (!inner) for (const sent of sents.slice(1)) { if (/^you may play (?:it|the exiled card|that card|those cards|them) this turn\.?$/i.test(sent) ? play : (() => { const one = parseLookDistribute(sents[0] + ' ' + sent, true); return !!(one && one.full); })()) covers.push(sent); }
+  return { n, slots, full: ok, alt, covers };
 }
 function openHalfChooser(c, opts, pick) {
   const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which half?`, { width: 560, sticky: true, onCancel: () => {} });

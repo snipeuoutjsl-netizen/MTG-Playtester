@@ -34,13 +34,15 @@ function adjustLoyalty(id, d) {
   log(`${f.card.name}: loyalty ${d > 0 ? '+' : ''}${d} → ${f.card.loyalty}`);
   checkLoyalty(f.card); render(); flushTriggers();
 }
-function activatePW(c, ab, x) {
+function activatePW(c, ab, x, picked) {
   if (splitSecondOn()) { toast('Split second', 'Loyalty abilities cannot be activated while a spell with split second is on the stack.'); return; }
+  // v0.99.68 CR 602.2b (601.2c): targets are chosen as the ability is activated, before the loyalty cost is paid; "up to one" may be none
+  if (picked === undefined) { const specs = parseTargetSpecs(ab.text || ''); if (specs.length) { chooseTargets(`${c.name} (${ab.label})`, specs, p => activatePW(c, ab, x, p || []), { srcId: c.id, onCancel: () => {} }); return; } }
   snap();
   const delta = ab.isX ? -x : ab.cost;
   c.loyalty = Math.max(0, (c.loyalty || 0) + delta);
   c.activatedTurn = state.turn;
-  state.stack.push({ ability: true, pw: true, id: state.nextId++, name: `${c.name} (${ab.label})`, sourceId: c.id, sourceName: c.name, text: ab.text });
+  state.stack.push(Object.assign({ ability: true, pw: true, id: state.nextId++, name: `${c.name} (${ab.label})`, sourceId: c.id, sourceName: c.name, text: ab.text }, picked !== undefined ? { targets: picked, target: picked[0] && picked[0].kind === 'player' ? picked[0].id : undefined } : {}));
   state.priority = { active: true, passed: false };
   log(`${c.name}: activated ${ab.isX ? '−' + x : ab.label} (loyalty now ${c.loyalty}); ability on the stack`);
   checkLoyalty(c);

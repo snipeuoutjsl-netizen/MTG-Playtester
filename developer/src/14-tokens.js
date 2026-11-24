@@ -70,6 +70,8 @@ function tokenDefsFromText(text, srcName) {
   let am = t.match(/\bamass ([A-Z][a-z]+)/); if (am) { const ty = singularWord(am[1]), tn = ty[0].toUpperCase() + ty.slice(1); mk({ name: `${tn} Army`, pt: '0/0', col: ['B'], types: ['Creature'], subs: [ty, 'army'], tx: '', count: 1, type: `Token Creature — ${tn} Army`, amassOnly: true }); }
   if (/\binvestigate\b/i.test(t)) mk({ name: 'Clue', pt: '', col: [], types: ['Artifact'], subs: ['clue'], tx: TOKEN_PRE.clue.tx, count: 1, type: 'Token Artifact — Clue' });
   if (/\bafterlife (\d+)/i.test(t)) mk({ name: 'Spirit', pt: '1/1', col: ['W', 'B'], types: ['Creature'], subs: ['spirit'], tx: 'Flying', count: +t.match(/\bafterlife (\d+)/i)[1], type: 'Token Creature — Spirit' });
+  // v0.99.68 "Create a 4/4 Zombie token. It gains haste until end of turn." / "They gain haste": the tokens just created get haste
+  { const hm = /\btokens?\b[^.]*\.\s*(?:it|they|those tokens|the tokens?) gains? haste( until end of turn)?\b/i.exec(t); if (hm && out.length) out[out.length - 1].haste = hm[1] ? 'eot' : 'perm'; }
   return out;
 }
 let tokenCache = { key: '', defs: [] };
@@ -92,6 +94,7 @@ function makeTokensFromDef(d, n, src) {
     if (d.startPlus) c.counters = { plus: d.startPlus, minus: 0 };   // Incubate N: the token enters with N +1/+1 counters
     if (d.amassOnly) c.counters = { plus: 1, minus: 0 };   // a hand-made Army starts as if amassed once
     enterBattlefield(c, { from: 'effect', tapped: !!d.tapped, logMsg: `${src ? src + ': created' : 'Created'} token ${d.name}${d.pt ? ' ' + d.pt : ''}` });
+    if (d.haste) { const g = findCard(c.id); if (g && g.zone === 'battlefield') addKwFx(c.id, 'haste', d.haste === 'perm' ? { until: 'manual' } : undefined); }
   }
   render(); flushTriggers();
 }

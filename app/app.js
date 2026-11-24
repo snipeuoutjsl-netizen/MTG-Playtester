@@ -342,7 +342,7 @@ function exileOnAdventure(c) { c.onAdv = true; state.exile.push(c); log(`${c.fac
 // v0.94.1 Warp (rule 702.185): after a warped permanent is exiled at the end step you may cast it from exile on a later turn, for its normal cost.
 function warpCastable(c) { return !!c && !!state && c.warpExile && state.turn > c.warpExile; }
 function castFromExile(id) {
-  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && c.mayPlayTurn !== state.turn && !c.mayPlayAlways && !preparedCastable(c)) return;
+  if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i]; if (!c.onAdv && !warpCastable(c) && !stashReady(c) && !mayPlayNow(c) && !preparedCastable(c)) return;
   if (!canCastNow(c)) { toast('Wrong timing', 'A card cast from exile follows the normal timing: your main phase with an empty stack for permanents and sorceries; instants any time you have priority.'); return; }
   state.exile.splice(i, 1); c.fromExile = true; state.hand.push(c); state.halfChosen = id; castSpell(id);
 }
@@ -381,12 +381,15 @@ function castFromGraveyard(id, opt) {
 }
 function withGy(c, o, fn) { if (o.fi === null || o.fi === undefined) return fn(); return withHalf(c, o.fi, fn); }
 // ---- v0.82 "may play it this turn" cards in exile (impulse draw): lands use your land drop, other cards are cast normally.
+// v0.99.68 how long an exiled card stays playable: this turn (mayPlayTurn), through a later turn (mayPlayUntil: "until the end of your next turn"), or always
+function mayPlayNow(c) { return !!c && !!state && (c.mayPlayTurn === state.turn || !!c.mayPlayAlways || (c.mayPlayUntil != null && state.turn <= c.mayPlayUntil)); }
 function playFromExile(id) {
   if (!state) return; const i = state.exile.findIndex(x => x.id === id); if (i < 0) return; const c = state.exile[i];
-  if (c.mayPlayTurn !== state.turn && !c.mayPlayAlways) { toast('No longer playable', 'This card could only be played in the turn it was exiled.'); return; }
+  if (!mayPlayNow(c)) { toast('No longer playable', 'The time to play this card from exile has ended.'); return; }
   if (isLandName(c.name)) {
+    if (c.mayCastOnly) { toast('Cast only', 'The effect lets you cast this card, and a land cannot be cast.'); return; }
     if (!canPlayLandNow()) { toast(landDropUsed() ? 'Land already played' : 'Wrong phase', 'A land from exile uses your land drop: your main phase, empty stack, and a land play left.'); return; }
-    state.exile.splice(i, 1); delete c.mayPlayTurn; state.hand.push(c); playLand(c.id); return;
+    state.exile.splice(i, 1); delete c.mayPlayTurn; delete c.mayPlayUntil; delete c.mayCastOnly; state.hand.push(c); playLand(c.id); return;
   }
   castFromExile(id);
 }
@@ -438,7 +441,7 @@ function openLookDistribute(want, slots, srcText, onDone) {
   draw(); showPreview(top[0]);
 }
 // Reads "Look at the top N cards of your library. Put one into your hand, put one on the bottom, and exile one. You may play the exiled card this turn."
-function parseLookDistribute(tx) {
+function parseLookDistribute(tx, inner) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), sents = t.split(/(?<=[.!?])\s+/);
   const m0 = /^(?:look at|reveal) the top (a|one|two|three|four|five|six|seven|\d+|x) cards? of your library\.?$/i.exec(sents[0] || ''); if (!m0 || sents.length < 2) return null;
   const n = numOf(m0[1]); let play = false; const slots = []; let ok = true; let alt = null;
@@ -481,7 +484,10 @@ function parseLookDistribute(tx) {
   if (!slots.length) return null;
   for (const sl of slots) if (sl.dest === 'exile') sl.play = play;
   if (slots.some(sl => sl.dest === 'exile') && play) slots.find(sl => sl.dest === 'exile').short = 'Exile (may play)';
-  return { n, slots, full: ok, alt };
+  // v0.99.68 which sentences this sort carries out (the honesty check credits them even when another sentence, like "You gain 3 life", is a separate effect)
+  let covers = [sents[0]];
+  if (!inner) for (const sent of sents.slice(1)) { if (/^you may play (?:it|the exiled card|that card|those cards|them) this turn\.?$/i.test(sent) ? play : (() => { const one = parseLookDistribute(sents[0] + ' ' + sent, true); return !!(one && one.full); })()) covers.push(sent); }
+  return { n, slots, full: ok, alt, covers };
 }
 function openHalfChooser(c, opts, pick) {
   const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which half?`, { width: 560, sticky: true, onCancel: () => {} });
@@ -1016,6 +1022,12 @@ function durationOptions(sentence, obj, targets) {
   };
   const nameOf = () => group ? 'Creatures you control' : who.map(t => t.name).join(', ');
   let handled = false;
+  // v0.99.68 frost: "It doesn't untap during its controller's next untap step" / "Those creatures don't untap …" (CR 502.3)
+  if (who && /\b(?:doesn'?t|don'?t) untap during (?:its|their) controllers?'?s? next untap steps?|\b(?:doesn'?t|don'?t) untap during your next untap step/i.test(s)) {
+    out.push({ label: `${nameOf()} ${who.length > 1 ? "don't" : "doesn't"} untap during the next untap step`, fn: () => { snap(); for (const t of who) { const f = findCard(t.id); if (f && f.zone === 'battlefield') f.card.noUntapNext = state.turn; } log(`${obj.sourceName || 'Effect'}: ${nameOf()} will not untap during the next untap step`); render(); } }); handled = true; }
+  // v0.99.68 "If that creature would die this turn, exile it instead" (CR 614.1a): a replacement on the chosen creature until the turn ends
+  if (who && /^if (?:that creature|it|that permanent|target creature|those creatures) would die this turn, exile (?:it|them) instead\.?$/i.test(s)) {
+    out.push({ label: `If ${nameOf()} would die this turn, exile it instead`, fn: () => { for (const t of who) { const f = findCard(t.id); if (f && f.zone === 'battlefield') f.card.dieExileTurn = state.turn; } log(`${obj.sourceName || 'Effect'}: if ${nameOf()} would die this turn, it is exiled instead`); render(); } }); handled = true; }
   if (isDur && (who || group)) {
     if ((m = s.match(/\bgets? ([+-]\d+)\/([+-]\d+)/i))) { const p = +m[1], t = +m[2]; out.push({ label: `${nameOf()} ${group ? 'get' : 'gets'} ${sgnN(p)}/${sgnN(t)} ${uw}`, fn: apply({ kind: 'pt', p, t }) }); handled = true; }
     if ((m = s.match(KW_LIST_RE))) for (const kw of kwsIn(m[1])) { out.push({ label: `${nameOf()} ${group ? 'gain' : 'gains'} ${kw} ${uw}`, fn: apply({ kind: 'kw', kw }) }); handled = true; }
@@ -1833,7 +1845,16 @@ function effectOptionsBase(tx, obj) {
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   if (/look at the top card of target player'?s library/i.test(tx)) opts.push({ special: 'lookTop', summary: 'look at the top card' });
   // v0.82 look at the top N cards and distribute them
-  { const ld = parseLookDistribute(txs.replace(/\n/g, ' ')); if (ld && state) opts.push({ full: ld.full, label: `Look at the top ${ld.n === 1 ? 'card' : ld.n + ' cards'} of your library and sort them: ${ld.slots.map(x => x.label).join(', ')}${ld.slots.some(x => x.play) ? ' (you may play the exiled card this turn)' : ''}`, fn: () => { let sl = ld.slots; if (ld.alt) { let v = null; try { v = evalCond(ld.alt.cond, { id: -1, name: 'x', tapped: false, counters: { plus: 0, minus: 0 } }); } catch (e) {} if (v === true) { sl = ld.alt.slots; log(`${obj.sourceName || 'Ability'}: the condition "${ld.alt.cond}" is true, so the alternative applies`); } else if (v === null) toast('Check the condition', `The app cannot check "${ld.alt.cond}". If it is true, sort the cards as the "instead" line says.`); } openLookDistribute(ld.n, sl, obj.sourceName || ''); } }); }
+  // v0.99.68 impulse draw: "Exile the top [N] card(s) of your library. [Until the end of your next turn | Until end of turn | This turn,] you may play/cast it/them [this turn | until the end of your next turn]."
+  const imp = /\bexile the top (card|(a|one|two|three|four|five|six|seven|x|\d+) cards) of your library(?: face down)?\.\s*((?:until the end of your next turn|until end of turn|this turn|until your next end step),?\s*)?you may (play|cast) (?:it|that card|them|those cards|the exiled cards?|cards exiled this way)( this turn| until the end of your next turn| until end of turn| until your next end step)?\.?/i.exec(txs.replace(/\n/g, ' '));
+  if (imp && state && !/\bif you don'?t\b|\bspend mana as though\b/i.test(txs)) {
+    const n = imp[1].toLowerCase() === 'card' ? 1 : (/^x$/i.test(imp[2]) ? (obj.xValue || 0) : numOf(imp[2])), nextTurn = /next turn|next end step/i.test((imp[3] || '') + (imp[5] || '')), castOnly = /^cast$/i.test(imp[4]);
+    const whenTxt = nextTurn ? 'until the end of your next turn' : 'this turn';
+    opts.push({ full: imp[0].replace(/\s+/g, ' ').trim().length >= txs.replace(/\s+/g, ' ').trim().length - 1, covers: imp[0].split(/(?<=\.)\s+/), label: `Exile the top ${n === 1 ? 'card' : n + ' cards'} of your library; you may ${castOnly ? 'cast' : 'play'} ${n === 1 ? 'it' : 'them'} ${whenTxt}`, fn: () => {
+      snap(); const got = []; for (let i = 0; i < n && state.library.length; i++) { const c = state.library.shift(); if (nextTurn) c.mayPlayUntil = state.turn + 1; else c.mayPlayTurn = state.turn; if (castOnly) c.mayCastOnly = true; state.exile.push(c); got.push(c.name); }
+      log(`${src}: exiled ${got.join(', ') || 'nothing (the library is empty)'} from the top of your library; you may ${castOnly ? 'cast' : 'play'} ${got.length === 1 ? 'it' : 'them'} ${whenTxt} (from the exile pile)`); render(); } });
+  }
+  { const ld = parseLookDistribute(txs.replace(/\n/g, ' ')); if (ld && state) opts.push({ full: ld.full, covers: ld.covers, label: `Look at the top ${ld.n === 1 ? 'card' : ld.n + ' cards'} of your library and sort them: ${ld.slots.map(x => x.label).join(', ')}${ld.slots.some(x => x.play) ? ' (you may play the exiled card this turn)' : ''}`, fn: () => { let sl = ld.slots; if (ld.alt) { let v = null; try { v = evalCond(ld.alt.cond, { id: -1, name: 'x', tapped: false, counters: { plus: 0, minus: 0 } }); } catch (e) {} if (v === true) { sl = ld.alt.slots; log(`${obj.sourceName || 'Ability'}: the condition "${ld.alt.cond}" is true, so the alternative applies`); } else if (v === null) toast('Check the condition', `The app cannot check "${ld.alt.cond}". If it is true, sort the cards as the "instead" line says.`); } openLookDistribute(ld.n, sl, obj.sourceName || ''); } }); }
   // v0.79 flashback granted until end of turn (Snapcaster Mage): "Target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost."
   { const fg = /target (instant or sorcery|instant|sorcery) card in your graveyard gains flashback until end of turn/i.exec(txs);
     if (fg) {
@@ -1889,7 +1910,10 @@ function effectOptionsBase(tx, obj) {
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
   let prevSent = ''; for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+(?!If you don't\b)/)) {   /* "pay X. If you don't, ..." stays one instruction */ const prev = prevSent; prevSent = sent; if (bound.length && /\btarget\b/i.test(sent)) continue;
     // v0.99.65 "Return target creature card … to the battlefield. It gains haste": "it" is the card just returned, put or created, not the source (the return itself grants that, see applyGraveReturn)
-    if (/^(?:it|that creature|they|those creatures)\b/i.test(sent.trim()) && /\b(?:return|put|create|creates)\b[^.]*\b(?:card|cards|token|tokens|creature|creatures)\b[^.]*\b(?:battlefield|tokens?)\b/i.test(prev) && !/\b(?:return|put) (?:~|this \w+)\b/i.test(prev)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
+    if (/^(?:it|that creature|they|those creatures)\b/i.test(sent.trim()) && /\b(?:return|put|create|creates)\b[^.]*\b(?:card|cards|token|tokens|creature|creatures)\b[^.]*\b(?:battlefield|tokens?)\b/i.test(prev) && !/\b(?:return|put) (?:~|this \w+)\b/i.test(prev)) continue;
+    if (/^(?:it|that creature|that permanent|they|those creatures)\b/i.test(sent.trim()) && /\btarget\b/i.test(prev) && !((obj.targets || []).some(t => t.kind === 'perm'))) continue;   // v0.99.68 "it" is the target, which has not been chosen here
+    if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue;
+    if (imp && /^(?:(?:until the end of your next turn|until end of turn|this turn|until your next end step),?\s*)?you may (?:play|cast) /i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
   if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
@@ -1972,6 +1996,16 @@ function openAbilityEffect(obj, done) {
     const specs = parseTargetSpecs(tx);
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
+  // v0.99.68 CR 115.6 + 608.2b: "up to one target" with no target chosen. The parts that need the target do nothing; any other part still happens.
+  if (Array.isArray(obj.targets) && !obj.targets.length && !obj.special) {
+    const specs0 = parseTargetSpecs(tx);
+    if (specs0.length && specs0.every(sp => sp.min === 0)) {
+      const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
+      for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
+      if (!keep.length) { log(`${obj.sourceName || obj.name}: no target was chosen, so it does nothing`); toast(`${obj.sourceName || 'Ability'} resolves`, 'No target was chosen, so it does nothing.'); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (keep.length < sents.length) { const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
+    }
+  }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
     const e = ayGet(obj.sourceName, tx, obj.sourceId);
     if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = visibleOptions(effectOptions(tx, obj)); } catch (er) { os = []; } const o = os.find(x => lblStable(x.label) === lblStable(e.label) && typeof x.fn === 'function');
@@ -1984,6 +2018,15 @@ function openAbilityEffect(obj, done) {
     let clean = !!one && (one.full || !uncoveredClauses(tx).length);
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
     if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
+    // v0.99.68 several effects that must all happen ("You gain 3 life and draw a card"): every sentence understood, nothing optional or chosen,
+    // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
+    if (!one && pre.length > 1 && pre.length <= 4) {
+      const plain = tx.replace(/\([^)]*\)/g, ' '), labs = pre.map(o => String(o.label || '').toLowerCase());
+      const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain) && !uncoveredClauses(tx).length
+        && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
+        && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));
+      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+    }
     if (clean) {
       const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
       log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
@@ -2145,6 +2188,8 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
   if (c.origName) { c.name = c.origName; delete c.origName; }
   const _mp = c.mutParts ? c : null;
+  if (c.dieExileTurn === state.turn && dest === 'graveyard') { log(`${c.name} would die, so it is exiled instead`); dest = 'exile'; }   // v0.99.68 "If that creature would die this turn, exile it instead" (CR 614.1a)
+  delete c.dieExileTurn;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
   if (c.prepared) unprepare(c, 'it left the battlefield');   // CR 722.3c
   delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
@@ -2221,13 +2266,15 @@ function adjustLoyalty(id, d) {
   log(`${f.card.name}: loyalty ${d > 0 ? '+' : ''}${d} → ${f.card.loyalty}`);
   checkLoyalty(f.card); render(); flushTriggers();
 }
-function activatePW(c, ab, x) {
+function activatePW(c, ab, x, picked) {
   if (splitSecondOn()) { toast('Split second', 'Loyalty abilities cannot be activated while a spell with split second is on the stack.'); return; }
+  // v0.99.68 CR 602.2b (601.2c): targets are chosen as the ability is activated, before the loyalty cost is paid; "up to one" may be none
+  if (picked === undefined) { const specs = parseTargetSpecs(ab.text || ''); if (specs.length) { chooseTargets(`${c.name} (${ab.label})`, specs, p => activatePW(c, ab, x, p || []), { srcId: c.id, onCancel: () => {} }); return; } }
   snap();
   const delta = ab.isX ? -x : ab.cost;
   c.loyalty = Math.max(0, (c.loyalty || 0) + delta);
   c.activatedTurn = state.turn;
-  state.stack.push({ ability: true, pw: true, id: state.nextId++, name: `${c.name} (${ab.label})`, sourceId: c.id, sourceName: c.name, text: ab.text });
+  state.stack.push(Object.assign({ ability: true, pw: true, id: state.nextId++, name: `${c.name} (${ab.label})`, sourceId: c.id, sourceName: c.name, text: ab.text }, picked !== undefined ? { targets: picked, target: picked[0] && picked[0].kind === 'player' ? picked[0].id : undefined } : {}));
   state.priority = { active: true, passed: false };
   log(`${c.name}: activated ${ab.isX ? '−' + x : ab.label} (loyalty now ${c.loyalty}); ability on the stack`);
   checkLoyalty(c);
@@ -3094,7 +3141,7 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   snap(); const [c]=state.hand.splice(f.idx,1); sfx('cast'); spotlight(c,'cast',fromC);
   state.halfChosen=null; delete c.preAlt; delete c.miracleNow; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':c.fromCmd?'command zone':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
   if(c.prepCopy!==undefined){ const pf=findCard(c.prepCopy); if(pf&&pf.card.prepared){ delete pf.card.prepared; log(`${pf.card.name}: cast its prepared spell, so it is no longer prepared (CR 722.3c + 601.2i)`); } }
-  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.warpExile; delete c.plotted; delete c.foretold; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
+  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.mayPlayUntil; delete c.mayCastOnly; delete c.warpExile; delete c.plotted; delete c.foretold; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
   if(c.fromCmd){ delete c.fromCmd; c.cmdCasts=(c.cmdCasts||0)+1; log(`${c.name}: cast from the command zone (cast ${c.cmdCasts} time${c.cmdCasts===1?'':'s'}; it will cost {${2*c.cmdCasts}} more next time)`); }
   c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }
@@ -3501,7 +3548,7 @@ function applyGraveReturn(c, stx) {
     if(/exile (?:it|that creature) at the beginning of the next end step/i.test(rest)){ addFx({kind:'delayed',when:'end',action:'exile',targetId:t.id,targetName:t.name,text:`Exile ${t.name}.`,srcName:c.name}); log(`${t.name} will be exiled at the beginning of the next end step`); }
     if(/if (?:it|that creature) would leave the battlefield, exile it instead/i.test(rest)){ t.exileInstead=true; }
   }});
-  return rest.replace(/You lose life equal to (?:its|that card's) mana value\.?/i,'').replace(/[^.]*gains? haste until end of turn\.?/i,'').replace(/[^.]*exile (?:it|that creature) at the beginning of the next end step\.?/i,'').replace(/[^.]*would leave the battlefield, exile it instead[^.]*\.?/i,'').trim();
+  return rest.replace(/You lose life equal to (?:its|that card's) mana value\.?/i,'').replace(/[^.]*gains? haste(?: until end of turn)?\.?/i,'').replace(/[^.]*exile (?:it|that creature) at the beginning of the next end step\.?/i,'').replace(/[^.]*would leave the battlefield, exile it instead[^.]*\.?/i,'').trim();
 }
 // "Countered": the top object of the stack is removed without resolving (you are playtesting against a real opponent).
 function counterStackObject(id, by, dest) {   // dest: where a countered spell goes instead of its graveyard (CR 701.6 + Remand / Memory Lapse / Dissipate text)
@@ -3986,7 +4033,7 @@ function moveCard(id, to, pos) {
   } else {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
-    delete c.xValue; delete c.manaSpent; delete c.freeCastTurn; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.xValue; delete c.manaSpent; delete c.freeCastTurn; delete c.mayPlayUntil; delete c.mayCastOnly; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
     delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });
@@ -4194,6 +4241,7 @@ function enterStep(i, quiet) {
       const self = new RegExp("^(?:" + nm + "|this \\w+) doesn't untap during your untap step", 'im').test(tx);
       const bb = noUntapNonbasic && /\bLand\b/.test(c.types ? c.types.join(' ') : (cardInfo(c.name) || {}).t || '') && !/\bBasic\b/.test((cardInfo(c.name) || {}).t || '');
       if (c.exerted && c.exerted < state.turn) { delete c.exerted; if (c.tapped) { held.push(c.name + ' (exerted)'); continue; } }   // CR 701.43a: an exerted permanent does not untap during your next untap step
+      if (c.noUntapNext && c.noUntapNext < state.turn) { delete c.noUntapNext; if (c.tapped) { held.push(c.name + ' (does not untap this time)'); continue; } }   // v0.99.68 frost effects (CR 502.3): skips one untap step
       if ((self || bb) && c.tapped) { held.push(c.name); continue; }
       if (c.tapped) pendUntap.push(c); else delete c.mt;
     }
@@ -4771,6 +4819,8 @@ function tokenDefsFromText(text, srcName) {
   let am = t.match(/\bamass ([A-Z][a-z]+)/); if (am) { const ty = singularWord(am[1]), tn = ty[0].toUpperCase() + ty.slice(1); mk({ name: `${tn} Army`, pt: '0/0', col: ['B'], types: ['Creature'], subs: [ty, 'army'], tx: '', count: 1, type: `Token Creature — ${tn} Army`, amassOnly: true }); }
   if (/\binvestigate\b/i.test(t)) mk({ name: 'Clue', pt: '', col: [], types: ['Artifact'], subs: ['clue'], tx: TOKEN_PRE.clue.tx, count: 1, type: 'Token Artifact — Clue' });
   if (/\bafterlife (\d+)/i.test(t)) mk({ name: 'Spirit', pt: '1/1', col: ['W', 'B'], types: ['Creature'], subs: ['spirit'], tx: 'Flying', count: +t.match(/\bafterlife (\d+)/i)[1], type: 'Token Creature — Spirit' });
+  // v0.99.68 "Create a 4/4 Zombie token. It gains haste until end of turn." / "They gain haste": the tokens just created get haste
+  { const hm = /\btokens?\b[^.]*\.\s*(?:it|they|those tokens|the tokens?) gains? haste( until end of turn)?\b/i.exec(t); if (hm && out.length) out[out.length - 1].haste = hm[1] ? 'eot' : 'perm'; }
   return out;
 }
 let tokenCache = { key: '', defs: [] };
@@ -4793,6 +4843,7 @@ function makeTokensFromDef(d, n, src) {
     if (d.startPlus) c.counters = { plus: d.startPlus, minus: 0 };   // Incubate N: the token enters with N +1/+1 counters
     if (d.amassOnly) c.counters = { plus: 1, minus: 0 };   // a hand-made Army starts as if amassed once
     enterBattlefield(c, { from: 'effect', tapped: !!d.tapped, logMsg: `${src ? src + ': created' : 'Created'} token ${d.name}${d.pt ? ' ' + d.pt : ''}` });
+    if (d.haste) { const g = findCard(c.id); if (g && g.zone === 'battlefield') addKwFx(c.id, 'haste', d.haste === 'perm' ? { until: 'manual' } : undefined); }
   }
   render(); flushTriggers();
 }
@@ -6489,7 +6540,7 @@ function openZone(zone) {
       } });
       if(teach('libraryPreview')) row.addEventListener('mouseenter', () => showPreview(c));
       if (zone === 'command' && c.isCommander) row.append(h('button', { class: 'primary', text: `Cast${(c.cmdCasts || 0) ? ' (+{' + 2 * c.cmdCasts + '} tax)' : ''}`, title: 'Cast your commander from the command zone (CR 903.8): it costs {2} more for each time you have cast it from there', onclick: () => { m.close(); castFromCommand(c.id); } }));
-      if (zone === 'exile' && (c.mayPlayTurn === state.turn || c.mayPlayAlways)) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
+      if (zone === 'exile' && mayPlayNow(c) && !(c.mayCastOnly && isLandName(c.name))) row.append(h('button', { class: 'primary', text: isLandName(c.name) ? 'Play land' : 'Cast', title: 'You may play this card this turn (it was exiled with permission)', onclick: () => { m.close(); playFromExile(c.id); } }));
       if (zone === 'exile' && c.freeCastTurn === state.turn && !isLandName(c.name)) row.append(h('button', { class: 'primary', text: 'Cast free (this turn)', title: 'An effect lets you cast this exiled card without paying its mana cost until end of turn', onclick: () => { m.close(); suspendCastFree(c.id, null, 'Free cast'); } }));
       if (zone === 'exile' && c.prepCopy !== undefined && preparedCastable(c)) row.append(h('button', { class: 'primary', text: `Cast (prepared by ${c.prepSource})`, title: 'A copy of a prepared creature\'s spell: cast it for its own mana cost, with its normal timing. Casting it unprepares the creature (CR 722.3c).', onclick: () => { m.close(); castPrepared(c); } }));
       if (zone === 'exile' && warpCastable(c)) row.append(h('button', { class: 'primary', text: 'Cast (warped earlier)', title: 'This card was exiled by warp: you may cast it from exile on a later turn, for its normal cost', onclick: () => { m.close(); castFromExile(c.id); } }));
@@ -6743,8 +6794,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.67';
+const APP_VERSION = '0.99.68';
 const CHANGELOG = [
+  { v: '0.99.68', title: 'Loyalty abilities by the rules, and more cards read', notes: ['RULES (CR 602.2b): a planeswalker\'s loyalty ability now asks for its targets when you activate it, before the loyalty is paid and before it goes on the stack (it used to ask when it resolved).', 'RULES (CR 115.6): "up to one target" really can be none. Karn, the Great Creator\'s +1 with no artifact chosen does nothing; the parts of an ability that do not need the target still happen.', 'Effects that must all happen are no longer offered as buttons: Ugin\'s +2 "You gain 3 life and draw a card" just happens. This only applies when every part is understood, nothing is optional or chosen, and no part opens its own window.', 'NEW: "It doesn\'t untap during its controller\'s next untap step" (Frost Breath, Icefall Regent and the like) keeps the creature tapped for exactly one untap step.', 'NEW: "If that creature would die this turn, exile it instead" (Puncturing Blow and others).', 'NEW: "Create a … token. It gains haste until end of turn": the token has haste.', 'NEW: impulse draw. "Exile the top card(s) of your library. You may play it this turn" and "until the end of your next turn" exile the cards and keep them playable from the exile pile for exactly that long ("cast" lets you cast, not play a land).', 'Card reading: a "look at the top N" sort is credited for each sentence it carries out (Commune with Evil, Discerning Taste…). 144 more Modern-legal cards are now read in full.', 'Phones held upright: the table ends where the fanned hand begins, so no battlefield card sits under your hand.'] },
   { v: '0.99.67', title: 'Phone fixes and a clean-up', notes: ['Kozilek\'s Command and other modal spells with X: the modes you chose were lost when the X window paid automatically (Pay window turned off) or X made the spell free, so the resolving window offered every mode (with "Exile You" for the creature and graveyard modes). The chosen modes now always stay with the spell. ', 'Phones: the Victory / Defeat screen (Next round, Sideboard, Choose another deck) now comes up when a player reaches 0 life even with animations off, as they often are on phones. It used to be started by the life animation, so with no animation there was no screen.', 'Phones: the top bar no longer slides under the iPhone status bar. The upright layout is shrunk to fit the screen and the space kept for the status bar and home bar was shrunk with it; it is now scaled back to the real size.', 'Clean-up: 16 pieces of code nothing used any more (an old hand-sort menu, an old ability window and others) and 134 style rules for screens that no longer exist (the old desk stacks and piles, old phase bar, old stack list…) were removed. The app is a little smaller and nothing you see changes.'] },
   { v: '0.99.66', title: 'Choices inside the stack window', notes: ['When a spell or ability resolves, its choices (Apply buttons, Done) now appear inside the stack window, under the card that is resolving, instead of in a separate narrow window. On phones the stack window spans the screen, so the choices are full width and easy to tap; on the computer the stack window widens while it holds them.', 'One Done button finishes the effect (the separate Finish button is gone while the choices are shown).', 'Escape still closes the window it should.'] },
   { v: '0.99.65', title: 'A deeper book, and pages printed on both sides', notes: ['The menu book has real depth: the pages rise from a sunken gutter, the page block is several uneven layers that step out at the sides and bottom, and it sits on a thick cover board.', 'The turning page is printed on both sides: turning to a card, its back carries the card picture, so the left page no longer goes blank while the page lands; turning back, the picture lifts away with the page.', 'RULES: "Return target creature card from your graveyard to the battlefield. It gains haste until end of turn." no longer offers to give the spell itself haste: "it" is the card just returned (the return already gives that card haste).'] },
@@ -10029,7 +10081,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^Exile ~\.?$/i, /^If you search your library this way, shuffle\.?$/i, /^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^(?:it|they|those tokens|the tokens?) gains? haste(?: until end of turn)?\.?$/i, /^(?:it|that creature|that permanent|those creatures|they) (?:doesn'?t|don'?t) untap during (?:its|their) controllers?'?s? next untap steps?\.?$/i, /^if (?:that creature|it|that permanent) would die this turn, exile it instead\.?$/i, /^Exile ~\.?$/i, /^If you search your library this way, shuffle\.?$/i, /^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 // A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
 // Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
 const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
@@ -10043,9 +10095,11 @@ function uncoveredClauses(effectText) {
   effectText = applyCondInstead(effectText, true);   // a conditional "instead" sentence whose condition the app understands is covered
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const sents = t.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
-  try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; } catch (e) { /* ignore */ }
+  const nz = x => String(x).toLowerCase().replace(/[.\s]+$/, '').replace(/\s+/g, ' ').trim(), covered = new Set();
+  try { const whole = effectOptions(t, { sourceName: '~', sourceId: -1 }); if (whole.some(o => o.full)) return []; for (const o of whole) for (const c of (o.covers || [])) covered.add(nz(c)); } catch (e) { /* ignore */ }   // v0.99.68 an option names the sentences it carries out
   const missed = [];
   sents.forEach((x, i) => {
+    if (covered.has(nz(x))) return;
     if (/^(?:Flashback|Kicker|Multikicker|Buyback|Cycling|Escape|Jump-start|Retrace|Entwine|Storm|Foretell|Suspend)\b/i.test(x)) return;
     if (/^(?:Activate|Cast this spell|This ability|You can't|Spend only|Play this|Cast only|Cast it|This spell can't be countered)\b/i.test(x)) return;
     if (i > 0 && DEP_HANDLED.some(r => r.test(x))) return;

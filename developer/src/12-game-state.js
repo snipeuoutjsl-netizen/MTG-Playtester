@@ -93,7 +93,7 @@ function moveCard(id, to, pos) {
   } else {
     [c] = state[f.zone].splice(f.idx, 1);
     if (c.token) { log(`Token ${c.name} removed`); render(); return; }
-    delete c.xValue; delete c.manaSpent; delete c.freeCastTurn; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
+    delete c.xValue; delete c.manaSpent; delete c.freeCastTurn; delete c.mayPlayUntil; delete c.mayCastOnly; delete c.modes; delete c.modeTexts; delete c.target; delete c.targets; delete c.dmg; delete c.tmpKw; delete c.exileAtEnd; delete c.exileInstead; delete c.imprint; delete c.rebound; delete c.evoked; delete c.kicked; delete c.castFrom; delete c.fromGy; if (to !== 'exile') { delete c.mayPlayTurn; delete c.warpExile; } if (to !== 'graveyard' && to !== 'exile') delete c.gyExile; if (to !== 'exile') delete c.timeCounters; if (to !== 'battlefield') delete c.suspHaste;
     delete c.exiledWith;
     c.tapped = false; delete c.mt; c.counters = to === 'battlefield' ? (c.counters || { plus: 0, minus: 0 }) : { plus: 0, minus: 0 };
     if (to === 'battlefield') enterBattlefield(c, { from: f.zone });
@@ -301,6 +301,7 @@ function enterStep(i, quiet) {
       const self = new RegExp("^(?:" + nm + "|this \\w+) doesn't untap during your untap step", 'im').test(tx);
       const bb = noUntapNonbasic && /\bLand\b/.test(c.types ? c.types.join(' ') : (cardInfo(c.name) || {}).t || '') && !/\bBasic\b/.test((cardInfo(c.name) || {}).t || '');
       if (c.exerted && c.exerted < state.turn) { delete c.exerted; if (c.tapped) { held.push(c.name + ' (exerted)'); continue; } }   // CR 701.43a: an exerted permanent does not untap during your next untap step
+      if (c.noUntapNext && c.noUntapNext < state.turn) { delete c.noUntapNext; if (c.tapped) { held.push(c.name + ' (does not untap this time)'); continue; } }   // v0.99.68 frost effects (CR 502.3): skips one untap step
       if ((self || bb) && c.tapped) { held.push(c.name); continue; }
       if (c.tapped) pendUntap.push(c); else delete c.mt;
     }

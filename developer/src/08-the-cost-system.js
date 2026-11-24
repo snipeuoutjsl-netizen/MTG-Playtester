@@ -756,7 +756,7 @@ function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
   snap(); const [c]=state.hand.splice(f.idx,1); sfx('cast'); spotlight(c,'cast',fromC);
   state.halfChosen=null; delete c.preAlt; delete c.miracleNow; let gyLeft=false; const castFrom0=c.fromGy?'graveyard':c.fromExile?'exile':c.fromCmd?'command zone':'hand'; if(c.fromGy){ if(c.fromGy.kind==='warp') c.warped=true; else if(c.fromGy.kind!=='escape'&&c.fromGy.kind!=='static') c.gyExile=true; log(`${c.faceOf||c.name}: cast from the graveyard (${c.fromGy.kind})`); delete c.fromGy; gyLeft=true; }
   if(c.prepCopy!==undefined){ const pf=findCard(c.prepCopy); if(pf&&pf.card.prepared){ delete pf.card.prepared; log(`${pf.card.name}: cast its prepared spell, so it is no longer prepared (CR 722.3c + 601.2i)`); } }
-  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.warpExile; delete c.plotted; delete c.foretold; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
+  if(c.fromExile){ delete c.fromExile; delete c.mayPlayTurn; delete c.mayPlayUntil; delete c.mayCastOnly; delete c.warpExile; delete c.plotted; delete c.foretold; const wasAdv=c.onAdv; delete c.onAdv; log(`${c.name}: cast from exile${wasAdv?' (it was on an adventure)':''}`); }
   if(c.fromCmd){ delete c.fromCmd; c.cmdCasts=(c.cmdCasts||0)+1; log(`${c.name}: cast from the command zone (cast ${c.cmdCasts} time${c.cmdCasts===1?'':'s'}; it will cost {${2*c.cmdCasts}} more next time)`); }
   c.castFrom=castFrom0;   // v0.86: "if this spell wasn't cast from your hand"
   if(x!==undefined){ c.xValue=x; log(`${c.name}: X = ${x}`); }

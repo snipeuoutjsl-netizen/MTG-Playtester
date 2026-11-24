@@ -353,8 +353,9 @@ const { setup } = require('./common.js');
   await T('606.4', 'Tezzeret, Cruel Captain 0: untap target artifact or creature; if it is an artifact creature it gets a +1/+1 counter (non-artifact creature: untapped only); loyalty unchanged, one loyalty ability per turn (606.3)', async () => { await reset(); const id = await bf1('Tezzeret, Cruel Captain');
     await ev(i => { const s = __d.state, c = s.battlefield.find(x => x.id === i); if (!c) throw new Error('no tezzeret: ' + JSON.stringify(s.battlefield.map(x => x.name))); c.loyalty = 4; s.step = __d.STEPS.findIndex(x => x.id === 'main1'); s.battlefield = s.battlefield.filter(x => x.id === i); const ar = __d.newCard('Memnite', {}); ar.id = s.nextId++; ar.tapped = true; s.battlefield.push(ar); window.__ar = ar.id; }, id);
     const lab = await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); const ab = __d.pwAbilities(c); return { labels: ab.map(a => a.label), eff: __d.effectOptions(ab[0].text, { sourceName: c.name, sourceId: i }).map(o => o.label) }; }, id);
-    await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); const ab = __d.pwAbilities(c)[0]; __d.activatePW(c, ab, 0); __d.resolveTopOfStack(); }, id);
+    await ev(i => { const c = __d.state.battlefield.find(x => x.id === i); const ab = __d.pwAbilities(c)[0]; __d.activatePW(c, ab, 0); }, id);   // v0.99.68 the target is chosen as it is activated (CR 602.2b)
     const picked = await clickPick();
+    await ev(() => __d.resolveTopOfStack()); await p.waitForTimeout(400); await clickPick().catch(() => false);
     const r = await ev(a => { const s = __d.state, x = s.battlefield.find(y => y.id === a), c = s.battlefield[0]; return { tapped: x.tapped, plus: (x.counters && x.counters.plus) || 0, loy: c.loyalty, block: __d.pwBlock(c, __d.pwAbilities(c)[1]), types: [...__d.permTypeInfo(x).types].join(',') }; }, await ev(() => window.__ar));
     return { ok: lab.labels[0] === '0' && lab.eff.length === 1 && /Untap/.test(lab.eff[0]) && picked && r.tapped === false && (lab.labels[0] === '0' && picked && r.tapped === false && r.plus === 1 && r.loy === 4 && /only one loyalty ability/.test(r.block)), why: JSON.stringify({ lab, picked, r }) }; });
   await T('701.23', 'Tezzeret, Cruel Captain -3: search for an artifact card with mana value 1 or less, reveal it, put it into your hand, then shuffle (only matching cards are valid choices)', async () => { await reset(); const id = await bf1('Tezzeret, Cruel Captain');
@@ -1496,6 +1497,36 @@ const { setup } = require('./common.js');
         document.getElementById('modalRoot').innerHTML = ''; }
       S.teaching.stackGuidance = was; return res;})()`));
     return { ok: r.every(x => x.onStack && JSON.stringify(x.modes) === '[0,1]'), why: JSON.stringify(r) }; });
+  await T('502.3 + 614.1a + 111.10 + 608.2c', "general effects: 'It doesn't untap during its controller's next untap step' keeps a tapped creature tapped for exactly one untap step; 'If that creature would die this turn, exile it instead' sends it to exile, not the graveyard; 'Create a 4/4 Zombie token. It gains haste until end of turn' makes a token with haste; impulse draw 'Exile the top two cards … Until the end of your next turn, you may play those cards' keeps them playable through the next turn only; Commune with Evil's sort is credited for both its sentences", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      s.battlefield = []; s.graveyard = []; s.exile = [];
+      const a = mk('Memnite'); a.tapped = true; s.battlefield.push(a); const b = mk('Memnite'); s.battlefield.push(b);
+      const T = [{ kind: 'perm', id: a.id, name: a.name }];
+      __d.effectOptions("Tap target creature. It doesn't untap during its controller's next untap step.", { sourceName: 'Frost', targets: T }).find(o => /untap during the next/.test(o.label)).fn();
+      const turn0 = s.turn; s.turn = turn0 + 1; __d.enterStep(__d.STEPS.findIndex(x => x.id === 'untap'), true); const held1 = a.tapped;
+      s.turn = turn0 + 2; __d.enterStep(__d.STEPS.findIndex(x => x.id === 'untap'), true); const held2 = a.tapped; s.turn = turn0;
+      const T2 = [{ kind: 'perm', id: b.id, name: b.name }];
+      __d.effectOptions('Target creature gets -3/-3 until end of turn. If that creature would die this turn, exile it instead.', { sourceName: 'Puncture', targets: T2 }).find(o => /exile it instead/.test(o.label)).fn();
+      __d.moveCard(b.id, 'graveyard'); const exiled = s.exile.some(x => x.id === b.id), inGy = s.graveyard.some(x => x.id === b.id);
+      const d = __d.tokenDefsFromText('Create a 4/4 black Zombie creature token. It gains haste until end of turn.', 'Src')[0]; __d.makeTokensFromDef(d, 1, 'Src'); const tok = s.battlefield.find(x => x.token && x.name === d.name); const haste = !!tok && __d.hasKw(tok, 'haste');
+      const L0 = s.library.length; const imp = __d.effectOptions('Exile the top two cards of your library. Until the end of your next turn, you may play those cards.', { sourceName: 'Impulse' }).find(o => /Exile the top 2/.test(o.label)); imp.fn();
+      const ex = s.exile.slice(-2); const now = ex.every(x => __d.mayPlayNow(x)); s.turn = turn0 + 1; const next = ex.every(x => __d.mayPlayNow(x)); s.turn = turn0 + 2; const after = ex.some(x => __d.mayPlayNow(x)); s.turn = turn0;
+      const commune = __d.uncoveredClauses('Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard. You gain 3 life.');
+      return { held1, held2, exiled, inGy, haste, lib: L0 - s.library.length, now, next, after, commune };})()`));
+    return { ok: r.held1 === true && r.held2 === false && r.exiled && !r.inGy && r.haste && r.lib === 2 && r.now && r.next && !r.after && r.commune.length === 0, why: JSON.stringify(r) }; });
+  await T('606.3 + 602.2b + 115.6 + 608.2c', "loyalty abilities: targets are chosen when the ability is activated (before it goes on the stack); Karn's +1 'up to one target noncreature artifact' with none chosen does nothing; Ugin's +2 'You gain 3 life and draw a card' happens by itself (both parts are mandatory, no buttons)", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      document.getElementById('modalRoot').innerHTML = ''; const out = {};
+      const k = mk('Karn, the Great Creator'); k.loyalty = 5; s.battlefield = [k, mk('Sol Ring')]; s.stack = [];
+      __d.activatePW(k, __d.pwAbilities(k)[0], 0); await W(250); out.asked = !!document.querySelector('.modal') && s.stack.length === 0;
+      const cf = [...document.querySelectorAll('.modal footer button')].find(b => /Confirm/.test(b.textContent)); if (cf) cf.click(); await W(250);
+      out.onStack = s.stack.length === 1 && Array.isArray(s.stack[0].targets) && s.stack[0].targets.length === 0; __d.resolveTopOfStack(); await W(350);
+      out.quiet = !document.querySelector('.modal') && /does nothing/.test(s.log.slice(-2).join(' '));
+      const u = mk('Ugin, Eye of the Storms'); u.loyalty = 7; s.battlefield = [u]; s.activatedTurn = 0; const l0 = s.life, h0 = s.hand.length;
+      __d.activatePW(u, __d.pwAbilities(u)[0], 0); await W(200); __d.resolveTopOfStack(); await W(350);
+      out.ugin = { life: s.life - l0, drew: s.hand.length - h0, win: !!document.querySelector('.modal') };
+      document.getElementById('modalRoot').innerHTML = ''; return out;})()`));
+    return { ok: r.asked && r.onStack && r.quiet && r.ugin.life === 3 && r.ugin.drew === 1 && !r.ugin.win, why: JSON.stringify(r) }; });
   await T('601.3 + 601.2h + 702.51a', "Hogaak: 'You may cast this card from your graveyard' gives a graveyard cast; 'You can't spend mana' means the cost must be paid fully by convoke and delve (a black or green creature pays {B/G}); with too few creatures and cards it cannot be cast", async () => { await reset(); await toMain();
     const r = await ev(new Function('return (async()=>{' + amuSetup + `
       setup(['Narcomoeba','Golgari Thug','Ichorid'],[]); s.graveyard=['Stinkweed Imp','Creeping Chill','Cabal Therapy','Gitaxian Probe','Street Wraith'].map(mk); const hg=mk('Hogaak, Arisen Necropolis'); s.graveyard.push(hg);
