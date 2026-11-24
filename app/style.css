@@ -2451,3 +2451,16 @@ html.portrait-ui body:not(.mullhand):not(.mullpick):not(.hall-on) .hand-tab { po
 /* v0.99.69 upright phones: when the resolving window cannot sit inside the stack window it is centred, full width (not pushed 340px to the right) */
 html.portrait-ui #modalRoot .backdrop.resolve { padding: 10px; justify-content: center; align-items: center; }
 html.portrait-ui #modalRoot .backdrop.resolve .modal { width: 100% !important; max-width: 500px; }
+/* ===== v0.99.70 Library uniformity: the corner buttons are brass-trimmed walnut plaques like the sign; the ribbons sit in front of the raised pages ===== */
+#hall .hall-corner .hall-close, #hall .hall-gear { height: 42px; border-radius: 8px; border: 1px solid #b08a45; color: #f0d48c; cursor: pointer;
+  background: linear-gradient(180deg, rgba(255,235,190,.10), transparent 40%), linear-gradient(180deg, #4b2f19, #2b190b);
+  box-shadow: inset 0 1px 0 rgba(255,230,170,.28), inset 0 -2px 0 rgba(0,0,0,.35), 0 0 0 2px rgba(43,25,11,.9), 0 4px 10px rgba(0,0,0,.55); text-shadow: 0 1px 1px #000; }
+#hall .hall-corner .hall-close { padding: 0 18px; font: 600 15px Georgia, 'Times New Roman', serif; font-variant: small-caps; letter-spacing: .07em; }
+#hall .hall-corner .hall-close:hover, #hall .hall-gear:hover { border-color: #e3b95c; color: #ffe7a6; background: linear-gradient(180deg, rgba(255,235,190,.16), transparent 45%), linear-gradient(180deg, #5a3920, #331f0f); }
+#hall .hall-corner .hall-close:focus-visible, #hall .hall-gear:focus-visible { outline: 2px solid #f0d48c; outline-offset: 3px; }
+#hall .hall-gear { width: 42px; padding: 0; }
+#hall .tm-ribbons { transform: translateZ(24px); }
+#hall .tm-ribbon { font: 700 11px Georgia, serif; letter-spacing: .1em; }
+/* upright: with a deck on the desk the book rises over the lower shelf, so the deck's cards start below it */
+#hall.portrait .hall-stage:has(.dbx-pull) .hall-tome { top: 690px; }
+#hall.portrait .hall-spread.dk { top: 1330px; }

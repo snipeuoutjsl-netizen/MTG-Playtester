@@ -122,8 +122,11 @@ async function loadSleeve() {
   applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board layout'], ['mat', 'Playmat & frame'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
-const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged: lanes, zone rail, piles and board effects'], mat: ['🖼', 'Playmat picture, colour and motion, and the frame around the board'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+// v0.99.70 merged: Board layout + Playmat & frame = Table; Animations + Sound = Motion & sound; the Library look window and the card-data / update
+// windows have their own tabs. ('mat' and 'snd' panes are still built, then folded into their merged tab.)
+const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['lib', 'Library'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
+const SET_TAB_ALIAS = { mat: 'board', snd: 'anim' };
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged (lanes, zone rail, piles, board effects), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['Library of Alexandria (MTG Playtester) is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -275,7 +278,7 @@ function openSettings() {
     sel.addEventListener('change',()=>{const st=UI_SETS.find(x=>x.id===sel.value); note.textContent=st?st.note:'';});
     const note=h('span',{class:'muted small',text:(UI_SETS.find(x=>x.id===sel.value)||{}).note||''});
     return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
-  const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
+  const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.mat=h('div',{class:'settab'}); P.snd=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox); P.a11y.append(buildA11yTab());
   { const box = h('div'), draw = () => {
       const mk = (v, label, desc) => { const r = h('input', { type: 'radio', name: 'laymode' }); r.checked = (settings.layoutMode || 'updated') === v; r.addEventListener('change', () => { settings.layoutMode = v; saveSettings(); applyLayout(); render(); draw(); });
@@ -289,7 +292,7 @@ function openSettings() {
         h('div', { class: 'setgrid' }, LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
           cb.addEventListener('change', () => { settings.lay = { ...(settings.lay || {}), [k]: cb.checked }; saveSettings(); applyLayout(); render(); });
           return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })),
-        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat picture and the frame have their own tab.' }));
+        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat and the frame are further down this tab.' }));
     }; draw(); P.layout.append(box); }
   const foilBox=h('div');
   const drawFoil=()=>{ const sel=h('select'); for(const [v,l] of [['off','Off'],['some','Some cards (about 1 in 5)'],['all','Every card']]) sel.append(h('option',{value:v,text:l})); sel.value=settings.foil||'off';
@@ -344,6 +347,16 @@ function openSettings() {
     h('div', { class: 'fhead', text: 'Board frame' }),
     frameBox,
     h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Playmat images are stored in this browser only, so they work offline.' }));
+  // v0.99.70 fold the merged panes in, and fill the two new tabs
+  P.board.append(h('div', { class: 'fhead', text: 'Playmat & frame' }), ...[...P.mat.childNodes].filter(n => !(n.classList && n.classList.contains('fhead') && n.textContent === 'Playmat'))); delete P.mat;
+  P.anim.append(h('div', { class: 'fhead', text: 'Sound' }), ...P.snd.childNodes); delete P.snd;
+  P.lib.append(buildHallLook(), h('div', { class: 'fhead', text: 'Start-up' }),
+    (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = lsGet(HALL_KEY, true) !== false; cb.addEventListener('change', () => lsSet(HALL_KEY, cb.checked)); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Open the Library when the app starts' }), h('span', { class: 'muted small', text: ' \u2014 otherwise the app opens straight at the table' }))); })());
+  { const go = (t, d, f) => h('div', { class: 'setrow' }, h('label', { text: t }), h('button', { text: 'Open\u2026', onclick: () => { m.close(); f(); } }), h('span', { class: 'muted small', text: d }));
+    const upd = (k, t) => { const cb = h('input', { type: 'checkbox' }); cb.checked = settings[k] !== false; cb.addEventListener('change', () => { settings[k] = cb.checked; saveSettings(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: t }))); };
+    P.data.append(h('div', { class: 'fhead', text: 'Card data' }), go('Card data', `Names, costs and rules text (${cardCount ? cardCount.toLocaleString() + ' cards loaded' : 'not loaded yet'})`, openCardData), go('Card pictures', 'Download pictures, or play with text cards', openImages),
+      h('div', { class: 'fhead', text: 'Updates' }), window.desktop ? go('Update app', 'Check GitHub for a new version and install it', () => openUpdate()) : h('div', { class: 'setrow' }, h('span', { class: 'muted small', text: 'The web app updates itself the next time it is opened.' })),
+      ...(window.desktop ? [upd('autoUpdateCheck', 'Check for updates when the app starts'), upd('updatePrompt', 'Open the update window when an update is found (otherwise a small notice)')] : [])); }
   // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
   const tabbar = h('div', { class: 'setnav' }), stage = h('div', { class: 'setmain' });
   const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings' });
@@ -379,7 +392,7 @@ function openSettings() {
   tabbar.append(search);
   for (const [k, label] of SET_TABS) tabbar.append(h('button', { class: 'settabbtn', 'data-k': k, onclick: () => showTab(k) }, h('span', { class: 'ti', text: TAB_INFO[k][0] }), h('span', { text: label })));
   const shell = h('div', { class: 'setshell' }, tabbar, stage);
-  body.append(shell); showTab(P[settingsTab] ? settingsTab : 'gfx');
+  body.append(shell); { const t0 = SET_TAB_ALIAS[settingsTab] || settingsTab; showTab(P[t0] ? t0 : 'gfx'); }
   m.foot.append(
     h('button', { text: 'Welcome tour', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
     h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); delete settings.a11y; saveSettings(); applyA11y(); m.close(); openSettings(); } }),
