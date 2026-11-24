@@ -71,6 +71,10 @@ function batch2Options(txs, obj) {
     const hasT = /\btarget\b/i.test(t) && !/\b(?:spell|player|opponent) target/i.test(t);
     // "Untap those creatures." / "Untap it." / "Untap that creature." (Colossal Heroics, Triton Tactics, Twist Allegiance)
     const us = sents.find(x => /^untap (?:those creatures|those permanents|it|that creature|that permanent|them)\.?$/i.test(x));
+    if (us && !hasT && /those creatures|them/i.test(us)) {   // v0.99.77 "Creatures you control get +2/+1 until end of turn. Untap those creatures." (War Flare, Mob Rule): the group the sentence before named
+      const prev = sents[sents.indexOf(us) - 1] || ''; const gm = /^(.+?) (?:each )?(?:gets?|gains?|have|has) /i.exec(prev); const sub = gm ? (() => { try { return parseSubject(gm[1].replace(/~/g, src), { id: -1, name: src }); } catch (e) { return null; } })() : null;
+      if (sub && !sub.self) out.push({ covers: [us], label: 'Untap those creatures', fn: () => { const cs = state.battlefield.filter(c => permZone(c) === 'creatures' && sub.test(c)); snap(); for (const c of cs) { c.tapped = false; delete c.mt; } log(`${src}: untapped ${cs.length} creature${cs.length === 1 ? '' : 's'}`); render(); } });
+    }
     if (us && hasT) out.push({ covers: [us], label: 'Untap the chosen creature' + (tg().length === 1 ? '' : 's'), fn: () => { const cs = tg(); snap(); for (const c of cs) { c.tapped = false; delete c.mt; } log(`${src}: untapped ${cs.map(c => c.name).join(', ') || 'nothing (no target left)'}`); render(); } });
     // "It gains vigilance until end of turn." / "That creature gains indestructible and lifelink until end of turn." (one reader, so the sentence is also counted as read)
     const gs = sents.map(x => [x, /^(?:it|that creature|that permanent|they|those creatures|each of them) gains? ((?:[a-z ]+?)(?:,? and [a-z ]+?)?) until end of turn\.?$/i.exec(x)]).find(p => p[1]);
@@ -79,5 +83,22 @@ function batch2Options(txs, obj) {
         drop.push(new RegExp('^(?!The chosen creature).* gains? .*' + kr + '.* until end of turn$', 'i'));
         out.push({ covers: [gs[0]], label: `The chosen creature${tg().length === 1 ? '' : 's'} gain${tg().length === 1 ? 's' : ''} ${kws.join(' and ')} until end of turn`, fn: () => { const cs = tg(); for (const c of cs) for (const k of kws) addKwFx(c.id, k, { srcName: src }); if (!cs.length) log(`${src}: no target left to gain ${kws.join(' and ')}`); render(); } }); } }
   }
+  // v0.99.77 CR 701.34 Proliferate: each permanent and player with a counter may get one more of each kind it has. In a goldfish game every choice is yours,
+  // so the app adds to all of your permanents that have counters (and your poison/energy are counters on you only if you choose: energy is added).
+  { const ps = sents.find(x => /^proliferate\.?$/i.test(x) || /,? then proliferate\.?$/i.test(x));
+    if (ps) out.push({ covers: /^proliferate\.?$/i.test(ps) ? [ps] : undefined, label: 'Proliferate (one more of each kind of counter on your permanents with counters, and energy)', fn: () => { snap(); let n = 0;
+      for (const c of state.battlefield) { const k = c.counters || {}; let any = false; for (const key of Object.keys(k)) { if (key === 'minusApplied' || !(k[key] > 0)) continue; k[key]++; any = true; } if (any) n++; }
+      if (state.gs && state.gs.energy > 0) state.gs.energy++;
+      log(`${src}: proliferated (${n} permanent${n === 1 ? '' : 's'}${state.gs && state.gs.energy > 0 ? ', energy' : ''})`); fireTrigger && render(); } }); }
+  // v0.99.77 "Tap it." / "Untap ~." with nothing targeted: the source itself (Wicked Wolf)
+  { const ts = !/\btarget\b/i.test(t) && sents.find(x => /^(tap|untap) (?:it|~|this (?:creature|artifact|permanent))\.?$/i.test(x));
+    if (ts) { const up = /^untap/i.test(ts); out.push({ covers: [ts], label: `${up ? 'Untap' : 'Tap'} ${src}`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } snap(); f.card.tapped = !up; if (up) delete f.card.mt; log(`${src}: ${up ? 'untapped' : 'tapped'}`); render(); } }); } }
+  // v0.99.77 "Exile ~." on its own (Ghost Council of Orzhova, Argent Sphinx): the source leaves the battlefield for exile
+  { const es = sents.find(x => /^exile ~\.?$/i.test(x));
+    if (es) out.push({ covers: [es], label: `Exile ${src}`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } moveCard(f.card.id, 'exile'); log(`${src}: exiled itself`); render(); } }); }
+  // v0.99.77 "It gains indestructible until end of turn." with nothing targeted: "it" is the source (Wicked Wolf, Syndicate Trafficker)
+  { const hasT2 = /\btarget\b/i.test(t); const gs2 = !hasT2 && sents.map(x => [x, /^(?:it|~) gains? ([a-z ]+?(?:,? and [a-z ]+?)?) until end of turn\.?$/i.exec(x)]).find(p => p[1]);
+    if (gs2) { const kws = gs2[1][1].toLowerCase().split(/\s*(?:,\s*(?:and\s+)?|\band\b)\s*/).map(x => x.trim()).filter(Boolean);
+      if (kws.length && kws.every(k => GRANTABLE.includes(k))) out.push({ covers: [gs2[0]], label: `${src} gains ${kws.join(' and ')} until end of turn`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } for (const k of kws) addKwFx(f.card.id, k, { srcName: src }); render(); } }); } }
   return { out, drop };
 }

@@ -1775,7 +1775,7 @@ function effectOptions(tx, obj) {
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
-    if (b2.out.length) res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))).concat(b2.out.filter(o => !res.some(r => r && r.label === o.label))); }
+    if (b2.out.length) { res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))); for (const o of b2.out) { const same = res.find(r => r && r.label === o.label); if (same) { if (o.covers) same.covers = (same.covers || []).concat(o.covers); } else res.push(o); } } }   // v0.99.77 an option offered twice keeps one copy, with what both say they carry out
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
   const dup = new Set(); if (drawN.length > 1) { const keep = drawN.find(o => !/^Draw /i.test(o.label)) || drawN[0]; for (const o of drawN) if (o !== keep && String(o.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase() === String(keep.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase()) dup.add(o); }
@@ -1960,11 +1960,13 @@ function effectOptionsBase(tx, obj) {
       opts.push({ label: lbl(d.count), fn: () => { let n = d.count; if (n === 'X') { n = parseInt(prompt(`How many ${d.name} tokens (X)?`, '1'), 10) || 0; } if (n > 0) makeTokensFromDef(d, n, src); } });
     } }
   const txNq = tx.replace(/"[^"]*"/g, ' ');
-  if (!/^\{T\}/.test(tx) && (mm = txNq.match(/\badd ((?:\{[WUBRGC]\})+)/i)) && !/for each|any number/i.test(tx)) { const cols = [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]); opts.push({ label: `Add ${cols.join('')}`, fn: () => { snap(); for (const col of cols) addFloatingMana(col); render(); } }); }
-  if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana of any (one )?color\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana of any one color`, fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col, nn); render(); } }, ['W', 'U', 'B', 'R', 'G']) }); }
+  // v0.99.77 CR 106.6 "Spend this mana only to …" after an Add: the mana floats with that restriction (Lord of the Forsaken, Titans' Nest)
+  const spendS = (txNq.match(/(?:^|[.!]\s+)(Spend this mana only (?:to|on) [^.]+\.)/i) || [])[1] || '', spendOnly = spendS ? spendS.replace(/^Spend this mana only (?:to |on )?/i, '').replace(/\.$/, '') : undefined, spendCov = spendS ? [spendS] : undefined, spendLab = spendS ? ` (spend it only to ${spendOnly})` : '';
+  if (!/^\{T\}/.test(tx) && (mm = txNq.match(/\badd ((?:\{[WUBRGC]\})+)/i)) && !/for each|any number/i.test(tx)) { const cols = [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]); opts.push({ label: `Add ${cols.join('')}${spendLab}`, covers: spendCov, fn: () => { snap(); for (const col of cols) addFloatingMana(col, 1, spendOnly); render(); } }); }
+  if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana of any (one )?color\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana of any one color${spendLab}`, covers: spendCov, fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col, nn, spendOnly); render(); } }, ['W', 'U', 'B', 'R', 'G']) }); }
   if ((mm = txNq.match(/\badd (two|three|four|five|\d+) mana in any combination of colors\b/i))) { const nn = wordN(mm[1]); opts.push({ label: `Add ${nn} mana in any combination of colors`, fn: () => { let left = nn; const next = () => { if (left <= 0) return; openManaChoice({ name: src + ` (${left} left)` }, col => { if (col) { snap(); addFloatingMana(col, 1); left--; render(); next(); } }, ['W', 'U', 'B', 'R', 'G']); }; next(); } }); }
   if (/\btakes? an extra turn after this one\b/i.test(tx)) opts.push({ label: 'Take an extra turn after this one', fn: () => { state.extraTurns = (state.extraTurns || 0) + 1; log(`${src}: you will take an extra turn after this one`); toast('Extra turn', 'You take another turn right after this one (rule 500.7). In a goldfish every turn is already yours; the log notes it.'); } });
-  if (/\badd one mana of any color\b/i.test(txNq)) opts.push({ label: 'Add one mana of any color', fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col); render(); } }, ['W', 'U', 'B', 'R', 'G']) });
+  if (/\badd one mana of any color\b/i.test(txNq)) opts.push({ label: 'Add one mana of any color' + spendLab, covers: spendCov, fn: () => openManaChoice({ name: src }, col => { if (col) { snap(); addFloatingMana(col, 1, spendOnly); render(); } }, ['W', 'U', 'B', 'R', 'G']) });
   // v0.67.1 Thespian's Stage: "~ becomes a copy of target land, except it has this ability." (rule 707.9: it keeps counters and tapped state; no enter-the-battlefield event)
   if (obj.sourceId && /\bbecomes a copy of target land, except it has this ability\b/i.test(tx)) return [{ full: true, label: `${src} becomes a copy of a land`, fn: () => {
     const f = findCard(obj.sourceId); if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; }
@@ -6970,8 +6972,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.76';
+const APP_VERSION = '0.99.77';
 const CHANGELOG = [
+  { v: '0.99.77', title: 'Reading sweep', notes: ['A sweep over every card the app knows found sentences it skipped; these are now carried out: \u201cYou may pay {1}. If you do, target player loses 1 life\u201d and other payments whose result has a target or several parts (Smolder Initiate, Ruthless Sniper); \u201cUntap those creatures\u201d after a group pump (War Flare, Mob Rule); Proliferate (one more of each counter on your permanents, and energy), also as \u201c\u2026, then proliferate\u201d (Tezzeret\u2019s Gambit, Grim Affliction); \u201cSpend this mana only to \u2026\u201d after an ability adds mana (Lord of the Forsaken), which now floats with that restriction; a spell\u2019s \u201cExile [this spell].\u201d is read; \u201cIt gains indestructible until end of turn\u201d and \u201cTap it\u201d on the source itself (Wicked Wolf).', 'Cards the app fully reads went from 11,704 to 11,777 across all 22,743 cards.', 'The Library book has no more \u201c\u2026\u201d: menu entries and buttons lost their trailing dots, and long names wrap and the page scales its writing down instead of being cut off.', '285 rules tests pass, all with real cards.'] },
   { v: '0.99.76', title: 'Triggers you can see, cards that glow for their abilities, Kaito\u2019s 0', notes: ['Skysovereign and other abilities aimed at an opponent\u2019s permanent: when one resolves, the stack window shows what to do on the real card (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) until you press Done, instead of a toast that was easy to miss. Always yield is no longer offered for these, so the trigger asks for its target every time it enters or attacks.', 'Always yield: \u201cAsk every time\u201d is now the default button (Enter), so pressing Enter no longer silences every later trigger of that card for the rest of the game.', 'A card in your hand glows green whenever an ability of it can be activated from there, not only when it can be cast: Ninjutsu after blockers are declared with an unblocked attacker and the mana available, cycling (Street Wraith in the middle of combat) and reinforce.', 'Kaito, Bane of Nightmares 0: \u201cSurveil 2. Then draw a card for each opponent who lost life this turn.\u201d now draws when the opponent lost life this turn (and nothing otherwise). Before, it was mistaken for an \u201cuntil end of turn\u201d reminder and drew nothing.', '284 rules tests pass, all with real cards.'] },
   { v: '0.99.75', title: 'Emblems and anthems, Station, Lightning Axe', notes: ['Emblems now work: their static abilities apply from the command zone (CR 114.4). Kaito\u2019s \u201cNinjas you control get +1/+1\u201d emblem pumps your Ninjas, and two of them stack; Sorin\u2019s +1/+0 and Elspeth\u2019s indestructible emblems apply too (Elspeth\u2019s now covers lands as well as creatures). Before, emblems only worked for triggered abilities.', 'The emblem panel is labelled Command zone, shows each emblem\u2019s own words, groups identical emblems with a \u00d7 count, and no longer covers your library.', 'Anthems read far more wordings (565 of the 729 anthem-style lines in Modern, up from 456): \u201cwith a +1/+1 counter on it\u201d (Abzan Falconer), \u201cother creatures you control with flying\u201d (Thunderclap Wyvern), \u201cwithout flying\u201d, \u201cthat are enchanted\u201d, \u201cof the chosen type / colour\u201d (Icon of Ancestry, Caged Sun), lists of types (\u201cArtifacts, creatures, enchantments, and lands\u201d), two subtypes (\u201cEldrazi Spawn creatures\u201d), \u201cNonwhite creatures\u201d (Crovax) and shroud.', 'Station: a Spacecraft with enough charge counters is now an artifact creature everywhere: it moves to the creature row, can attack and block, and deals combat damage (before, it had the creature P/T and keywords but could not attack). Its \u201cN+ | \u2026\u201d lines are read instead of being reported as gaps.', 'Skysovereign: its enters/attacks trigger can target only a creature or planeswalker an opponent controls. Because the opponent\u2019s permanents are not on this table, it now says exactly what to do (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) instead of a vague note. It never touches your creatures or the opponent\u2019s life.', 'Lightning Axe and other spells with \u201cAs an additional cost to cast this spell \u2026\u201d no longer ask about that cost when they resolve: it was paid as the spell was cast.', '282 rules tests pass, all with real cards.'] },
   { v: '0.99.74', title: 'Book tidy-up', notes: ['The little page numbers in the bottom corners of the Library book are gone (the curved page edge had pushed them off the page).', 'A page\u2019s writing now keeps a slightly larger margin above the bent bottom edge, so a long \u201cBegin with \u2026\u201d line is never cut off.'] },
@@ -8315,10 +8318,10 @@ function pullDeckBox(m, tile, d) {
     h('div', { class: 'dbx-acts' },
       btn(d.beginLabel || (d.isCur ? 'Keep using this deck' : 'Use this deck'), d.onPick, 'primary'),
       keep('Edit list', d.onEdit), d.onSide ? keep('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
-      keep('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), keep('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
-      btn('Buy this deck…', () => openBuyDeck(Object.assign({}, d.deck, { name: d.deckName })), '', 'Open TCGplayer with this list (and your chosen printings) ready to add to the cart'),
+      keep('Box art', d.onArt, '', 'Choose which card’s art is on this box'), keep('Card art & printings', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
+      btn('Buy this deck', () => openBuyDeck(Object.assign({}, d.deck, { name: d.deckName })), '', 'Open TCGplayer with this list (and your chosen printings) ready to add to the cart'),
       h('button', { text: 'Put it back', onclick: () => putBack() }),
-      h('button', { class: 'danger', text: 'Delete deck\u2026', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
+      h('button', { class: 'danger', text: 'Delete deck', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
   const sc3 = d.scene || null;   // v0.99.50 the Library: one 3D room; the book stands on the desk and its details fill the pages of the open book
   const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, sc3 ? null : info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
@@ -10274,7 +10277,7 @@ function compileCardOne(c) {
     if (sp && sp[1]) { push(text, 'static', sp[2] || 'ok', sp[1]); continue; }
     // spell effect
     if (isSpell) {
-      const eff = recognizedEffects(stripped);
+      let eff = recognizedEffects(stripped); if (!eff.length && norml !== stripped) eff = recognizedEffects(norml);   // v0.99.77 the spell's own name reads as ~ ("Exile Woodland Guidance.")
       if (/^(?:Domain|Landfall|Delirium|Metalcraft|Threshold|Revolt|Spell mastery)\b/.test(stripped) && sp) { push(text, 'spell', 'ok', sp[1]); continue; }
       push(text, 'spell', eff.length ? 'ok' : 'part', eff.length ? `Spell effect: when it resolves the app offers: ${eff.join('; ')}.` : 'Spell effect: the app puts the spell on the stack and tells you when it resolves, but you apply the effect by hand.'); continue;
     }
@@ -13938,13 +13941,21 @@ function mayPayOptions(sents, obj) {
   // v0.99.72 "it" with nothing targeted is the source itself (Order of the Golden Cricket: "If you do, it gains flying until end of turn")
   if (/\bon it\.?$/.test(rest) && !(obj && obj.targets && obj.targets.length) && obj && obj.sourceId != null) rest = rest.replace(/\bon it(\.?)$/, 'on ~$1');
   const inner = effectOptionsBase(rest, obj || {}).filter(o => typeof o.fn === 'function' && !o.special && !o.hidden && !/^remember\b/i.test(o.label || ''));
-  if (inner.length !== 1) return null;
+  const energy0 = /^(?:\{E\})+$/i.test(cost) ? cost.length / 3 : 0;
+  if (inner.length !== 1) {   // v0.99.77 the rest has a target or several parts: pay, then resolve the rest as its own effect (its targets were chosen with the ability)
+    let whole = false; try { whole = !uncoveredClauses(rest).length && recognizedEffects(rest).length > 0; } catch (e) { whole = false; } if (!whole) return null;
+    const after = () => { const o2 = Object.assign({}, obj || {}, { text: rest, _tgtAsked: true }); openAbilityEffect(o2, () => render()); };
+    return [{ full: true, covers: sents, label: `Pay ${energy0 ? energy0 + ' energy' : cost}, then: ${rest.replace(/^./, ch => ch.toLowerCase())}`, fn: () => {
+        if (energy0) { const gs = state.gs || (state.gs = {}); if ((gs.energy || 0) < energy0) { toast('Not enough energy', `You have ${gs.energy || 0} energy; this costs ${energy0}.`); return; } snap(); gs.energy -= energy0; log(`${src}: paid ${energy0} energy`); after(); return; }
+        const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, after); } },
+      { full: true, covers: sents, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }];
+  }
   const energy = /^(?:\{E\})+$/i.test(cost) ? cost.length / 3 : 0;   // CR 107.14: {E} is paid with energy counters, not mana
   if (energy) { const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
-    return [{ full: whole, label: `Pay ${energy} energy: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const gs = state.gs || (state.gs = {}); if ((gs.energy || 0) < energy) { toast('Not enough energy', `You have ${gs.energy || 0} energy; this costs ${energy}.`); return; } snap(); gs.energy -= energy; log(`${src}: paid ${energy} energy (${gs.energy} left)`); io.fn(); render(); } },
+    return [{ full: whole, covers: whole ? sents : undefined, label: `Pay ${energy} energy: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const gs = state.gs || (state.gs = {}); if ((gs.energy || 0) < energy) { toast('Not enough energy', `You have ${gs.energy || 0} energy; this costs ${energy}.`); return; } snap(); gs.energy -= energy; log(`${src}: paid ${energy} energy (${gs.energy} left)`); io.fn(); render(); } },
       { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }]; }
   const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
-  return [{ full: whole, label: `Pay ${cost}: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, () => { io.fn(); render(); }); } },
+  return [{ full: whole, covers: whole ? sents : undefined, label: `Pay ${cost}: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, () => { io.fn(); render(); }); } },
     { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }];
 }
 // ---- v0.99.47 Preparation cards (CR 722, Secrets of Strixhaven / Reality Fracture). Scryfall layout "prepare": face 0 is the creature, face 1 its prepare spell.
@@ -14242,11 +14253,11 @@ function drawHall() {
     chk('I go first (on the play)', onPlay, e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } }),
     h('div', { class: 'tm-begin' }, ink(inGame ? 'Begin a new game' : `Begin with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, 'tm-go' + (inGame ? '' : ' primary'), 'Shuffle up and deal with the deck in hand')));
   const entries = [
-    ['Import a deck…', () => openDeckEditor(cmd ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'],
+    ['Import a deck', () => openDeckEditor(cmd ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'],
     ['Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'],
     ['Settings', () => openSettings()],
     ['Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }],
-    ['Library look…', () => openHallLook(), 'Choose the wall and the desk'],
+    ['Library look', () => openHallLook(), 'Choose the wall and the desk'],
     ['Rules & help', () => openWelcome()],
     ['How cards are read', () => { try { $('#btnReading').click(); } catch (e) {} }],
     [`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }],
@@ -14526,6 +14537,10 @@ function batch2Options(txs, obj) {
     const hasT = /\btarget\b/i.test(t) && !/\b(?:spell|player|opponent) target/i.test(t);
     // "Untap those creatures." / "Untap it." / "Untap that creature." (Colossal Heroics, Triton Tactics, Twist Allegiance)
     const us = sents.find(x => /^untap (?:those creatures|those permanents|it|that creature|that permanent|them)\.?$/i.test(x));
+    if (us && !hasT && /those creatures|them/i.test(us)) {   // v0.99.77 "Creatures you control get +2/+1 until end of turn. Untap those creatures." (War Flare, Mob Rule): the group the sentence before named
+      const prev = sents[sents.indexOf(us) - 1] || ''; const gm = /^(.+?) (?:each )?(?:gets?|gains?|have|has) /i.exec(prev); const sub = gm ? (() => { try { return parseSubject(gm[1].replace(/~/g, src), { id: -1, name: src }); } catch (e) { return null; } })() : null;
+      if (sub && !sub.self) out.push({ covers: [us], label: 'Untap those creatures', fn: () => { const cs = state.battlefield.filter(c => permZone(c) === 'creatures' && sub.test(c)); snap(); for (const c of cs) { c.tapped = false; delete c.mt; } log(`${src}: untapped ${cs.length} creature${cs.length === 1 ? '' : 's'}`); render(); } });
+    }
     if (us && hasT) out.push({ covers: [us], label: 'Untap the chosen creature' + (tg().length === 1 ? '' : 's'), fn: () => { const cs = tg(); snap(); for (const c of cs) { c.tapped = false; delete c.mt; } log(`${src}: untapped ${cs.map(c => c.name).join(', ') || 'nothing (no target left)'}`); render(); } });
     // "It gains vigilance until end of turn." / "That creature gains indestructible and lifelink until end of turn." (one reader, so the sentence is also counted as read)
     const gs = sents.map(x => [x, /^(?:it|that creature|that permanent|they|those creatures|each of them) gains? ((?:[a-z ]+?)(?:,? and [a-z ]+?)?) until end of turn\.?$/i.exec(x)]).find(p => p[1]);
@@ -14534,6 +14549,23 @@ function batch2Options(txs, obj) {
         drop.push(new RegExp('^(?!The chosen creature).* gains? .*' + kr + '.* until end of turn$', 'i'));
         out.push({ covers: [gs[0]], label: `The chosen creature${tg().length === 1 ? '' : 's'} gain${tg().length === 1 ? 's' : ''} ${kws.join(' and ')} until end of turn`, fn: () => { const cs = tg(); for (const c of cs) for (const k of kws) addKwFx(c.id, k, { srcName: src }); if (!cs.length) log(`${src}: no target left to gain ${kws.join(' and ')}`); render(); } }); } }
   }
+  // v0.99.77 CR 701.34 Proliferate: each permanent and player with a counter may get one more of each kind it has. In a goldfish game every choice is yours,
+  // so the app adds to all of your permanents that have counters (and your poison/energy are counters on you only if you choose: energy is added).
+  { const ps = sents.find(x => /^proliferate\.?$/i.test(x) || /,? then proliferate\.?$/i.test(x));
+    if (ps) out.push({ covers: /^proliferate\.?$/i.test(ps) ? [ps] : undefined, label: 'Proliferate (one more of each kind of counter on your permanents with counters, and energy)', fn: () => { snap(); let n = 0;
+      for (const c of state.battlefield) { const k = c.counters || {}; let any = false; for (const key of Object.keys(k)) { if (key === 'minusApplied' || !(k[key] > 0)) continue; k[key]++; any = true; } if (any) n++; }
+      if (state.gs && state.gs.energy > 0) state.gs.energy++;
+      log(`${src}: proliferated (${n} permanent${n === 1 ? '' : 's'}${state.gs && state.gs.energy > 0 ? ', energy' : ''})`); fireTrigger && render(); } }); }
+  // v0.99.77 "Tap it." / "Untap ~." with nothing targeted: the source itself (Wicked Wolf)
+  { const ts = !/\btarget\b/i.test(t) && sents.find(x => /^(tap|untap) (?:it|~|this (?:creature|artifact|permanent))\.?$/i.test(x));
+    if (ts) { const up = /^untap/i.test(ts); out.push({ covers: [ts], label: `${up ? 'Untap' : 'Tap'} ${src}`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } snap(); f.card.tapped = !up; if (up) delete f.card.mt; log(`${src}: ${up ? 'untapped' : 'tapped'}`); render(); } }); } }
+  // v0.99.77 "Exile ~." on its own (Ghost Council of Orzhova, Argent Sphinx): the source leaves the battlefield for exile
+  { const es = sents.find(x => /^exile ~\.?$/i.test(x));
+    if (es) out.push({ covers: [es], label: `Exile ${src}`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } moveCard(f.card.id, 'exile'); log(`${src}: exiled itself`); render(); } }); }
+  // v0.99.77 "It gains indestructible until end of turn." with nothing targeted: "it" is the source (Wicked Wolf, Syndicate Trafficker)
+  { const hasT2 = /\btarget\b/i.test(t); const gs2 = !hasT2 && sents.map(x => [x, /^(?:it|~) gains? ([a-z ]+?(?:,? and [a-z ]+?)?) until end of turn\.?$/i.exec(x)]).find(p => p[1]);
+    if (gs2) { const kws = gs2[1][1].toLowerCase().split(/\s*(?:,\s*(?:and\s+)?|\band\b)\s*/).map(x => x.trim()).filter(Boolean);
+      if (kws.length && kws.every(k => GRANTABLE.includes(k))) out.push({ covers: [gs2[0]], label: `${src} gains ${kws.join(' and ')} until end of turn`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } for (const k of kws) addKwFx(f.card.id, k, { srcName: src }); render(); } }); } }
   return { out, drop };
 }
 init();

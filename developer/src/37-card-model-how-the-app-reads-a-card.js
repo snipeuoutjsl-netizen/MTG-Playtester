@@ -219,7 +219,7 @@ function compileCardOne(c) {
     if (sp && sp[1]) { push(text, 'static', sp[2] || 'ok', sp[1]); continue; }
     // spell effect
     if (isSpell) {
-      const eff = recognizedEffects(stripped);
+      let eff = recognizedEffects(stripped); if (!eff.length && norml !== stripped) eff = recognizedEffects(norml);   // v0.99.77 the spell's own name reads as ~ ("Exile Woodland Guidance.")
       if (/^(?:Domain|Landfall|Delirium|Metalcraft|Threshold|Revolt|Spell mastery)\b/.test(stripped) && sp) { push(text, 'spell', 'ok', sp[1]); continue; }
       push(text, 'spell', eff.length ? 'ok' : 'part', eff.length ? `Spell effect: when it resolves the app offers: ${eff.join('; ')}.` : 'Spell effect: the app puts the spell on the stack and tells you when it resolves, but you apply the effect by hand.'); continue;
     }
