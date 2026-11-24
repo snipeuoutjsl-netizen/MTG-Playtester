@@ -128,7 +128,7 @@ function pullDeckBox(m, tile, d) {
   let inked = null;
   if (sc3) {   // v0.99.71 two pages written straight onto the book's own pages (they bend into the spine with them): the deck on the left, key cards, notes and what to do on the right
     const pl = sc3.tome.querySelector('.hall-page.left'), pr = sc3.tome.querySelector('.hall-page.right'), acts = info.querySelector('.dbx-acts');
-    if (pl && pr && acts) { inked = tomeDeckPages(d, sm, acts); pl.append(inked[0]); pr.append(inked[1]); info.replaceChildren(); }
+    if (pl && pr && acts) { inked = tomeDeckPages(d, sm, acts); pl.append(inked[0]); pr.append(inked[1]); info.replaceChildren(); if (typeof fitBookPages === 'function') { requestAnimationFrame(() => fitBookPages(sc3.tome.parentNode || document)); setTimeout(() => fitBookPages(sc3.tome.parentNode || document), 1200); } }
     else { const R = [...info.children].filter(x => x.classList.contains('dbx-top') || x.classList.contains('dbx-acts')), Lp = [...info.children].filter(x => !R.includes(x));
       info.replaceChildren(h('div', { class: 'ti-page' }, ...Lp), h('div', { class: 'ti-page' }, ...R)); }
     info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }

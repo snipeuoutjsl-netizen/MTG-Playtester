@@ -3,8 +3,23 @@
 // / Add one mana of any color. / Add one mana of any color among legendary creatures and planeswalkers you control.
 // Extra sentences like "Activate only if you control a Dragon." are checked softly (see staticCheck).
 const ROCK_CACHE = new Map();
+// v0.99.73 a mana ability given by another permanent: Cryptolith Rite ("Creatures you control have \"{T}: Add one mana of any color.\""), Citanul Hierophants ({G})
+function grantedRock(c) {
+  if (!state || !c || !state.battlefield.includes(c)) return null; let ti; try { ti = permTypeInfo(c); } catch (e) { return null; }
+  for (const g of state.battlefield) { if (g === c && false) continue;
+    for (const ln of String(cardText(g) || '').replace(/[\u201c\u201d]/g, '"').split('\n')) {
+      const m = /^(creatures|artifacts|creature tokens|artifact creatures) you control have "\{T\}: Add (one mana of any color|\{[WUBRGC]\})\."\.?$/i.exec(ln.trim()); if (!m) continue;
+      const k = m[1].toLowerCase(), ok = k === 'creatures' ? ti.types.has('creature') : k === 'artifacts' ? ti.types.has('artifact') : k === 'creature tokens' ? ti.types.has('creature') && !!c.token : ti.types.has('creature') && ti.types.has('artifact');
+      if (!ok) continue; const fx = /^\{([WUBRGC])\}$/.exec(m[2]);
+      return fx ? { fixed: [fx[1]], tap: true, sac: false, cond: null, granted: g.name } : { choice: ['W', 'U', 'B', 'R', 'G'], tap: true, sac: false, cond: null, granted: g.name };
+    } }
+  return null;
+}
 function rockInfo(c) {
   if (!c || (!c.token && isLandName(c.name))) return null;
+  { const own = rockInfo0(c); if (own) return own; return grantedRock(c); }
+}
+function rockInfo0(c) {
   const tx = cardText(c);
   if (!tx) return null;
   const key = (c.token ? 'tok:' : '') + norm(c.name);
@@ -16,7 +31,7 @@ function rockInfo(c) {
     // v0.99.32 CR 605.1a: a mana ability is any activated ability that adds mana (no target, not loyalty). The app pays {T} and "Sacrifice this ..." itself,
     // so Treasure, Lotus Petal, Eldrazi Spawn/Scion and the like are mana sources too. Costs it cannot pay itself (mana, life, other permanents) stay manual.
     let comps; try { comps = parseCostComps(m[1].trim(), (cardInfo(c.name) || {}).name ? cardInfo(c.name).name.split(' // ')[0] : c.name); } catch (e) { comps = null; }
-    if (!comps || !comps.length || !comps.every(k => k.k === 'tap' || k.k === 'sacSelf')) continue;
+    if (!comps || !comps.length || !comps.every(k => k.k === 'tap' || k.k === 'sacSelf' || k.k === 'mana') || comps.filter(k => k.k === 'mana').length > 1) continue;   // v0.99.73 a mana cost too (Signets: "{1}, {T}: Add {W}{B}"; Prophetic Prism)
     const body = m[2];
     const first = body.split(/(?<=\.)\s+/)[0], rest = body.slice(first.length).trim();
     let r = null;
@@ -26,10 +41,11 @@ function rockInfo(c) {
     else if (/^one mana of any color among legendary creatures and planeswalkers you control\.?$/i.test(first)) r = { among: true, choice: [] };
     else if ((mm = first.match(/^\{([WUBRGC])\} for each (.+?) you control\.?$/i))) r = { fixed: [mm[1]], per: mm[2] + ' you control' };   // CR 106.1: Elvish Archdruid, Gaea's Cradle style
     else if ((mm = first.match(/^(two|three|four|five) mana of any one color\.?$/i))) r = { choice: ['W', 'U', 'B', 'R', 'G'], multi: ({ two: 2, three: 3, four: 4, five: 5 })[mm[1].toLowerCase()] };   // Gilded Lotus
+    else if (/^one mana of any color in your commander'?s colou?r identity\.?$/i.test(first)) r = { cmdId: true, choice: [] };   // v0.99.73 Arcane Signet (CR 903.4f: no commander, no mana)
     else if (/^one mana of any color\.?$/i.test(first)) r = { choice: ['W', 'U', 'B', 'R', 'G'] };
     else if (/^one mana of any of the exiled card'?s colou?rs?\.?$/i.test(first)) r = { exiled: true, choice: [] };   // v0.95.2 imprint (Chrome Mox)
     if (!r) continue;
-    r.tap = comps.some(k => k.k === 'tap'); r.sac = comps.some(k => k.k === 'sacSelf');
+    r.tap = comps.some(k => k.k === 'tap'); r.sac = comps.some(k => k.k === 'sacSelf'); { const mc = comps.find(k => k.k === 'mana'); if (mc) r.payMana = mc.mana; }
     const cm = (rest + ' ' + first).match(/Activate (?:this ability )?only ([^.]+)\./i);
     r.cond = cm ? cm[1].trim() : null;
     { const rs = (rest + ' ' + first).replace(/\s+/g, ' '); if (/this mana can'?t be spent to cast (?:a )?nonartifact spells?/i.test(rs)) r.noSpend = 'nonartifact'; const so = rs.match(/spend this mana only (?:to|on) ([^.]+)\./i); if (so) r.only = so[1].trim(); }   // CR 106.6 restrictions on what the mana may pay for (Powerstone, Mishra's Workshop style)
@@ -131,12 +147,14 @@ function rockColors(c) {
   const r = rockInfo(c); if (!r) return [];
   if (r.among) return amongColors();
   if (r.exiled) return (c.imprint && c.imprint.cols) || [];
+  if (r.cmdId) return cmdIdentity();
   return [...new Set(r.fixed || r.choice)];
 }
 function rockStatus(c) {   // can this rock produce mana right now? (soft)
   const r = rockInfo(c); if (!r) return { ok: false, why: '' };
   if (r.tap && isSick(c)) return { ok: false, why: 'Summoning sickness: this creature came under your control this turn, so it cannot tap for mana (it has no haste).' };
   if (r.exiled && !rockColors(c).length) return { ok: false, why: `${c.name} has no exiled card with a colour (imprint), so it adds no mana.` };
+  if (r.cmdId && !cmdIdentity().length) return { ok: false, why: 'You have no commander (or it has no colours), so this adds no mana (rule 903.4f).' };
   if (r.among && !amongColors().length) return { ok: false, why: 'You control no legendary creature or planeswalker with a colour, so there is no colour of mana to add.' };
   return r.cond ? staticCheck(r.cond, c) : { ok: true, why: '' };
 }
@@ -155,11 +173,16 @@ function softWarn(title, msg, proceed) {
 }
 function tapRock(card) {
   const id = card.id, r = rockInfo(card);
+  if (r && r.payMana && !card._payingRock) {   // v0.99.73 pay the ability's own mana cost first (from your pool or other sources), then it makes its mana
+    const f0 = findCard(id); if (!f0 || f0.zone !== 'battlefield' || (r.tap && f0.card.tapped)) return;
+    payManaThen(f0.card, r.payMana, `${f0.card.name}: pay ${r.payMana}`, () => { const g = findCard(id); if (!g) return; g.card._payingRock = true; try { tapRock(g.card); } finally { delete g.card._payingRock; } });
+    return;
+  }
   const run = () => {
     const f = findCard(id); if (!f || f.zone !== 'battlefield' || (r.tap && f.card.tapped)) return;
     if (r.fixed) {
       let fx = r.fixed; if (r.per) { const n = csCount(r.per, f.card) || 0; fx = Array(n).fill(r.fixed[0]); }   // counted when you tap
-      snap(); if (r.tap) f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col);
+      snap(); if (r.tap) f.card.tapped = true; if (fx.length) noteManaTap(f.card, fx); markAbilityUsed(f.card); for (const col of fx) addFloatingMana(col, 1, r.only);
       log(`${f.card.name} ${manaVerb(r)} → floated ${fx.join('') || 'no mana'}`); manaSacrifice(f.card, r); render(); return;
     }
     const colors = rockColors(f.card);
@@ -167,7 +190,7 @@ function tapRock(card) {
     openManaChoice(f.card, color => {
       if (!color) return;
       const g = findCard(id); if (!g || g.zone !== 'battlefield' || (r.tap && g.card.tapped)) return;
-      const nm = r.multi || 1; snap(); if (r.tap) g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color);
+      const nm = r.multi || 1; snap(); if (r.tap) g.card.tapped = true; noteManaTap(g.card, Array(nm).fill(color)); markAbilityUsed(g.card); for (let k = 0; k < nm; k++) addFloatingMana(color, 1, r.only);
       log(`${g.card.name} ${manaVerb(r)} → floated ${color.repeat(nm)}`); manaSacrifice(g.card, r); render();
     }, use);
   };
@@ -185,7 +208,8 @@ function landManaColors(c) {
   const i = cardInfo(c.name), key = norm(c.name);
   const prod = (i && i.prod && i.prod.length) ? i.prod : BASIC_PRODUCES[key] || [];
   const out = new Set(prod.map(x=>String(x).toUpperCase()).filter(x=>/^[WUBRGC]$/.test(x)));
-  for (const k of landBlockedColors(c)) out.delete(k);   // v0.99.71 a restricted ability (Verge lands) adds nothing while its condition is not met
+  for (const k of landBlockedColors(c)) out.delete(k);
+  { const abs = landManaAbilities(c); if (abs.some(a => a.cmdId)) { const can = new Set(abs.flatMap(a => landAbUsable(a, c) ? abColors(a) : [])); for (const k of [...out]) if (!can.has(k)) out.delete(k); } }   // v0.99.71 a restricted ability (Verge lands) adds nothing while its condition is not met
   for (const t of eff.types) out.add(({Plains:'W',Island:'U',Swamp:'B',Mountain:'R',Forest:'G'})[t]);
   return [...out].filter(Boolean);
 }
@@ -208,7 +232,7 @@ function tapForMana(id) {
   if (!f || f.zone !== 'battlefield' || f.card.tapped || !isManaPermanent(f.card)) return;
   if (!isLandName(f.card.name)) { tapRock(f.card); return; }
   { const lm=landMulti(f.card,true);
-    if(lm){ snap(); f.card.tapped=true; noteManaTap(f.card,lm.fixed); fireTrigger('tapmana',{card:f.card}); for(const col of lm.fixed) addFloatingMana(col); applyLandCost(f.card,{dmg:lm.dmg,life:lm.life}); log(`${f.card.name} tapped → floated ${lm.fixed.join('')}`); if(lm.only) toast('Mana restriction',`Spend this mana only ${lm.only}. The app cannot track restricted mana in the pool, so keep to that yourself, or pay through the cast window, which enforces it.`); render(); return; } }
+    if(lm){ snap(); f.card.tapped=true; noteManaTap(f.card,lm.fixed); fireTrigger('tapmana',{card:f.card}); for(const col of lm.fixed) addFloatingMana(col,1,lm.only); applyLandCost(f.card,{dmg:lm.dmg,life:lm.life}); log(`${f.card.name} tapped → floated ${lm.fixed.join('')}`); if(lm.only) toast('Mana restriction',`Spend this mana only ${lm.only}. The app cannot track restricted mana in the pool, so keep to that yourself, or pay through the cast window, which enforces it.`); render(); return; } }
   const colors=landManaColors(f.card);
   if (!colors.length) { toast('No mana ability detected', `${f.card.name} has no recognized mana production entry.`); return; }
   openManaChoice(f.card, color=>{
@@ -217,7 +241,7 @@ function tapForMana(id) {
     if (!fresh || fresh.zone!=='battlefield' || fresh.card.tapped) return;
     snap();
     fresh.card.tapped=true; noteManaTap(fresh.card,[color]); fireTrigger('tapmana',{card:fresh.card});
-    addFloatingMana(color); applyLandCost(fresh.card,landColorCost(fresh.card,color));
+    { const ab=landColorAbility(fresh.card,color); addFloatingMana(color,1,ab&&ab.only); } applyLandCost(fresh.card,landColorCost(fresh.card,color));
     log(`${fresh.card.name} tapped → floated ${color}`);
     render();
   });

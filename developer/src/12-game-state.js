@@ -538,8 +538,27 @@ function clearManaPool(reason='') {
   if (reason && lost) log(`${lost} floating mana emptied (${reason})`);
   if (reason && held) log(`${held} floating mana stayed in your pool (${[...new Set(keep.by)].join(', ')})`);
 }
-function addFloatingMana(color, amount=1) {
+function addFloatingMana(color, amount=1, only) {
   if (!state) return;
   state.manaPool = state.manaPool || {W:0,U:0,B:0,R:0,G:0,C:0};
   state.manaPool[color] = (state.manaPool[color] || 0) + amount;
+  if (only) { state.poolR = state.poolR || []; for (let k = 0; k < amount; k++) state.poolR.push({ col: color, only }); }   // v0.99.73 CR 106.6: the restriction stays with that mana while it floats
+}
+// v0.99.73 restricted mana in the pool (Mishra's Workshop: "Spend this mana only to cast artifact spells"). state.poolR lists the restricted mana;
+// it never holds more of a colour than the pool has (spent or emptied mana takes its restriction with it).
+function normPoolR() {
+  if (!state || !state.poolR || !state.poolR.length) return; const pool = state.manaPool || {}, keep = [], seen = {};
+  for (let i = state.poolR.length - 1; i >= 0; i--) { const e = state.poolR[i]; seen[e.col] = (seen[e.col] || 0) + 1; if (seen[e.col] <= (pool[e.col] || 0)) keep.unshift(e); }
+  state.poolR = keep;
+}
+let POOL_RUSE = null;   // restricted mana the last payment plan spends (taken off state.poolR when that payment is made)
+function poolRSplit(ctx) {   // per colour: restricted mana this payment may not use, and restricted mana it may use
+  normPoolR(); const blocked = {}, allowed = {};
+  for (const e of (state && state.poolR) || []) { if (spendOnlyOk(e.only, ctx)) allowed[e.col] = (allowed[e.col] || 0) + 1; else blocked[e.col] = (blocked[e.col] || 0) + 1; }
+  return { blocked, allowed };
+}
+function consumePoolR() {
+  const u = POOL_RUSE; POOL_RUSE = null; if (!u || !state || !state.poolR) { normPoolR(); return; }
+  for (const col of Object.keys(u)) { let k = u[col]; state.poolR = state.poolR.filter(e => { if (k > 0 && e.col === col && spendOnlyOk(e.only, u._ctx)) { k--; return false; } return true; }); }
+  normPoolR();
 }
