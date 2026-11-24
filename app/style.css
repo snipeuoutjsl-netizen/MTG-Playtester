@@ -2406,3 +2406,6 @@ html.portrait-ui #stackStage.sk { left: 8px !important; right: 8px; top: 118px !
 #stackStage .sk-foot.ss-btns { flex-wrap: nowrap; }
 #stackStage .sk-foot.ss-btns button { padding: 6px 9px; white-space: nowrap; }
 html.portrait-ui #stackStage .sk-foot.ss-btns { flex-wrap: wrap; }
+/* v0.99.57 hovering a card on the desk only outlines it: lifting it moved it out from under the pointer at its bottom edge, which made it flicker */
+#hall .ds-pile .ds-card:hover, #hall .ds-pile .ds-card:focus-visible { transform: none !important; }
+#hall .ds-pile .ds-card { transition: box-shadow .14s ease; }
