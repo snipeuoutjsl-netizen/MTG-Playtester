@@ -20,6 +20,7 @@ function landManaAbilities(c) {
     if ((mm = first.match(/^Add (\{[WUBRGC]\}) for each (.+?)(?: you control| on the battlefield)?$/i))) ab.per = { col: mm[1][1], what: mm[2], ctrl: / you control$/i.test(first) };
     else if ((mm = first.match(/^Add ((?:\{[WUBRGC]\})+)$/i))) ab.fixed = [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);
     else if ((mm = first.match(/^Add (\{[WUBRGC]\}(?:,? (?:or )?\{[WUBRGC]\})+)$/i))) ab.choice = [...mm[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);
+    else if (/^Add one mana of any color in your commander'?s colou?r identity$/i.test(first)) ab.cmdId = true;   // v0.99.73 Command Tower (CR 903.4f)
     else if (/^Add one mana of any color$/i.test(first)) ab.any = true;
     else continue;
     for (const sn of sents.slice(1)) { let q;
@@ -64,7 +65,12 @@ function landMulti(c, anyCtx) {
 // v0.99.71 CR 602.5b + 605.3: a land with several mana abilities pays the cost of the ability that made the colour (a painland's {C} is free, its coloured mana deals 1 damage);
 // an ability whose "Activate only ..." restriction is not met is not available at all.
 function landAbUsable(ab, c) { return !ab.cond || staticCheck(ab.cond, c).ok !== false; }
-function abColors(ab) { if (ab.fixed) return ab.fixed.length === 1 ? ab.fixed : []; if (ab.choice) return ab.choice; if (ab.any) return ['W', 'U', 'B', 'R', 'G']; if (ab.per) return [ab.per.col]; return []; }
+function cmdIdentity() {   // the colours of your commander(s); none outside Commander mode
+  if (!state) return []; const set = new Set();
+  for (const z of ['command', 'battlefield', 'graveyard', 'exile', 'hand', 'library']) for (const c of state[z] || []) if (c.isCommander) { const s = colorIdentityOf(c.name); if (s) s.forEach(x => set.add(x)); }
+  return [...set];
+}
+function abColors(ab) { if (ab.cmdId) return cmdIdentity(); if (ab.fixed) return ab.fixed.length === 1 ? ab.fixed : []; if (ab.choice) return ab.choice; if (ab.any) return ['W', 'U', 'B', 'R', 'G']; if (ab.per) return [ab.per.col]; return []; }
 function landColorAbility(c, col) {
   const abs = landManaAbilities(c).filter(ab => landAbUsable(ab, c) && (col == null || abColors(ab).includes(col)));
   if (!abs.length) return null;
@@ -163,6 +169,7 @@ function manaSources() {
     if(!isManaPermanent(c)) continue;
     if(!isLandName(c.name)){
       const r=rockInfo(c), st=rockStatus(c);
+      if(r.payMana) continue;   // v0.99.73 a mana ability with a mana cost (Signet) is used by hand, not by the automatic payment
       if(r.tap && c.tapped) continue;   // v0.99.32 a sacrifice-only mana ability (Eldrazi Spawn) has no {T}: a tapped creature can still pay with it
       if(st.ok===false) continue;
       if(PAY_CTX && r.noSpend==='nonartifact' && !state.battlefield.includes(PAY_CTX) && !/\bArtifact\b/.test(PAY_CTX.token ? ((PAY_CTX.tk&&PAY_CTX.tk.type)||'') : ((cardInfo(PAY_CTX.name)||{}).t||'').split(' // ')[0])) continue;   // "This mana can't be spent to cast a nonartifact spell"

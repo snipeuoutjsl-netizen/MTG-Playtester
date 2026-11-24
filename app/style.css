@@ -2504,21 +2504,33 @@ html.portrait-ui #modalRoot .backdrop.resolve .modal { width: 100% !important; m
 #hall .tome-ink button.primary { width: 100%; text-align: left; font: italic 700 19px 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif !important; color: #8e1f0b !important; text-decoration: none; margin-bottom: 2px; }
 #hall .tome-ink button.primary::after { content: ' \2767'; font-style: normal; }
 #hall .tome-ink button.danger { color: #8e1f0b !important; opacity: .8; }
+#hall .tome-ink .ti-key .ti-row b { order: -1; min-width: 2.2em; }
 /* v0.99.72 a real book: the page block bends down into the spine. Page tops and bottoms dip towards the gutter, the stacked page edges under each page
    follow that curve down into a dark hollow at the spine, and the flat page-edge strip is gone */
 #hall .tm-edges { display: none; }
-#hall .hall-tome .hall-page.left { clip-path: polygon(0% 0.39%, 3.33% 0.7%, 6.67% 0.06%, 10% 1.08%, 13.33% 0.91%, 16.67% 1.1%, 20% 0.33%, 23.33% 0.26%, 26.67% 0.11%, 30% 0.25%, 33.33% 0.08%, 36.67% 0.78%, 40% 0.43%, 43.33% 0.91%, 46.67% 0.85%, 50% 0.42%, 53.33% 0.26%, 56.67% 0.55%, 60% 0.38%, 63.33% 1.26%, 66.67% 1.08%, 70% 1.41%, 73.33% 2.62%, 76.67% 2.64%, 80% 3.74%, 83.33% 4.41%, 86.67% 4.78%, 90% 5.11%, 93.33% 5.84%, 96.67% 6.84%, 100% 8.32%, 100% 97.5%, 96.67% 96.68%, 93.33% 95.91%, 90% 95.19%, 86.67% 94.52%, 83.33% 93.9%, 80% 93.33%, 76.67% 92.82%, 73.33% 92.36%, 70% 91.95%, 66.67% 91.59%, 63.33% 91.28%, 60% 91.02%, 56.67% 90.81%, 53.33% 90.66%, 50% 90.56%, 46.67% 90.51%, 43.33% 90.5%, 40% 90.5%, 36.67% 90.5%, 33.33% 90.5%, 30% 90.5%, 26.67% 90.5%, 23.33% 90.5%, 20% 90.5%, 16.67% 90.5%, 13.33% 90.5%, 10% 90.5%, 6.67% 90.5%, 3.33% 90.5%, 0% 90.5%) !important; transform: rotateY(5deg); }
-#hall .hall-tome .hall-page.right { clip-path: polygon(0% 8.32%, 3.33% 6.84%, 6.67% 5.84%, 10% 5.11%, 13.33% 4.78%, 16.67% 4.41%, 20% 3.74%, 23.33% 2.64%, 26.67% 2.62%, 30% 1.41%, 33.33% 1.08%, 36.67% 1.26%, 40% 0.38%, 43.33% 0.55%, 46.67% 0.26%, 50% 0.42%, 53.33% 0.85%, 56.67% 0.91%, 60% 0.43%, 63.33% 0.78%, 66.67% 0.08%, 70% 0.25%, 73.33% 0.11%, 76.67% 0.26%, 80% 0.33%, 83.33% 1.1%, 86.67% 0.91%, 90% 1.08%, 93.33% 0.06%, 96.67% 0.7%, 100% 0.39%, 100% 90.5%, 96.67% 90.5%, 93.33% 90.5%, 90% 90.5%, 86.67% 90.5%, 83.33% 90.5%, 80% 90.5%, 76.67% 90.5%, 73.33% 90.5%, 70% 90.5%, 66.67% 90.5%, 63.33% 90.5%, 60% 90.5%, 56.67% 90.5%, 53.33% 90.51%, 50% 90.56%, 46.67% 90.66%, 43.33% 90.81%, 40% 91.02%, 36.67% 91.28%, 33.33% 91.59%, 30% 91.95%, 26.67% 92.36%, 23.33% 92.82%, 20% 93.33%, 16.67% 93.9%, 13.33% 94.52%, 10% 95.19%, 6.67% 95.91%, 3.33% 96.68%, 0% 97.5%) !important; transform: rotateY(-5deg); }
-#hall .hall-tome > .tm-block { position: absolute; left: 0; top: 0; width: 100%; height: 108%; z-index: -1; pointer-events: none; overflow: visible; filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
-#hall .hall-tome .hall-spine { background: linear-gradient(90deg, rgba(40,20,6,.6), rgba(25,12,3,.9) 50%, rgba(40,20,6,.6)) !important; clip-path: polygon(0 8.1%, 100% 8.1%, 100% 100%, 0 100%); }
+#hall .hall-tome .hall-page.left { clip-path: polygon(0% 0.39%, 3.33% 0.7%, 6.67% 0.06%, 10% 1.08%, 13.33% 0.91%, 16.67% 1.1%, 20% 0.33%, 23.33% 0.26%, 26.67% 0.11%, 30% 0.25%, 33.33% 0.08%, 36.67% 0.78%, 40% 0.43%, 43.33% 0.91%, 46.67% 0.85%, 50% 0.42%, 53.33% 0.25%, 56.67% 0.5%, 60% 0.27%, 63.33% 1.06%, 66.67% 0.76%, 70% 0.94%, 73.33% 1.98%, 76.67% 1.82%, 80% 2.7%, 83.33% 3.12%, 86.67% 3.22%, 90% 3.26%, 93.33% 3.66%, 96.67% 4.32%, 100% 5.42%, 100% 100%, 96.67% 99.6%, 93.33% 99.23%, 90% 98.88%, 86.67% 98.55%, 83.33% 98.25%, 80% 97.98%, 76.67% 97.73%, 73.33% 97.5%, 70% 97.3%, 66.67% 97.13%, 63.33% 96.98%, 60% 96.85%, 56.67% 96.75%, 53.33% 96.68%, 50% 96.63%, 46.67% 96.6%, 43.33% 96.6%, 40% 96.6%, 36.67% 96.6%, 33.33% 96.6%, 30% 96.6%, 26.67% 96.6%, 23.33% 96.6%, 20% 96.6%, 16.67% 96.6%, 13.33% 96.6%, 10% 96.6%, 6.67% 96.6%, 3.33% 96.6%, 0% 96.6%) !important; transform: rotateY(5deg); }
+#hall .hall-tome .hall-page.right { clip-path: polygon(0% 5.42%, 3.33% 4.32%, 6.67% 3.66%, 10% 3.26%, 13.33% 3.22%, 16.67% 3.12%, 20% 2.7%, 23.33% 1.82%, 26.67% 1.98%, 30% 0.94%, 33.33% 0.76%, 36.67% 1.06%, 40% 0.27%, 43.33% 0.5%, 46.67% 0.25%, 50% 0.42%, 53.33% 0.85%, 56.67% 0.91%, 60% 0.43%, 63.33% 0.78%, 66.67% 0.08%, 70% 0.25%, 73.33% 0.11%, 76.67% 0.26%, 80% 0.33%, 83.33% 1.1%, 86.67% 0.91%, 90% 1.08%, 93.33% 0.06%, 96.67% 0.7%, 100% 0.39%, 100% 96.6%, 96.67% 96.6%, 93.33% 96.6%, 90% 96.6%, 86.67% 96.6%, 83.33% 96.6%, 80% 96.6%, 76.67% 96.6%, 73.33% 96.6%, 70% 96.6%, 66.67% 96.6%, 63.33% 96.6%, 60% 96.6%, 56.67% 96.6%, 53.33% 96.6%, 50% 96.63%, 46.67% 96.68%, 43.33% 96.75%, 40% 96.85%, 36.67% 96.98%, 33.33% 97.13%, 30% 97.3%, 26.67% 97.5%, 23.33% 97.73%, 20% 97.98%, 16.67% 98.25%, 13.33% 98.55%, 10% 98.88%, 6.67% 99.23%, 3.33% 99.6%, 0% 100%) !important; transform: rotateY(-5deg); }
+#hall .hall-tome > .tm-block { position: absolute; left: 0; top: 0; width: 100%; height: 109%; z-index: -1; pointer-events: none; overflow: visible; filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
+#hall .hall-tome .hall-spine { background: linear-gradient(90deg, rgba(40,20,6,.6), rgba(25,12,3,.9) 50%, rgba(40,20,6,.6)) !important; clip-path: polygon(0 5.2%, 100% 5.2%, 100% 100%, 0 100%); }
 #hall .hall-tome.deck-open > .hall-page > .ti-page { padding-bottom: 46px; }
 /* end v0.99.72 book */
-/* v0.99.72 the deck spread out on the desk the way a player lays it out: each pile fanned a little, turned a few degrees, piles overlapping
-   their neighbour. Only the cards move visually; each pile's own (unturned) box is what the pointer rests on, so nothing flickers */
-#hall .dk-stacks { gap: calc(var(--cw) * .12) 0; padding-left: calc(var(--cw) * .2); }
-#hall .dk-stack { width: calc(var(--cw) * (1 + (var(--n) - 1) * .07)); height: calc(var(--ch) + (var(--n) - 1) * var(--cw) * .05 + 8px); margin-left: calc(var(--cw) * -.2); transform: translateY(var(--dy, 0px)); }
-#hall .dk-card { top: calc(var(--i) * var(--cw) * .05); left: calc(var(--i) * var(--cw) * .07); transform: rotate(calc(var(--rot, 0deg) + (var(--i) - 1.5) * 1.6deg)); transform-origin: 50% 60%;
-  box-shadow: 0 1px 2px rgba(0,0,0,.45), 0 4px 10px rgba(0,0,0,.25); }
-#hall .dk-qty { transform: rotate(var(--rot, 0deg)); }
-#hall .dk-gh { position: relative; z-index: 5; margin-bottom: calc(var(--cw) * .1); text-shadow: 0 1px 2px rgba(0,0,0,.8); }
-#hall .tome-ink .ti-key .ti-row b { order: -1; min-width: 2.2em; }
+/* v0.99.73 the chapter you are in is a ribbon bookmark lying in the spine, hanging out below the book with a tassel; the other chapter stays a tab at the top */
+#hall .tm-ribbons { position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: block; pointer-events: none; transform: none; z-index: 4; }
+#hall .tm-ribbon { position: absolute; pointer-events: auto; }
+#hall .tm-ribbon:not(.on) { right: 34px; top: -30px; transform: translateZ(24px); }
+#hall .tm-ribbon:not(.on):hover { transform: translateZ(24px) translateY(2px); }
+#hall .tm-ribbon.on { left: calc(50% - 9px); top: 3%; width: 18px; height: calc(97% + 64px); padding: 0 0 26px; border-radius: 1px; cursor: default; transform: translateZ(26px);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), 50% calc(100% - 4px), 0 calc(100% - 14px)); display: flex; align-items: flex-end; justify-content: center;
+  box-shadow: inset 2px 0 2px rgba(255,255,255,.18), inset -2px 0 3px rgba(0,0,0,.35); }
+#hall .tm-ribbon.on span { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 9.5px Georgia, serif; letter-spacing: .14em; white-space: nowrap; margin-bottom: 0; }
+#hall .tm-ribbon.on::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f3d58a, #9a6a1c); }
+#hall .tm-ribbon.standard.on { background: linear-gradient(90deg, #6d170e, #b2361f 50%, #6d170e); }
+#hall .tm-ribbon.commander.on { background: linear-gradient(90deg, #17325a, #3363a0 50%, #17325a); }
+#hall .hall-tome .hall-spine { position: relative; }
+#hall .hall-tome .hall-page.left { filter: url(#pgWarpL) drop-shadow(0 1px 0 rgba(90,60,25,.35)); }
+#hall .hall-tome .hall-page.right { filter: url(#pgWarpR) drop-shadow(0 1px 0 rgba(90,60,25,.35)); }
+/* v0.99.73 a card page (pointer resting on a card on the desk) covers the deck pages: the deck writing hides under it, and the pages lie flat while
+   a card page is shown or turning, so the flat card page and leaf never cut through the bent pages */
+#hall .hall-tome.card-open > .hall-page > .ti-page { visibility: hidden; }
+#hall .hall-tome.card-open > .hall-page.left, #hall .hall-tome.card-open > .hall-page.right, #hall .hall-tome:has(> .tome-leaf) > .hall-page.left, #hall .hall-tome:has(> .tome-leaf) > .hall-page.right { transform: none; }
+#hall .hall-tome > .tome-card, #hall .hall-tome > .tome-leaf { z-index: 6; }
