@@ -2539,3 +2539,6 @@ html.portrait-ui #modalRoot .backdrop.resolve .modal { width: 100% !important; m
 #hall .hall-tome.card-open > .hall-page > .ti-page { visibility: hidden; }
 #hall .hall-tome.card-open > .hall-page.left, #hall .hall-tome.card-open > .hall-page.right, #hall .hall-tome:has(> .tome-leaf) > .hall-page.left, #hall .hall-tome:has(> .tome-leaf) > .hall-page.right { transform: none; }
 #hall .hall-tome > .tome-card, #hall .hall-tome > .tome-leaf { z-index: 6; }
+/* v0.99.77 nothing in the book is cut off with "…": long names wrap and the page's writing scales down to fit instead */
+#hall .hall-tome, #hall .hall-tome * { text-overflow: clip !important; }
+#hall .tome-ink h3, #hall .tome-ink .ti-row span, #hall .hall-tome .hall-link { white-space: normal !important; overflow: visible !important; }

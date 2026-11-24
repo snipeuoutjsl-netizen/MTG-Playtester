@@ -148,12 +148,20 @@ function mayPayOptions(sents, obj) {
   // v0.99.72 "it" with nothing targeted is the source itself (Order of the Golden Cricket: "If you do, it gains flying until end of turn")
   if (/\bon it\.?$/.test(rest) && !(obj && obj.targets && obj.targets.length) && obj && obj.sourceId != null) rest = rest.replace(/\bon it(\.?)$/, 'on ~$1');
   const inner = effectOptionsBase(rest, obj || {}).filter(o => typeof o.fn === 'function' && !o.special && !o.hidden && !/^remember\b/i.test(o.label || ''));
-  if (inner.length !== 1) return null;
+  const energy0 = /^(?:\{E\})+$/i.test(cost) ? cost.length / 3 : 0;
+  if (inner.length !== 1) {   // v0.99.77 the rest has a target or several parts: pay, then resolve the rest as its own effect (its targets were chosen with the ability)
+    let whole = false; try { whole = !uncoveredClauses(rest).length && recognizedEffects(rest).length > 0; } catch (e) { whole = false; } if (!whole) return null;
+    const after = () => { const o2 = Object.assign({}, obj || {}, { text: rest, _tgtAsked: true }); openAbilityEffect(o2, () => render()); };
+    return [{ full: true, covers: sents, label: `Pay ${energy0 ? energy0 + ' energy' : cost}, then: ${rest.replace(/^./, ch => ch.toLowerCase())}`, fn: () => {
+        if (energy0) { const gs = state.gs || (state.gs = {}); if ((gs.energy || 0) < energy0) { toast('Not enough energy', `You have ${gs.energy || 0} energy; this costs ${energy0}.`); return; } snap(); gs.energy -= energy0; log(`${src}: paid ${energy0} energy`); after(); return; }
+        const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, after); } },
+      { full: true, covers: sents, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }];
+  }
   const energy = /^(?:\{E\})+$/i.test(cost) ? cost.length / 3 : 0;   // CR 107.14: {E} is paid with energy counters, not mana
   if (energy) { const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
-    return [{ full: whole, label: `Pay ${energy} energy: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const gs = state.gs || (state.gs = {}); if ((gs.energy || 0) < energy) { toast('Not enough energy', `You have ${gs.energy || 0} energy; this costs ${energy}.`); return; } snap(); gs.energy -= energy; log(`${src}: paid ${energy} energy (${gs.energy} left)`); io.fn(); render(); } },
+    return [{ full: whole, covers: whole ? sents : undefined, label: `Pay ${energy} energy: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const gs = state.gs || (state.gs = {}); if ((gs.energy || 0) < energy) { toast('Not enough energy', `You have ${gs.energy || 0} energy; this costs ${energy}.`); return; } snap(); gs.energy -= energy; log(`${src}: paid ${energy} energy (${gs.energy} left)`); io.fn(); render(); } },
       { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }]; }
   const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
-  return [{ full: whole, label: `Pay ${cost}: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, () => { io.fn(); render(); }); } },
+  return [{ full: whole, covers: whole ? sents : undefined, label: `Pay ${cost}: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, () => { io.fn(); render(); }); } },
     { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }];
 }
