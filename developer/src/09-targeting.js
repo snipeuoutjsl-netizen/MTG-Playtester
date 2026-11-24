@@ -248,25 +248,10 @@ function targetedOptions(tx, obj) {
 // "Return target legendary creature card from your graveyard to the battlefield" and similar: the target is chosen
 // as the spell is cast, and checked again as it resolves (rules 601.2c, 608.2b).
 const RETURN_RE = /\b(?:Return|Put) target ((?:[a-z\-]+ )*?)card (?:with mana value (\d+)( or (?:less|greater))? )?(?:from|in) (?:your|a|an) graveyard (?:to|onto) (the battlefield|your hand)[^.]*\./i;   // v0.94.1 also "Put target creature card from a graveyard onto the battlefield under your control" and mana value limits
-function graveTargetSpec(c) {
-  if(!/\b(?:Instant|Sorcery)\b/.test(frontType(c))) return null;
-  const m=cardText(c).replace(/\n/g,' ').match(RETURN_RE); if(!m) return null;
-  return { words: m[1].trim().toLowerCase().split(/\s+/).filter(Boolean), mv: m[2] ? { n: +m[2], rel: (m[3] || '').trim() } : null, to: m[4].toLowerCase(), label: (m[1]+'card'+(m[2] ? ' with mana value '+m[2]+(m[3]||'') : '')).trim() };
-}
 function matchesGraveSpec(card, spec) {
   const t=frontType(card)||'';
   if (spec.mv) { const i=cardInfo(card.name), v=i?i.cmc||0:0; if (spec.mv.rel==='or less' ? v>spec.mv.n : spec.mv.rel==='or greater' ? v<spec.mv.n : v!==spec.mv.n) return false; }
   return spec.words.every(w => w==='legendary' ? /Legendary/i.test(t) : w==='nonlegendary' ? !/Legendary/i.test(t) : w==='nonland' ? !/\bLand\b/i.test(t) : new RegExp('\\b'+w+'\\b','i').test(t));
-}
-function openGraveTarget(c, spec, done) {
-  const opts=state.graveyard.filter(x=>matchesGraveSpec(x,spec));
-  if(!opts.length){ toast('No legal target', `${c.name} needs a target ${spec.label} in your graveyard, and you have none. A spell cannot be cast without a legal target.`); return; }
-  const m=modal(`${c.name}: choose a target`,{width:520,sticky:true});
-  m.body.append(h('div',{class:'psub',text:`Choose a target ${spec.label} in your graveyard. Targets are chosen as the spell is cast, before you pay; if it is gone when the spell resolves, the spell does nothing.`}));
-  for(const x of opts){ const info=cardInfo(x.name);
-    const row=h('div',{class:'row'},h('span',{class:'nm'},x.name,' ',info&&info.mc?symbols(info.mc):''),h('button',{class:'primary',text:'Target this',onclick:()=>{m.close();done(x);}}));
-    row.addEventListener('mouseenter',()=>showPreview(x)); m.body.append(row); }
-  m.foot.append(h('button',{text:'Cancel — do not cast',onclick:()=>m.close()}));
 }
 let targetChosenFor=null;
 // Carry out the "Return target ..." sentence of a resolving spell. Returns the spell text left for the effect panel.

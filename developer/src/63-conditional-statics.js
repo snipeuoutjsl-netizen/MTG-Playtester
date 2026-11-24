@@ -30,7 +30,6 @@ function csCount(phrase, g) {
   }
   const f = typeof countForEach === 'function' ? countForEach(t) : null; return f;
 }
-function csCmp(n, op, k) { return /less|fewer/.test(op) ? n <= k : n >= k; }
 // The conditions the top-bar game-state icons already track, by the words a card uses for them.
 function IND_COND_KEY(t) {
   if (/^you control (?:three|3) or more artifacts$/.test(t)) return 'metalcraft';

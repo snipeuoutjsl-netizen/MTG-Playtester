@@ -157,8 +157,10 @@ function spotlight(c, kind, from) {
 // ---- life effects
 let lifePrev = { you: null, opp: null };
 function lifeFx(which, el, val) {
-  if (!el) return;
   const prev = lifePrev[which]; lifePrev[which] = val;
+  // v0.99.67 reaching 0 life ends the game whether or not life animations run or the life box is on screen (with animations off, as on many phones, the Victory screen never came)
+  if (prev !== null && val <= 0 && prev > 0 && (!el || !animOn('life'))) { setTimeout(() => { try { showGameEnd(which); } catch (e) { /* convenience */ } }, 400); }
+  if (!el) return;
   if (prev === null || prev === val || !animOn('life')) { if (!el._rolling || prev === null || !animOn('life')) el.textContent = val; return; }
   const d = val - prev, up = d > 0, tok = (el._tok = (el._tok || 0) + 1);
   if (Math.abs(d) > 1) { el._rolling = true; const t0 = performance.now(), dur = Math.min(700, 260 + Math.abs(d) * 40) / aspd();

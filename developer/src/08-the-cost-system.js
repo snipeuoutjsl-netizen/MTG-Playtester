@@ -844,12 +844,12 @@ function castXSpell(c, reopen, modes) {
     const x = Math.max(0, Math.min(max, parseInt(inp.value, 10) || 0));
     m.close();
     const cost = costWithX(ec.cost, x);
-    if (symCmc(cost) === 0 && !/\{[WUBRGCSP]/i.test(cost)) { commitSpellToStack(id, [], reopen, x); return; }
+    if (symCmc(cost) === 0 && !/\{[WUBRGCSP]/i.test(cost)) { commitSpellToStack(id, [], reopen, x, modes); return; }   // v0.99.67 the chosen modes travel with every way of paying (they were dropped here and below)
     if (teach('stackGuidance')) { openManaPayment(c, ids => commitSpellToStack(id, ids, reopen, x, modes), cost); return; }
     const plan = manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null);
     if (!plan.ok) { toast('Cannot cast this spell', 'Not enough mana.'); return; }
     state.manaPool = plan.pool;
-    commitSpellToStack(id, plan.used.map(i => manaSources()[i].card.id), reopen, x);
+    commitSpellToStack(id, plan.used.map(i => manaSources()[i].card.id), reopen, x, modes);
   } }));
 }
 function castSpell(id,reopen=true,modes) {

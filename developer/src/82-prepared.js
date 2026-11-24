@@ -4,7 +4,6 @@
 //        and prepared; its controller may cast it (paying its own mana cost, normal timing). The permanent stops being prepared as the copy becomes cast (601.2i),
 //        so a countered copy still leaves it unprepared. Leaving the battlefield or an "unprepare" effect ends the designation and the copy ceases to exist.
 function prepSpellOf(c) { if (!c || c.token && !c.tk) return null; const i = cardInfo(c.faceOf || c.origName || c.name); return i && i.lo === 'prepare' && i.fc && i.fc[1] ? i.fc[1] : (i && i.prep && i.fc && i.fc[1] ? i.fc[1] : null); }
-function prepCopyOf(c) { return state ? state.exile.find(x => x.prepCopy === c.id) || state.hand.find(x => x.prepCopy === c.id) : null; }
 function becomePrepared(c, why) {
   if (!state || !c) return false; const sp = prepSpellOf(c);
   if (!sp) { log(`${c.name} has no prepare spell, so it can't become prepared (CR 722.3a)`); return false; }

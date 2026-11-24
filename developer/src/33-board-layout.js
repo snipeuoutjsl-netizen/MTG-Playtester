@@ -28,7 +28,6 @@ const expandedGroups = new Set();
 function groupKey(c) {
   return [c.name, c.tapped ? 't' : 'u', JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : '', isSick(c) ? 's' : ''].join('~');
 }
-function groupKeyMix(c) { return groupKey({ ...c, tapped: false }); }
 function stackableCard(c) {
   if (!c || c.att || c.target || c.targets || c.dmg || c.loyalty !== undefined || c.evoked || c.kicked || c.origName) return false;
   if (state.battlefield.some(x => x.att === c.id)) return false;

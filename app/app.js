@@ -1125,12 +1125,6 @@ function landETBTrigger(c) {
   if(m) return {kind:'ability',cardId:c.id,cardName:c.name,special:'surveil',n:+m[1],optional:false,why:'A land with an enters-the-battlefield trigger.',text:`When ${c.name} enters, surveil ${m[1]}.`,effect:`Surveil ${m[1]}.`};
   return null;
 }
-function triggeredAbilityFor(c){
-  const tx=cardText(c); if(!tx)return null;
-  const m=tx.match(/((?:When|Whenever|At the beginning|At the end)[^.]*\.)/i);
-  if(!m)return null;
-  return {kind:'ability',cardId:c.id,text:m[1]};
-}
 // ---------------------------------------------------------------- triggered abilities (v0.23)
 // A triggered ability has an event ("when X happens") and an effect. When the event happens the ability
 // is put on the stack the next time a player would get priority, then resolves like a spell.
@@ -1575,7 +1569,6 @@ const wnum = w => /^x$/i.test(w) ? 'X' : (WORD_NUM[String(w).toLowerCase()] || p
 // { label, fn } choices the general reader does. Cards without a definition still use the general reader (and the scanner tells you how far it got).
 const CARD_DEFS = [];   // v0.96.4: a flat list of rules-text definitions. A line is matched by what the card SAYS, never by its name, so any card with the same wording behaves the same.
 function defCard(name, def) { for (const L of def.lines) CARD_DEFS.push(Object.assign({ doc: name }, L)); }   // 'name' is documentation only
-function defFor(name) { return CARD_DEFS.length ? CARD_DEFS : null; }
 function defLine(name, text) {
   const clean = x => x.replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(name ? selfNameRe(name) : /$^/, '~').replace(/\s+/g, ' ').trim();
   const whole = clean(String(text || '')); let L = CARD_DEFS.find(x => x.re.test(whole)); if (L) return L;
@@ -2273,11 +2266,6 @@ function resolvePendingTrigger(){
   else if(t.kind==='choose') openChoose(t.cardId,t.what);
   else if(t.kind==='sagaSac') { state.sagaWait = (state.sagaWait || []).concat([t.cardId]); sagaCheck(); }
 }
-function openTriggeredAbility(t){
-  const c=findCard(t.cardId)?.card; const m=modal('Triggered ability',{width:560,sticky:true});
-  m.body.append(h('div',{class:'ptitle',text:c?c.name:'Ability'}),h('div',{class:'psub'},t.text),h('div',{class:'muted small'},teach('triggerPrompts')?'Resolve this trigger before continuing.':''));
-  m.foot.append(h('button',{class:'primary',text:'Resolve ability',onclick:()=>{m.close();log(`Resolved triggered ability — ${c?c.name:'unknown source'}`);resolvePendingTrigger();render();}}));
-}
 // v0.94.5 How much life the "you may pay N life; if you don't, it enters tapped" question costs (shocklands pay 2; the modal double-faced lands such as Soporific Springs pay 3). 0 = no such question.
 function shockLife(c) {
   if (!c || c.token) return 0; if (SHOCKS.has(norm(c.name))) return 2;
@@ -2297,9 +2285,6 @@ function resumePhase() {
   if(!state) return; state.phasePause=false;
   if(state.pendingTriggers.length) resolvePendingTrigger();
   else render();
-}
-function stackPriorityMessage(){
-  return teach('stackGuidance') ? 'You have priority. You may cast an instant/flash spell or activate an ability before the top object resolves.' : 'Priority is active.';
 }
 // ---- contextual mana costs ("This spell costs {2} less to cast for each basic land type ...")
 // "for each Locus on the battlefield" / "for each Goblin you control": permanents with that type or subtype. ctrl 'you' counts only yours
@@ -3197,12 +3182,12 @@ function castXSpell(c, reopen, modes) {
     const x = Math.max(0, Math.min(max, parseInt(inp.value, 10) || 0));
     m.close();
     const cost = costWithX(ec.cost, x);
-    if (symCmc(cost) === 0 && !/\{[WUBRGCSP]/i.test(cost)) { commitSpellToStack(id, [], reopen, x); return; }
+    if (symCmc(cost) === 0 && !/\{[WUBRGCSP]/i.test(cost)) { commitSpellToStack(id, [], reopen, x, modes); return; }   // v0.99.67 the chosen modes travel with every way of paying (they were dropped here and below)
     if (teach('stackGuidance')) { openManaPayment(c, ids => commitSpellToStack(id, ids, reopen, x, modes), cost); return; }
     const plan = manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null);
     if (!plan.ok) { toast('Cannot cast this spell', 'Not enough mana.'); return; }
     state.manaPool = plan.pool;
-    commitSpellToStack(id, plan.used.map(i => manaSources()[i].card.id), reopen, x);
+    commitSpellToStack(id, plan.used.map(i => manaSources()[i].card.id), reopen, x, modes);
   } }));
 }
 function castSpell(id,reopen=true,modes) {
@@ -3494,25 +3479,10 @@ function targetedOptions(tx, obj) {
 // "Return target legendary creature card from your graveyard to the battlefield" and similar: the target is chosen
 // as the spell is cast, and checked again as it resolves (rules 601.2c, 608.2b).
 const RETURN_RE = /\b(?:Return|Put) target ((?:[a-z\-]+ )*?)card (?:with mana value (\d+)( or (?:less|greater))? )?(?:from|in) (?:your|a|an) graveyard (?:to|onto) (the battlefield|your hand)[^.]*\./i;   // v0.94.1 also "Put target creature card from a graveyard onto the battlefield under your control" and mana value limits
-function graveTargetSpec(c) {
-  if(!/\b(?:Instant|Sorcery)\b/.test(frontType(c))) return null;
-  const m=cardText(c).replace(/\n/g,' ').match(RETURN_RE); if(!m) return null;
-  return { words: m[1].trim().toLowerCase().split(/\s+/).filter(Boolean), mv: m[2] ? { n: +m[2], rel: (m[3] || '').trim() } : null, to: m[4].toLowerCase(), label: (m[1]+'card'+(m[2] ? ' with mana value '+m[2]+(m[3]||'') : '')).trim() };
-}
 function matchesGraveSpec(card, spec) {
   const t=frontType(card)||'';
   if (spec.mv) { const i=cardInfo(card.name), v=i?i.cmc||0:0; if (spec.mv.rel==='or less' ? v>spec.mv.n : spec.mv.rel==='or greater' ? v<spec.mv.n : v!==spec.mv.n) return false; }
   return spec.words.every(w => w==='legendary' ? /Legendary/i.test(t) : w==='nonlegendary' ? !/Legendary/i.test(t) : w==='nonland' ? !/\bLand\b/i.test(t) : new RegExp('\\b'+w+'\\b','i').test(t));
-}
-function openGraveTarget(c, spec, done) {
-  const opts=state.graveyard.filter(x=>matchesGraveSpec(x,spec));
-  if(!opts.length){ toast('No legal target', `${c.name} needs a target ${spec.label} in your graveyard, and you have none. A spell cannot be cast without a legal target.`); return; }
-  const m=modal(`${c.name}: choose a target`,{width:520,sticky:true});
-  m.body.append(h('div',{class:'psub',text:`Choose a target ${spec.label} in your graveyard. Targets are chosen as the spell is cast, before you pay; if it is gone when the spell resolves, the spell does nothing.`}));
-  for(const x of opts){ const info=cardInfo(x.name);
-    const row=h('div',{class:'row'},h('span',{class:'nm'},x.name,' ',info&&info.mc?symbols(info.mc):''),h('button',{class:'primary',text:'Target this',onclick:()=>{m.close();done(x);}}));
-    row.addEventListener('mouseenter',()=>showPreview(x)); m.body.append(row); }
-  m.foot.append(h('button',{text:'Cancel — do not cast',onclick:()=>m.close()}));
 }
 let targetChosenFor=null;
 // Carry out the "Return target ..." sentence of a resolving spell. Returns the spell text left for the effect panel.
@@ -5885,7 +5855,6 @@ function layoutPass() {
   try { animApply(); } catch (e) { console.error(e); }
 }
 function scheduleLayout() { if (layoutQueued) return; layoutQueued = true; requestAnimationFrame(layoutPass); }
-function flushLayout() { if (layoutQueued) layoutPass(); }
 function renderInner() {
   if (state) { healHalves(); if (state.halfChosen) setTimeout(checkHalfAbandon, 80); }
   if (state && state.sagaWait && state.sagaWait.length) setTimeout(() => { try { sagaCheck(); } catch (e) { console.error(e); } }, 0);
@@ -6774,8 +6743,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.66';
+const APP_VERSION = '0.99.67';
 const CHANGELOG = [
+  { v: '0.99.67', title: 'Phone fixes and a clean-up', notes: ['Kozilek\'s Command and other modal spells with X: the modes you chose were lost when the X window paid automatically (Pay window turned off) or X made the spell free, so the resolving window offered every mode (with "Exile You" for the creature and graveyard modes). The chosen modes now always stay with the spell. ', 'Phones: the Victory / Defeat screen (Next round, Sideboard, Choose another deck) now comes up when a player reaches 0 life even with animations off, as they often are on phones. It used to be started by the life animation, so with no animation there was no screen.', 'Phones: the top bar no longer slides under the iPhone status bar. The upright layout is shrunk to fit the screen and the space kept for the status bar and home bar was shrunk with it; it is now scaled back to the real size.', 'Clean-up: 16 pieces of code nothing used any more (an old hand-sort menu, an old ability window and others) and 134 style rules for screens that no longer exist (the old desk stacks and piles, old phase bar, old stack list…) were removed. The app is a little smaller and nothing you see changes.'] },
   { v: '0.99.66', title: 'Choices inside the stack window', notes: ['When a spell or ability resolves, its choices (Apply buttons, Done) now appear inside the stack window, under the card that is resolving, instead of in a separate narrow window. On phones the stack window spans the screen, so the choices are full width and easy to tap; on the computer the stack window widens while it holds them.', 'One Done button finishes the effect (the separate Finish button is gone while the choices are shown).', 'Escape still closes the window it should.'] },
   { v: '0.99.65', title: 'A deeper book, and pages printed on both sides', notes: ['The menu book has real depth: the pages rise from a sunken gutter, the page block is several uneven layers that step out at the sides and bottom, and it sits on a thick cover board.', 'The turning page is printed on both sides: turning to a card, its back carries the card picture, so the left page no longer goes blank while the page lands; turning back, the picture lifts away with the page.', 'RULES: "Return target creature card from your graveyard to the battlefield. It gains haste until end of turn." no longer offers to give the spell itself haste: "it" is the card just returned (the return already gives that card haste).'] },
   { v: '0.99.64', title: 'As Foretold', notes: ['RULES (CR 118.9): a permanent that says "you may pay {0} rather than pay the mana cost for a spell you cast with mana value X or less" (As Foretold) now gives each spell it allows a "Pay {0} instead" way to cast. X is read from its time counters, and "once each turn" is kept.', 'A card with no mana cost has mana value 0 (CR 202.3a), so Living End, Ancestral Vision and the like can be cast through As Foretold even with no time counters; they could not be cast at all before.', 'Spells over the limit show why the As Foretold way is not available (its mana value, or already used this turn). Cards that already cost {0} get no extra button.'] },
@@ -8514,8 +8484,10 @@ function spotlight(c, kind, from) {
 // ---- life effects
 let lifePrev = { you: null, opp: null };
 function lifeFx(which, el, val) {
-  if (!el) return;
   const prev = lifePrev[which]; lifePrev[which] = val;
+  // v0.99.67 reaching 0 life ends the game whether or not life animations run or the life box is on screen (with animations off, as on many phones, the Victory screen never came)
+  if (prev !== null && val <= 0 && prev > 0 && (!el || !animOn('life'))) { setTimeout(() => { try { showGameEnd(which); } catch (e) { /* convenience */ } }, 400); }
+  if (!el) return;
   if (prev === null || prev === val || !animOn('life')) { if (!el._rolling || prev === null || !animOn('life')) el.textContent = val; return; }
   const d = val - prev, up = d > 0, tok = (el._tok = (el._tok || 0) + 1);
   if (Math.abs(d) > 1) { el._rolling = true; const t0 = performance.now(), dur = Math.min(700, 260 + Math.abs(d) * 40) / aspd();
@@ -8875,7 +8847,6 @@ function graveReturnEffect(tx, src) {
     openPickCards({ title: `${src}: return from your graveyard`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} to put ${to === 'hand' ? 'into your hand' : 'onto the battlefield'}.`, cards, max, done: move });
   } };
 }
-function flipCoin() { return Math.random() < 0.5; }
 
 
 // ---------------------------------------------------------------- game-state indicators (v0.75)
@@ -9002,7 +8973,6 @@ const expandedGroups = new Set();
 function groupKey(c) {
   return [c.name, c.tapped ? 't' : 'u', JSON.stringify(c.counters || {}), c.chosen || '', c.token ? 'tok' : '', (c.gained || []).join('|'), c.tmp ? 'tmp' : '', c.exileAtEnd ? 'ex' : '', isSick(c) ? 's' : ''].join('~');
 }
-function groupKeyMix(c) { return groupKey({ ...c, tapped: false }); }
 function stackableCard(c) {
   if (!c || c.att || c.target || c.targets || c.dmg || c.loyalty !== undefined || c.evoked || c.kicked || c.origName) return false;
   if (state.battlefield.some(x => x.att === c.id)) return false;
@@ -9646,29 +9616,6 @@ function reorderHand(id, slot) {
   const to = Math.max(0, Math.min(state.hand.length, slot > from ? slot - 1 : slot));
   state.hand.splice(to, 0, c);
   render();
-}
-const HAND_SORTS = [
-  ['Lands first, then by mana value', 'Land → cheap spells → expensive spells', c => { const i = cardInfo(c.name); return [isLandName(c.name) ? 0 : 1, i ? i.cmc || 0 : 0, c.name]; }],
-  ['Mana value, low to high', 'Cheapest first, lands counted as 0', c => { const i = cardInfo(c.name); return [0, i ? i.cmc || 0 : 0, c.name]; }],
-  ['Colour', 'Groups cards by colour', c => [0, ['W','U','B','R','G','multi','art','land'].indexOf(colorClass(c)), c.name]],
-  ['Playable first', 'Green, then red, then gold', c => [{ ready: 0, mana: 1, timing: 2 }[handInteraction(c)] ?? 3, 0, c.name]],
-];
-function sortHand(fn) {
-  if (!state) return;
-  const key = c => fn(c);
-  state.hand.sort((a, b) => { const x = key(a), y = key(b); for (let i = 0; i < x.length; i++) { if (x[i] < y[i]) return -1; if (x[i] > y[i]) return 1; } return 0; });
-  render();
-}
-function openHandSortMenu(ev) {
-  if (!state) return;
-  closeLibMenu();
-  const m = h('div', { id: 'libMenu', role: 'menu' }, h('div', { class: 'lm-title', text: 'Sort hand' }),
-    ...HAND_SORTS.map(([label, hint, fn]) => { const b = h('button', { class: 'lm-item', role: 'menuitem' }, h('span', { text: label }), h('small', { text: hint })); b.addEventListener('click', e => { e.stopPropagation(); closeLibMenu(); sortHand(fn); }); return b; }));
-  document.body.append(m);
-  const r = ev.currentTarget.getBoundingClientRect();
-  m.style.left = Math.max(6, Math.min(innerWidth - m.offsetWidth - 6, r.left)) + 'px';
-  m.style.top = Math.max(6, r.top - m.offsetHeight - 6) + 'px';
-  document.addEventListener('keydown', libMenuKey, true);
 }
 
 function setupDrop() {
@@ -10692,7 +10639,6 @@ function kwTriggersFor(info) {
   }
   return out;
 }
-const kwTarget = (obj, ids, label, fn) => ({ full: true, label, fn });
 const KW_EFFECTS = {
   'exalted': obj => { const a = state.combat.attackers || []; const id = a[0]; const f = id && findCard(id); return [{ full: true, label: f ? `${f.card.name} gets +1/+1 until end of turn (exalted)` : 'The lone attacker gets +1/+1 until end of turn', fn: () => { if (f) addTempPT(f.card.id, 1, 1); } }]; },
   'battle cry': obj => { const o = (state.combat.attackers || []).filter(i => i !== obj.sourceId); return [{ full: true, label: o.length ? `Each other attacking creature gets +1/+0 until end of turn (${o.length})` : 'No other attacking creature', fn: () => o.forEach(i => addTempPT(i, 1, 0)) }]; },
@@ -12231,7 +12177,6 @@ function csCount(phrase, g) {
   }
   const f = typeof countForEach === 'function' ? countForEach(t) : null; return f;
 }
-function csCmp(n, op, k) { return /less|fewer/.test(op) ? n <= k : n >= k; }
 // The conditions the top-bar game-state icons already track, by the words a card uses for them.
 function IND_COND_KEY(t) {
   if (/^you control (?:three|3) or more artifacts$/.test(t)) return 'metalcraft';
@@ -13672,7 +13617,6 @@ function mayPayOptions(sents, obj) {
 //        and prepared; its controller may cast it (paying its own mana cost, normal timing). The permanent stops being prepared as the copy becomes cast (601.2i),
 //        so a countered copy still leaves it unprepared. Leaving the battlefield or an "unprepare" effect ends the designation and the copy ceases to exist.
 function prepSpellOf(c) { if (!c || c.token && !c.tk) return null; const i = cardInfo(c.faceOf || c.origName || c.name); return i && i.lo === 'prepare' && i.fc && i.fc[1] ? i.fc[1] : (i && i.prep && i.fc && i.fc[1] ? i.fc[1] : null); }
-function prepCopyOf(c) { return state ? state.exile.find(x => x.prepCopy === c.id) || state.hand.find(x => x.prepCopy === c.id) : null; }
 function becomePrepared(c, why) {
   if (!state || !c) return false; const sp = prepSpellOf(c);
   if (!sp) { log(`${c.name} has no prepare spell, so it can't become prepared (CR 722.3a)`); return false; }
