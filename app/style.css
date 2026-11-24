@@ -2532,3 +2532,85 @@ html.portrait-ui #bsActions button { padding: 8px 14px; font-size: 14px; }
 .swipe-cue span { font-size: 22px; letter-spacing: -4px; }
 @keyframes swipeCue { 0% { opacity: 0; transform: translate(-30%, -50%); } 25% { opacity: 1; transform: translate(-50%, -50%); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-70%, -50%); } }
 @media (pointer: coarse) { #mat, #mat .zone, #mat .cardrow { touch-action: pan-y; } #mat .card { touch-action: none; } }   /* sideways swipes on the table belong to the app (swipe to the next step) */
+
+/* v0.99.63 the desk as in Deck stats: groups by type, one straight stack per card, no overlap between stacks, no hover effects (the book shows the card) */
+#hall .hall-spread.dk { display: block; transform: none; animation: none; left: 40px; right: 40px; top: 600px; --cw: 96px; --ch: calc(var(--cw) * 1.395); --off: calc(var(--ch) * .12); }
+#hall.portrait .hall-spread.dk { top: 1296px; left: 20px; right: 20px; }
+#hall .dk-wrap { margin: 0 auto; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: calc(var(--cw) * .14) calc(var(--cw) * .3); }
+#hall .dk-group { display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; }
+#hall .dk-gh { font: 600 calc(var(--cw) * .125)/1.2 Georgia, 'Times New Roman', serif; font-variant: small-caps; letter-spacing: .04em; color: #f1dfae; text-shadow: 0 1px 2px rgba(0,0,0,.85); margin: 0 0 calc(var(--cw) * .06) 2px; white-space: nowrap; pointer-events: none; }
+#hall .dk-stacks { display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(var(--cw) * .1) calc(var(--cw) * .07); }
+#hall .dk-stack { position: relative; flex: none; width: var(--cw); height: calc(var(--ch) + (var(--n) - 1) * var(--off)); cursor: default; outline: none; touch-action: manipulation; }
+#hall .dk-card { position: absolute; left: 0; top: calc(var(--i) * var(--off)); width: var(--cw); height: var(--ch); box-sizing: border-box; border-radius: calc(var(--cw) * .05); overflow: hidden; pointer-events: none;
+  background: #22262c; border: 1px solid #000; color: #eee; padding: 4px 5px; display: flex; flex-direction: column; gap: 2px; font-size: calc(var(--cw) * .085); box-shadow: 0 2px 4px rgba(0,0,0,.55); }
+#hall .dk-card.img { padding: 0; border: 0; background: #000; }
+#hall .dk-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#hall .dk-card b { font-size: calc(var(--cw) * .09); line-height: 1.15; }
+#hall .dk-card span { color: #c9c2b0; } #hall .dk-card i { color: #a9a294; }
+#hall .dk-qty { position: absolute; right: -4px; bottom: -6px; z-index: 9; font: 700 calc(var(--cw) * .11)/1 system-ui, sans-serif; font-style: normal; color: #1a130a; background: #e3c27a; border-radius: 999px; padding: 2px 6px; box-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none; }
+
+/* ===== v0.99.63 the menu book: bigger, lying back on its stand at a slight angle, worn pages with torn edges over a thick page block.
+   preserve-3d lets the turning leaf rise out of the page instead of sliding across it. ===== */
+#hall .hall-tome { left: 430px; top: 150px; width: 740px; height: 410px; transform: translateZ(100px) rotateX(19deg) rotateZ(-1.2deg); transform-style: preserve-3d; grid-template-columns: 1fr 18px 1fr; }
+#hall .hall-stand { left: 400px; width: 800px; }
+#hall .hall-tome-shadow { left: 380px; width: 840px; }
+#hall .hall-desk:has(.dbx-pull) .hall-tome { transform: translateZ(100px) rotateX(19deg) rotateZ(-1.2deg); }
+#hall .hall-tome .hall-page { padding: 26px 32px 30px; filter: drop-shadow(0 1px 0 rgba(90,60,25,.35)); }
+#hall .hall-tome .hall-page.left { clip-path: polygon(0.0% 0.49%, 7.14% 0.23%, 14.29% 0.98%, 21.43% 0.11%, 28.57% 0.8%, 35.71% 0.55%, 42.86% 0.09%, 50.0% 0.76%, 57.14% 0.06%, 64.29% 0.65%, 71.43% 0.1%, 78.57% 0.14%, 85.71% 0.64%, 92.86% 1.24%, 100.0% 0.19%, 100% 0.19%, 100% 99.07%, 100.0% 99.07%, 92.86% 99.71%, 85.71% 98.69%, 78.57% 99.51%, 71.43% 99.81%, 64.29% 99.77%, 57.14% 99.54%, 50.0% 98.63%, 42.86% 99.93%, 35.71% 98.44%, 28.57% 99.37%, 21.43% 99.08%, 14.29% 98.48%, 7.14% 99.0%, 0.0% 99.64%, 0.82% 100.0%, 1.05% 90.0%, 0.57% 80.0%, 0.77% 70.0%, 1.22% 60.0%, 0.37% 50.0%, 0.11% 40.0%, 0.11% 30.0%, 0.99% 20.0%, 0.67% 10.0%, 1.15% 0.0%); }
+#hall .hall-tome .hall-page.right { clip-path: polygon(0% 0.45%, 0.0% 0.45%, 7.14% 1.19%, 14.29% 1.05%, 21.43% 0.37%, 28.57% 0.86%, 35.71% 0.79%, 42.86% 1.31%, 50.0% 1.09%, 57.14% 0.43%, 64.29% 1.47%, 71.43% 0.18%, 78.57% 0.63%, 85.71% 1.14%, 92.86% 0.23%, 100.0% 0.73%, 98.74% 0.0%, 98.84% 10.0%, 98.21% 20.0%, 98.52% 30.0%, 99.49% 40.0%, 99.31% 50.0%, 98.8% 60.0%, 99.96% 70.0%, 99.17% 80.0%, 99.7% 90.0%, 99.79% 100.0%, 100.0% 99.9%, 92.86% 98.94%, 85.71% 99.24%, 78.57% 98.49%, 71.43% 98.66%, 64.29% 99.27%, 57.14% 99.07%, 50.0% 99.05%, 42.86% 98.89%, 35.71% 99.5%, 28.57% 98.6%, 21.43% 99.08%, 14.29% 98.78%, 7.14% 98.93%, 0.0% 99.94%, 0% 99.94%); }
+/* age: foxing, a water stain and darker, curling edges near the spine (the pages bulge up from the gutter like an old book) */
+#hall .hall-tome .hall-page::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(circle at 18% 82%, rgba(140,90,40,.16) 0 3%, transparent 9%), radial-gradient(circle at 74% 14%, rgba(140,90,40,.12) 0 2%, transparent 7%),
+    radial-gradient(ellipse 34% 22% at 82% 78%, rgba(150,105,50,.14), transparent 70%), radial-gradient(ellipse 120% 100% at 50% 50%, transparent 62%, rgba(110,70,25,.28) 100%); }
+#hall .hall-tome .hall-page.left::after { background-image: radial-gradient(circle at 18% 82%, rgba(140,90,40,.16) 0 3%, transparent 9%), radial-gradient(circle at 74% 14%, rgba(140,90,40,.12) 0 2%, transparent 7%), radial-gradient(ellipse 34% 22% at 30% 70%, rgba(150,105,50,.13), transparent 70%), radial-gradient(ellipse 120% 100% at 50% 50%, transparent 62%, rgba(110,70,25,.28) 100%), linear-gradient(90deg, transparent 80%, rgba(70,40,12,.30)); }
+#hall .hall-tome .hall-page.right::after { background-image: radial-gradient(circle at 84% 86%, rgba(140,90,40,.15) 0 2.5%, transparent 8%), radial-gradient(circle at 22% 10%, rgba(140,90,40,.10) 0 2%, transparent 6%), radial-gradient(ellipse 30% 20% at 70% 30%, rgba(150,105,50,.12), transparent 70%), radial-gradient(ellipse 120% 100% at 50% 50%, transparent 62%, rgba(110,70,25,.28) 100%), linear-gradient(270deg, transparent 80%, rgba(70,40,12,.30)); }
+#hall .hall-tome .hall-page > * { position: relative; z-index: 1; }
+#hall .hall-tome .hall-page > .tm-folio { position: absolute; }
+#hall .hall-tome .hall-spine { width: 18px; background: linear-gradient(90deg, rgba(50,28,8,.7), rgba(120,80,30,.25) 40%, rgba(120,80,30,.25) 60%, rgba(50,28,8,.7)); }
+/* the page block: many uneven leaves, thicker at the bottom, with a worn leather cover showing under it */
+#hall .tm-edges { left: -10px; right: -10px; top: 6px; bottom: -18px; border-radius: 10px; clip-path: polygon(0.0% 0.07%, 5.0% 0.92%, 10.0% 0.16%, 15.0% 0.3%, 20.0% 0.47%, 25.0% 1.05%, 30.0% 0.1%, 35.0% 0.54%, 40.0% 0.66%, 45.0% 1.06%, 50.0% 0.98%, 55.0% 1.04%, 60.0% 0.33%, 65.0% 0.5%, 70.0% 0.43%, 75.0% 1.06%, 80.0% 1.15%, 85.0% 0.18%, 90.0% 0.21%, 95.0% 0.28%, 100.0% 0.28%, 99.71% 12.5%, 99.65% 25.0%, 99.84% 37.5%, 100.0% 50.0%, 99.75% 62.5%, 99.78% 75.0%, 99.66% 87.5%, 100.0% 97.52%, 95.0% 98.2%, 90.0% 98.66%, 85.0% 98.39%, 80.0% 98.24%, 75.0% 99.86%, 70.0% 97.66%, 65.0% 97.97%, 60.0% 97.73%, 55.0% 97.93%, 50.0% 98.98%, 45.0% 98.96%, 40.0% 99.73%, 35.0% 98.35%, 30.0% 99.84%, 25.0% 99.82%, 20.0% 99.46%, 15.0% 99.58%, 10.0% 99.12%, 5.0% 99.86%, 0.0% 100.0%, 0.09% 87.5%, 0.06% 75.0%, 0.22% 62.5%, 0.02% 50.0%, 0.52% 37.5%, 0.37% 25.0%, 0.09% 12.5%);
+  background: repeating-linear-gradient(0deg, #e3cf9f 0 1px, #c4a874 1px 2px, #dcc48f 2px 3px, #b89a63 3px 4px), linear-gradient(90deg, rgba(90,55,20,.35), transparent 8%, transparent 92%, rgba(90,55,20,.35));
+  background-blend-mode: multiply; box-shadow: none; filter: drop-shadow(0 0 0 #5a3214); }
+#hall .hall-tome::before { content: ''; position: absolute; left: -16px; right: -16px; top: 12px; bottom: -26px; z-index: -2; border-radius: 12px 12px 16px 16px; pointer-events: none;
+  background: radial-gradient(ellipse 60% 40% at 30% 70%, rgba(255,220,170,.10), transparent 70%), repeating-linear-gradient(115deg, rgba(0,0,0,.08) 0 2px, transparent 2px 7px), linear-gradient(180deg, #5c3417, #3d200c);
+  box-shadow: inset 0 0 0 2px rgba(20,10,3,.55), 0 14px 22px rgba(0,0,0,.55); }
+/* print a size up, now that there is room */
+#hall .tm-para { font-size: 15.5px; }
+#hall .tm-title { font-size: 26px; }
+#hall .tm-aside { font-size: 13.5px; }
+#hall .hall-tome .hall-ink, #hall .hall-tome .hall-link { font-size: 16px !important; }
+#hall .tome-info button { font-size: 15px !important; }
+#hall .tome-info button.primary { font-size: 19px !important; }
+#hall .tm-folio { bottom: 10px; }
+/* the leaf that turns: aged like the pages, rising out of the book */
+#hall .tome-leaf { background: radial-gradient(ellipse 120% 100% at 50% 50%, transparent 60%, rgba(110,70,25,.25)), linear-gradient(90deg, rgba(90,55,20,.25), transparent 18%, transparent 82%, rgba(90,55,20,.2)), linear-gradient(180deg, #f1e2bd, #dcc690); }
+/* upright: the same book, larger so it reads on a phone */
+#hall.portrait .hall-tome { left: 165px; top: 905px; width: 570px; height: 385px; transform: translateZ(100px) rotateX(15deg) rotateZ(-1deg) scale(1.42); }
+#hall.portrait .hall-desk:has(.dbx-pull) .hall-tome { transform: translateZ(100px) rotateX(15deg) rotateZ(-1deg) scale(1.42); }
+/* v0.99.63 deck and card pages print on the same worn paper (the aged pages show through), a size up */
+#hall .tome-info, #hall .tome-card { background: none !important; padding: 24px 30px 26px; }
+#hall .tome-card .tc-pic img { max-height: 356px; }
+#hall .tome-card .tc-noimg { width: 240px; height: 336px; }
+#hall .tome-card .tc-title b { font-size: 21px; }
+#hall .tome-card .tc-type { font-size: 15px; }
+#hall .tome-card .tc-face p { font-size: 15.5px; line-height: 1.4; }
+#hall .tome-card .tc-foot { font-size: 13px; }
+#hall .tome-info h3 { font-size: 26px; }
+#hall .tome-info .fhead { font-size: 12px; }
+#hall .tome-info, #hall .tome-info .muted, #hall .tome-info li, #hall .tome-info p { font-size: 15px; }
+#hall .tm-para { font-size: 17px; } #hall .tm-aside { font-size: 14.5px; } #hall .tm-chap { font-size: 12.5px; } #hall .tm-title { font-size: 28px; }
+#hall .hall-tome .hall-ink, #hall .hall-tome .hall-link { font-size: 17.5px !important; }
+#hall .tm-deck { font-size: 18px; }
+/* the box taken off the shelf stands clear of the larger book */
+#hall .dbx-turn { left: 190px; }
+#hall .tome-info .ti-page div:not(.fhead):not([class*=curve]):not([class*=bar]), #hall .tome-info .ti-page span:not([class*=pip]):not([class*=dot]) { font-size: 15px; }
+#hall .tome-info .ti-page b { font-size: 12px; }
+#hall .hall-tome .hall-chk { font-size: 15.5px !important; }
+#hall .hall-tome .hall-chk.small { font-size: 14px !important; }
+#hall .tm-folio { font-size: 13px; }
+#hall.portrait .hall-tome { left: 160px; top: 850px; width: 580px; height: 440px; transform: translateZ(100px) rotateX(14deg) rotateZ(-1deg) scale(1.34); }
+#hall.portrait .hall-desk:has(.dbx-pull) .hall-tome { transform: translateZ(100px) rotateX(14deg) rotateZ(-1deg) scale(1.34); }
+#hall.portrait .tm-para { font-size: 15.5px; } #hall.portrait .tm-title { font-size: 24px; } #hall.portrait .tm-aside { font-size: 13px; }
+#hall.portrait .hall-tome .hall-ink, #hall.portrait .hall-tome .hall-link { font-size: 15.5px !important; }
+#hall.portrait .hall-tome .hall-page { padding: 22px 24px 26px; }
+#hall.portrait .hall-spread.dk { top: 1318px; }
