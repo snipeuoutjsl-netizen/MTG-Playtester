@@ -1,0 +1,73 @@
+{"cards":22743,"full":10363,"withUnk":12380,"lines":{"ok":27036,"part":11921,"unk":3748,"info":481},"byKind":{"static":{"ok":4218,"part":328,"unk":0,"info":10},"keyword":{"ok":7745,"part":1642,"unk":0,"info":0},"spell":{"ok":3166,"part":2526,"unk":0,"info":0},"triggered":{"ok":5294,"part":3868,"unk":1320,"info":0},"activated":{"ok":3877,"part":2231,"unk":0,"info":0},"other":{"ok":7,"part":652,"unk":2428,"info":0},"modal":{"ok":311,"part":259,"unk":0,"info":0},"reminder":{"ok":0,"part":0,"unk":0,"info":471},"cost":{"ok":516,"part":134,"unk":0,"info":0},"mana":{"ok":1248,"part":141,"unk":0,"info":0},"loyalty":{"ok":654,"part":140,"unk":0,"info":0}}}
+--- top unhandled line starts
+254	spell	part	~ deals n damage …	End-Blaze Epiphany | Harvest Pyre | Heaven // Earth
+242	triggered	part	put a +n/+n counter …	Yorvo, Lord of Garenbrig | Anim Pakal, Thousandth Moon | Sunrise Cavalier
+223	activated	part	equip {m} …	Zephyr Boots | Beamtown Beatstick | Executioner's Hood
+174	triggered	part	you may pay {m}. …	Minion Reflector | Ruthless Sniper | Order of the Golden Cricket
+156	modal	part	choose n — • …	Drill Too Deep | Plunge into Darkness | Take Down
+138	triggered	part	look at the top …	Harald, King of Skemfar | Courageous Outrider | Winota, Joiner of Forces
+126	other	unk	this creature can't be …	Pompous Gadabout | Zulaport Enforcer | Argothian Sprite
+100	spell	part	look at the top …	Commune with Evil | Strategic Planning | Sleight of Hand
+85	cost	part	as an additional cost …	Thunderherd Migration | Harvest Pyre | Close Encounter
+83	spell	part	target creature you control …	Oracle's Restoration | Hard-Hitting Question | Flesh // Blood
+82	activated	part	regenerate this creature. …	Patchwork Gnomes | Numai Outcast | Troll Ascetic
+73	activated	part	put a +n/+n counter …	Vito's Inquisitor | Champion of Dusan | Leyline of Abundance
+70	triggered	part	it deals n damage …	Cathedral Membrane | Chaos Maw | Inferno Titan
+69	triggered	part	you may pay {m}{m}. …	Labyrinth Adversary | Giant's Amulet | Aetherstorm Roc
+62	triggered	unk	draw a card. …	Taii Wakeen, Perfect Shot | Rigo, Streetwise Mentor | Ezio, Blade of Vengeance
+58	triggered	part	you may discard a …	Keldon Raider | Party Thrasher | Erebos's Titan
+57	triggered	part	exile the top card …	Moonring Mirror | Etali, Primal Storm | Abbot of Keral Keep
+55	triggered	unk	this creature deals n …	Hired Claw | Akoum Hellkite | Keral Keep Disciples
+55	other	unk	this creature can't attack …	Desperate Castaways | Sightless Brawler | Floodtide Serpent
+55	activated	part	add n mana of …	Cryptolith Rite | Jiang Yanggu, Wildcrafter | Interplanar Beacon
+54	activated	part	level n …	Stormchaser's Talent | Builder's Talent | Leader's Talent
+51	spell	part	gain control of target …	Aura Graft | Unwilling Recruit | Goatnap
+51	activated	part	look at the top …	Puresight Merrow | Orcish Spy | Scrying Sheets
+50	static	part	this creature gets +n/+n …	Isleback Spawn | Armored Scrapgorger | Scourge of Geier Reach
+49	other	unk	each creature you control …	Tanglewalker | Zegana, Utopian Speaker | Ghalta the Immovable
+48	spell	part	target opponent reveals their …	Gix's Caress | Intimidation Tactics | Agonizing Remorse
+47	activated	part	this creature deals n …	Freewind Equenaut | Sunflare Shaman | Sorcerer's Wand
+47	triggered	part	attach it to target …	Maul of the Skyclaves | Shining Armor | Squire's Lightblade
+46	other	unk	as long as this …	Storage Matrix | Demon Wall | Mirran Safehouse
+43	triggered	part	you may sacrifice another …	Rhovanion Rampager | Brawl-Bash Ogre | Ragefire Hellkite
+43	activated	part	put n +n/+n counters …	Sagu Pummeler | Thanos, the Mad Titan | Sabotage Strategist
+42	other	unk	you may look at …	One with the Multiverse | The Lunar Whale | Cemetery Illuminator
+41	other	unk	this creature enters with …	Shrewd Hatchling | Flycatcher Giraffid | Chainbreaker
+41	triggered	part	if it was kicked, …	Phyrexian Warhorse | Roost of Drakes | Tourach, Dread Cantor
+41	triggered	part	you may put a …	Deathrender | Mind Raker | Swift Warkite
+39	other	unk	enchanted creature doesn't untap …	Waterknot | Locked in the Cemetery | Bonds of Quicksilver
+39	other	part	this creature can block …	Welkin Tern | Selesnya Sagittars | Devoted Grafkeeper // Departed Soulkeeper
+39	spell	part	target creature gets +n/+n …	Spontaneous Flight | Joint Assault | Flare of Faith
+39	spell	part	put a +n/+n counter …	Assure // Assemble | Snakeskin Veil | Feat of Resistance
+38	triggered	unk	you gain n life. …	Lunarch Veteran // Luminous Phantom | The Meathook Massacre | Chrome Companion
+--- keywords not enforced
+93	reveal it	Absorb Vis | Muddle the Mixture | Battle Plan
+93	put it into your hand	Absorb Vis | Muddle the Mixture | Battle Plan
+81	then shuffle.)	Absorb Vis | Battle Plan | Hill Gigas
+54	morph	Willbender | Brine Elemental | Shaper Parasite
+50	level	Zulaport Enforcer | Student of Warfare | Coralhelm Commander
+47	madness	Muck Drubb | Gisa's Bidding | Psychotic Episode
+47	discard it into exile. when you do	Muck Drubb | Gisa's Bidding | Psychotic Episode
+47	cast it for its madness cost or put it into your graveyard.)	Muck Drubb | Gisa's Bidding | Psychotic Episode
+44	infect (this creature deals damage to creatures in the form of -	Phyrexian Juggernaut | Contagious Nim | Plague Stinger
+38	disguise	Nightdrinker Moroii | Concealed Weapon | Dog Walker
+37	start your engines! (if you have no speed	Momentum Breaker | Point the Way | Lightwheel Enhancements
+37	it starts at	Momentum Breaker | Point the Way | Lightwheel Enhancements
+36	it gets +	Numai Outcast | Nezumi Ronin | Toshiro Umezawa
+35	bushido	Numai Outcast | Nezumi Ronin | Toshiro Umezawa
+34	daybound (if a player casts no spells during their own turn	Graveyard Trespasser // Graveyard Glutton | Shady Traveler // Stalking Predator | Tovolar's Huntmaster // Tovolar's Packleader
+34	it becomes night next turn.)	Graveyard Trespasser // Graveyard Glutton | Shady Traveler // Stalking Predator | Tovolar's Huntmaster // Tovolar's Packleader
+34	nightbound (if a player casts at least two spells during their own turn	Graveyard Trespasser // Graveyard Glutton | Shady Traveler // Stalking Predator | Tovolar's Huntmaster // Tovolar's Packleader
+34	it becomes day next turn.)	Graveyard Trespasser // Graveyard Glutton | Shady Traveler // Stalking Predator | Tovolar's Huntmaster // Tovolar's Packleader
+32	kicker	Archangel of Wrath | Kavu Primarch | Aether Figment
+32	toxic	Tyrranax Atrocity | Bloated Contaminator | Voidwing Hybrid
+30	fuse (you may cast one or both halves of this card from your hand.)	Breaking // Entering | Flesh // Blood | Protect // Serve
+30	megamorph	Segmented Krotiq | Kolaghan Stormsinger | Marang River Skeleton
+30	saddle	Caustic Bronco | Brightfield Mustang | Stubborn Burrowfiend
+30	create a	Monk's Fist | Mirran Bardiche | Paladin's Arms
+28	basic landcycling	Absorb Vis | Battle Plan | Landscaper Colos
+28	discard this card: search your library for a basic land card	Absorb Vis | Battle Plan | Landscaper Colos
+28	entwine	Rain of Rust | Blinding Beam | Plunge into Darkness
+28	fear (this creature can't be blocked except by artifact creatures and/or black creatures.)	Dread | Lingering Tormentor | Undercity Shade
+28	enchant player	Curse of Hospitality | Overwhelming Splendor | Curse of Oblivion
+27	sneak	Turncoat Kunoichi | Michelangelo, Improviser | Donatello's Technique
