@@ -70,7 +70,7 @@ function drawStateIcons() {
     e.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GS_ICON[s.on || s.key !== 'day' ? s.key : 'dayoff'] || ''}</svg>`;
     if (s.count !== '' && s.count !== undefined) e.append(h('i', { text: String(s.count) }));
     e._s = s; return e;
-  }));
+  }), h('button', { class: 'sti-more', text: document.body.classList.contains('gs-all') ? '×' : '⋯', title: 'Show every game-state icon (to add energy, poison…)', 'aria-label': 'Show all game-state icons', onclick: ev => { ev.stopPropagation(); document.body.classList.toggle('gs-all'); drawStateIcons(); } }));   // v0.99.69 upright phones show only the active ones
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('#gstates .sti'); if (!b || !state || !b._s) return;

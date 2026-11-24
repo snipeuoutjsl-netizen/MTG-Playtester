@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.68';
+const APP_VERSION = '0.99.69';
 const CHANGELOG = [
+  { v: '0.99.69', title: 'Triggers always trigger, a roomier phone table, self-installing Windows updates', notes: ['RULES FIX: turning off "Triggered ability prompts" (a Tutor mode hint) switched off triggered abilities altogether, so cards like Skysovereign did nothing when they entered or attacked. Triggers are rules, not hints: they always trigger now; with the hint off they go on the stack by themselves in the order they happened (you still choose their targets).', 'Likewise, a Leyline or a card you reveal from your opening hand still gets its pre-game chance when the Pre-game screen is turned off.', 'Resolving window: each effect can be applied once, applying one locks any button that would repeat part of it, and the window finishes by itself when every effect is done, so nothing extra can be done that the card does not say. An ability aimed at an opponent\'s permanent (which the app does not track) is noted in the log for you to apply on the table instead of offering buttons.', 'NEW rules: "Put a +1/+1 counter on each [other] [Dragon] creature you control"; "Each opponent loses N life. You gain life equal to the life lost this way"; damage to "that creature\'s controller"; "You gain life equal to the number of …" / the greatest power among your creatures. 103 more Modern-legal cards are read in full.', 'Phones held upright: zones share the height by how many cards they hold, cards grow into the room they have, and lands or artifacts pile only when they would not fit side by side (on every device). Only active game-state icons show (⋯ shows the rest), and the ▾ Hand tab tucks your hand down to a strip.', 'Windows: the installed app now updates itself with the full Setup installer (checked against GitHub\'s checksum), so the window code is updated too. This needs this version\'s installer once; after that, Update now does everything.', 'The Welcome tour is rewritten for the current app: the Library and its book, phones and tablets, the stack window, how effects and triggers resolve, the end of a game and updates.'] },
   { v: '0.99.68', title: 'Loyalty abilities by the rules, and more cards read', notes: ['RULES (CR 602.2b): a planeswalker\'s loyalty ability now asks for its targets when you activate it, before the loyalty is paid and before it goes on the stack (it used to ask when it resolved).', 'RULES (CR 115.6): "up to one target" really can be none. Karn, the Great Creator\'s +1 with no artifact chosen does nothing; the parts of an ability that do not need the target still happen.', 'Effects that must all happen are no longer offered as buttons: Ugin\'s +2 "You gain 3 life and draw a card" just happens. This only applies when every part is understood, nothing is optional or chosen, and no part opens its own window.', 'NEW: "It doesn\'t untap during its controller\'s next untap step" (Frost Breath, Icefall Regent and the like) keeps the creature tapped for exactly one untap step.', 'NEW: "If that creature would die this turn, exile it instead" (Puncturing Blow and others).', 'NEW: "Create a … token. It gains haste until end of turn": the token has haste.', 'NEW: impulse draw. "Exile the top card(s) of your library. You may play it this turn" and "until the end of your next turn" exile the cards and keep them playable from the exile pile for exactly that long ("cast" lets you cast, not play a land).', 'Card reading: a "look at the top N" sort is credited for each sentence it carries out (Commune with Evil, Discerning Taste…). 144 more Modern-legal cards are now read in full.', 'Phones held upright: the table ends where the fanned hand begins, so no battlefield card sits under your hand.'] },
   { v: '0.99.67', title: 'Phone fixes and a clean-up', notes: ['Kozilek\'s Command and other modal spells with X: the modes you chose were lost when the X window paid automatically (Pay window turned off) or X made the spell free, so the resolving window offered every mode (with "Exile You" for the creature and graveyard modes). The chosen modes now always stay with the spell. ', 'Phones: the Victory / Defeat screen (Next round, Sideboard, Choose another deck) now comes up when a player reaches 0 life even with animations off, as they often are on phones. It used to be started by the life animation, so with no animation there was no screen.', 'Phones: the top bar no longer slides under the iPhone status bar. The upright layout is shrunk to fit the screen and the space kept for the status bar and home bar was shrunk with it; it is now scaled back to the real size.', 'Clean-up: 16 pieces of code nothing used any more (an old hand-sort menu, an old ability window and others) and 134 style rules for screens that no longer exist (the old desk stacks and piles, old phase bar, old stack list…) were removed. The app is a little smaller and nothing you see changes.'] },
   { v: '0.99.66', title: 'Choices inside the stack window', notes: ['When a spell or ability resolves, its choices (Apply buttons, Done) now appear inside the stack window, under the card that is resolving, instead of in a separate narrow window. On phones the stack window spans the screen, so the choices are full width and easy to tap; on the computer the stack window widens while it holds them.', 'One Done button finishes the effect (the separate Finish button is gone while the choices are shown).', 'Escape still closes the window it should.'] },
@@ -401,7 +402,7 @@ function makeProgress() {
   return { el: h('div', { class: 'upd-prog' }, bar, txt), set(pct, t) { bar.classList.remove('indet'); fill.style.width = Math.max(0, Math.min(100, pct)) + '%'; bar.setAttribute('aria-valuenow', String(Math.round(pct))); txt.textContent = t || ''; }, indet(t) { bar.classList.add('indet'); txt.textContent = t || ''; } };
 }
 // Runs the GitHub install and drives a progress bar; resolves with the result of ghInstall.
-async function installWithProgress(prog, bytesHint) {
+async function installWithProgress(prog, bytesHint, viaInstaller) {
   prog.indet('Starting\u2026');
   let off = null;
   if (window.desktop && typeof window.desktop.onProgress === 'function') off = window.desktop.onProgress(d => {
@@ -410,7 +411,10 @@ async function installWithProgress(prog, bytesHint) {
     else if (d.phase === 'install') prog.set(96, 'Installing\u2026');
     else if (d.phase === 'done') prog.set(100, 'Done');
   }); else prog.indet('Downloading and checking files\u2026');
-  try { const r = await window.desktop.ghInstall(); if (r && r.ok && !r.upToDate) prog.set(100, 'Installed and verified'); return r; }
+  try {
+    // v0.99.69 installed Windows copies run the newest Setup installer (it updates the window code too, then reopens the app); others replace the game files
+    if (viaInstaller) { const r = await window.desktop.installerUpdate(); if (r && r.ok) { prog.set(100, 'Installing. The app closes and opens again by itself.'); return r; } prog.indet('The installer route did not work (' + ((r && r.error) || 'no answer') + '). Updating the game files instead\u2026'); }
+    const r = await window.desktop.ghInstall(); if (r && r.ok && !r.upToDate) prog.set(100, 'Installed and verified'); return r; }
   finally { if (off) off(); }
 }
 // v0.94.7 ONE update window. The start-up notice and ⚙ → Update app are the same window: `openUpdate(pre)` shows a result that was already fetched
@@ -420,6 +424,7 @@ async function openUpdate(pre) {
   const m = modal('Update app', { width: 560, sticky: !!pre });
   try { const bd = m.el.closest('.backdrop') || m.el.parentElement; if (bd) bd.classList.add('keep'); } catch (e) {}   // v0.99.60 starting a game from the Library must not close this window
   const info = await window.desktop.info();
+  const canInst = !!(window.desktop.canInstaller && await window.desktop.canInstaller().catch(() => false));   // v0.99.69 this copy can update itself with the Setup installer
   const body = h('div'), prog = makeProgress(), status = h('p', { class: 'small', style: 'color:var(--gold)' }), note = h('p', { class: 'small', style: 'color:var(--gold)' });
   prog.el.hidden = true;
   const restartBtn = h('button', { class: 'primary', text: 'Restart now', hidden: true, onclick: () => window.desktop.restart() });
@@ -436,11 +441,12 @@ async function openUpdate(pre) {
     if (!r.newer) { body.append(h('p', null, 'You have the newest version (', h('b', { text: r.current }), ').')); return; }
     cur = r;
     body.append(h('p', null, `You have version ${r.current}. Version `, h('b', { text: r.latest }), ' is ready on GitHub', r.bytes ? ` (${fmtMB(r.bytes)}).` : '.'), r.title ? h('div', { class: 'ptitle', text: r.title }) : null, r.notes && r.notes.length ? h('ul', { class: 'small upd-notes' }, ...r.notes.map(n => h('li', { text: n }))) : null);
-    if (r.needsInstaller) { status.textContent = 'This release also changes the app shell, so it cannot be installed from inside the app. Download the full package from the release page and run Build-Installer.bat once.'; go.textContent = 'Open release page'; go.hidden = false; go.onclick = () => window.open(RELEASES_URL, '_blank'); return; }
+    if (r.needsInstaller && !canInst) { status.textContent = 'This release also changes the app\u2019s window code, so it cannot be installed from inside this copy. Download MTG-Playtester-Setup from the release page and run it once; later updates then install themselves.'; go.textContent = 'Open release page'; go.hidden = false; go.onclick = () => window.open(RELEASES_URL, '_blank'); return; }
     go.textContent = 'Update now'; go.hidden = false; skip.hidden = false;
     go.onclick = async () => {
       go.disabled = later.disabled = skip.disabled = true; prog.el.hidden = false; status.textContent = '';
-      const res = await installWithProgress(prog, r.bytes);
+      const res = await installWithProgress(prog, r.bytes, canInst);
+      if (res && res.ok && res.installer) { status.textContent = `Installing version ${res.version || r.latest}. The app closes now and opens again when it is done (about half a minute).`; return; }
       if (!res || !res.ok) { prog.el.hidden = true; status.textContent = 'Update failed: ' + ((res && res.error) || 'unknown error') + ' Nothing was changed.'; go.textContent = 'Try again'; go.disabled = later.disabled = skip.disabled = false; return; }
       afterInstall(res.version);
     };

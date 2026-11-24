@@ -2437,4 +2437,17 @@ html.portrait-ui #bsActions button { padding: 8px 14px; font-size: 14px; }
 html.portrait-ui #stackStage.sk.has-panel { width: auto; max-height: calc(100% - 130px); }
 #stackStage .modal.res-panel > header { display: none; }
 /* v0.99.68 upright: the table ends where the fanned hand begins, so no battlefield row sits under the hand (cards shrink to fit instead) */
-html.portrait-ui body:not(.mullhand):not(.mullpick) #mat { padding-bottom: calc(var(--ch, 150px) + 52px) !important; }
+html.portrait-ui body:not(.mullhand):not(.mullpick) #mat { padding-bottom: calc(var(--hand-h, 200px) + 6px) !important; }
+/* v0.99.69 upright phones: only active game-state icons (⋯ shows the rest); a tab tucks the hand down to a strip */
+#gstates .sti-more { display: none; }
+html.portrait-ui #gstates .sti-more { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 30px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 16px; padding: 0 8px; }
+html.portrait-ui body:not(.gs-all) #gstates .sti.off { display: none; }
+.hand-tab { display: none; }
+html.portrait-ui body:not(.mullhand):not(.mullpick):not(.hall-on) .hand-tab { display: block; position: absolute; left: 50%; top: -14px; transform: translateX(-50%); z-index: 60; padding: 5px 16px; border-radius: 999px 999px 0 0; border: 1px solid rgba(227,185,92,.45); border-bottom: 0; background: rgba(14,16,20,.92); color: #e9d9b0; font: 600 13px system-ui, sans-serif; letter-spacing: .03em; }
+html.portrait-ui #handWrap { transition: transform .22s ease; }
+html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #handWrap { transform: translateY(calc(var(--ch, 150px) + 30px)); }
+html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bottom: 46px !important; }
+html.portrait-ui body:not(.mullhand):not(.mullpick):not(.hall-on) .hand-tab { position: fixed; left: auto; right: 10px; transform: none; z-index: 380; border-radius: 999px; border-bottom: 1px solid rgba(227,185,92,.45); }
+/* v0.99.69 upright phones: when the resolving window cannot sit inside the stack window it is centred, full width (not pushed 340px to the right) */
+html.portrait-ui #modalRoot .backdrop.resolve { padding: 10px; justify-content: center; align-items: center; }
+html.portrait-ui #modalRoot .backdrop.resolve .modal { width: 100% !important; max-width: 500px; }

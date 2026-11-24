@@ -136,7 +136,7 @@ function filterMatches(filter, card) {
 }
 function fireTrigger(ev, ctx = {}) {
   if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
-  if (!state || !teach('triggerPrompts')) return;
+  if (!state) return;   // v0.99.69 triggered abilities are rules, not a teaching aid: they always trigger (the prompt setting only skips the ordering window)
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
   // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
@@ -409,6 +409,7 @@ function openTriggerBatch(batch) {
   const skip = t => { remaining.splice(remaining.indexOf(t), 1); log(`${t.cardName}: trigger ${t.optional ? 'declined' : 'did not apply'}`); if (!remaining.length) finish(); else draw(); };
   const draw = () => {
     if (!remaining.length) return;
+    if (!teach('triggerPrompts')) { put(remaining[0]); return; }   // v0.99.69 prompts off: each goes on the stack in the order it triggered (targets and modes are still chosen)
     win().body.replaceChildren(...[
       teach('stackGuidance') ? h('div', { class: 'psub', text: remaining.length > 1 ? 'Several abilities triggered at once. You choose the order they go on the stack. The LAST one you put on the stack resolves FIRST.' : 'A triggered ability goes on the stack, then resolves like a spell. Read it: if it says "you may", or has a condition, decide whether it applies.' }) : null,
       ...remaining.map(t => h('div', { class: 'trig' },
@@ -611,7 +612,9 @@ function effectOptions(tx, obj) {
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
   tx = applyCondInstead(tx);   // "... deals 4 damage instead if you control three or more artifacts"
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
-  const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
+  let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
+  { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
+    if (b2.out.length) res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))).concat(b2.out.filter(o => !res.some(r => r && r.label === o.label))); }
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
   const dup = new Set(); if (drawN.length > 1) { const keep = drawN.find(o => !/^Draw /i.test(o.label)) || drawN[0]; for (const o of drawN) if (o !== keep && String(o.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase() === String(keep.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase()) dup.add(o); }
@@ -858,13 +861,15 @@ function openAbilityEffect(obj, done) {
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
   // v0.99.68 CR 115.6 + 608.2b: "up to one target" with no target chosen. The parts that need the target do nothing; any other part still happens.
-  if (Array.isArray(obj.targets) && !obj.targets.length && !obj.special) {
+  const untracked = Array.isArray(obj.targets) && obj.targets.length > 0 && obj.targets.every(t => t.kind === 'opp');   // v0.99.69 only the opponent's (untracked) permanents were chosen
+  if (Array.isArray(obj.targets) && (!obj.targets.length || untracked) && !obj.special) {
     const specs0 = parseTargetSpecs(tx);
-    if (specs0.length && specs0.every(sp => sp.min === 0)) {
+    if (specs0.length && (untracked || specs0.every(sp => sp.min === 0))) {
+      const what = untracked ? obj.targets.map(t => t.name.replace(/ \(not tracked here\)$/, '')).join(', ') : '';
       const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
       for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
-      if (!keep.length) { log(`${obj.sourceName || obj.name}: no target was chosen, so it does nothing`); toast(`${obj.sourceName || 'Ability'} resolves`, 'No target was chosen, so it does nothing.'); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
-      if (keep.length < sents.length) { const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
+      if (!keep.length) { const msg = untracked ? `it affects ${what}. The app does not track your opponent's permanents, so apply it on the real table.` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); toast(`${obj.sourceName || 'Ability'} resolves`, msg); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (keep.length < sents.length) { if (untracked) log(`${obj.sourceName || obj.name}: the part about ${what} is applied on the real table (the opponent's permanents are not tracked)`); const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
     }
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
@@ -901,6 +906,13 @@ function openAbilityEffect(obj, done) {
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   for (const o of opts) if (o.special === 'delayedDraw' && !obj._delayedSet) { obj._delayedSet = true; addFx({ kind: 'delayed', when: 'upkeep', draw: 1, text: 'Draw a card.', srcName: obj.sourceName, srcId: obj.sourceId || null }); log(`${obj.sourceName}: you will draw a card at the beginning of the next turn's upkeep`); }
   const used = new Set();
+  // v0.99.69 each effect happens once: applying one locks the buttons that would repeat part of it ("Scry 3" after "Scry 3, then draw a card"),
+  // and when every effect has been applied (and nothing is left to do by hand) the window finishes by itself, so no extra action can follow
+  const applyBtns = [], low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
+  const lockOverlaps = o => { const a = low(o.label); for (const r of applyBtns) if (r.o !== o && !r.b.disabled) { const b2 = low(r.o.label); if (b2 && (a.includes(b2) || b2.includes(a))) { r.b.disabled = true; r.b.title = 'Already done as part of: ' + o.label; } } };
+  let finished = false; const finishNow = () => { if (finished) return; finished = true; m.close(); log(`Resolved: ${obj.name}`); if (done) done(); };
+  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return; if (m.body.querySelector('.gapbox')) return;
+    const wait = () => { if (finished) return; if ([...document.querySelectorAll('.modal')].some(x => x !== m.el && !x.classList.contains('res-panel'))) { setTimeout(wait, 300); return; } setTimeout(finishNow, 350); }; wait(); };
   const box = h('div', { class: 'prelist' });
   for (const o of opts) {
     if (o.special === 'delayedDraw') continue;
@@ -933,7 +945,8 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });
+      applyBtns.push({ o, b });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
   }
@@ -943,7 +956,7 @@ function openAbilityEffect(obj, done) {
     opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
     box,
     (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'The app does NOT apply these lines. Do them by hand, then tick them off:' }), ...miss.map(x => h('label', { class: 'chk' }, h('input', { type: 'checkbox' }), ' ', x))) : null; })());
-  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); log(`Resolved: ${obj.name}`); if (done) done(); } }));
+  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => finishNow() }));
 }
 function openCascade(obj, done) {
   const src = cardInfo(obj.sourceName), mv = src ? src.cmc : 0;

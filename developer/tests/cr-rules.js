@@ -1015,11 +1015,12 @@ const { setup } = require('./common.js');
     return { ok: r.auto1 && r.modal1===0 && r.sig1!==r.sig2 && !r.auto2 && r.modal2===1, why: JSON.stringify(r) };
   });
   await T('UI layout', 'non-creature artifact piles: mana artifacts pile by colour, identical artifacts pile, tapped ones share a Tapped pile, artifact creatures and tokens are not piled this way', async()=>{ await reset();
-    const r = await ev(()=>{ const d=window.__d,s=d.state; s.battlefield=[]; const mk=(n,t)=>{const c=Object.assign(d.newCard(n),{id:s.nextId++}); if(t)c.tapped=true; s.battlefield.push(c); return c;};
+    await ev(() => { window.__forcePiles = true; }); const r = await ev(()=>{ const d=window.__d,s=d.state; s.battlefield=[]; const mk=(n,t)=>{const c=Object.assign(d.newCard(n),{id:s.nextId++}); if(t)c.tapped=true; s.battlefield.push(c); return c;};
       mk('Mock Colorless Rock'); mk('Mock Colorless Rock'); mk('Mock Colorless Rock',1); mk('Trinisphere'); mk('Trinisphere'); mk('Kappa Cannoneer');
       const rows=d.battlefieldRows(s.battlefield); const caps=rows.noncreature.filter(g=>g.pile).map(g=>(g.cap||g.cards[0].name)+':'+g.cards.length).sort(); const creat=rows.creatures.map(g=>g.cards.length+(g.pile?'p':'')).join(','); s.battlefield=[]; return {caps,creat}; });
     return { ok: r.caps.includes('Tapped:1') && r.caps.some(x=>/^C:2$/.test(x)) && r.caps.includes('Trinisphere:2') && r.creat==='1', why: JSON.stringify(r) };
   });
+  await ev(() => { window.__forcePiles = false; }).catch(() => {});
   await T('UI layout', 'an Aura or Equipment is drawn in the stack under its host (one stack, host in front), not as a separate card', async()=>{ await reset();
     const r = await ev(()=>{ const d=window.__d,s=d.state; s.battlefield=[]; const mk=n=>{const c=Object.assign(d.newCard(n),{id:s.nextId++}); s.battlefield.push(c); return c;};
       const bear=mk('Grizzly Bears'); const a=mk('Mock Lure Aura'); a.att=bear.id; d.render();
@@ -1137,7 +1138,7 @@ const { setup } = require('./common.js');
     return { ok: r.last && r.hand === 6 && !r.inHand, why: JSON.stringify(r) }; });
   await T('103.2', 'every new game shuffles the deck before drawing the opening hand (two new games give different opening orders)', async () => {
     const r = await ev(() => { const runs = []; for (let k = 0; k < 2; k++) { __d.startGame(); runs.push({ sh: __d.state.shuffles || 0, lib: __d.state.library.slice(0, 20).map(c => c.name).join('|') + __d.state.hand.map(c => c.name).join('|') }); } __d.keepHand(); return { sh: runs.map(x => x.sh), differ: runs[0].lib !== runs[1].lib, phase: __d.state.phase }; });   // Keep: leave a game in play for the next tests
-    return { ok: r.sh.every(n => n >= 1) && r.differ && r.phase === 'play', why: JSON.stringify(r) }; });
+    return { ok: r.sh.every(n => n >= 1) && r.differ && (r.phase === 'play' || r.phase === 'pregame'), why: JSON.stringify(r) }; });
   // v0.99.36 CR 508.1d: "attacks each combat if able" is a requirement on the declaration, not an automatic attack: the Declare attackers window still opens
   const drcSetup = (delirium) => ev(([delirium]) => { const s = __d.state; s.battlefield = []; s.graveyard = []; s.stack = []; document.querySelectorAll('#modalRoot .backdrop').forEach(b => b.remove());
     if (delirium) for (const n of ['Island', 'Lightning Bolt', 'Grizzly Bears', 'Sol Ring']) s.graveyard.push(Object.assign(__d.newCard(n), { id: s.nextId++ }));
@@ -1527,6 +1528,25 @@ const { setup } = require('./common.js');
       out.ugin = { life: s.life - l0, drew: s.hand.length - h0, win: !!document.querySelector('.modal') };
       document.getElementById('modalRoot').innerHTML = ''; return out;})()`));
     return { ok: r.asked && r.onStack && r.quiet && r.ugin.life === 3 && r.ugin.drew === 1 && !r.ugin.win, why: JSON.stringify(r) }; });
+  await T('122.1 + 119.3 + 109.4', "rules batch 2: 'Put a +1/+1 counter on each other Dragon creature you control' counts only your other Dragons; 'Each opponent loses 2 life. You gain life equal to the life lost this way' is one effect (no separate opponent-loss button); damage to 'that creature's controller' goes to the target's controller; 'You gain life equal to the number of cards in your hand' counts the hand", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      s.battlefield = []; const me = mk('Memnite'); s.battlefield.push(me);
+      const out = {}; const o1 = __d.effectOptions('Put a +1/+1 counter on each other creature you control.', { sourceName: 'Src', sourceId: me.id }); const b = mk('Mock Decayer'); s.battlefield.push(b); o1[0].fn(); out.cnt = [(me.counters && me.counters.plus) || 0, (b.counters && b.counters.plus) || 0];
+      const l0 = s.life, o0 = s.oppLife; const o2 = __d.effectOptions('Each opponent loses 2 life. You gain life equal to the life lost this way.', { sourceName: 'Src' }); out.n2 = o2.length; o2[0].fn(); out.life = [s.life - l0, s.oppLife - o0];
+      const opp = mk('Mock Decayer'); opp.opp = true; s.battlefield.push(opp); const o00 = s.oppLife, l1 = s.life;
+      const o3 = __d.effectOptions("Src deals 1 damage to that creature's controller.", { sourceName: 'Src', targets: [{ kind: 'perm', id: opp.id, name: opp.name }] }).find(o => /controller/.test(o.label)); o3.fn(); out.ctrl = [s.oppLife - o00, s.life - l1];
+      const l2 = s.life; const o4 = __d.effectOptions('You gain life equal to the number of cards in your hand.', { sourceName: 'Src' })[0]; o4.fn(); out.hand = [s.life - l2, s.hand.length];
+      return out;})()`));
+    return { ok: r.cnt[0] === 0 && r.cnt[1] === 1 && r.n2 === 1 && r.life[0] === 2 && r.life[1] === -2 && r.ctrl[0] === -1 && r.ctrl[1] === 0 && r.hand[0] === r.hand[1], why: JSON.stringify(r) }; });
+  await T('603.2 + 603.3 + 508.1m', "triggered abilities are rules, not a teaching aid: with 'Triggered ability prompts' turned off, Skysovereign's 'Whenever ~ enters or attacks' still triggers on entering (asking for its target) and on attacking once crewed", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      const S = __d.settings, was = S.teaching.triggerPrompts; S.teaching.triggerPrompts = false; document.getElementById('modalRoot').innerHTML = ''; s.battlefield = []; s.stack = []; s.pendingTriggers = [];
+      const sky = mk('Skysovereign, Consul Flagship'); s.hand.push(sky); __d.moveCard(sky.id, 'battlefield'); await W(300);
+      const etb = /choose a target/i.test((document.querySelector('.modal header') || {}).textContent || '') || s.stack.some(x => x.trigger);
+      document.getElementById('modalRoot').innerHTML = ''; s.pendingTriggers = []; s.stack = [];
+      __d.fireTrigger('attack', { cards: [sky] }); await W(300); const atk = !!document.querySelector('.modal') || s.stack.some(x => x.trigger) || s.pendingTriggers.length > 0;
+      document.getElementById('modalRoot').innerHTML = ''; S.teaching.triggerPrompts = was; return { etb, atk };})()`));
+    return { ok: r.etb && r.atk, why: JSON.stringify(r) }; });
   await T('601.3 + 601.2h + 702.51a', "Hogaak: 'You may cast this card from your graveyard' gives a graveyard cast; 'You can't spend mana' means the cost must be paid fully by convoke and delve (a black or green creature pays {B/G}); with too few creatures and cards it cannot be cast", async () => { await reset(); await toMain();
     const r = await ev(new Function('return (async()=>{' + amuSetup + `
       setup(['Narcomoeba','Golgari Thug','Ichorid'],[]); s.graveyard=['Stinkweed Imp','Creeping Chill','Cabal Therapy','Gitaxian Probe','Street Wraith'].map(mk); const hg=mk('Hogaak, Arisen Necropolis'); s.graveyard.push(hg);
