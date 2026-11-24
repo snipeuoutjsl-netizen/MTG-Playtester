@@ -32,7 +32,7 @@ function fitBookPages(root) {
   for (const pg of root.querySelectorAll('.hall-tome .hall-page')) {
     const box = pg.querySelector(':scope > .ti-page') || pg; const kids = box === pg ? [...pg.children].filter(x => getComputedStyle(x).visibility !== 'hidden' && !x.classList.contains('tm-folio')) : [box];
     for (const k of kids) k.style.zoom = '';
-    const limit = () => { const r = pg.getBoundingClientRect(); return r.bottom - r.height * 0.06; };
+    const limit = () => { const r = pg.getBoundingClientRect(); return r.bottom - r.height * 0.075; };
     const low = () => { let m = -1e9; for (const x of (box === pg ? kids : [box]).flatMap(k => [k, ...k.querySelectorAll('*')])) { if (x.children.length || !x.textContent.trim()) continue; const b = x.getBoundingClientRect().bottom; if (b > m) m = b; } return m; };
     let z = 1; for (let i = 0; i < 10 && low() > limit(); i++) { z -= 0.03; for (const k of (box === pg ? kids : [box.firstElementChild ? box : box])) k.style.zoom = z.toFixed(2); }
   }
@@ -249,8 +249,7 @@ function drawHall() {
     h('div', { class: 'tm-para' }, h('span', { class: 'bk-lead', text: 'The deck in hand is ' }), h('b', { class: 'tm-deck', text: cur || 'none yet' }), h('span', { class: 'bk-lead', text: '.' })),
     h('div', { class: 'tm-aside', text: all.length ? 'Take another book from the shelves to choose a different deck.' : (cmd ? 'Import a Commander deck to fill these shelves.' : 'Import a deck to fill the shelves.') }),
     chk('I go first (on the play)', onPlay, e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } }),
-    h('div', { class: 'tm-begin' }, ink(inGame ? 'Begin a new game' : `Begin with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, 'tm-go' + (inGame ? '' : ' primary'), 'Shuffle up and deal with the deck in hand')),
-    h('div', { class: 'tm-folio', text: cmd ? 'iii' : 'i' }));
+    h('div', { class: 'tm-begin' }, ink(inGame ? 'Begin a new game' : `Begin with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, 'tm-go' + (inGame ? '' : ' primary'), 'Shuffle up and deal with the deck in hand')));
   const entries = [
     ['Import a deck…', () => openDeckEditor(cmd ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'],
     ['Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'],
@@ -266,8 +265,7 @@ function drawHall() {
     h('div', { class: 'tm-toc' }, entries.map(([t, fn, ti], i) => h('div', { class: 'tm-toc-row' }, h('button', { class: 'hall-btn hall-link', text: t, title: ti || '', onclick: fn }), h('i', { class: 'tm-dots', 'aria-hidden': 'true' }), h('span', { class: 'tm-num', text: ROMAN[i + 2] || '' })))),
     h('div', { class: 'tm-foot' },
       h('div', { class: 'tm-aside hall-archive', text: archiveLine() }),
-      chk('Open the Library when the app starts', lsGet(HALL_KEY, true) !== false, e => lsSet(HALL_KEY, e.target.checked), 'small')),
-    h('div', { class: 'tm-folio', text: cmd ? 'iv' : 'ii' }));
+      chk('Open the Library when the app starts', lsGet(HALL_KEY, true) !== false, e => lsSet(HALL_KEY, e.target.checked), 'small')));
   // silk ribbons on the top edge: one per chapter; the other chapter's ribbon turns the page to it
   const ribbons = FEATURES.commander ? h('div', { class: 'tm-ribbons', role: 'tablist', 'aria-label': 'Game mode' }, [['standard', 'Standard'], ['commander', 'Commander']].map(([k, lab]) =>
     h('button', { class: 'tm-ribbon ' + k + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: mode === k ? `You are in the ${lab} chapter` : `Turn to the ${lab} chapter`, onclick: () => hallTurnTo(k) }, h('span', { text: lab })))) : null;
