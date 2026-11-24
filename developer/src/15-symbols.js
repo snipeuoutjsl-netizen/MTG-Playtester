@@ -103,14 +103,15 @@ function buildStack(m, panel){
     if(panel&&box){ box.classList.toggle('live',state.stack.length>0); if(cnt) cnt.textContent=state.stack.length?String(state.stack.length):''; }
     m.body.replaceChildren(...[
       state.stack.length?null:h('div',{class:'muted small',text:'Empty. Add what your opponent casts so you can respond to it.'}),
-      state.stack.length?h('div',{class:'stk'},[...state.stack].reverse().map((c,i)=>h('div',{class:'stk-item'+(i?'':' top')+(c.opp?' opp':c.ability?' abil':'')},
+      (panel&&state.stack.length)?h('div',{class:'stk-sum'},h('b',{text:`${state.stack.length} on the stack`}),h('span',{class:'muted small',text:' · top: '+String(top.ability?(top.sourceName||top.name):top.name).replace(/ — ability$/,'')+'. Resolve it in the stack window on the table.'})):null,
+      (!panel&&state.stack.length)?h('div',{class:'stk'},[...state.stack].reverse().map((c,i)=>h('div',{class:'stk-item'+(i?'':' top')+(c.opp?' opp':c.ability?' abil':'')},
         h('div',{class:'stk-name'},(i?'':h('span',{class:'stk-top',text:'TOP'})),`${c.opp?"Opponent's ":''}${c.name.replace(/ — ability$/,'')}${c.xValue!==undefined?` (X = ${c.xValue})`:''}`),
         h('div',{class:'stk-sub',text:(c.opp?'Cast by your opponent':c.ability?(c.trigger?'Triggered ability':'Activated ability'):'Spell')+(c.modeTexts?' — '+c.modeTexts.map(t=>{t=c.xValue!==undefined?t.replace(/\bX\b/g,String(c.xValue)):t;return t.length>40?t.slice(0,37)+'…':t}).join('; '):'')+(targetsText(c)?' → '+targetsText(c):'')})))) : null,
       state.stack.length?h('div',{class:'stk-hint'},h('i',{class:'stk-dot'}),'Green outlines: cast or activate in response.'):null,
       h('details',Object.assign({class:'stk-opp'},state.stack.length?{}:{open:true}),h('summary',{text:'Opponent casts something'}),h('div',{class:'setrow'},oppName,oppType,h('button',{text:'Add',onclick:addOpp}))),
       h('div',{class:'pbtns',style:'margin-top:8px'},h('button',{text:'View top 10 of library',onclick:()=>openLibraryManipulation()}))
     ].filter(Boolean));
-    m.foot.replaceChildren(...(state.stack.length?[
+    m.foot.replaceChildren(...((state.stack.length&&!panel)?[
       h('button',{text:'Pass priority',onclick:()=>{m.close();passPriority();}}),
       (()=>{const cw=cantBeCounteredWhy(top);return h('button',{class:'danger',text:cw?"Can't be countered":'Countered',disabled:!!cw,title:cw?`${top.name} can't be countered: ${cw}`:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}});})(),
       h('button',{class:'primary',text:'Resolve top',title:`Resolve ${top.opp?"opponent's ":''}${top.name}`,onclick:()=>{resolveTopOfStack();draw();}})
@@ -123,17 +124,16 @@ function ensureStackPanel(){
   stackPanelDraw=buildStack({body:$('#stackBody'),foot:$('#stackFoot'),close(){}},true);
 }
 function openStack() {
+  // v0.99.56 one stack window only: the panel on the table. "Open the stack" unfolds it; with nothing on the stack it opens the
+  // opponent tools (the right column, or the drawer when the phone is upright). The old floating "The Stack" window is gone.
   if(!state||state.phase==='idle')return;
-  if(stackPanelVisible()){
-    if(stackDock){ try{ stackDock.close(); }catch(e){} stackDock=null; }
-    ensureStackPanel(); stackPanelDraw();
-    const box=$('#stackBox'); box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
-    if(box.scrollIntoView) box.scrollIntoView({block:'nearest',behavior:'smooth'});
-    return;
-  }
   if(stackDock){ try{ stackDock.close(); }catch(e){} stackDock=null; }
-  const m=modal('The Stack',{width:340,sticky:true,dock:true,onClose:()=>{ if(stackDock===m) stackDock=null; }});
-  stackDock=m; buildStack(m,false)();
+  ensureStackPanel(); stackPanelDraw();
+  if (typeof stackMin !== 'undefined' && stackMin) { stackMin = false; drawStackStage(); }
+  const st=$('#stackStage');
+  if (st && !st.hidden) { st.classList.remove('flash'); void st.offsetWidth; st.classList.add('flash'); return; }
+  if (document.documentElement.classList.contains('portrait-ui')) { document.body.classList.add('side-open'); return; }
+  const box=$('#stackBox'); if (box) { box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash'); if(box.scrollIntoView) box.scrollIntoView({block:'nearest',behavior:'smooth'}); }
 }
 function openLibraryManipulation(want) {
   if(!state)return;
