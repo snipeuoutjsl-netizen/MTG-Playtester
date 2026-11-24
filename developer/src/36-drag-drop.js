@@ -28,29 +28,6 @@ function reorderHand(id, slot) {
   state.hand.splice(to, 0, c);
   render();
 }
-const HAND_SORTS = [
-  ['Lands first, then by mana value', 'Land → cheap spells → expensive spells', c => { const i = cardInfo(c.name); return [isLandName(c.name) ? 0 : 1, i ? i.cmc || 0 : 0, c.name]; }],
-  ['Mana value, low to high', 'Cheapest first, lands counted as 0', c => { const i = cardInfo(c.name); return [0, i ? i.cmc || 0 : 0, c.name]; }],
-  ['Colour', 'Groups cards by colour', c => [0, ['W','U','B','R','G','multi','art','land'].indexOf(colorClass(c)), c.name]],
-  ['Playable first', 'Green, then red, then gold', c => [{ ready: 0, mana: 1, timing: 2 }[handInteraction(c)] ?? 3, 0, c.name]],
-];
-function sortHand(fn) {
-  if (!state) return;
-  const key = c => fn(c);
-  state.hand.sort((a, b) => { const x = key(a), y = key(b); for (let i = 0; i < x.length; i++) { if (x[i] < y[i]) return -1; if (x[i] > y[i]) return 1; } return 0; });
-  render();
-}
-function openHandSortMenu(ev) {
-  if (!state) return;
-  closeLibMenu();
-  const m = h('div', { id: 'libMenu', role: 'menu' }, h('div', { class: 'lm-title', text: 'Sort hand' }),
-    ...HAND_SORTS.map(([label, hint, fn]) => { const b = h('button', { class: 'lm-item', role: 'menuitem' }, h('span', { text: label }), h('small', { text: hint })); b.addEventListener('click', e => { e.stopPropagation(); closeLibMenu(); sortHand(fn); }); return b; }));
-  document.body.append(m);
-  const r = ev.currentTarget.getBoundingClientRect();
-  m.style.left = Math.max(6, Math.min(innerWidth - m.offsetWidth - 6, r.left)) + 'px';
-  m.style.top = Math.max(6, r.top - m.offsetHeight - 6) + 'px';
-  document.addEventListener('keydown', libMenuKey, true);
-}
 
 function setupDrop() {
   document.addEventListener('dragover', e => { if (dragHand == null) return; if (e.target.closest && e.target.closest('#handWrap')) { e.preventDefault(); showHandMarker(handSlotAt(e.clientX)); } else clearHandMarker(); });

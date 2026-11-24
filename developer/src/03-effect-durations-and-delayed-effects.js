@@ -240,9 +240,3 @@ function landETBTrigger(c) {
   if(m) return {kind:'ability',cardId:c.id,cardName:c.name,special:'surveil',n:+m[1],optional:false,why:'A land with an enters-the-battlefield trigger.',text:`When ${c.name} enters, surveil ${m[1]}.`,effect:`Surveil ${m[1]}.`};
   return null;
 }
-function triggeredAbilityFor(c){
-  const tx=cardText(c); if(!tx)return null;
-  const m=tx.match(/((?:When|Whenever|At the beginning|At the end)[^.]*\.)/i);
-  if(!m)return null;
-  return {kind:'ability',cardId:c.id,text:m[1]};
-}

@@ -1483,6 +1483,19 @@ const { setup } = require('./common.js');
       rt('Living End')[0].alt.onPay(); const after = rt('Lightning Bolt').map(r => r.ok + ':' + r.detail);
       const st = __d.cardModel ? null : null; return { le0, bolt0, mem, bolt1, after };})()`));
     return { ok: r.le0[0] === true && r.bolt0[0] === false && r.mem === 0 && r.bolt1[0] === true && /already used/.test(r.after[0]) && /^false/.test(r.after[0]), why: JSON.stringify(r) }; });
+  await T('601.2b + 601.2f + 700.2', "modal spell with X (Kozilek's Command): the modes chosen as it is cast stay with it when the X window pays automatically (no Pay window) and when X makes it free; the resolving window then offers only those modes", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      const S = __d.settings; const was = S.teaching.stackGuidance; S.teaching.stackGuidance = false; const res = [];
+      for (const lands of [6, 2]) { s.battlefield = []; s.stack = []; s.hand = []; s.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }; for (let i = 0; i < lands; i++) { const w = mk('Wastes'); w.sick = false; s.battlefield.push(w); }
+        const k = mk("Kozilek's Command"); s.hand.push(k); __d.castSpell(k.id, true, [0, 1]); await W(300);
+        const pick = [...document.querySelectorAll('.modal button')].filter(b => /^Choose$/.test(b.textContent.trim())); if (pick[0]) pick[0].click(); await W(80); const pick2 = [...document.querySelectorAll('.modal button')].filter(b => /^Choose$/.test(b.textContent.trim())); if (pick2[1] || pick2[0]) (pick2[1] || pick2[0]).click(); await W(80);
+        const conf = [...document.querySelectorAll('.modal footer button')].find(b => /Confirm/.test(b.textContent)); if (conf) conf.click(); await W(250);
+        const xi = document.querySelector('.modal input[type=number]'); if (xi) xi.value = lands === 6 ? '3' : '0';
+        const cast = [...document.querySelectorAll('.modal footer button')].find(b => /^Cast$/.test(b.textContent.trim())); if (cast) cast.click(); await W(300);
+        const top = s.stack[s.stack.length - 1]; res.push({ lands, onStack: !!top, modes: top && top.modes, x: top && top.xValue });
+        document.getElementById('modalRoot').innerHTML = ''; }
+      S.teaching.stackGuidance = was; return res;})()`));
+    return { ok: r.every(x => x.onStack && JSON.stringify(x.modes) === '[0,1]'), why: JSON.stringify(r) }; });
   await T('601.3 + 601.2h + 702.51a', "Hogaak: 'You may cast this card from your graveyard' gives a graveyard cast; 'You can't spend mana' means the cost must be paid fully by convoke and delve (a black or green creature pays {B/G}); with too few creatures and cards it cannot be cast", async () => { await reset(); await toMain();
     const r = await ev(new Function('return (async()=>{' + amuSetup + `
       setup(['Narcomoeba','Golgari Thug','Ichorid'],[]); s.graveyard=['Stinkweed Imp','Creeping Chill','Cabal Therapy','Gitaxian Probe','Street Wraith'].map(mk); const hg=mk('Hogaak, Arisen Necropolis'); s.graveyard.push(hg);

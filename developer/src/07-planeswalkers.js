@@ -79,11 +79,6 @@ function resolvePendingTrigger(){
   else if(t.kind==='choose') openChoose(t.cardId,t.what);
   else if(t.kind==='sagaSac') { state.sagaWait = (state.sagaWait || []).concat([t.cardId]); sagaCheck(); }
 }
-function openTriggeredAbility(t){
-  const c=findCard(t.cardId)?.card; const m=modal('Triggered ability',{width:560,sticky:true});
-  m.body.append(h('div',{class:'ptitle',text:c?c.name:'Ability'}),h('div',{class:'psub'},t.text),h('div',{class:'muted small'},teach('triggerPrompts')?'Resolve this trigger before continuing.':''));
-  m.foot.append(h('button',{class:'primary',text:'Resolve ability',onclick:()=>{m.close();log(`Resolved triggered ability — ${c?c.name:'unknown source'}`);resolvePendingTrigger();render();}}));
-}
 // v0.94.5 How much life the "you may pay N life; if you don't, it enters tapped" question costs (shocklands pay 2; the modal double-faced lands such as Soporific Springs pay 3). 0 = no such question.
 function shockLife(c) {
   if (!c || c.token) return 0; if (SHOCKS.has(norm(c.name))) return 2;
@@ -103,9 +98,6 @@ function resumePhase() {
   if(!state) return; state.phasePause=false;
   if(state.pendingTriggers.length) resolvePendingTrigger();
   else render();
-}
-function stackPriorityMessage(){
-  return teach('stackGuidance') ? 'You have priority. You may cast an instant/flash spell or activate an ability before the top object resolves.' : 'Priority is active.';
 }
 // ---- contextual mana costs ("This spell costs {2} less to cast for each basic land type ...")
 // "for each Locus on the battlefield" / "for each Goblin you control": permanents with that type or subtype. ctrl 'you' counts only yours

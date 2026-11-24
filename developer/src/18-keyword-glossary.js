@@ -398,7 +398,6 @@ function layoutPass() {
   try { animApply(); } catch (e) { console.error(e); }
 }
 function scheduleLayout() { if (layoutQueued) return; layoutQueued = true; requestAnimationFrame(layoutPass); }
-function flushLayout() { if (layoutQueued) layoutPass(); }
 function renderInner() {
   if (state) { healHalves(); if (state.halfChosen) setTimeout(checkHalfAbandon, 80); }
   if (state && state.sagaWait && state.sagaWait.length) setTimeout(() => { try { sagaCheck(); } catch (e) { console.error(e); } }, 0);

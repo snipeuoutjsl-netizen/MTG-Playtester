@@ -40,7 +40,6 @@ function kwTriggersFor(info) {
   }
   return out;
 }
-const kwTarget = (obj, ids, label, fn) => ({ full: true, label, fn });
 const KW_EFFECTS = {
   'exalted': obj => { const a = state.combat.attackers || []; const id = a[0]; const f = id && findCard(id); return [{ full: true, label: f ? `${f.card.name} gets +1/+1 until end of turn (exalted)` : 'The lone attacker gets +1/+1 until end of turn', fn: () => { if (f) addTempPT(f.card.id, 1, 1); } }]; },
   'battle cry': obj => { const o = (state.combat.attackers || []).filter(i => i !== obj.sourceId); return [{ full: true, label: o.length ? `Each other attacking creature gets +1/+0 until end of turn (${o.length})` : 'No other attacking creature', fn: () => o.forEach(i => addTempPT(i, 1, 0)) }]; },

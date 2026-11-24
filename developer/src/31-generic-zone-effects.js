@@ -105,6 +105,5 @@ function graveReturnEffect(tx, src) {
     openPickCards({ title: `${src}: return from your graveyard`, note: `Choose ${max === 1 ? 'a card' : 'up to ' + max + ' cards'} to put ${to === 'hand' ? 'into your hand' : 'onto the battlefield'}.`, cards, max, done: move });
   } };
 }
-function flipCoin() { return Math.random() < 0.5; }
 
 

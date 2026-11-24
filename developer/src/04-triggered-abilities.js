@@ -442,7 +442,6 @@ const wnum = w => /^x$/i.test(w) ? 'X' : (WORD_NUM[String(w).toLowerCase()] || p
 // { label, fn } choices the general reader does. Cards without a definition still use the general reader (and the scanner tells you how far it got).
 const CARD_DEFS = [];   // v0.96.4: a flat list of rules-text definitions. A line is matched by what the card SAYS, never by its name, so any card with the same wording behaves the same.
 function defCard(name, def) { for (const L of def.lines) CARD_DEFS.push(Object.assign({ doc: name }, L)); }   // 'name' is documentation only
-function defFor(name) { return CARD_DEFS.length ? CARD_DEFS : null; }
 function defLine(name, text) {
   const clean = x => x.replace(/\([^)]*\)/g, ' ').replace(/\u2019/g, "'").replace(name ? selfNameRe(name) : /$^/, '~').replace(/\s+/g, ' ').trim();
   const whole = clean(String(text || '')); let L = CARD_DEFS.find(x => x.re.test(whole)); if (L) return L;
