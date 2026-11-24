@@ -92,7 +92,7 @@ function tomeDeckPages(d, sm, acts) {
     h('div', { class: 'dbx-curve ti-curve', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i}${i === 6 ? '+' : ''}`).join(', ') }, sm.curve.map((n, i) => h('div', { class: 'dbx-cbar' }, h('b', { text: n ? String(n) : '' }), h('i', { style: `height:${n ? Math.max(6, Math.round(100 * n / maxC)) : 0}%` }), h('span', { text: i === 6 ? '6+' : String(i) })))),
     h('div', { class: 'ti-foot', text: `${mvN ? `Average mana value ${(mvSum / mvN).toFixed(2)}` : 'No spells'} · ${lands} land${lands === 1 ? '' : 's'} (${total ? Math.round(100 * lands / total) : 0}%)` }));
   const right = h('div', { class: 'ti-page tome-ink right' },
-    sm.top.length ? h('div', { class: 'ti-key' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { class: 'ti-row' }, h('span', { text: x.name }), h('i'), h('b', { text: '× ' + x.qty })))) : null,
+    sm.top.length ? h('div', { class: 'ti-key' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { class: 'ti-row' }, h('b', { text: x.qty + ' ×' }), h('span', { text: x.name })))) : null,
     typeof libraryNotesEl === 'function' ? libraryNotesEl(d.deckName) : null, acts);
   return [left, right];
 }

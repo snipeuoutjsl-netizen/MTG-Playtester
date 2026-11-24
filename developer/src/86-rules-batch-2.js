@@ -65,5 +65,19 @@ function batch2Options(txs, obj) {
     const n = +m[2], tgt = (obj.targets || []).find(x => x.kind === 'perm' || x.kind === 'opp'), f = tgt && tgt.kind === 'perm' && findCard(tgt.id), mine = !!(f && !f.card.opp);
     out.push({ covers: [m[0].replace(/^\.\s+/, '')], full: sents.length === 1, label: `${tgt ? (mine ? 'You lose' : 'Opponent loses') : 'Its controller loses'} ${n} life (the controller of ${tgt ? tgt.name : 'that permanent'})`, fn: () => { if (mine) changeLife(-n, true); else changeOppLife(-n); log(`${src}: ${mine ? 'you' : 'the opponent'} lost ${n} life`); render(); } });
   }
+  // v0.99.72 follow-ups that act on the permanents chosen as targets earlier in the same ability (CR 608.2c "those creatures" / "it" refer back to them)
+  {
+    const tg = () => (obj.targets || []).filter(x => x.kind === 'perm' && !x.gone).map(x => findCard(x.id)).filter(f => f && f.zone === 'battlefield').map(f => f.card);
+    const hasT = /\btarget\b/i.test(t) && !/\b(?:spell|player|opponent) target/i.test(t);
+    // "Untap those creatures." / "Untap it." / "Untap that creature." (Colossal Heroics, Triton Tactics, Twist Allegiance)
+    const us = sents.find(x => /^untap (?:those creatures|those permanents|it|that creature|that permanent|them)\.?$/i.test(x));
+    if (us && hasT) out.push({ covers: [us], label: 'Untap the chosen creature' + (tg().length === 1 ? '' : 's'), fn: () => { const cs = tg(); snap(); for (const c of cs) { c.tapped = false; delete c.mt; } log(`${src}: untapped ${cs.map(c => c.name).join(', ') || 'nothing (no target left)'}`); render(); } });
+    // "It gains vigilance until end of turn." / "That creature gains indestructible and lifelink until end of turn." (one reader, so the sentence is also counted as read)
+    const gs = sents.map(x => [x, /^(?:it|that creature|that permanent|they|those creatures|each of them) gains? ((?:[a-z ]+?)(?:,? and [a-z ]+?)?) until end of turn\.?$/i.exec(x)]).find(p => p[1]);
+    if (gs && hasT) { const kws = gs[1][1].toLowerCase().split(/\s*(?:,\s*(?:and\s+)?|\band\b)\s*/).map(x => x.trim()).filter(Boolean);
+      if (kws.length && kws.every(k => GRANTABLE.includes(k))) { const kr = kws.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+        drop.push(new RegExp('^(?!The chosen creature).* gains? .*' + kr + '.* until end of turn$', 'i'));
+        out.push({ covers: [gs[0]], label: `The chosen creature${tg().length === 1 ? '' : 's'} gain${tg().length === 1 ? 's' : ''} ${kws.join(' and ')} until end of turn`, fn: () => { const cs = tg(); for (const c of cs) for (const k of kws) addKwFx(c.id, k, { srcName: src }); if (!cs.length) log(`${src}: no target left to gain ${kws.join(' and ')}`); render(); } }); } }
+  }
   return { out, drop };
 }

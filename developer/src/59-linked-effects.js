@@ -56,10 +56,11 @@ function ifYouDoOptions(tx, obj) {
   const j = sents.findIndex((x, i) => i > 0 && IFDO_RE.test(x)); if (j < 1) return null;
   const A = sents.slice(0, j).join(' '), B = sents[j].replace(IFDO_RE, ''), rest = sents.slice(j + 1).join(' ');
   const B1 = B[0].toUpperCase() + B.slice(1);
+  if (!rest && /^you may pay (?:\{[^}]+\})+\.?$/i.test(A) && typeof mayPayOptions === 'function' && mayPayOptions([A, sents[j]], obj)) return null;   // v0.99.72 a mana / energy payment is made by the payment reader, not asked about
   const aO = effectOptionsBase(A, obj).filter(o => typeof o.fn === 'function' && !o.hidden), bO = effectOptionsBase(B1, obj).filter(o => typeof o.fn === 'function' && !o.hidden);
   if (aO.length === 0 && bO.length === 1) {   // the first part is something the app cannot do for you (sacrifice, behold ...): do it by hand, then say whether you did
     const b = bO[0], src0 = (obj && obj.sourceName) || 'Ability', aTxt = A.replace(/\.$/, '');
-    return [{ full: true, label: `If you ${aTxt[0].toLowerCase() + aTxt.slice(1).replace(/^you may /i, '')}: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
+    return [{ full: true, label: `If you ${(t0 => t0[0].toLowerCase() + t0.slice(1))(aTxt.replace(/^you may /i, ''))}: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
       const m = modal(`${src0}: did you do it?`, { width: 480, sticky: true, noClose: true }); m.body.append(h('div', { class: 'psub', text: `${A}` }), h('div', { class: 'psub', text: `Do the first part by hand (card menus), then answer. The "if you do" part only happens if you did it.` }));
       m.foot.append(h('button', { text: "I didn't", onclick: () => { m.close(); log(`${src0}: the first part was not done, so "if you do" does nothing (CR 608.2c)`); } }), h('button', { class: 'primary', text: 'I did it', onclick: () => { m.close(); b.fn(); } }));
     } }];

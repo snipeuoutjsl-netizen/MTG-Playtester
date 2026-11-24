@@ -175,6 +175,7 @@ function drawStackStage() {
       h('button', { text: 'Pass priority', title: 'Do not respond: the top object will resolve', onclick: () => passPriority() }),
       (!top.ability && !top.opp && !isPermanentCard(top)) ? h('button', { text: 'Copy', title: 'A copy of this spell goes on the stack (Twincast, Fork, Reverberate…). It is not cast, so it does not count for Storm.', onclick: () => { snap(); makeSpellCopies(top.id, 1, 'Copy effect'); render(); } }) : null,
       h('button', { class: 'danger', text: cw ? "Can't be countered" : 'Countered', disabled: !!cw, title: cw ? top.name + " can't be countered: " + cw : 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }),
+      (() => { const n = sameSourceRun(); return n >= 2 ? h('button', { class: 'ss-all', text: `Resolve all ${n}`, title: `Resolve every ${top.sourceName} trigger on top of the stack, one after another. It stops at anything from another card, so you can still respond to that.`, onclick: () => resolveAllFromSource() }) : null; })(),
       main];
     if (splitSecondOn()) note = h('div', { class: 'sk-note warn', text: 'Split second: no spells or abilities (except mana abilities) until it resolves.' });
     hint = h('div', { class: 'sk-hint', text: 'Drag a card here to respond' });

@@ -144,9 +144,15 @@ function graveyardSelfOptions(t, obj) {
 function mayPayOptions(sents, obj) {
   if (sents.length !== 2) return null;
   const a = /^you may pay ((?:\{[^}]+\})+)\.?$/i.exec(sents[0]), b = /^If you do, (.+)$/i.exec(sents[1]); if (!a || !b) return null;
-  const cost = a[1], rest = b[1].charAt(0).toUpperCase() + b[1].slice(1), src = (obj && obj.sourceName) || 'Ability';
-  const inner = effectOptionsBase(rest, obj || {}).filter(o => typeof o.fn === 'function' && !o.special && !o.hidden);
+  const cost = a[1], src = (obj && obj.sourceName) || 'Ability'; let rest = b[1].charAt(0).toUpperCase() + b[1].slice(1);
+  // v0.99.72 "it" with nothing targeted is the source itself (Order of the Golden Cricket: "If you do, it gains flying until end of turn")
+  if (/\bon it\.?$/.test(rest) && !(obj && obj.targets && obj.targets.length) && obj && obj.sourceId != null) rest = rest.replace(/\bon it(\.?)$/, 'on ~$1');
+  const inner = effectOptionsBase(rest, obj || {}).filter(o => typeof o.fn === 'function' && !o.special && !o.hidden && !/^remember\b/i.test(o.label || ''));
   if (inner.length !== 1) return null;
+  const energy = /^(?:\{E\})+$/i.test(cost) ? cost.length / 3 : 0;   // CR 107.14: {E} is paid with energy counters, not mana
+  if (energy) { const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
+    return [{ full: whole, label: `Pay ${energy} energy: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const gs = state.gs || (state.gs = {}); if ((gs.energy || 0) < energy) { toast('Not enough energy', `You have ${gs.energy || 0} energy; this costs ${energy}.`); return; } snap(); gs.energy -= energy; log(`${src}: paid ${energy} energy (${gs.energy} left)`); io.fn(); render(); } },
+      { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }]; }
   const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
   return [{ full: whole, label: `Pay ${cost}: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, () => { io.fn(); render(); }); } },
     { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }];
