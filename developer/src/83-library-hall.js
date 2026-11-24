@@ -47,32 +47,61 @@ function beginWith(name) {
 }
 // v0.99.51 the deck taken down is laid out on the desk: one column per mana value (lands last), each card once with its count,
 // fanned so every name shows; hovering a card lifts it to full size.
+// v0.99.63 what the Archive (card data) holds: the full Oracle file, or the cards looked up for your decks (the app's usual source when no full file was loaded)
+function archiveLine() {
+  const full = (typeof cardCount === 'number' && cardCount) || 0, looked = typeof deckMetaCount === 'function' ? deckMetaCount() : 0;
+  if (full) return `The Archive holds every card: ${full.toLocaleString()} in all.`;
+  if (looked) return `The Archive holds the ${looked.toLocaleString()} cards in your decks. Load the full card data (Settings → Card data) to cover every card.`;
+  return 'The Archive is empty: no card data yet. Open Settings → Card data to fill it.';
+}
 function deckSpreadEl(deck, deckName, onCard) {
-  const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
+  // v0.99.63 the desk shows the deck the way the Deck stats window does: grouped by card type, mana-value order, one stack per card
+  // (its copies stacked straight down). Stacks never overlap one another and nothing on the desk moves, grows or glows on hover:
+  // resting the pointer on a stack only turns the book to that card. (Overlapping, turned cards made the browser flip between two
+  // cards under the pointer, which was the flicker.) Card size is chosen so the whole deck fits the desk.
+  const el = h('div', { class: 'hall-spread dk', 'aria-label': 'Main deck by card type and mana value' });
+  let hoverName = null;
+  const want = c => { if (!onCard) return; const nm = c ? c.name : null; if (nm === hoverName) return; hoverName = nm; clearTimeout(el._t); el._t = setTimeout(() => onCard(c), c ? 160 : 600); };
   const build = () => {
-    // v0.99.59 back to fanned stacks: at most three different cards a stack (mana-value order, lands last, the basic lands share one),
-    // each card set a little lower, to the right and turned, so every name shows. Hovering only outlines a card (no lifting: that flickered).
     const tot = new Map();
     for (const x of deck.main) { const rec = resolve(x.name), nm = rec ? rec.name : x.name, o = tot.get(nm) || { name: nm, rec, qty: 0 }; o.qty += (x.qty || x.n || 1); tot.set(nm, o); }
-    const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
-    const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
-    const spells = all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), lands = all.filter(c => isLand(c) && !isBasic(c)).sort(byName), basics = all.filter(isBasic).sort(byName);
-    const stacks = [], chunk3 = list => { for (let i = 0; i < list.length; i += 3) stacks.push(list.slice(i, i + 3)); };
-    const mvs = [...new Set(spells.map(mv))]; for (const v of mvs) chunk3(spells.filter(c => mv(c) === v));
-    chunk3(lands); if (basics.length) stacks.push(basics);
-    const STRIP = 32, CH = 206, DX = 7;
-    const cols = stacks.map(list => h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + CH + 6}px;width:${148 + DX * (list.length - 1)}px` }, list.map((c, i) => {
-      const k = i - (list.length - 1) / 2;
-      const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;left:${i * DX}px;z-index:${i + 1};--rot:${(k * 2.2).toFixed(1)}deg`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
-        im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
-        h('em', { class: 'ds-qty', text: '×' + c.qty }));
-      const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
-      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 320); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }   // v0.99.60 the pointer must rest on a card for a moment: on the edge between two fanned cards it used to flip the page back and forth
-      return card; })));
-    el.replaceChildren(...cols);
-    requestAnimationFrame(() => { const W = hallPortrait() ? 860 : 1520, H = 280, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
+    const typeOf = c => { const rec = c.rec; if (rec ? rec.land : BASIC_LANDS.has(norm(c.name))) return 'Land'; if (!rec) return 'Unknown'; const front = String(rec.t || '').split(' // ')[0]; return ['Creature', 'Planeswalker', 'Battle', 'Instant', 'Sorcery', 'Artifact', 'Enchantment'].find(x => front.includes(x)) || 'Other'; };
+    const all = [...tot.values()].map(c => Object.assign(c, { type: typeOf(c), mv: (c.rec && +c.rec.cmc) || 0 }));
+    const groups = [['Creatures', ['Creature']], ['Planeswalkers & Battles', ['Planeswalker', 'Battle']], ['Instants & Sorceries', ['Instant', 'Sorcery']], ['Artifacts', ['Artifact']], ['Enchantments', ['Enchantment']], ['Other', ['Other', 'Unknown']], ['Lands', ['Land']]];
+    const stackEl = c => {
+      const show = Math.min(c.qty, 4), im = imgFor(c.name, deckName);
+      const st = h('div', { class: 'dk-stack', style: `--n:${show}`, title: `${c.qty} × ${c.name}`, tabindex: 0 });
+      for (let i = 0; i < show; i++) {
+        const f = h('div', { class: 'dk-card' + (im ? ' img' : ''), style: `--i:${i}` });
+        if (im) { const img = h('img', { src: im.front, alt: i === show - 1 ? c.name : '', draggable: 'false' }); img.addEventListener('error', () => { img.remove(); f.classList.remove('img'); f.append(h('b', { text: c.name })); }); f.append(img); }
+        else f.append(h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' }));
+        st.append(f);
+      }
+      st.append(h('em', { class: 'dk-qty', text: '×' + c.qty }));
+      st.addEventListener('pointerenter', () => want(c)); st.addEventListener('focus', () => want(c));
+      return st;
+    };
+    const wrap = h('div', { class: 'dk-wrap' });
+    for (const [title, types] of groups) {
+      const list = all.filter(c => types.includes(c.type)).sort((a, b) => a.mv - b.mv || a.name.localeCompare(b.name)); if (!list.length) continue;
+      wrap.append(h('div', { class: 'dk-group' }, h('div', { class: 'dk-gh', text: `${title} · ${list.reduce((n, c) => n + c.qty, 0)}` }), h('div', { class: 'dk-stacks' }, ...list.map(stackEl))));
+    }
+    el.replaceChildren(wrap);
+    // the biggest card size at which every group fits the desk AND is fully inside the window. The desk is nearer the camera than the
+    // wall, so perspective draws it larger than its stage size: the fit is checked against what is really on screen.
+    el._fit = () => {
+      if (!el.isConnected) return;
+      const W = hallPortrait() ? 860 : 1520, H = 2000, vp = el.closest('.hall-view') || document.documentElement, v = vp.getBoundingClientRect();
+      wrap.style.width = W + 'px'; wrap.style.transform = '';
+      const inView = () => { const r = wrap.getBoundingClientRect(); return r.left >= v.left + 6 && r.right <= v.right - 6 && r.bottom <= v.bottom - 6; };
+      let cw = 150; for (; cw > 30; cw -= 3) { el.style.setProperty('--cw', cw + 'px'); if (wrap.scrollHeight <= H && wrap.scrollWidth <= W && inView()) break; }
+      // still too big at the smallest size (a 100-card singleton list, a tiny window): shrink the whole layout
+      let k = 1; wrap.style.transformOrigin = '50% 0'; wrap.style.transform = k < 1 ? `scale(${k.toFixed(3)})` : '';
+      for (let i = 0; i < 12 && !inView(); i++) { k *= 0.92; wrap.style.transform = `scale(${k.toFixed(3)})`; }
+    };
+    requestAnimationFrame(() => { el._fit(); setTimeout(() => el._fit(), 700); });   // again once the desk has finished coming down
   };
-  if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 600); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
+  if (onCard) { el.addEventListener('pointerleave', () => want(null)); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) want(null); }); }
   build();
   try { loadCachedImages(deck.main.map(x => x.name)).then(n => { if (n && el.isConnected) build(); }); } catch (e) {}
   return el;
@@ -145,6 +174,7 @@ function hallFit() {   // scale the fixed stage to fit the window (letterboxed o
   const vp = document.querySelector('#hall .hall-view'), st = vp && vp.querySelector('.hall-stage'); if (!st) return;
   const W = hallPortrait() ? 900 : HALL_W, H = hallPortrait() ? 1600 : HALL_H;
   const k = Math.min(vp.clientWidth / W, vp.clientHeight / H) || 1; st.style.setProperty('--hs', String(Math.max(0.2, Math.min(1.6, k))));
+  const sp = vp.querySelector('.hall-spread.dk'); if (sp && sp._fit) requestAnimationFrame(() => sp._fit());   // v0.99.63 refit the desk cards to the new window
 }
 window.addEventListener('resize', () => { if (!hallOpen()) return; if (hallWantsPortrait() !== hallPortrait()) drawHall(); else hallFit(); });
 // v0.99.61 turning to the other chapter: the leaf goes up on the old book, the room is redrawn for the new game mode while the leaf
@@ -206,7 +236,7 @@ function drawHall() {
     h('div', { class: 'tm-chap', text: 'Contents' }),
     h('div', { class: 'tm-toc' }, entries.map(([t, fn, ti], i) => h('div', { class: 'tm-toc-row' }, h('button', { class: 'hall-btn hall-link', text: t, title: ti || '', onclick: fn }), h('i', { class: 'tm-dots', 'aria-hidden': 'true' }), h('span', { class: 'tm-num', text: ROMAN[i + 2] || '' })))),
     h('div', { class: 'tm-foot' },
-      h('div', { class: 'tm-aside hall-archive', text: CARDS.size ? `The Archive holds ${CARDS.size.toLocaleString()} cards.` : 'The Archive is empty: no card data yet.' }),
+      h('div', { class: 'tm-aside hall-archive', text: archiveLine() }),
       chk('Open the Library when the app starts', lsGet(HALL_KEY, true) !== false, e => lsSet(HALL_KEY, e.target.checked), 'small')),
     h('div', { class: 'tm-folio', text: cmd ? 'iv' : 'ii' }));
   // silk ribbons on the top edge: one per chapter; the other chapter's ribbon turns the page to it
