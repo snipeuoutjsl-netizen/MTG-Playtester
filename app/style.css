@@ -2504,3 +2504,21 @@ html.portrait-ui #modalRoot .backdrop.resolve .modal { width: 100% !important; m
 #hall .tome-ink button.primary { width: 100%; text-align: left; font: italic 700 19px 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif !important; color: #8e1f0b !important; text-decoration: none; margin-bottom: 2px; }
 #hall .tome-ink button.primary::after { content: ' \2767'; font-style: normal; }
 #hall .tome-ink button.danger { color: #8e1f0b !important; opacity: .8; }
+/* v0.99.72 a real book: the page block bends down into the spine. Page tops and bottoms dip towards the gutter, the stacked page edges under each page
+   follow that curve down into a dark hollow at the spine, and the flat page-edge strip is gone */
+#hall .tm-edges { display: none; }
+#hall .hall-tome .hall-page.left { clip-path: polygon(0% 0.39%, 3.33% 0.7%, 6.67% 0.06%, 10% 1.08%, 13.33% 0.91%, 16.67% 1.1%, 20% 0.33%, 23.33% 0.26%, 26.67% 0.11%, 30% 0.25%, 33.33% 0.08%, 36.67% 0.78%, 40% 0.43%, 43.33% 0.91%, 46.67% 0.85%, 50% 0.42%, 53.33% 0.26%, 56.67% 0.55%, 60% 0.38%, 63.33% 1.26%, 66.67% 1.08%, 70% 1.41%, 73.33% 2.62%, 76.67% 2.64%, 80% 3.74%, 83.33% 4.41%, 86.67% 4.78%, 90% 5.11%, 93.33% 5.84%, 96.67% 6.84%, 100% 8.32%, 100% 97.5%, 96.67% 96.68%, 93.33% 95.91%, 90% 95.19%, 86.67% 94.52%, 83.33% 93.9%, 80% 93.33%, 76.67% 92.82%, 73.33% 92.36%, 70% 91.95%, 66.67% 91.59%, 63.33% 91.28%, 60% 91.02%, 56.67% 90.81%, 53.33% 90.66%, 50% 90.56%, 46.67% 90.51%, 43.33% 90.5%, 40% 90.5%, 36.67% 90.5%, 33.33% 90.5%, 30% 90.5%, 26.67% 90.5%, 23.33% 90.5%, 20% 90.5%, 16.67% 90.5%, 13.33% 90.5%, 10% 90.5%, 6.67% 90.5%, 3.33% 90.5%, 0% 90.5%) !important; transform: rotateY(5deg); }
+#hall .hall-tome .hall-page.right { clip-path: polygon(0% 8.32%, 3.33% 6.84%, 6.67% 5.84%, 10% 5.11%, 13.33% 4.78%, 16.67% 4.41%, 20% 3.74%, 23.33% 2.64%, 26.67% 2.62%, 30% 1.41%, 33.33% 1.08%, 36.67% 1.26%, 40% 0.38%, 43.33% 0.55%, 46.67% 0.26%, 50% 0.42%, 53.33% 0.85%, 56.67% 0.91%, 60% 0.43%, 63.33% 0.78%, 66.67% 0.08%, 70% 0.25%, 73.33% 0.11%, 76.67% 0.26%, 80% 0.33%, 83.33% 1.1%, 86.67% 0.91%, 90% 1.08%, 93.33% 0.06%, 96.67% 0.7%, 100% 0.39%, 100% 90.5%, 96.67% 90.5%, 93.33% 90.5%, 90% 90.5%, 86.67% 90.5%, 83.33% 90.5%, 80% 90.5%, 76.67% 90.5%, 73.33% 90.5%, 70% 90.5%, 66.67% 90.5%, 63.33% 90.5%, 60% 90.5%, 56.67% 90.5%, 53.33% 90.51%, 50% 90.56%, 46.67% 90.66%, 43.33% 90.81%, 40% 91.02%, 36.67% 91.28%, 33.33% 91.59%, 30% 91.95%, 26.67% 92.36%, 23.33% 92.82%, 20% 93.33%, 16.67% 93.9%, 13.33% 94.52%, 10% 95.19%, 6.67% 95.91%, 3.33% 96.68%, 0% 97.5%) !important; transform: rotateY(-5deg); }
+#hall .hall-tome > .tm-block { position: absolute; left: 0; top: 0; width: 100%; height: 108%; z-index: -1; pointer-events: none; overflow: visible; filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
+#hall .hall-tome .hall-spine { background: linear-gradient(90deg, rgba(40,20,6,.6), rgba(25,12,3,.9) 50%, rgba(40,20,6,.6)) !important; clip-path: polygon(0 8.1%, 100% 8.1%, 100% 100%, 0 100%); }
+#hall .hall-tome.deck-open > .hall-page > .ti-page { padding-bottom: 46px; }
+/* end v0.99.72 book */
+/* v0.99.72 the deck spread out on the desk the way a player lays it out: each pile fanned a little, turned a few degrees, piles overlapping
+   their neighbour. Only the cards move visually; each pile's own (unturned) box is what the pointer rests on, so nothing flickers */
+#hall .dk-stacks { gap: calc(var(--cw) * .12) 0; padding-left: calc(var(--cw) * .2); }
+#hall .dk-stack { width: calc(var(--cw) * (1 + (var(--n) - 1) * .07)); height: calc(var(--ch) + (var(--n) - 1) * var(--cw) * .05 + 8px); margin-left: calc(var(--cw) * -.2); transform: translateY(var(--dy, 0px)); }
+#hall .dk-card { top: calc(var(--i) * var(--cw) * .05); left: calc(var(--i) * var(--cw) * .07); transform: rotate(calc(var(--rot, 0deg) + (var(--i) - 1.5) * 1.6deg)); transform-origin: 50% 60%;
+  box-shadow: 0 1px 2px rgba(0,0,0,.45), 0 4px 10px rgba(0,0,0,.25); }
+#hall .dk-qty { transform: rotate(var(--rot, 0deg)); }
+#hall .dk-gh { position: relative; z-index: 5; margin-bottom: calc(var(--cw) * .1); text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+#hall .tome-ink .ti-key .ti-row b { order: -1; min-width: 2.2em; }

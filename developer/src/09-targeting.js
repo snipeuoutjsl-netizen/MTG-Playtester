@@ -349,6 +349,32 @@ function resolveTopOfStack() {
 }
 
 
+// v0.99.72 "Resolve all": resolve every trigger of ONE card from the top of the stack, one at a time in stack order (CR 608.1, 405.5).
+// A new trigger of that card that lands on top (Glaring Fleshraker's damage when one of its Spawn enters) is part of the run; anything else on top ends it,
+// so you can still respond to a different card. A choice window pauses the run until you answer it.
+function sameSourceRun() {
+  if (!state || !state.stack.length) return 0; const st = state.stack, top = st[st.length - 1]; if (!top.ability || !top.trigger || top.opp || top.sourceId == null) return 0;
+  let n = 0; for (let i = st.length - 1; i >= 0; i--) { const x = st[i]; if (x.ability && x.trigger && !x.opp && x.sourceId === top.sourceId) n++; else break; } return n;
+}
+let RES_RUN = null;
+function resolveAllFromSource() {
+  const st = state && state.stack; if (!st || !st.length) return; const top = st[st.length - 1];
+  RES_RUN = { src: top.sourceId, name: top.sourceName, done: 0, t0: Date.now() }; log(`Resolve all: ${top.sourceName}'s triggers resolve one at a time`); stepResolveRun();
+}
+function stepResolveRun() {
+  const run = RES_RUN; if (!run || !state) return;
+  if (gameIsOver() || Date.now() - run.t0 > 10 * 60000) { RES_RUN = null; return; }
+  { const ay = document.querySelector('#modalRoot .ay-offer'); const no = ay && [...ay.querySelectorAll('button')].find(b => b.textContent === 'Ask every time'); if (no) { no.click(); setTimeout(stepResolveRun, 60); return; } }   // you chose Resolve all: the Always yield offer is answered "not now"
+  const win = document.querySelector('#modalRoot .backdrop, #stackStage .res-panel');
+  if (!win && state.pendingTriggers.length && !state.resolving && !state.resolvingAb) flushTriggers();
+  const busy = state.resolving || state.resolvingAb || document.querySelector('#modalRoot .backdrop, #stackStage .res-panel') || state.pendingTriggers.length;
+  if (busy) { setTimeout(stepResolveRun, 150); return; }   // waiting for you to answer a choice (or to order new triggers)
+  const top = state.stack[state.stack.length - 1];
+  if (!top || !top.ability || !top.trigger || top.opp || top.sourceId !== run.src) { RES_RUN = null; if (run.done) log(`Resolve all: ${run.done} of ${run.name}'s triggers resolved`); render(); return; }
+  run.done++; resolveTopOfStack(); setTimeout(stepResolveRun, 60);
+}
+
+
 const BASIC_LANDS = new Set(['plains', 'island', 'swamp', 'mountain', 'forest', 'wastes',
   'snow-covered plains', 'snow-covered island', 'snow-covered swamp', 'snow-covered mountain', 'snow-covered forest']);
 
