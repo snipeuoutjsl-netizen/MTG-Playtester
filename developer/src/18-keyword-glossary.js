@@ -259,9 +259,21 @@ function fitBattlefieldCards() {
   // v0.99.69 upright phones: each zone's share of the height follows how many cards it holds (an empty zone stays small, a busy one grows)
   try { const mat = $('#mat'); if (mat && document.documentElement.classList.contains('portrait-ui') && state) {
     const n = { creatures: 0, noncreature: 0, lands: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
-    const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2);
-    mat.style.setProperty('grid-template-rows', `104px minmax(0, ${w('creatures')}fr) auto minmax(0, ${w('noncreature')}fr) minmax(0, ${w('lands')}fr)`, 'important');
+    // v0.99.78 an empty zone shrinks to its label, so the zones with cards get the height (and their cards grow into it)
+    const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2), row = k => n[k] ? `minmax(0, ${w(k)}fr)` : 'minmax(34px, 0.12fr)';
+    mat.style.setProperty('grid-template-rows', `92px ${row('creatures')} auto ${row('noncreature')} ${row('lands')}`, 'important');
   } else if (mat) mat.style.removeProperty('grid-template-rows'); } catch (e) { /* layout only */ }
+  // v0.99.78 side by side (desktop, tablets, sideways phones): lands and artifacts/enchantments share the row by how many cards each holds,
+  // so a big mana base gets the width and an empty zone shrinks to its label (and the other way round)
+  try { const mat = $('#mat'), zl = $('#zone-lands'), zn = $('#zone-noncreature'); if (mat && document.documentElement.classList.contains('portrait-ui')) mat.style.removeProperty('grid-template-columns');
+    if (mat && zl && zn && state && !document.documentElement.classList.contains('portrait-ui')) {
+    mat.style.removeProperty('grid-template-columns'); const cols = getComputedStyle(mat).gridTemplateColumns.split(' ').filter(Boolean);
+    if (cols.length === 3 && Math.abs(zl.offsetTop - zn.offsetTop) < 4) {
+      const n = { lands: 0, noncreature: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
+      const w = k => n[k] ? `minmax(0, ${(0.6 + Math.sqrt(n[k]) * 0.45).toFixed(2)}fr)` : 'minmax(150px, 0.3fr)';
+      const landsFirst = zl.offsetLeft < zn.offsetLeft;
+      mat.style.setProperty('grid-template-columns', `${landsFirst ? w('lands') : w('noncreature')} ${landsFirst ? w('noncreature') : w('lands')} ${cols[2]}`, 'important');
+    } } } catch (e) { /* layout only */ }
   const specs = [
     { id: 'row-creatures', wrap: true },
     { id: 'row-noncreature', wrap: true },
@@ -284,7 +296,8 @@ function fitBattlefieldCards() {
     }
 
     const availW = Math.max(1, zone.clientWidth - 20);
-    const availH = Math.max(1, zone.clientHeight - 48);   // v0.96.20 a few px of margin so a borderline fit cannot flip between two layouts
+    const lab = zone.querySelector('.zlabel, .zone-label, h3, .zhead'); const labH = lab ? lab.offsetHeight + 14 : 34;   // v0.99.78 only the label's own height is held back
+    const availH = Math.max(1, zone.clientHeight - Math.max(30, labH) - 8);   // v0.96.20 a few px of margin so a borderline fit cannot flip between two layouts
     let scale = 1, usedCols = 0;
     if (spec.id === 'row-creatures' && zone.classList.contains('combat-on')) {   // combat (v0.69.3): a single row, non-attackers overlapped to the side
       const na = row.querySelectorAll('.card.attacking').length, no = row.querySelectorAll('.card:not(.attacking)').length;
@@ -300,7 +313,7 @@ function fitBattlefieldCards() {
       const cols = Math.min(count, idealCols);
       const rows = Math.ceil(count / cols); usedCols = cols;
       scale = Math.min(
-        document.documentElement.classList.contains('portrait-ui') ? 1.6 : 1,   // v0.99.69 upright phones: cards grow into the room they have
+        document.documentElement.classList.contains('portrait-ui') ? 1.9 : (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 1.5 : 1),   // v0.99.78 phones and tablets (upright or sideways): cards grow into the room they have
         (availW - Math.max(0, cols - 1) * gap) / (cols * baseW),
         (availH - Math.max(0, rows - 1) * gap) / (rows * baseH)
       );

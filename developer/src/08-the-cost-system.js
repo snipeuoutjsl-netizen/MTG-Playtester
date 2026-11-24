@@ -703,14 +703,14 @@ function openManaPayment(c, done, costOverride, verb, skipId) {
   const pool = state && state.manaPool ? state.manaPool : { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
   if (!sources.length && manaTotal() === 0 && mc && symCmc(mc) > 0) { toast('No mana available', 'You cannot pay this spell’s cost.'); return; }
   const m = modal(`Pay ${c.name}`, { width: 620, sticky: true });
-  const auto = manaPaymentAllocation(parts, pool, sources, null);
+  const auto = withCtx(c, () => manaPaymentAllocation(parts, pool, sources, null));
   let chosen = new Set(auto.ok ? auto.used : []);
   const status = h('div', { class: 'small muted' });
   const poolEl = h('div', { class: 'mana-payment-pool' });
   const rows = h('div', { class: 'prelist' });
   const pay = h('button', { class: 'primary', text: verb || 'Pay and cast', disabled: true });
   const refresh = () => {
-    const result = manaPaymentAllocation(parts, pool, sources, chosen);
+    const result = withCtx(c, () => manaPaymentAllocation(parts, pool, sources, chosen));
     const poolText = manaTotal() ? Object.entries(pool).filter(([, n]) => n).map(([k, n]) => `${n}${k}`).join(' · ') : 'empty';
     poolEl.replaceChildren(h('span', { class: 'mana-payment-label', text: 'Floating' }), h('span', { class: 'mana-payment-value', text: poolText }),
       h('span', { class: 'muted small', text: result.poolUsed ? ` · ${result.poolUsed} will be spent from the pool first` : ' · spent automatically first' }));
@@ -726,7 +726,7 @@ function openManaPayment(c, done, costOverride, verb, skipId) {
     rows.append(row);
   });
   pay.addEventListener('click', () => {
-    const result = manaPaymentAllocation(parts, pool, sources, chosen);
+    const result = withCtx(c, () => manaPaymentAllocation(parts, pool, sources, chosen));
     if (!result.ok) return;
     m.close();
     state.manaPool = result.pool;
@@ -851,10 +851,11 @@ function castXSpell(c, reopen, modes) {
     const cost = costWithX(ec.cost, x);
     if (symCmc(cost) === 0 && !/\{[WUBRGCSP]/i.test(cost)) { commitSpellToStack(id, [], reopen, x, modes); return; }   // v0.99.67 the chosen modes travel with every way of paying (they were dropped here and below)
     if (teach('stackGuidance')) { openManaPayment(c, ids => commitSpellToStack(id, ids, reopen, x, modes), cost); return; }
-    const plan = manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null);
-    if (!plan.ok) { toast('Cannot cast this spell', 'Not enough mana.'); return; }
-    state.manaPool = plan.pool;
-    commitSpellToStack(id, plan.used.map(i => manaSources()[i].card.id), reopen, x, modes);
+    withCtx(c, () => {   // v0.99.78 this runs after the X window closes, outside castSpell: pay in the spell's own context, or mana that may only be spent on it (Eldrazi Temple) is left out and the cast silently fails
+      const srcs = manaSources(), plan = manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, srcs, null);
+      if (!plan.ok) { toast('Cannot cast this spell', 'Not enough mana.'); return; }
+      state.manaPool = plan.pool;
+      commitSpellToStack(id, plan.used.map(i => srcs[i].card.id), reopen, x, modes); });
   } }));
 }
 function castSpell(id,reopen=true,modes) {

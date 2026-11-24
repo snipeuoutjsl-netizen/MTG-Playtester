@@ -19,6 +19,8 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
     if (e.pointerType !== 'touch' || !e.isPrimary) return;
     const src = e.target.closest && e.target.closest('[draggable="true"]');
     st = { x: e.clientX, y: e.clientY, src, target: e.target, drag: false, held: false, t: Date.now() };
+    // v0.99.78 a button, a field or a choice in a window is never press-and-hold: a slow tap on "Pay and cast" or "Cast" must still click it
+    if (e.target.closest && e.target.closest('button, input, select, textarea, a, label, .mode-row, .tgl, #modalRoot .row, .res-panel .row')) { st.noHold = true; return; }
     st.timer = setTimeout(() => {   // press and hold = right-click (card menus, the library menu ...)
       if (!st || st.drag) return; st.held = true; swallowClick = Date.now();
       const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: st.x, clientY: st.y, button: 2 }); (under(st.x, st.y) || st.target).dispatchEvent(ev);

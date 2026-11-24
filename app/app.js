@@ -1429,6 +1429,12 @@ function parseModal(tx) {
   { const rm = tx.match(/\bchoose (one|two|three|four|five)\.\s*You may choose the same mode more than once\.\s*(?=•)/i);   // Mystic Confluence (CR 700.2d): the same mode may be chosen more than once
     if (rm) { const N0 = { one: 1, two: 2, three: 3, four: 4, five: 5 }; const modes0 = ('• ' + tx.slice(rm.index + rm[0].length)).split(/\s*•\s*/).slice(1).map(x => ({ text: x.trim() })).filter(x => x.text);
       if (modes0.length >= 2) return { spree: false, repeat: true, min: N0[rm[1].toLowerCase()], max: N0[rm[1].toLowerCase()], label: rm[1].toLowerCase() + ' (repeats allowed)', modes: modes0, kind: /^\s*(?:when|whenever|at the beginning)/i.test(tx.slice(0, rm.index)) ? 'trigger' : 'spell', escalate: '' }; } }
+  // v0.99.78 CR 700.2: "Choose one. If you control a Wizard as you cast this spell, you may choose two instead." (Flame of Anor, Go Nuts!, See Double, Inscription of Insight)
+  { const um = tx.match(/\bchoose (one|two)\.\s*(?:If|As long as) ([^•]+?), (you may )?choose (both|two|three|any number)(?: instead)?\.\s*(?=•)/i);
+    if (um) { const modes = ('• ' + tx.slice(um.index + um[0].length)).split(/\s*•\s*/).slice(1).map(x => ({ text: x.trim() })).filter(x => x.text);
+      if (modes.length >= 2) { const NN = { one: 1, two: 2, three: 3, both: 2 }, base = NN[um[1].toLowerCase()], up = um[4].toLowerCase() === 'any number' ? modes.length : NN[um[4].toLowerCase()];
+        const lead = tx.slice(tx.lastIndexOf('\n', um.index) + 1, um.index), kind = /\b(?:when|whenever|at the beginning of)\b/i.test(lead) ? 'trigger' : lead.includes(':') ? 'ability' : 'spell';
+        return { spree: false, min: base, max: base, label: um[1].toLowerCase(), modes, kind, escalate: '', upgrade: { cond: um[2].trim(), max: Math.min(up, modes.length), may: !!um[3], anyNumber: um[4].toLowerCase() === 'any number' } }; } } }
   m = tx.match(/\bchoose (one or both|one or more|up to (?:one|two|three|four)|one|two|three|four)\b[^•—]*—\s*/i);
   if (!m || !/•/.test(tx)) return null;
   const word = m[1].toLowerCase(), after = tx.slice(m.index + m[0].length);
@@ -1465,7 +1471,23 @@ function modalText(md, idxs) {
 }
 function mergeGeneric(cost) { let n = 0; const rest = []; for (const m of String(cost || '').match(/\{[^}]+\}/g) || []) { if (/^\{\d+\}$/.test(m)) n += +m.slice(1, -1); else rest.push(m); } return (n ? `{${n}}` : '') + rest.join(''); }
 function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : md.escalate ? md.escalate.repeat(Math.max(0, idxs.length - 1)) : ''; }
+// v0.99.78 is the condition that lets you choose more modes met right now? true / false / null (the app cannot tell: you say)
+function modeUpgradeMet(cond, name) {
+  const c = String(cond || '').replace(/\s+as you cast this spell$/i, '').trim(); let m;
+  if ((m = c.match(/^you control (an?|one or more|two or more|three or more) (.+)$/i))) { try { const r = staticCheck('if you control ' + m[1] + ' ' + m[2], { name: name || '' }); return r.ok === true ? true : r.ok === false ? false : null; } catch (e) { return null; } }
+  if (/^you have (\w+) or (?:less|fewer) life$/i.test(c) || /^you have (\w+) or more life$/i.test(c)) { try { const r = staticCheck('if ' + c, { name: name || '' }); return r.ok === true ? true : r.ok === false ? false : null; } catch (e) { return null; } }
+  return null;   // kicked / teamwork / the opponent's graveyard: you say whether it is met
+}
 function openModeChoice(name, md, cb, baseCost, onCancel) {
+  if (md.upgrade && !md._up) {   // decide how many modes may be chosen before showing them
+    const met = modeUpgradeMet(md.upgrade.cond, name), up = md.upgrade;
+    const go = yes => { const m2 = Object.assign({}, md, { _up: true, upgrade: Object.assign({}, up, { met: yes }) }); if (yes) { m2.max = up.max; if (!up.may && !up.anyNumber) m2.min = up.max; m2.label = up.anyNumber ? 'any number' : up.may ? `${md.label} or ${up.max === 2 ? 'both' : up.max}` : String(up.max); if (up.anyNumber) m2.min = 1; } openModeChoice(name, m2, cb, baseCost, onCancel); };
+    if (met !== null) { go(met); return; }
+    const q = modal(`${name}: how many modes?`, { width: 520, sticky: true });
+    q.body.append(h('div', { class: 'psub', text: `If ${up.cond}, you ${up.may ? 'may ' : ''}choose ${up.anyNumber ? 'any number of modes' : up.max === 2 ? 'two modes' : up.max + ' modes'} instead of ${md.max === 1 ? 'one' : md.max}.` }), h('div', { class: 'muted small', text: 'The app cannot check this condition here (rule 700.2): tell it whether it is met.' }));
+    q.foot.append(h('button', { text: 'Not met', onclick: () => { q.close(); go(false); } }), h('button', { class: 'primary', text: 'It is met', onclick: () => { q.close(); go(true); } }));
+    return;
+  }
   const chosen = new Set();
   const m = modal(`${name}: choose ${md.spree ? 'additional costs' : md.min === md.max ? md.max === 1 ? 'one mode' : md.max + ' modes' : md.label}`, { width: 640, sticky: true });
   const info = h('div', { class: 'psub' });
@@ -3132,14 +3154,14 @@ function openManaPayment(c, done, costOverride, verb, skipId) {
   const pool = state && state.manaPool ? state.manaPool : { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
   if (!sources.length && manaTotal() === 0 && mc && symCmc(mc) > 0) { toast('No mana available', 'You cannot pay this spell’s cost.'); return; }
   const m = modal(`Pay ${c.name}`, { width: 620, sticky: true });
-  const auto = manaPaymentAllocation(parts, pool, sources, null);
+  const auto = withCtx(c, () => manaPaymentAllocation(parts, pool, sources, null));
   let chosen = new Set(auto.ok ? auto.used : []);
   const status = h('div', { class: 'small muted' });
   const poolEl = h('div', { class: 'mana-payment-pool' });
   const rows = h('div', { class: 'prelist' });
   const pay = h('button', { class: 'primary', text: verb || 'Pay and cast', disabled: true });
   const refresh = () => {
-    const result = manaPaymentAllocation(parts, pool, sources, chosen);
+    const result = withCtx(c, () => manaPaymentAllocation(parts, pool, sources, chosen));
     const poolText = manaTotal() ? Object.entries(pool).filter(([, n]) => n).map(([k, n]) => `${n}${k}`).join(' · ') : 'empty';
     poolEl.replaceChildren(h('span', { class: 'mana-payment-label', text: 'Floating' }), h('span', { class: 'mana-payment-value', text: poolText }),
       h('span', { class: 'muted small', text: result.poolUsed ? ` · ${result.poolUsed} will be spent from the pool first` : ' · spent automatically first' }));
@@ -3155,7 +3177,7 @@ function openManaPayment(c, done, costOverride, verb, skipId) {
     rows.append(row);
   });
   pay.addEventListener('click', () => {
-    const result = manaPaymentAllocation(parts, pool, sources, chosen);
+    const result = withCtx(c, () => manaPaymentAllocation(parts, pool, sources, chosen));
     if (!result.ok) return;
     m.close();
     state.manaPool = result.pool;
@@ -3280,10 +3302,11 @@ function castXSpell(c, reopen, modes) {
     const cost = costWithX(ec.cost, x);
     if (symCmc(cost) === 0 && !/\{[WUBRGCSP]/i.test(cost)) { commitSpellToStack(id, [], reopen, x, modes); return; }   // v0.99.67 the chosen modes travel with every way of paying (they were dropped here and below)
     if (teach('stackGuidance')) { openManaPayment(c, ids => commitSpellToStack(id, ids, reopen, x, modes), cost); return; }
-    const plan = manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, manaSources(), null);
-    if (!plan.ok) { toast('Cannot cast this spell', 'Not enough mana.'); return; }
-    state.manaPool = plan.pool;
-    commitSpellToStack(id, plan.used.map(i => manaSources()[i].card.id), reopen, x, modes);
+    withCtx(c, () => {   // v0.99.78 this runs after the X window closes, outside castSpell: pay in the spell's own context, or mana that may only be spent on it (Eldrazi Temple) is left out and the cast silently fails
+      const srcs = manaSources(), plan = manaPaymentAllocation(manaCostParts(cost), state.manaPool || {}, srcs, null);
+      if (!plan.ok) { toast('Cannot cast this spell', 'Not enough mana.'); return; }
+      state.manaPool = plan.pool;
+      commitSpellToStack(id, plan.used.map(i => srcs[i].card.id), reopen, x, modes); });
   } }));
 }
 function castSpell(id,reopen=true,modes) {
@@ -5939,9 +5962,21 @@ function fitBattlefieldCards() {
   // v0.99.69 upright phones: each zone's share of the height follows how many cards it holds (an empty zone stays small, a busy one grows)
   try { const mat = $('#mat'); if (mat && document.documentElement.classList.contains('portrait-ui') && state) {
     const n = { creatures: 0, noncreature: 0, lands: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
-    const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2);
-    mat.style.setProperty('grid-template-rows', `104px minmax(0, ${w('creatures')}fr) auto minmax(0, ${w('noncreature')}fr) minmax(0, ${w('lands')}fr)`, 'important');
+    // v0.99.78 an empty zone shrinks to its label, so the zones with cards get the height (and their cards grow into it)
+    const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2), row = k => n[k] ? `minmax(0, ${w(k)}fr)` : 'minmax(34px, 0.12fr)';
+    mat.style.setProperty('grid-template-rows', `92px ${row('creatures')} auto ${row('noncreature')} ${row('lands')}`, 'important');
   } else if (mat) mat.style.removeProperty('grid-template-rows'); } catch (e) { /* layout only */ }
+  // v0.99.78 side by side (desktop, tablets, sideways phones): lands and artifacts/enchantments share the row by how many cards each holds,
+  // so a big mana base gets the width and an empty zone shrinks to its label (and the other way round)
+  try { const mat = $('#mat'), zl = $('#zone-lands'), zn = $('#zone-noncreature'); if (mat && document.documentElement.classList.contains('portrait-ui')) mat.style.removeProperty('grid-template-columns');
+    if (mat && zl && zn && state && !document.documentElement.classList.contains('portrait-ui')) {
+    mat.style.removeProperty('grid-template-columns'); const cols = getComputedStyle(mat).gridTemplateColumns.split(' ').filter(Boolean);
+    if (cols.length === 3 && Math.abs(zl.offsetTop - zn.offsetTop) < 4) {
+      const n = { lands: 0, noncreature: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
+      const w = k => n[k] ? `minmax(0, ${(0.6 + Math.sqrt(n[k]) * 0.45).toFixed(2)}fr)` : 'minmax(150px, 0.3fr)';
+      const landsFirst = zl.offsetLeft < zn.offsetLeft;
+      mat.style.setProperty('grid-template-columns', `${landsFirst ? w('lands') : w('noncreature')} ${landsFirst ? w('noncreature') : w('lands')} ${cols[2]}`, 'important');
+    } } } catch (e) { /* layout only */ }
   const specs = [
     { id: 'row-creatures', wrap: true },
     { id: 'row-noncreature', wrap: true },
@@ -5964,7 +5999,8 @@ function fitBattlefieldCards() {
     }
 
     const availW = Math.max(1, zone.clientWidth - 20);
-    const availH = Math.max(1, zone.clientHeight - 48);   // v0.96.20 a few px of margin so a borderline fit cannot flip between two layouts
+    const lab = zone.querySelector('.zlabel, .zone-label, h3, .zhead'); const labH = lab ? lab.offsetHeight + 14 : 34;   // v0.99.78 only the label's own height is held back
+    const availH = Math.max(1, zone.clientHeight - Math.max(30, labH) - 8);   // v0.96.20 a few px of margin so a borderline fit cannot flip between two layouts
     let scale = 1, usedCols = 0;
     if (spec.id === 'row-creatures' && zone.classList.contains('combat-on')) {   // combat (v0.69.3): a single row, non-attackers overlapped to the side
       const na = row.querySelectorAll('.card.attacking').length, no = row.querySelectorAll('.card:not(.attacking)').length;
@@ -5980,7 +6016,7 @@ function fitBattlefieldCards() {
       const cols = Math.min(count, idealCols);
       const rows = Math.ceil(count / cols); usedCols = cols;
       scale = Math.min(
-        document.documentElement.classList.contains('portrait-ui') ? 1.6 : 1,   // v0.99.69 upright phones: cards grow into the room they have
+        document.documentElement.classList.contains('portrait-ui') ? 1.9 : (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 1.5 : 1),   // v0.99.78 phones and tablets (upright or sideways): cards grow into the room they have
         (availW - Math.max(0, cols - 1) * gap) / (cols * baseW),
         (availH - Math.max(0, rows - 1) * gap) / (rows * baseH)
       );
@@ -6972,8 +7008,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.77';
+const APP_VERSION = '0.99.78';
 const CHANGELOG = [
+  { v: '0.99.78', title: 'Kozilek\u2019s Command on mobile, modal spells, cards that size to the table', notes: ['Kozilek\u2019s Command (and every X spell) with automatic land tapping: after you chose modes and X, pressing Cast did nothing when part of your mana could only be spent on that spell (Eldrazi Temple). X counted that mana but the payment that followed left it out. Payment now happens in the spell\u2019s own context, in the payment window too.', 'On phones a slow tap on a button (Cast, Pay and cast, Choose) is always a tap: press-and-hold only opens menus on cards and the table, never on buttons, fields or choices in a window.', 'Modal spells whose number of modes depends on a condition: Flame of Anor (\u201cIf you control a Wizard as you cast this spell, you may choose two instead\u201d) lets you pick one, or up to two while you control a Wizard; when the app cannot check the condition (Go Nuts!\u2019s teamwork, Inscription of Insight\u2019s kicker, See Double\u2019s opponent graveyard) it asks whether it is met. These spells were not read as modal at all before.', 'Cards size themselves to the table on every screen: lands and artifacts/enchantments share their row by how many cards each holds (a big mana base gets the width, an empty zone shrinks to its label); on an upright phone an empty zone shrinks to its label and the cards in the others grow into the room (up to 1.9\u00d7); on tablets and sideways phones cards may grow to 1.5\u00d7.', '287 rules tests pass, all with real cards.'] },
   { v: '0.99.77', title: 'Reading sweep', notes: ['A sweep over every card the app knows found sentences it skipped; these are now carried out: \u201cYou may pay {1}. If you do, target player loses 1 life\u201d and other payments whose result has a target or several parts (Smolder Initiate, Ruthless Sniper); \u201cUntap those creatures\u201d after a group pump (War Flare, Mob Rule); Proliferate (one more of each counter on your permanents, and energy), also as \u201c\u2026, then proliferate\u201d (Tezzeret\u2019s Gambit, Grim Affliction); \u201cSpend this mana only to \u2026\u201d after an ability adds mana (Lord of the Forsaken), which now floats with that restriction; a spell\u2019s \u201cExile [this spell].\u201d is read; \u201cIt gains indestructible until end of turn\u201d and \u201cTap it\u201d on the source itself (Wicked Wolf).', 'Cards the app fully reads went from 11,704 to 11,777 across all 22,743 cards.', 'The Library book has no more \u201c\u2026\u201d: menu entries and buttons lost their trailing dots, and long names wrap and the page scales its writing down instead of being cut off.', '285 rules tests pass, all with real cards.'] },
   { v: '0.99.76', title: 'Triggers you can see, cards that glow for their abilities, Kaito\u2019s 0', notes: ['Skysovereign and other abilities aimed at an opponent\u2019s permanent: when one resolves, the stack window shows what to do on the real card (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) until you press Done, instead of a toast that was easy to miss. Always yield is no longer offered for these, so the trigger asks for its target every time it enters or attacks.', 'Always yield: \u201cAsk every time\u201d is now the default button (Enter), so pressing Enter no longer silences every later trigger of that card for the rest of the game.', 'A card in your hand glows green whenever an ability of it can be activated from there, not only when it can be cast: Ninjutsu after blockers are declared with an unblocked attacker and the mana available, cycling (Street Wraith in the middle of combat) and reinforce.', 'Kaito, Bane of Nightmares 0: \u201cSurveil 2. Then draw a card for each opponent who lost life this turn.\u201d now draws when the opponent lost life this turn (and nothing otherwise). Before, it was mistaken for an \u201cuntil end of turn\u201d reminder and drew nothing.', '284 rules tests pass, all with real cards.'] },
   { v: '0.99.75', title: 'Emblems and anthems, Station, Lightning Axe', notes: ['Emblems now work: their static abilities apply from the command zone (CR 114.4). Kaito\u2019s \u201cNinjas you control get +1/+1\u201d emblem pumps your Ninjas, and two of them stack; Sorin\u2019s +1/+0 and Elspeth\u2019s indestructible emblems apply too (Elspeth\u2019s now covers lands as well as creatures). Before, emblems only worked for triggered abilities.', 'The emblem panel is labelled Command zone, shows each emblem\u2019s own words, groups identical emblems with a \u00d7 count, and no longer covers your library.', 'Anthems read far more wordings (565 of the 729 anthem-style lines in Modern, up from 456): \u201cwith a +1/+1 counter on it\u201d (Abzan Falconer), \u201cother creatures you control with flying\u201d (Thunderclap Wyvern), \u201cwithout flying\u201d, \u201cthat are enchanted\u201d, \u201cof the chosen type / colour\u201d (Icon of Ancestry, Caged Sun), lists of types (\u201cArtifacts, creatures, enchantments, and lands\u201d), two subtypes (\u201cEldrazi Spawn creatures\u201d), \u201cNonwhite creatures\u201d (Crovax) and shroud.', 'Station: a Spacecraft with enough charge counters is now an artifact creature everywhere: it moves to the creature row, can attack and block, and deals combat damage (before, it had the creature P/T and keywords but could not attack). Its \u201cN+ | \u2026\u201d lines are read instead of being reported as gaps.', 'Skysovereign: its enters/attacks trigger can target only a creature or planeswalker an opponent controls. Because the opponent\u2019s permanents are not on this table, it now says exactly what to do (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) instead of a vague note. It never touches your creatures or the opponent\u2019s life.', 'Lightning Axe and other spells with \u201cAs an additional cost to cast this spell \u2026\u201d no longer ask about that cost when they resolve: it was paid as the spell was cast.', '282 rules tests pass, all with real cards.'] },
@@ -14317,6 +14354,8 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
     if (e.pointerType !== 'touch' || !e.isPrimary) return;
     const src = e.target.closest && e.target.closest('[draggable="true"]');
     st = { x: e.clientX, y: e.clientY, src, target: e.target, drag: false, held: false, t: Date.now() };
+    // v0.99.78 a button, a field or a choice in a window is never press-and-hold: a slow tap on "Pay and cast" or "Cast" must still click it
+    if (e.target.closest && e.target.closest('button, input, select, textarea, a, label, .mode-row, .tgl, #modalRoot .row, .res-panel .row')) { st.noHold = true; return; }
     st.timer = setTimeout(() => {   // press and hold = right-click (card menus, the library menu ...)
       if (!st || st.drag) return; st.held = true; swallowClick = Date.now();
       const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: st.x, clientY: st.y, button: 2 }); (under(st.x, st.y) || st.target).dispatchEvent(ev);
