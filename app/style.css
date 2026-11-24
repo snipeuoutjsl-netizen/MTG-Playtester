@@ -2441,3 +2441,7 @@ html.portrait-ui #topbar #btnVersion { display: none !important; }
   box-shadow: 0 2px 4px rgba(0,0,0,.55), 0 6px 14px rgba(0,0,0,.35); }
 #hall .ds-stack .ds-card:hover, #hall .ds-stack .ds-card:focus-visible { z-index: auto !important; box-shadow: 0 0 0 3px #e3b95c, 0 0 16px rgba(227,185,92,.55), 0 6px 14px rgba(0,0,0,.45); outline: none; }
 #hall.portrait .hall-spread { top: 1300px; }
+/* v0.99.60 the Library shows a found update */
+#hall .hall-upd { height: 40px; padding: 0 14px; border-radius: 10px; font-weight: 700; box-shadow: 0 0 0 2px rgba(106,160,255,.35), 0 6px 16px rgba(0,0,0,.45); animation: updPulse 2.4s ease-in-out infinite; }
+@keyframes updPulse { 50% { box-shadow: 0 0 0 5px rgba(106,160,255,.18), 0 6px 16px rgba(0,0,0,.45); } }
+body.a11y-calm #hall .hall-upd { animation: none; }

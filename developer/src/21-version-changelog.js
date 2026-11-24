@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.59';
+const APP_VERSION = '0.99.60';
 const CHANGELOG = [
+  { v: '0.99.60', title: 'Updates from the Library, steadier page turns', notes: ['Updates: when a new version is found at start-up, the Library shows an "Update available" button in its top right corner, and the menu book has a "Check for updates" (or "Update to …") entry under Options. Before, the update was only reachable from the game table\'s menu, which the Library covers.', 'Starting a game from the Library no longer closes the Update window.', 'Library: resting the pointer on the edge between two fanned cards no longer flips the book back and forth. A card has to be pointed at for a moment before the page turns, and only one page turns at a time.'] },
   { v: '0.99.59', title: 'Fanned stacks and page turns are back', notes: ['Library: the deck on the desk is laid out in fanned stacks again (up to three different cards a stack, in mana-value order, lands last, the basic lands together), each card set a little lower, to the right and turned, so every name shows. Hovering a card only outlines it in gold, so nothing moves and nothing flickers.', 'The open book turns its page again for every card you point at, and turns back to the deck when you move away. The next card\'s picture is loaded before the page turns, so the page never shows an empty frame.'] },
   { v: '0.99.58', title: 'iPhone fixes and a gear in the Library', notes: ['iPhone and iPad: the app now keeps clear of the status bar (clock, battery), the notch and the home bar when it runs from the home screen. Before, the top bar sat under the clock.', 'Phone held upright: the top bar wraps onto a second row instead of running off the side, and the life totals wrap too, so your life is no longer cut off.', 'Phone held upright: your hand is fanned like real cards held in your hand, spread from one point below the screen, so the top of every card shows.', 'The Library has a gear (Settings) in its top right corner, on the computer and on phones.'] },
   { v: '0.99.57', title: 'No more flicker on the desk', notes: ['Library: hovering the cards laid out on the desk no longer flickers. A hovered card used to lift up a little; near its bottom edge, the lift moved it out from under the pointer and back, over and over. It now just gets a gold outline.', 'The open book only changes to a new card once its picture is ready, so the page never flashes empty between cards.'] },
@@ -409,6 +410,7 @@ async function installWithProgress(prog, bytesHint) {
 async function openUpdate(pre) {
   if (!window.desktop) return;
   const m = modal('Update app', { width: 560, sticky: !!pre });
+  try { const bd = m.el.closest('.backdrop') || m.el.parentElement; if (bd) bd.classList.add('keep'); } catch (e) {}   // v0.99.60 starting a game from the Library must not close this window
   const info = await window.desktop.info();
   const body = h('div'), prog = makeProgress(), status = h('p', { class: 'small', style: 'color:var(--gold)' }), note = h('p', { class: 'small', style: 'color:var(--gold)' });
   prog.el.hidden = true;
