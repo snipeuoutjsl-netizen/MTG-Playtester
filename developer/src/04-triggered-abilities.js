@@ -270,6 +270,12 @@ function parseModal(tx) {
   { const rm = tx.match(/\bchoose (one|two|three|four|five)\.\s*You may choose the same mode more than once\.\s*(?=•)/i);   // Mystic Confluence (CR 700.2d): the same mode may be chosen more than once
     if (rm) { const N0 = { one: 1, two: 2, three: 3, four: 4, five: 5 }; const modes0 = ('• ' + tx.slice(rm.index + rm[0].length)).split(/\s*•\s*/).slice(1).map(x => ({ text: x.trim() })).filter(x => x.text);
       if (modes0.length >= 2) return { spree: false, repeat: true, min: N0[rm[1].toLowerCase()], max: N0[rm[1].toLowerCase()], label: rm[1].toLowerCase() + ' (repeats allowed)', modes: modes0, kind: /^\s*(?:when|whenever|at the beginning)/i.test(tx.slice(0, rm.index)) ? 'trigger' : 'spell', escalate: '' }; } }
+  // v0.99.78 CR 700.2: "Choose one. If you control a Wizard as you cast this spell, you may choose two instead." (Flame of Anor, Go Nuts!, See Double, Inscription of Insight)
+  { const um = tx.match(/\bchoose (one|two)\.\s*(?:If|As long as) ([^•]+?), (you may )?choose (both|two|three|any number)(?: instead)?\.\s*(?=•)/i);
+    if (um) { const modes = ('• ' + tx.slice(um.index + um[0].length)).split(/\s*•\s*/).slice(1).map(x => ({ text: x.trim() })).filter(x => x.text);
+      if (modes.length >= 2) { const NN = { one: 1, two: 2, three: 3, both: 2 }, base = NN[um[1].toLowerCase()], up = um[4].toLowerCase() === 'any number' ? modes.length : NN[um[4].toLowerCase()];
+        const lead = tx.slice(tx.lastIndexOf('\n', um.index) + 1, um.index), kind = /\b(?:when|whenever|at the beginning of)\b/i.test(lead) ? 'trigger' : lead.includes(':') ? 'ability' : 'spell';
+        return { spree: false, min: base, max: base, label: um[1].toLowerCase(), modes, kind, escalate: '', upgrade: { cond: um[2].trim(), max: Math.min(up, modes.length), may: !!um[3], anyNumber: um[4].toLowerCase() === 'any number' } }; } } }
   m = tx.match(/\bchoose (one or both|one or more|up to (?:one|two|three|four)|one|two|three|four)\b[^•—]*—\s*/i);
   if (!m || !/•/.test(tx)) return null;
   const word = m[1].toLowerCase(), after = tx.slice(m.index + m[0].length);
@@ -306,7 +312,23 @@ function modalText(md, idxs) {
 }
 function mergeGeneric(cost) { let n = 0; const rest = []; for (const m of String(cost || '').match(/\{[^}]+\}/g) || []) { if (/^\{\d+\}$/.test(m)) n += +m.slice(1, -1); else rest.push(m); } return (n ? `{${n}}` : '') + rest.join(''); }
 function modalCost(md, idxs) { return md.spree ? idxs.map(i => md.modes[i].cost).join('') : md.escalate ? md.escalate.repeat(Math.max(0, idxs.length - 1)) : ''; }
+// v0.99.78 is the condition that lets you choose more modes met right now? true / false / null (the app cannot tell: you say)
+function modeUpgradeMet(cond, name) {
+  const c = String(cond || '').replace(/\s+as you cast this spell$/i, '').trim(); let m;
+  if ((m = c.match(/^you control (an?|one or more|two or more|three or more) (.+)$/i))) { try { const r = staticCheck('if you control ' + m[1] + ' ' + m[2], { name: name || '' }); return r.ok === true ? true : r.ok === false ? false : null; } catch (e) { return null; } }
+  if (/^you have (\w+) or (?:less|fewer) life$/i.test(c) || /^you have (\w+) or more life$/i.test(c)) { try { const r = staticCheck('if ' + c, { name: name || '' }); return r.ok === true ? true : r.ok === false ? false : null; } catch (e) { return null; } }
+  return null;   // kicked / teamwork / the opponent's graveyard: you say whether it is met
+}
 function openModeChoice(name, md, cb, baseCost, onCancel) {
+  if (md.upgrade && !md._up) {   // decide how many modes may be chosen before showing them
+    const met = modeUpgradeMet(md.upgrade.cond, name), up = md.upgrade;
+    const go = yes => { const m2 = Object.assign({}, md, { _up: true, upgrade: Object.assign({}, up, { met: yes }) }); if (yes) { m2.max = up.max; if (!up.may && !up.anyNumber) m2.min = up.max; m2.label = up.anyNumber ? 'any number' : up.may ? `${md.label} or ${up.max === 2 ? 'both' : up.max}` : String(up.max); if (up.anyNumber) m2.min = 1; } openModeChoice(name, m2, cb, baseCost, onCancel); };
+    if (met !== null) { go(met); return; }
+    const q = modal(`${name}: how many modes?`, { width: 520, sticky: true });
+    q.body.append(h('div', { class: 'psub', text: `If ${up.cond}, you ${up.may ? 'may ' : ''}choose ${up.anyNumber ? 'any number of modes' : up.max === 2 ? 'two modes' : up.max + ' modes'} instead of ${md.max === 1 ? 'one' : md.max}.` }), h('div', { class: 'muted small', text: 'The app cannot check this condition here (rule 700.2): tell it whether it is met.' }));
+    q.foot.append(h('button', { text: 'Not met', onclick: () => { q.close(); go(false); } }), h('button', { class: 'primary', text: 'It is met', onclick: () => { q.close(); go(true); } }));
+    return;
+  }
   const chosen = new Set();
   const m = modal(`${name}: choose ${md.spree ? 'additional costs' : md.min === md.max ? md.max === 1 ? 'one mode' : md.max + ' modes' : md.label}`, { width: 640, sticky: true });
   const info = h('div', { class: 'psub' });
