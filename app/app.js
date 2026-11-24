@@ -2596,11 +2596,39 @@ function castRoutes(c, extra) {
   for (const a of alts) for (const ch of chs) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond, ch));
   // v0.99.45 CR 118.9 + 601.2f: a permanent that lets you cast spells from your hand "without paying their mana costs" (Omniscience) is another way to cast them.
   { const fp = c.fromGy || c.fromExile ? null : freeCastPermission(c); if (fp) for (const ch of chs) routes.push(mk(`Without paying its mana cost (${fp})`, '', { kind: 'free', label: `Without paying its mana cost (${fp})`, mana: '', comps: [] }, '', ch)); }
+  // v0.99.64 CR 118.9: a permanent that offers another cost for spells you cast (As Foretold: "Once each turn, you may pay {0} rather than pay the mana cost
+  // for a spell you cast with mana value X or less …"). A card with no mana cost has mana value 0, so this is a way to cast Living End or Ancestral Vision (CR 118.6, 202.3a).
+  if (!c.fromGy) for (const g of grantedAltCosts(c)) for (const ch of chs) { const r = mk(g.label, g.mana ? taxed(g.mana, ec) : taxed('', ec), { kind: 'granted', label: g.label, mana: g.mana, comps: [], onPay: g.onPay }, '', ch); if (g.why) { r.ok = false; r.why = 'condition'; r.detail = g.why; } routes.push(r); }
   // CR 118.6: a card with no mana cost (Ancestral Vision, Lotus Bloom, Living End) can't be cast by paying its mana cost; only suspend or another effect casts it.
   if (noManaCost(c)) for (const r of routes) if (!r.alt) { r.ok = false; r.why = 'nocost'; r.detail = 'it has no mana cost, so it cannot be cast normally (CR 118.6)' + (suspendFor(c) ? '; suspend it instead' : ''); }
   const lim = routeLimits(c, routes); return lim.length ? lim : routes;
 }
 function noManaCost(c) { const i = c && !c.token ? cardInfo(c.name) : null; return !!i && !i.land && !String(i.mc || '').split(' // ')[0].trim() && !/\bLand\b/.test(frontType(c) || ''); }
+// Alternative costs offered by your permanents for the spells you cast, read from their text:
+// "[Once each turn, ]you may pay {COST} rather than pay the mana cost for [a|the first] [<type>] spell[s] you cast [from your hand] [each turn] [with mana value N or less | with mana value X or less, where X is the number of <kind> counters on <this permanent>]."
+function grantedAltCosts(c) {
+  const out = []; if (!state || !c || isLandName(c.name)) return out;
+  const own = cardInfo(c.name) || {}, mv = +own.cmc || 0, ty = frontType(c) || '';
+  if (!noManaCost(c) && symCmc(String(own.mc || '').split(' // ')[0]) === 0) return out;   // a {0} spell gains nothing from another {0} cost
+  for (const p of state.battlefield) { if (p.opp) continue; const tx = (cardText(p) || '').replace(/\([^)]*\)/g, '');
+    for (const raw of tx.split('\n')) { const line = raw.trim().replace(/’/g, "'"); const m = line.match(/^(once each turn, )?you may pay ((?:\{[^}]+\})+) rather than pay the mana cost for (?:a |an |the first )?(.+?)\.?$/i); if (!m) continue;
+      let rest = m[3]; const once = !!m[1] || /\bthe first\b/i.test(line) || /\beach turn\b/i.test(rest);
+      const fm = rest.match(/^(.*?)\s*spells? you cast\b/i); if (!fm) continue;
+      const filt = fm[1].trim().toLowerCase(); rest = rest.slice(fm[0].length);
+      if (/\bfrom your hand\b/i.test(rest) && (c.fromExile || c.fromGy)) continue;
+      if (filt && !(filterMatches(filt, c) || new RegExp('\\b' + filt.replace(/s$/, ''), 'i').test(ty))) continue;
+      let lim = Infinity, limTxt = '';
+      const lm = rest.match(/with mana value (\d+|x) or less(?:, where x is the number of ([+\-\w\/]+) counters on (?:this \w+|~|it|[A-Z][^.,]*))?/i);
+      if (lm) { if (/^x$/i.test(lm[1])) { const kind = (lm[2] || '').toLowerCase(), key = kind === '+1/+1' ? 'plus' : kind === '-1/-1' ? 'minus' : kind; lim = (p.counters && +p.counters[key]) || 0; limTxt = `: mana value ${lim} or less, from its ${lim} ${kind} counter${lim === 1 ? '' : 's'}`; } else { lim = +lm[1]; limTxt = `: mana value ${lim} or less`; } }
+      else if (/\bwith\b|\bif\b/i.test(rest.replace(/\b(?:from your hand|each turn|this turn)\b/gi, ''))) continue;   // a condition the app does not read: no button rather than a wrong one
+      let why = '';
+      if (mv > lim) why = `${p.name} allows mana value ${lim} or less; ${c.name} has mana value ${mv}`;
+      else if (once && p.altCostTurn === state.turn) why = `${p.name} was already used this turn`;
+      const pid = p.id;
+      out.push({ label: `Pay ${m[2]} instead \u2014 ${p.name}${limTxt}`, mana: m[2] === '{0}' ? '' : m[2], why, onPay: () => { const f = findCard(pid); if (f && once) f.card.altCostTurn = state.turn; log(`${c.name}: cast by paying ${m[2]} rather than its mana cost (${p.name}${once ? ', once each turn' : ''})`); } });
+    } }
+  return out;
+}
 function freeCastPermission(c) {
   if (!state) return null; const ty = frontType(c) || '';
   for (const p of state.battlefield) { if (p.opp) continue; const tx = cardText(p) || ''; let m;
@@ -2800,7 +2828,7 @@ function runCast(c, reopen, modes, route, kicks) {
     let manaE = mana; if (route.alt && route.alt.reduceBySac) { const sp = picks.find(p => p.comp.emerge); const sc = sp && findCard(sp.ids[0]); const mv = sc && !sc.card.token ? (cardInfo(sc.card.name) || {}).cmc || 0 : 0; manaE = reduceGenericBy(mana, mv); log(`${c.name}: emerge, ${sc ? sc.card.name : 'the sacrificed creature'} has mana value ${mv}, so the cost is reduced by ${mv}`); }
     runReducers(c, manaE, reducerKinds(c), (mana2, rpicks) => {
       const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke'), splice: kicks.filter(k => k.splice).map(k => k.splice) };
-      const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
+      const finish = ids => { if (route.alt && route.alt.onPay) route.alt.onPay(); commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
       if (noManaSpend(c) && (symCmc(full) > 0 || /\{[WUBRGCSP]/i.test(full))) { toast("You can't spend mana on this spell", `${c.name} must be paid for entirely by tapping creatures (convoke) and exiling cards from your graveyard (delve). ${full} is still unpaid, so it is not cast.`); return; }
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }
@@ -6740,8 +6768,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.63';
+const APP_VERSION = '0.99.64';
 const CHANGELOG = [
+  { v: '0.99.64', title: 'As Foretold', notes: ['RULES (CR 118.9): a permanent that says "you may pay {0} rather than pay the mana cost for a spell you cast with mana value X or less" (As Foretold) now gives each spell it allows a "Pay {0} instead" way to cast. X is read from its time counters, and "once each turn" is kept.', 'A card with no mana cost has mana value 0 (CR 202.3a), so Living End, Ancestral Vision and the like can be cast through As Foretold even with no time counters; they could not be cast at all before.', 'Spells over the limit show why the As Foretold way is not available (its mana value, or already used this turn). Cards that already cost {0} get no extra button.'] },
   { v: '0.99.63', title: 'The deck laid out like Deck stats, and an old book', notes: ['Library desk: the deck is laid out the way the Deck stats window shows it: grouped by card type (Creatures, Instants & Sorceries, Lands …), in mana-value order, one stack per card with its copies stacked straight down. Stacks never overlap, so the flicker is gone.', 'Hovering a card on the desk only turns the book to that card: nothing on the desk moves, grows or glows.', 'The cards are sized so the whole deck is always on screen, whatever the window shape (the desk is closer to you than the wall, so its real on-screen size is measured).', 'The menu book is bigger, lies back on its stand at a slight angle, and looks old: torn page edges, stains, a thick uneven page block and a worn leather cover. Pages turn up out of the book in 3D. Its print is a size larger and nothing is cut off.', 'The Archive line in the book counts the card data you really have: the full file, or the cards looked up for your decks (it used to say empty when only your decks\' cards were saved).'] },
   { v: '0.99.62', title: 'Windows start-up fix, phone fixes, rules batch', notes: ['Windows: after an in-app update the app could fail to open. The restart now hands over cleanly, a window saved off-screen or minimised is brought back on screen, and clicking the app again always shows its window. (This part needs the new installer once; later updates keep it.)', 'Phones and tablets: planeswalker loyalty abilities work again when the card data came from the backup source (MTGJSON writes costs as [+2]:, which the app now reads).', 'Phones: a double tap on a spell opened its choices twice (Kozilek\'s Command and other modal spells), so finishing one left a second copy behind. One double tap is now one action.', 'The target window names the right mode for each target even when the mode quotes an ability ("Sacrifice this token: Add {C}.").', 'Rules: regeneration shields (Regenerate ~ / target creature); "You may pay {X}. If you do, …"; "~ deals N damage to each creature / player / opponent"; spells that exile themselves as they finish; "target opponent loses N life" no longer also offers you; Ancient Stirrings-style reveal filters with subtypes and lists; Equip lines read correctly.'] },
   { v: '0.99.61', title: 'A real book, and swipe to move on', notes: ['The Library\'s menu book now reads like a book. The left page opens a chapter (Chapter I, The Standard Game; Chapter II, The Commander Game) with the deck in hand, who goes first and "Begin with …" in red ink. The right page is a table of contents with dotted leaders and page numbers. The pages have paper grain, page numbers and a page block, and the links are set as print, not buttons.', 'Standard and Commander are two silk ribbons on top of the book: pick the other ribbon and the page turns to that chapter.', 'The deck pages and the card pages use the same print.', 'Wide screens: the desk now runs the full width of the window. Phones held upright: the open book fits the screen, and the shelves no longer run under the name plate.', 'Phones held upright: swipe the table from right to left to go to the next step (the same as the Next button). The turn bar now wraps, so its Next buttons stay on screen.', 'Fixed: on a phone held upright the opening-hand prompt was covered by the hand.'] },
@@ -9773,6 +9802,7 @@ const KW_ENFORCED = { has(n) {
   return kwEnfMemo.has(n);
 } };
 const STATIC_PATTERNS = [
+  [/^(?:once each turn, )?you may pay (?:\{[^}]+\})+ rather than pay the mana cost for (?:a |an |the first )?(?:[\w\- ]*?)spells? you cast(?: from your hand)?(?: each turn)?(?: with mana value (?:\d+|x) or less(?:, where x is the number of [+\-\w\/]+ counters on (?:this \w+|~))?)?\.?$/i, 'Alternative cost for your spells (rule 118.9): each spell it allows gets a "Pay … instead" way to cast, limited by mana value (counted from the counters) and to once a turn where it says so. Cards with no mana cost have mana value 0, so they qualify.'],
   [/^(?:~|this creature) enters prepared\.?$/i, 'Prepared (CR 722.3c): it enters prepared, so a copy of its prepare spell waits in exile; cast it from the creature\'s menu or the exile zone. Casting it unprepares the creature.'],
   [/^you can'?t spend mana to cast this spell\.?$/i, "Can't spend mana (CR 601.2h): the whole cost has to be paid by convoke, delve and the like; the app refuses mana for it."],
   [/^you may cast (?:this card|~) from your graveyard\.?$/i, 'Cast from the graveyard (CR 601.3): the graveyard shows a Cast button for it, with the normal timing and cost.'],

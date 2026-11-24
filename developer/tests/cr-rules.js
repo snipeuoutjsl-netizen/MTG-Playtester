@@ -1474,6 +1474,15 @@ const { setup } = require('./common.js');
       const mv = [__d.mvOf(__d.cardInfo('Ancestral Vision')), __d.mvOf(__d.cardInfo('Forest')), __d.mvOf(__d.cardInfo('Fire // Ice') || { mc: '{1}{R} // {1}{U}', cmc: 4 })];
       return { free, blocked, mv };})()`));
     return { ok: r.free.every(Boolean) && r.blocked.every(Boolean) && r.mv[0] === 0 && r.mv[1] === 0 && r.mv[2] === 4, why: JSON.stringify(r) }; });
+  await T('118.9 + 118.6 + 202.3a', "As Foretold: 'Once each turn, you may pay {0} rather than pay the mana cost for a spell you cast with mana value X or less' — with no time counters only mana value 0 qualifies, so Living End (no mana cost) can be cast through it but Lightning Bolt cannot; with 1 counter Lightning Bolt can; once used, not again that turn; a {0} card gets no extra route", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      setup(['As Foretold'],['Living End','Lightning Bolt','Memnite']); const af = s.battlefield.find(x => x.name === 'As Foretold');
+      const rt = n => __d.castRoutes(s.hand.find(x => x.name === n)).filter(r => /As Foretold/.test(r.label));
+      const le0 = rt('Living End').map(r => r.ok), bolt0 = rt('Lightning Bolt').map(r => r.ok), mem = rt('Memnite').length;
+      af.counters = Object.assign(af.counters || {}, { time: 1 }); const bolt1 = rt('Lightning Bolt').map(r => r.ok);
+      rt('Living End')[0].alt.onPay(); const after = rt('Lightning Bolt').map(r => r.ok + ':' + r.detail);
+      const st = __d.cardModel ? null : null; return { le0, bolt0, mem, bolt1, after };})()`));
+    return { ok: r.le0[0] === true && r.bolt0[0] === false && r.mem === 0 && r.bolt1[0] === true && /already used/.test(r.after[0]) && /^false/.test(r.after[0]), why: JSON.stringify(r) }; });
   await T('601.3 + 601.2h + 702.51a', "Hogaak: 'You may cast this card from your graveyard' gives a graveyard cast; 'You can't spend mana' means the cost must be paid fully by convoke and delve (a black or green creature pays {B/G}); with too few creatures and cards it cannot be cast", async () => { await reset(); await toMain();
     const r = await ev(new Function('return (async()=>{' + amuSetup + `
       setup(['Narcomoeba','Golgari Thug','Ichorid'],[]); s.graveyard=['Stinkweed Imp','Creeping Chill','Cabal Therapy','Gitaxian Probe','Street Wraith'].map(mk); const hg=mk('Hogaak, Arisen Necropolis'); s.graveyard.push(hg);
