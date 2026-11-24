@@ -121,6 +121,7 @@ function etbCounters(c) {
     const fd = its.map(x => x.match(/^fading (\d+)$/i)).find(Boolean); if (fd) tx += `\n~ enters with ${fd[1]} fade counters on it.`; }   // CR 702.32a   // v0.96.1 modular (CR 702.43a)
   const m = tx.match(/\benters(?: the battlefield)? with (twice )?(an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);   // v0.99.32 also "twice X"
   if (!m) return;
+  if (!etbCounterCondOk(c, tx)) return;   // v0.99.81 Raid: "... counter on it if you attacked this turn"
   // v0.84 "...counter on it for each <type> card exiled with it" (Murktide Regent): one per matching card exiled while casting it (delve), not a flat one.
   const fe = tx.match(/\bcounters? on it for each ([^.]+?)(?:\.|$)/im);
   let n;

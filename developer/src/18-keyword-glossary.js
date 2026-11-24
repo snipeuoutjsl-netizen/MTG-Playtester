@@ -261,19 +261,24 @@ function fitBattlefieldCards() {
     const n = { creatures: 0, noncreature: 0, lands: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
     // v0.99.78 an empty zone shrinks to its label, so the zones with cards get the height (and their cards grow into it)
     const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2), row = k => n[k] ? `minmax(0, ${w(k)}fr)` : 'minmax(34px, 0.12fr)';
-    mat.style.setProperty('grid-template-rows', `92px ${row('creatures')} auto ${row('noncreature')} ${row('lands')}`, 'important');
+    const nb = n.noncreature + n.lands, bot = nb ? `minmax(0, ${Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(nb) * 0.42)).toFixed(2)}fr)` : 'minmax(34px, 0.12fr)';   // v0.99.81 lands and the other permanents share one row
+    mat.style.setProperty('grid-template-rows', `92px ${row('creatures')} auto ${bot}`, 'important');
   } else if (mat) mat.style.removeProperty('grid-template-rows'); } catch (e) { /* layout only */ }
   // v0.99.78 side by side (desktop, tablets, sideways phones): lands and artifacts/enchantments share the row by how many cards each holds,
   // so a big mana base gets the width and an empty zone shrinks to its label (and the other way round)
-  try { const mat = $('#mat'), zl = $('#zone-lands'), zn = $('#zone-noncreature'); if (mat && document.documentElement.classList.contains('portrait-ui')) mat.style.removeProperty('grid-template-columns');
-    if (mat && zl && zn && state && !document.documentElement.classList.contains('portrait-ui')) {
-    mat.style.removeProperty('grid-template-columns'); const cols = getComputedStyle(mat).gridTemplateColumns.split(' ').filter(Boolean);
-    if (cols.length === 3 && Math.abs(zl.offsetTop - zn.offsetTop) < 4) {
-      const n = { lands: 0, noncreature: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
-      const w = k => n[k] ? `minmax(0, ${(0.6 + Math.sqrt(n[k]) * 0.45).toFixed(2)}fr)` : 'minmax(150px, 0.3fr)';
-      const landsFirst = zl.offsetLeft < zn.offsetLeft;
-      mat.style.setProperty('grid-template-columns', `${landsFirst ? w('lands') : w('noncreature')} ${landsFirst ? w('noncreature') : w('lands')} ${cols[2]}`, 'important');
-    } } } catch (e) { /* layout only */ }
+  // v0.99.81 one zone: lands on the left, artifacts/enchantments/planeswalkers on the right, on every screen. The split follows how many cards
+  // each side holds. The weights are scaled to add up to 2: fr tracks that add up to less than 1 leave part of the row empty (CSS Grid 7.2.4),
+  // which is what left half of a wide window blank.
+  try { const mat = $('#mat'), zl = $('#zone-lands'), zn = $('#zone-noncreature');
+    if (mat && zl && zn && state) {
+      mat.style.removeProperty('grid-template-columns'); const cols = getComputedStyle(mat).gridTemplateColumns.split(' ').filter(Boolean), port = document.documentElement.classList.contains('portrait-ui');
+      if ((cols.length === 3 || (port && cols.length === 2)) && Math.abs(zl.offsetTop - zn.offsetTop) < 4) {
+        const n = { lands: 0, noncreature: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
+        const raw = k => n[k] ? 0.6 + Math.sqrt(n[k]) * 0.45 : 0.3, sum = raw('lands') + raw('noncreature'), mn = port ? 72 : 150;
+        const w = k => `minmax(${n[k] ? 0 : mn}px, ${(raw(k) / sum * 2).toFixed(3)}fr)`;
+        const landsFirst = zl.offsetLeft < zn.offsetLeft, pair = landsFirst ? `${w('lands')} ${w('noncreature')}` : `${w('noncreature')} ${w('lands')}`;
+        mat.style.setProperty('grid-template-columns', cols.length === 3 ? `${pair} ${cols[2]}` : pair, 'important');
+      } } } catch (e) { /* layout only */ }
   const specs = [
     { id: 'row-creatures', wrap: true },
     { id: 'row-noncreature', wrap: true },

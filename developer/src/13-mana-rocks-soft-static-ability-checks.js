@@ -84,6 +84,7 @@ function parseRestrictionPart(p) {
   if (/^if you have no cards in hand$/i.test(p)) return { kind: 'hand', max: 0, label: 'if you have no cards in hand' };
   if ((m = p.match(/^if you have (\w+) or (more|fewer) cards in (?:your )?(hand|graveyard)$/i))) return { kind: 'count', n: numOf(m[1]), more: /more/i.test(m[2]), zone: m[3].toLowerCase() === 'hand' ? 'hand' : 'graveyard', label: p };
   if ((m = p.match(/^if there are (\w+) or more cards in your graveyard$/i))) return { kind: 'count', n: numOf(m[1]), more: true, zone: 'graveyard', label: p };
+  if ((m = p.match(/^if (.+)$/i))) return { kind: 'cond', cond: m[1], label: p };   // v0.99.81 any condition evalCond reads ("if a creature died this turn")
   return null;
 }
 function parseRestriction(cond) {
@@ -96,6 +97,7 @@ function checkRestrictionPart(rec, card) {
   switch (rec.kind) {
     case 'sorcery': return canPlaySorcerySpeedNow() ? { ok: true, why: '' } : { ok: false, why: 'This can only be activated at sorcery speed: your main phase with an empty stack.' };
     case 'myturn': return { ok: true, why: '' };
+    case 'cond': { let v = null; try { v = evalCond(rec.cond, card); } catch (e) { v = null; } return v === true ? { ok: true, why: '' } : v === false ? { ok: false, why: `Activate only ${rec.label}: not true right now.` } : { ok: null, why: `Restriction "Activate only ${rec.label}" could not be checked automatically. Make sure it is met.` }; }
     case 'any': { const rs = rec.parts.map(x => checkRestrictionPart(x, card)); if (rs.some(r => r.ok === true)) return { ok: true, why: '' }; if (rs.every(r => r.ok === false)) return { ok: false, why: 'Needs ' + rec.label + '.' }; return { ok: null, why: '' }; }
     case 'entered': return card && card.enteredTurn === state.turn ? { ok: true, why: '' } : { ok: false, why: 'It did not enter the battlefield this turn.' };
     case 'attacked': return card && state.combat && state.combat.declared && (state.combat.attackers || []).some(a => (a.id ?? a) === card.id) ? { ok: true, why: '' } : { ok: false, why: 'This creature has not attacked this turn.' };
@@ -130,6 +132,7 @@ function staticCheck(cond, card) {
     if (!p.rec) { unknown = unknown || { ok: null, why: `Restriction "Activate only ${p.raw}" could not be checked automatically. Make sure it is met.` }; continue; }
     const r = checkRestrictionPart(p.rec, card);
     if (r.ok === false) return r;
+    if (r.ok === null) unknown = unknown || r;
   }
   return unknown || { ok: true, why: '' };
 }

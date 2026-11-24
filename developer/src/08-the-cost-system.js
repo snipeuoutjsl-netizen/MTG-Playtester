@@ -159,6 +159,7 @@ function effectiveCost(c) {
     const per = (m[1].match(/\{(\d+)\}/g) || []).reduce((a, x) => a + parseInt(x.slice(1), 10), 0), n = countForEach(m[2]);
     if (per && n !== null && per * n > 0) { cut += per * n; notes.push(`${n} × {${per}} less (${m[2].replace(/ you control$/, '').replace(/^basic land type among lands$/, 'basic land type')})`); }
   }
+  { const cc = condCostCut(c, tx); if (cc) { cut += cc.n; notes.push(cc.why); } }   // v0.99.81 "costs {N} less to cast if …"
   if (/^Undaunted\s*$/im.test(tx)) { cut += 1; notes.push('Undaunted: {1} less for each opponent (1 opponent)'); }
   const am = tx.match(/^Affinity for ([a-z ]+?)\s*$/im);
   if (am) { const w = singularWord(am[1].trim().split(/\s+/).pop()), n = state.battlefield.filter(x => { const p = permTypeInfo(x); return p.types.has(w) || p.subs.has(w); }).length; if (n) { cut += n; notes.push(`Affinity: ${n} × {1} less (${am[1].trim()})`); } }
@@ -400,7 +401,7 @@ function applyCostInfo(c, ci) {
   try {
     if (ci.life) { state.life -= ci.life; log(`${c.name}: paid ${ci.life} life as a cost`); }
     applyPicks(c, ci.picks || []);
-    if (ci.alt === 'warp') { c.warped = true; log(`${c.name}: cast for its warp cost (exiled at the next end step)`); }
+    if (ci.alt === 'warp') { c.warped = true; memBump('warped', 1); log(`${c.name}: cast for its warp cost (exiled at the next end step)`); }
     if (ci.alt === 'blitz') c.blitzed = true;
     if (ci.alt === 'dash') c.dashed = true;
     if (ci.casualty) c.casualtyPaid = true;
