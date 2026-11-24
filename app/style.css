@@ -2638,3 +2638,12 @@ html.portrait-ui #bsActions button { padding: 8px 14px; font-size: 14px; }
 #hall .tome-leaf .tl-back { transform: rotateY(180deg); }
 #hall .tome-leaf .tl-face img { max-height: 356px; max-width: 100%; border-radius: 10px; box-shadow: 0 4px 10px rgba(60,30,5,.45); display: block; }
 #hall .tome-leaf .tl-face .tc-noimg { width: 240px; height: 336px; border-radius: 10px; border: 2px solid rgba(122,79,29,.5); display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; font: 700 18px Georgia, serif; color: #4a250c; box-sizing: border-box; }
+/* v0.99.66 a resolving effect's choices sit inside the stack window */
+#stackStage .modal.res-panel { position: static; width: auto !important; max-width: none; max-height: none; margin: 8px 0 4px; box-shadow: 0 0 0 1px rgba(227,185,92,.45); border-radius: 10px; transform: none; animation: none; overflow: visible; }
+#stackStage .modal.res-panel > header { font-size: 15px; padding: 8px 12px; }
+#stackStage .modal.res-panel > header button { display: none; }
+#stackStage .modal.res-panel > .mbody { max-height: none; overflow: visible; padding: 8px 12px; }
+#stackStage .modal.res-panel > footer { padding: 8px 12px; }
+#stackStage.sk.has-panel { width: 470px; overflow-y: auto; }
+html.portrait-ui #stackStage.sk.has-panel { width: auto; max-height: calc(100% - 130px); }
+#stackStage .modal.res-panel > header { display: none; }

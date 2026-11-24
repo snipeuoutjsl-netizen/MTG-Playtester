@@ -114,7 +114,9 @@ function drawStackStage() {
   const resPick = !!state && state.phase === 'play' && state.discarding > 0 && (layoutOn('pickCentre') || (!state.stack.length && !!handPick && !!handPick.res));   // v0.94.2 every hand choice, not only ones from a resolving ability
   const resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
   const on = !!state && state.phase === 'play' && (state.stack.length > 0 || resPick || resSpell || resAb);
-  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { el.replaceChildren(); return; }
+  const panel = [...document.querySelectorAll('.modal.res-panel')].pop() || null;
+  const home = () => { if (panel && panel._home && panel.parentNode !== panel._home && panel._home.isConnected) panel._home.append(panel); };
+  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { home(); el.replaceChildren(); el.classList.remove('has-panel'); return; }
   el.classList.add('sk'); el.classList.toggle('min', stackMin && !resPick);
   const pickSrc = resPick ? pickSource() : null;
   const items = resPick ? [handPick && handPick.res ? (state.resolving || Object.assign({}, handPick.res, { id: 'res', ability: true })) : pickSrc] : resSpell ? [state.resolving] : resAb ? [state.resolvingAb, ...[...state.stack].reverse()] : [...state.stack].reverse();
@@ -170,10 +172,12 @@ function drawStackStage() {
     h('span', { class: 'sk-sp' }),
     stackMin && main ? (() => { const b = main.cloneNode(true); b.onclick = main.onclick; b.disabled = main.disabled; b.classList.add('sk-mini'); return b; })() : null,
     h('button', { class: 'sk-fold', 'aria-label': stackMin ? 'Show the stack' : 'Fold the stack', title: stackMin ? 'Show the stack' : 'Fold the stack down to one line', text: stackMin ? '▾' : '▴', onclick: () => { stackMin = !stackMin; drawStackStage(); } }));
-  if (stackMin && !resPick) { el.replaceChildren(head); return; }
+  el.classList.toggle('has-panel', !!panel);
+  if (stackMin && !resPick && !panel) { el.replaceChildren(head); return; }
+  if (panel) { el.classList.remove('min'); if (resAb) { note = null; buttons = []; } }   // its own Done button finishes it   // the panel itself says what is resolving and holds its choices
   el.replaceChildren(head,
     list.length ? h('div', { class: 'sk-list' }, list.map(row)) : null,
-    note, linesEl(),
+    note, panel, linesEl(),
     h('div', { class: 'sk-foot ss-btns' }, ...buttons.filter(Boolean)), hint);
 }
 // kept for older callers: the docked panel needs no scaling

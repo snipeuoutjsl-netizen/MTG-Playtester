@@ -67,7 +67,7 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('keydown', e => {
     if (e.target.closest && e.target.closest('input, textarea, select')) return;
-    if ($('#modalRoot').children.length) { if (e.key === 'Escape' && !$('#modalRoot').lastElementChild.querySelector('.modal[data-noclose]')) $('#modalRoot').lastElementChild.querySelector('header button').click(); return; }
+    if ($('#modalRoot').children.length) { const top = [...document.querySelectorAll('#modalRoot .modal')].pop() || document.querySelector('#stackStage .modal.res-panel'); if (e.key === 'Escape' && top && !top.matches('[data-noclose]')) { const x = top.querySelector('header button'); if (x) x.click(); } return; }   // v0.99.66 the resolve panel may sit in the stack window
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
     else if (e.ctrlKey || e.metaKey || e.altKey) return;
