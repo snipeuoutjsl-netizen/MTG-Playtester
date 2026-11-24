@@ -8,15 +8,21 @@
    fits the whole layout to the screen (pinch to zoom still works). Desktop windows are not touched. */
 (function () {
   if (/Electron/.test(navigator.userAgent)) return;
-  var MIN_W = 1180, MIN_H = 680;
+  var MIN_W = 1180, MIN_H = 680, PORTRAIT_W = 520;
   function fit() {
     var a = screen.width, b = screen.height, land = (window.matchMedia && matchMedia('(orientation: landscape)').matches);
     var dw = land ? Math.max(a, b) : Math.min(a, b), dh = land ? Math.min(a, b) : Math.max(a, b);
+    var coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
     var m = document.getElementById('vpMeta'); if (!m) return;
+    /* v0.99.55 a phone or tablet held upright gets the upright layout (html.portrait-ui), laid out PORTRAIT_W wide on phones */
+    var upright = coarse && !land && dw < 900;
+    document.documentElement.classList.toggle('portrait-ui', upright);
+    if (upright) { m.setAttribute('content', dw < PORTRAIT_W ? 'width=' + PORTRAIT_W + ', viewport-fit=cover' : 'width=device-width, initial-scale=1, viewport-fit=cover'); return; }
     if (dw >= MIN_W && dh >= MIN_H) { m.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover'); return; }
     var w = Math.max(MIN_W, Math.ceil(MIN_H * dw / dh));
     m.setAttribute('content', 'width=' + w + ', viewport-fit=cover');
   }
+  window.__fitViewport = fit;
   fit(); window.addEventListener('orientationchange', function () { setTimeout(fit, 150); }); window.addEventListener('resize', fit);
 })();
 </script>
@@ -183,7 +189,6 @@
 
 <div id="modalRoot"></div>
 <div id="ctxMenu" hidden></div>
-<div id="rotateHint" role="alert"><svg class="rot" viewBox="0 0 64 64" fill="none" stroke="#e3b95c" stroke-width="3" stroke-linejoin="round"><rect x="20" y="6" width="24" height="52" rx="5"/><circle cx="32" cy="51" r="2" fill="#e3b95c"/></svg><div>Turn your phone sideways</div><small>The table needs the width.</small></div>
 <script src="app.js"></script>
 <script>
 /* v0.99.54 the web app keeps working offline once loaded (sw.js); the desktop app (Electron, file://) does not use it */

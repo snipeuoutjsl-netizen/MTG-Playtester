@@ -57,7 +57,7 @@ function deckSpreadEl(deck, deckName, onCard) {
     const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
     const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
     const piles = [...all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), ...all.filter(c => isLand(c) && !isBasic(c)).sort(byName), ...all.filter(isBasic).sort(byName)];
-    const W = 1520, H = 290, GAP = 14, N = Math.max(1, piles.length);
+    const W = hallPortrait() ? 860 : 1520, H = hallPortrait() ? 290 : 290, GAP = 14, N = Math.max(1, piles.length);
     let best = { r: 1, cw: 0, ch: 0 };
     for (let r = 1; r <= 4; r++) { const cols = Math.ceil(N / r), cw0 = (W - GAP * (cols - 1)) / cols - 6, ch = Math.min(cw0 * 1.395, (H - GAP * (r - 1)) / r - 6), cw = ch / 1.395; if (cw > best.cw) best = { r, cw, ch, cols }; }
     const cw = Math.min(150, Math.floor(best.cw)), ch = Math.round(cw * 1.395);
@@ -134,16 +134,23 @@ function openHallLook() {
 const HALL_LOGO = '<svg class="lg" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lgGoldP" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1bd"/><stop offset=".45" stop-color="#e9c26a"/><stop offset="1" stop-color="#a8761f"/></linearGradient></defs><g fill="url(#lgGoldP)"><path d="M7 22.5 32 9l25 13.5z"/><path fill="var(--lg-bg, #1b130d)" d="M15.5 20.6 32 12.2l16.5 8.4z"/><rect x="8.5" y="23.8" width="47" height="3.6" rx=".6"/>\n<rect x="11.2" y="29" width="4" height="16.5" rx=".8"/><rect x="19.1" y="29" width="4" height="16.5" rx=".8"/><rect x="27" y="29" width="4" height="16.5" rx=".8"/><rect x="33" y="29" width="4" height="16.5" rx=".8"/><rect x="40.9" y="29" width="4" height="16.5" rx=".8"/><rect x="48.8" y="29" width="4" height="16.5" rx=".8"/>\n<rect x="9.5" y="27.6" width="45" height="1.6" rx=".5"/>\n<path d="M5 48.2c9.2-2.6 19-2.1 27 2.6v5.4c-8-4.4-17.8-4.9-27-2.4z"/><path d="M59 48.2c-9.2-2.6-19-2.1-27 2.6v5.4c8-4.4 17.8-4.9 27-2.4z"/></g></svg>';
 const HALL_W = 1600, HALL_H = 900, HALL_PER_PAGE = 40;
 let hallPage = 0;
+// v0.99.55 a tall window (a phone held upright) gets the room arranged for portrait: a 900 x 1600 stage, three shelves above
+// the open book, which is drawn large across the desk, and the deck's piles below it
+function hallPortrait() { const el = document.getElementById('hall'); return !!(el && el.classList.contains('portrait')); }
+function hallWantsPortrait() { const el = document.getElementById('hall'); return !!el && el.clientHeight > el.clientWidth * 1.1; }
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
   const vp = document.querySelector('#hall .hall-view'), st = vp && vp.querySelector('.hall-stage'); if (!st) return;
-  const k = Math.min(vp.clientWidth / HALL_W, vp.clientHeight / HALL_H) || 1; st.style.setProperty('--hs', String(Math.max(0.3, Math.min(1.6, k))));
+  const W = hallPortrait() ? 900 : HALL_W, H = hallPortrait() ? 1600 : HALL_H;
+  const k = Math.min(vp.clientWidth / W, vp.clientHeight / H) || 1; st.style.setProperty('--hs', String(Math.max(0.2, Math.min(1.6, k))));
 }
-window.addEventListener('resize', () => { if (hallOpen()) hallFit(); });
+window.addEventListener('resize', () => { if (!hallOpen()) return; if (hallWantsPortrait() !== hallPortrait()) drawHall(); else hallFit(); });
 function drawHall() {
   const el = document.getElementById('hall'); if (!el) return;
   const decks = loadDecks(), mode = gameMode(), all = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
-  const pages = Math.max(1, Math.ceil(all.length / HALL_PER_PAGE)); hallPage = Math.min(hallPage, pages - 1);
-  const names = all.slice(hallPage * HALL_PER_PAGE, (hallPage + 1) * HALL_PER_PAGE);
+  const portrait = hallWantsPortrait(); el.classList.toggle('portrait', portrait);
+  const PER = portrait ? 30 : HALL_PER_PAGE;
+  const pages = Math.max(1, Math.ceil(all.length / PER)); hallPage = Math.min(hallPage, pages - 1);
+  const names = all.slice(hallPage * PER, (hallPage + 1) * PER);
   const world = h('div', { class: 'hall-world' }); hallHost = { el: world };
   const btn = (text, fn, cls, title) => h('button', { class: 'hall-btn ' + (cls || ''), text, title: title || '', onclick: fn });
   const inGame = !!(state && state.deckName);
@@ -177,7 +184,7 @@ function drawHall() {
       h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts')));
   const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
   const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: (deck, name) => deckSpreadEl(deck, name, c => tomeCard(tome, c, name)), layer: null };
-  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: hallScene });
+  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: portrait ? 3 : 4, scale: 0.8, scene: hallScene });
   const pager = pages > 1 ? h('div', { class: 'hall-pager' },
     h('button', { text: '‹', title: 'Previous shelves', disabled: hallPage === 0, onclick: () => { hallPage--; drawHall(); } }),
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
