@@ -1,0 +1,29 @@
+# Publishes the web app (phones, tablets, any browser) to GitHub Pages whenever the app changes on main.
+name: Web app (GitHub Pages)
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency: { group: pages, cancel-in-progress: true }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: '${{ steps.dep.outputs.page_url }}' }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect the web files
+        run: |
+          mkdir site
+          cp app/index.html app/app.js app/style.css app/manifest.webmanifest app/sw.js site/
+          cp -r app/icons site/icons
+          touch site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+      - id: dep
+        uses: actions/deploy-pages@v4

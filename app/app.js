@@ -6703,8 +6703,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.53';
+const APP_VERSION = '0.99.54';
 const CHANGELOG = [
+  { v: '0.99.54', title: 'Phones and tablets', notes: ['The app now runs in the browser on phones and tablets (iPhone, iPad, Android) and can be installed to the home screen like an app. It keeps working offline once loaded. Address: snipeuoutjsl-netizen.github.io/MTG-Playtester', 'Touch: drag a card with your finger to play it or move it, press and hold for the card menu (the right-click menu), and double-tap for a double-click.', 'Small screens get the whole table fitted to the screen (pinch to zoom still works). Phones are asked to turn sideways, because the table needs the width.', 'The deck on the Library desk is now one pile per card, its copies stacked underneath, dealt out on a grid that never overlaps. Moving from card to card changes the open book\'s page without the turning leaf, which removes the flicker.'] },
   { v: '0.99.53', title: 'A new logo, and the Library arranged', notes: ['New logo: a temple front (the Library) standing on an open book, in gold. It is used in the top bar, on the Library\'s name plate and as the app icon.', 'The deck on the desk: stacks hold at most three different cards (the basic lands share one stack), the mana-value labels are gone, and the cards are bigger. Hovering a card outlines it in gold instead of lifting it over its neighbours, and the open book turns to its page.', 'The menu book is regrouped. The left page is for playing: your game, the deck in hand, Standard or Commander, who goes first, and Start. The right page is for the Library: Decks, Options and Help.', '"Buy this deck…" is now among a deck\'s buttons in the Library.', 'Library look… (in the menu book): choose the wall (warm plaster, sage, midnight, oxblood, ash grey, wood boards) and the desk (walnut, oak, mahogany, ebony, green baize).', 'Rules: type words side by side now all apply (CR 205.2b). A cost like "Sacrifice an artifact creature" accepts only artifact creatures, and a trigger for "an artifact creature" ignores plain artifacts and plain creatures. Before, either type was enough.', 'Rules: costs that say nontoken, token, noncreature (or any non-type), colorless, multicolored, basic, legendary or tapped now work. Before, they matched nothing (could not be paid) or ignored the word. "A red or green creature" now means a red creature or a green creature.', 'Rules: every card drawn triggers "Whenever you draw a card" (CR 121.2). Before, only the first three cards of one draw did.', 'Rules: "a white or green creature" in a trigger now matches a creature of either colour. Before, only the first colour was checked.'] },
   { v: '0.99.52', title: 'Turn to the card', notes: ['Hovering a card laid out on the desk now turns the open book to that card\'s page: its picture on the left, and on the right its name, cost, type, rules text, power and toughness, and how many the deck has. Move off the cards and the book turns back to the deck. The cards on the desk only lift a little now instead of zooming.', 'Fixed: going back to the Library from a game could show an empty screen. The Library\'s fade-out stayed on it, so it opened invisible the next time. This was also behind the "crash" when changing decks mid-game.', 'The deck button in the top bar is now "Return to the Library". Your game is kept, and "Back to the table" (or Esc) returns to it.'] },
   { v: '0.99.51', title: 'The deck on the desk', notes: ['When you take a book down, its main deck is laid out on the desk below: one column per mana value (0 to 7+, lands last), each card once with its count, fanned so every name shows. Hover a card (or tab to it) to lift it to full size.', 'The deck details on the open book are now set as two proper pages: the deck on the left; key cards and the buttons on the right.', 'Books are solid now: a page block shows at the top, the bottom and the fore-edge, so a book taken down from a high shelf no longer looks hollow from underneath.', 'The title plate is lettered in Cinzel Decorative with a gold finish.', 'Clicking a book on the shelves always takes that book: the side of the book next to it, seen at an angle, could catch the click before.', 'Starting a game from the Library while one is in progress first clears any windows the old game left open. If the game cannot start, you get a message on the table instead of a blank screen.', 'The desk top is now a picture already drawn in the room\'s perspective. It looks the same but is much lighter on the graphics card than the huge 3D surface it replaces.'] },
@@ -13631,27 +13632,31 @@ function beginWith(name) {
 function deckSpreadEl(deck, deckName, onCard) {
   const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
   const build = () => {
-    // v0.99.53 stacks of at most three different cards (in mana-value order, lands last; the basic lands share one stack), no labels
+    // v0.99.54 one pile per card: its copies lie on top of each other (a pile of four Thoughtseize is four cards deep), and the piles
+    // are dealt out in mana-value order (lands last) on a grid sized to fill the desk without any two piles overlapping.
     const tot = new Map();
     for (const x of deck.main) { const rec = resolve(x.name), nm = rec ? rec.name : x.name, o = tot.get(nm) || { name: nm, rec, qty: 0 }; o.qty += (x.qty || x.n || 1); tot.set(nm, o); }
     const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
     const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
-    const spells = all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), lands = all.filter(c => isLand(c) && !isBasic(c)).sort(byName), basics = all.filter(isBasic).sort(byName);
-    const stacks = [], chunk3 = list => { for (let i = 0; i < list.length; i += 3) stacks.push(list.slice(i, i + 3)); };
-    const mvs = [...new Set(spells.map(mv))]; for (const v of mvs) chunk3(spells.filter(c => mv(c) === v));
-    chunk3(lands); if (basics.length) stacks.push(basics);
-    const STRIP = 30, CH = 206;
-    const cols = stacks.map(list => h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + CH}px` }, list.map((c, i) => {
-      const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
+    const piles = [...all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), ...all.filter(c => isLand(c) && !isBasic(c)).sort(byName), ...all.filter(isBasic).sort(byName)];
+    const W = 1520, H = 290, GAP = 14, N = Math.max(1, piles.length);
+    let best = { r: 1, cw: 0, ch: 0 };
+    for (let r = 1; r <= 4; r++) { const cols = Math.ceil(N / r), cw0 = (W - GAP * (cols - 1)) / cols - 6, ch = Math.min(cw0 * 1.395, (H - GAP * (r - 1)) / r - 6), cw = ch / 1.395; if (cw > best.cw) best = { r, cw, ch, cols }; }
+    const cw = Math.min(150, Math.floor(best.cw)), ch = Math.round(cw * 1.395);
+    el.style.setProperty('--cw', cw + 'px'); el.style.setProperty('--ch', ch + 'px'); el.style.setProperty('--cols', String(Math.ceil(N / best.r)));
+    const cards = piles.map(c => {
+      const im = imgFor(c.name, deckName), layers = Math.min(4, c.qty) - 1;
+      const card = h('div', { class: 'ds-card' + (im ? ' img' : ''), title: `${c.qty} × ${c.name}`, tabindex: 0 },
         im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
         h('em', { class: 'ds-qty', text: '×' + c.qty }));
       const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
-      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 120); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
-      return card; })));
-    el.replaceChildren(...cols);
-    requestAnimationFrame(() => { const W = 1520, H = 268, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
+      const pile = h('div', { class: 'ds-pile', style: `--layers:${layers}` }, Array.from({ length: layers }, (_, i) => h('i', { class: 'ds-under', style: `--k:${layers - i}` })), card);
+      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 220); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
+      return pile; });
+    el.replaceChildren(...cards);
+    el.style.removeProperty('--dsk');
   };
-  if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 350); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
+  if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 600); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
   build();
   try { loadCachedImages(deck.main.map(x => x.name)).then(n => { if (n && el.isConnected) build(); }); } catch (e) {}
   return el;
@@ -13682,6 +13687,7 @@ function tomeCard(tome, c, deckName) {
   };
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
   if (calm) { fill(); return; }
+  if (c && cur) { fill(); const pg = tome.querySelector('.tome-card'); if (pg) wa(pg, [{ opacity: .55 }, { opacity: 1 }], { duration: 160 }); return; }   // card to card: same page, new picture (no flicker of turning leaves)
   // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck
   tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
   const back = !c, leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);
@@ -13771,6 +13777,80 @@ function drawHall() {
   applyHallLook(); hallFit(); requestAnimationFrame(hallFit);
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull')) { e.preventDefault(); closeHall(true); } });
+// ---------------------------------------------------------------- v0.99.54 phones and tablets (the web app)
+// The desktop layout is kept and fitted to the screen: on a screen smaller than the design size the viewport is widened (see the
+// script in index.html), phones are asked to turn sideways, and touch gets what a mouse has:
+//   drag a card      -> touch, move: the browser's drag events are replayed from the finger (the existing drop code runs unchanged)
+//   right-click      -> press and hold
+//   double-click     -> double tap
+const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
+(function touchLayer() {
+  if (typeof document === 'undefined') return;
+  let st = null, lastTap = null, swallowClick = 0;
+  const fire = (el, type, x, y, dt) => {
+    if (!el) return null;
+    let ev; try { ev = new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }); } catch (e) { ev = null; }
+    if (!ev || !ev.dataTransfer) { ev = new Event(type, { bubbles: true, cancelable: true }); Object.defineProperty(ev, 'dataTransfer', { value: dt }); Object.defineProperty(ev, 'clientX', { value: x }); Object.defineProperty(ev, 'clientY', { value: y }); }
+    el.dispatchEvent(ev); return ev;
+  };
+  const under = (x, y) => document.elementFromPoint(x, y);
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch' || !e.isPrimary) return;
+    const src = e.target.closest && e.target.closest('[draggable="true"]');
+    st = { x: e.clientX, y: e.clientY, src, target: e.target, drag: false, held: false, t: Date.now() };
+    st.timer = setTimeout(() => {   // press and hold = right-click (card menus, the library menu ...)
+      if (!st || st.drag) return; st.held = true; swallowClick = Date.now();
+      const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: st.x, clientY: st.y, button: 2 }); (under(st.x, st.y) || st.target).dispatchEvent(ev);
+      try { navigator.vibrate && navigator.vibrate(12); } catch (x) {}
+    }, TOUCH.holdMs);
+  }, true);
+  document.addEventListener('pointermove', e => {
+    if (!st || e.pointerType !== 'touch') return;
+    const dx = e.clientX - st.x, dy = e.clientY - st.y;
+    if (!st.drag && Math.hypot(dx, dy) > TOUCH.dragPx) {
+      clearTimeout(st.timer);
+      if (!st.src || st.held) return;
+      st.drag = true; st.dt = (() => { try { return new DataTransfer(); } catch (x) { const m = new Map(); return { setData: (k, v) => m.set(k, v), getData: k => m.get(k) || '', types: [], effectAllowed: 'all', dropEffect: 'move', files: [], setDragImage() {} }; } })();
+      fire(st.src, 'dragstart', st.x, st.y, st.dt);
+      const r = st.src.getBoundingClientRect(), g = st.src.cloneNode(true);
+      g.classList.add('touch-ghost'); Object.assign(g.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', margin: 0, pointerEvents: 'none', zIndex: 99999, opacity: '.88', transform: 'scale(1.06) rotate(-2deg)', transition: 'none' });
+      document.body.append(g); st.ghost = g; st.gx = r.left - st.x; st.gy = r.top - st.y;
+    }
+    if (st.drag) {
+      e.preventDefault();
+      st.ghost.style.left = (e.clientX + st.gx) + 'px'; st.ghost.style.top = (e.clientY + st.gy) + 'px';
+      const t = under(e.clientX, e.clientY);
+      if (t !== st.over) { if (st.over) fire(st.over, 'dragleave', e.clientX, e.clientY, st.dt); if (t) fire(t, 'dragenter', e.clientX, e.clientY, st.dt); st.over = t; }
+      const ov = fire(t, 'dragover', e.clientX, e.clientY, st.dt); st.canDrop = !!(ov && ov.defaultPrevented);
+    }
+  }, { capture: true, passive: false });
+  const end = (e, cancel) => {
+    if (!st || e.pointerType !== 'touch') return;
+    clearTimeout(st.timer);
+    if (st.drag) {
+      if (!cancel && st.over && st.canDrop) fire(st.over, 'drop', e.clientX, e.clientY, st.dt);
+      fire(st.src, 'dragend', e.clientX, e.clientY, st.dt); if (st.ghost) st.ghost.remove(); swallowClick = Date.now();
+    } else if (!st.held && !cancel && Date.now() - st.t < 400) {   // a tap: a second tap close by = double-click
+      const now = Date.now(), tgt = e.target;
+      if (lastTap && now - lastTap.t < TOUCH.dblMs && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < TOUCH.dblPx) {
+        setTimeout(() => tgt.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY })), 0); lastTap = null;
+      } else lastTap = { t: now, x: e.clientX, y: e.clientY };
+    }
+    st = null;
+  };
+  document.addEventListener('pointerup', e => end(e, false), true);
+  document.addEventListener('pointercancel', e => end(e, true), true);
+  // the click that a browser sends after a drag or a press-and-hold is not a click
+  document.addEventListener('click', e => { if (swallowClick && Date.now() - swallowClick < 600) { e.preventDefault(); e.stopPropagation(); swallowClick = 0; } }, true);
+  // iOS has no right-click menu of its own to block, but its long-press callout and text selection would fight the press-and-hold
+  document.addEventListener('contextmenu', e => { if (e.isTrusted && matchMedia('(pointer: coarse)').matches && !(e.target.closest && e.target.closest('input, textarea'))) e.preventDefault(); }, true);
+})();
+// phones held upright: the table needs the width, so ask for landscape
+function phoneOrientationCheck() {
+  const s = Math.min(screen.width, screen.height), portrait = matchMedia('(orientation: portrait)').matches;
+  document.documentElement.classList.toggle('phone-portrait', s < 600 && portrait && matchMedia('(pointer: coarse)').matches);
+}
+if (typeof window !== 'undefined') { window.addEventListener('orientationchange', () => setTimeout(phoneOrientationCheck, 200)); window.addEventListener('resize', phoneOrientationCheck); setTimeout(phoneOrientationCheck, 0); }
 init();
 
 })();

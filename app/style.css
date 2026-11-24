@@ -2291,3 +2291,26 @@ button.deckpick.libret:hover { border-color: #e3b95c; background: rgba(227,185,9
 #hall .hall-tome .hall-link { white-space: normal; line-height: 1.2; font-size: 13px; }
 #hall .hall-tome .hall-btn.primary { background: linear-gradient(180deg, #9a3a1c, #6e220c); color: #fff4dc; border: 1px solid #5a1a08; border-radius: 6px; font-weight: 700; padding: 7px 10px; margin-top: 4px; }
 #hall .hall-tome .hall-btn.primary:hover { filter: brightness(1.1); }
+/* v0.99.54 phones and tablets */
+@media (pointer: coarse) {
+  html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+  [draggable="true"], .card, .bk-face.spine, .ds-card { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  img { -webkit-user-drag: none; -webkit-touch-callout: none; }
+}
+.touch-ghost { box-shadow: 0 14px 30px rgba(0,0,0,.6) !important; }
+#rotateHint { display: none; }
+html.phone-portrait #rotateHint { display: flex; position: fixed; inset: 0; z-index: 100000; flex-direction: column; align-items: center; justify-content: center; gap: 28px; text-align: center; padding: 40px;
+  background: radial-gradient(ellipse at 50% 40%, #3a2a20, #120c08); color: #f0d48c; font: 700 64px 'Cinzel Decorative', Georgia, serif; }
+html.phone-portrait #rotateHint .lg { width: 260px; height: 260px; }
+html.phone-portrait #rotateHint small { font: italic 44px Georgia, serif; color: #e7cf9e; }
+html.phone-portrait #rotateHint .rot { width: 200px; height: 200px; animation: rotPhone 2.2s ease-in-out infinite; }
+@keyframes rotPhone { 0%, 20% { transform: rotate(0); } 55%, 100% { transform: rotate(-90deg); } }
+/* v0.99.54 the deck on the desk: one pile per card (its copies under it), on a grid, never overlapping */
+#hall .hall-spread { top: 606px; left: 40px; right: 40px; display: grid; grid-template-columns: repeat(var(--cols, 10), var(--cw)); justify-content: center; align-content: start; gap: 14px; transform: none; }
+#hall .ds-pile { position: relative; width: var(--cw); height: var(--ch); }
+#hall .ds-pile .ds-under { position: absolute; inset: 0; border-radius: 6px; background: linear-gradient(160deg, #2a2017, #120c07); border: 1px solid rgba(0,0,0,.8);
+  transform: translate(calc(var(--k) * 3px), calc(var(--k) * 3px)); box-shadow: 0 2px 4px rgba(0,0,0,.45); }
+#hall .ds-pile .ds-card { position: absolute; left: 0; top: 0; width: var(--cw); height: var(--ch); border-radius: 6px; font-size: calc(var(--cw) * .085); padding: 4px 5px; transition: transform .14s ease, box-shadow .14s ease; z-index: 1; }
+#hall .ds-pile .ds-card b { font-size: calc(var(--cw) * .09); }
+#hall .ds-pile .ds-card:hover, #hall .ds-pile .ds-card:focus-visible { transform: translateY(-4px); z-index: 1 !important; box-shadow: 0 0 0 3px #e3b95c, 0 0 14px rgba(227,185,92,.5), 0 8px 14px rgba(0,0,0,.5); }
+#hall .ds-qty { font-size: calc(var(--cw) * .085); }
