@@ -2436,3 +2436,5 @@ html.portrait-ui #bsActions button { padding: 8px 14px; font-size: 14px; }
 #stackStage.sk.has-panel { width: 470px; overflow-y: auto; }
 html.portrait-ui #stackStage.sk.has-panel { width: auto; max-height: calc(100% - 130px); }
 #stackStage .modal.res-panel > header { display: none; }
+/* v0.99.68 upright: the table ends where the fanned hand begins, so no battlefield row sits under the hand (cards shrink to fit instead) */
+html.portrait-ui body:not(.mullhand):not(.mullpick) #mat { padding-bottom: calc(var(--ch, 150px) + 52px) !important; }

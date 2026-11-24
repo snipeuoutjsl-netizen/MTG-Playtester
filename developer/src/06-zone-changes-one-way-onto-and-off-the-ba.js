@@ -58,6 +58,8 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
   if (c.origName) { c.name = c.origName; delete c.origName; }
   const _mp = c.mutParts ? c : null;
+  if (c.dieExileTurn === state.turn && dest === 'graveyard') { log(`${c.name} would die, so it is exiled instead`); dest = 'exile'; }   // v0.99.68 "If that creature would die this turn, exile it instead" (CR 614.1a)
+  delete c.dieExileTurn;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
   if (c.prepared) unprepare(c, 'it left the battlefield');   // CR 722.3c
   delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1

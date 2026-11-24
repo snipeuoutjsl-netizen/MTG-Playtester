@@ -131,6 +131,12 @@ function durationOptions(sentence, obj, targets) {
   };
   const nameOf = () => group ? 'Creatures you control' : who.map(t => t.name).join(', ');
   let handled = false;
+  // v0.99.68 frost: "It doesn't untap during its controller's next untap step" / "Those creatures don't untap …" (CR 502.3)
+  if (who && /\b(?:doesn'?t|don'?t) untap during (?:its|their) controllers?'?s? next untap steps?|\b(?:doesn'?t|don'?t) untap during your next untap step/i.test(s)) {
+    out.push({ label: `${nameOf()} ${who.length > 1 ? "don't" : "doesn't"} untap during the next untap step`, fn: () => { snap(); for (const t of who) { const f = findCard(t.id); if (f && f.zone === 'battlefield') f.card.noUntapNext = state.turn; } log(`${obj.sourceName || 'Effect'}: ${nameOf()} will not untap during the next untap step`); render(); } }); handled = true; }
+  // v0.99.68 "If that creature would die this turn, exile it instead" (CR 614.1a): a replacement on the chosen creature until the turn ends
+  if (who && /^if (?:that creature|it|that permanent|target creature|those creatures) would die this turn, exile (?:it|them) instead\.?$/i.test(s)) {
+    out.push({ label: `If ${nameOf()} would die this turn, exile it instead`, fn: () => { for (const t of who) { const f = findCard(t.id); if (f && f.zone === 'battlefield') f.card.dieExileTurn = state.turn; } log(`${obj.sourceName || 'Effect'}: if ${nameOf()} would die this turn, it is exiled instead`); render(); } }); handled = true; }
   if (isDur && (who || group)) {
     if ((m = s.match(/\bgets? ([+-]\d+)\/([+-]\d+)/i))) { const p = +m[1], t = +m[2]; out.push({ label: `${nameOf()} ${group ? 'get' : 'gets'} ${sgnN(p)}/${sgnN(t)} ${uw}`, fn: apply({ kind: 'pt', p, t }) }); handled = true; }
     if ((m = s.match(KW_LIST_RE))) for (const kw of kwsIn(m[1])) { out.push({ label: `${nameOf()} ${group ? 'gain' : 'gains'} ${kw} ${uw}`, fn: apply({ kind: 'kw', kw }) }); handled = true; }

@@ -706,7 +706,16 @@ function effectOptionsBase(tx, obj) {
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   if (/look at the top card of target player'?s library/i.test(tx)) opts.push({ special: 'lookTop', summary: 'look at the top card' });
   // v0.82 look at the top N cards and distribute them
-  { const ld = parseLookDistribute(txs.replace(/\n/g, ' ')); if (ld && state) opts.push({ full: ld.full, label: `Look at the top ${ld.n === 1 ? 'card' : ld.n + ' cards'} of your library and sort them: ${ld.slots.map(x => x.label).join(', ')}${ld.slots.some(x => x.play) ? ' (you may play the exiled card this turn)' : ''}`, fn: () => { let sl = ld.slots; if (ld.alt) { let v = null; try { v = evalCond(ld.alt.cond, { id: -1, name: 'x', tapped: false, counters: { plus: 0, minus: 0 } }); } catch (e) {} if (v === true) { sl = ld.alt.slots; log(`${obj.sourceName || 'Ability'}: the condition "${ld.alt.cond}" is true, so the alternative applies`); } else if (v === null) toast('Check the condition', `The app cannot check "${ld.alt.cond}". If it is true, sort the cards as the "instead" line says.`); } openLookDistribute(ld.n, sl, obj.sourceName || ''); } }); }
+  // v0.99.68 impulse draw: "Exile the top [N] card(s) of your library. [Until the end of your next turn | Until end of turn | This turn,] you may play/cast it/them [this turn | until the end of your next turn]."
+  const imp = /\bexile the top (card|(a|one|two|three|four|five|six|seven|x|\d+) cards) of your library(?: face down)?\.\s*((?:until the end of your next turn|until end of turn|this turn|until your next end step),?\s*)?you may (play|cast) (?:it|that card|them|those cards|the exiled cards?|cards exiled this way)( this turn| until the end of your next turn| until end of turn| until your next end step)?\.?/i.exec(txs.replace(/\n/g, ' '));
+  if (imp && state && !/\bif you don'?t\b|\bspend mana as though\b/i.test(txs)) {
+    const n = imp[1].toLowerCase() === 'card' ? 1 : (/^x$/i.test(imp[2]) ? (obj.xValue || 0) : numOf(imp[2])), nextTurn = /next turn|next end step/i.test((imp[3] || '') + (imp[5] || '')), castOnly = /^cast$/i.test(imp[4]);
+    const whenTxt = nextTurn ? 'until the end of your next turn' : 'this turn';
+    opts.push({ full: imp[0].replace(/\s+/g, ' ').trim().length >= txs.replace(/\s+/g, ' ').trim().length - 1, covers: imp[0].split(/(?<=\.)\s+/), label: `Exile the top ${n === 1 ? 'card' : n + ' cards'} of your library; you may ${castOnly ? 'cast' : 'play'} ${n === 1 ? 'it' : 'them'} ${whenTxt}`, fn: () => {
+      snap(); const got = []; for (let i = 0; i < n && state.library.length; i++) { const c = state.library.shift(); if (nextTurn) c.mayPlayUntil = state.turn + 1; else c.mayPlayTurn = state.turn; if (castOnly) c.mayCastOnly = true; state.exile.push(c); got.push(c.name); }
+      log(`${src}: exiled ${got.join(', ') || 'nothing (the library is empty)'} from the top of your library; you may ${castOnly ? 'cast' : 'play'} ${got.length === 1 ? 'it' : 'them'} ${whenTxt} (from the exile pile)`); render(); } });
+  }
+  { const ld = parseLookDistribute(txs.replace(/\n/g, ' ')); if (ld && state) opts.push({ full: ld.full, covers: ld.covers, label: `Look at the top ${ld.n === 1 ? 'card' : ld.n + ' cards'} of your library and sort them: ${ld.slots.map(x => x.label).join(', ')}${ld.slots.some(x => x.play) ? ' (you may play the exiled card this turn)' : ''}`, fn: () => { let sl = ld.slots; if (ld.alt) { let v = null; try { v = evalCond(ld.alt.cond, { id: -1, name: 'x', tapped: false, counters: { plus: 0, minus: 0 } }); } catch (e) {} if (v === true) { sl = ld.alt.slots; log(`${obj.sourceName || 'Ability'}: the condition "${ld.alt.cond}" is true, so the alternative applies`); } else if (v === null) toast('Check the condition', `The app cannot check "${ld.alt.cond}". If it is true, sort the cards as the "instead" line says.`); } openLookDistribute(ld.n, sl, obj.sourceName || ''); } }); }
   // v0.79 flashback granted until end of turn (Snapcaster Mage): "Target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost."
   { const fg = /target (instant or sorcery|instant|sorcery) card in your graveyard gains flashback until end of turn/i.exec(txs);
     if (fg) {
@@ -762,7 +771,10 @@ function effectOptionsBase(tx, obj) {
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
   let prevSent = ''; for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+(?!If you don't\b)/)) {   /* "pay X. If you don't, ..." stays one instruction */ const prev = prevSent; prevSent = sent; if (bound.length && /\btarget\b/i.test(sent)) continue;
     // v0.99.65 "Return target creature card … to the battlefield. It gains haste": "it" is the card just returned, put or created, not the source (the return itself grants that, see applyGraveReturn)
-    if (/^(?:it|that creature|they|those creatures)\b/i.test(sent.trim()) && /\b(?:return|put|create|creates)\b[^.]*\b(?:card|cards|token|tokens|creature|creatures)\b[^.]*\b(?:battlefield|tokens?)\b/i.test(prev) && !/\b(?:return|put) (?:~|this \w+)\b/i.test(prev)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
+    if (/^(?:it|that creature|they|those creatures)\b/i.test(sent.trim()) && /\b(?:return|put|create|creates)\b[^.]*\b(?:card|cards|token|tokens|creature|creatures)\b[^.]*\b(?:battlefield|tokens?)\b/i.test(prev) && !/\b(?:return|put) (?:~|this \w+)\b/i.test(prev)) continue;
+    if (/^(?:it|that creature|that permanent|they|those creatures)\b/i.test(sent.trim()) && /\btarget\b/i.test(prev) && !((obj.targets || []).some(t => t.kind === 'perm'))) continue;   // v0.99.68 "it" is the target, which has not been chosen here
+    if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue;
+    if (imp && /^(?:(?:until the end of your next turn|until end of turn|this turn|until your next end step),?\s*)?you may (?:play|cast) /i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
   if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
@@ -845,6 +857,16 @@ function openAbilityEffect(obj, done) {
     const specs = parseTargetSpecs(tx);
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
+  // v0.99.68 CR 115.6 + 608.2b: "up to one target" with no target chosen. The parts that need the target do nothing; any other part still happens.
+  if (Array.isArray(obj.targets) && !obj.targets.length && !obj.special) {
+    const specs0 = parseTargetSpecs(tx);
+    if (specs0.length && specs0.every(sp => sp.min === 0)) {
+      const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
+      for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
+      if (!keep.length) { log(`${obj.sourceName || obj.name}: no target was chosen, so it does nothing`); toast(`${obj.sourceName || 'Ability'} resolves`, 'No target was chosen, so it does nothing.'); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (keep.length < sents.length) { const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
+    }
+  }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
     const e = ayGet(obj.sourceName, tx, obj.sourceId);
     if (e && e.auto && e.label && !uncoveredClauses(tx).length) { let os = []; try { os = visibleOptions(effectOptions(tx, obj)); } catch (er) { os = []; } const o = os.find(x => lblStable(x.label) === lblStable(e.label) && typeof x.fn === 'function');
@@ -857,6 +879,15 @@ function openAbilityEffect(obj, done) {
     let clean = !!one && (one.full || !uncoveredClauses(tx).length);
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
     if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
+    // v0.99.68 several effects that must all happen ("You gain 3 life and draw a card"): every sentence understood, nothing optional or chosen,
+    // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
+    if (!one && pre.length > 1 && pre.length <= 4) {
+      const plain = tx.replace(/\([^)]*\)/g, ' '), labs = pre.map(o => String(o.label || '').toLowerCase());
+      const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain) && !uncoveredClauses(tx).length
+        && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
+        && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));
+      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+    }
     if (clean) {
       const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
       log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
