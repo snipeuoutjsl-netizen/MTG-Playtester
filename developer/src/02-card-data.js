@@ -507,9 +507,23 @@ function parseSubject(raw, g) {
   let s = String(raw).toLowerCase().replace(/[’]/g, "'").replace(/\.$/, '').trim();
   const nm = g.name.split(' // ')[0].toLowerCase();
   if (s === nm || s === '~' || s === 'this creature' || s === 'this permanent' || s === 'this token') return { self: true, test: c => c.id === g.id };
+  // v0.99.75 qualifiers after the noun: "with a +1/+1 counter on it", "with flying", "without flying", "that are enchanted", "of the chosen type/color"
+  const quals = []; { let q, again = true;
+    while (again) { again = false;
+      if ((q = s.match(/^(.+?)\s+with (?:a|an|one or more)?\s*\+1\/\+1 counters? on (?:it|them)(\s+you control)?$/))) { s = q[1] + (q[2] || ''); quals.push(c => ((c.counters && c.counters.plus) || 0) > 0); again = true; }
+      else if ((q = s.match(/^(.+?)\s+with (?:a |one or more )?counters? on (?:it|them)(\s+you control)?$/))) { s = q[1] + (q[2] || ''); quals.push(c => Object.entries(c.counters || {}).some(([k, v]) => k !== 'minusApplied' && (v || 0) > 0)); again = true; }
+      else if ((q = s.match(/^(.+?)\s+(with|without) ([a-z ]+?)(\s+you control)?$/)) && GRANTABLE.includes(q[3])) { const kw = q[3], neg = q[2] === 'without'; s = q[1] + (q[4] || ''); quals.push(c => { const has = !!kwLine(cardText(c), kw) || !!(state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)); return neg ? !has : has; }); again = true; }   // printed or gained keywords only (a grant that depends on itself would loop)
+      else if ((q = s.match(/^(.+?) you control that are enchanted$/))) { s = q[1] + ' you control'; quals.push(c => !!(state && state.battlefield.some(a => a.att === c.id && /\bAura\b/.test(permTypeLine(a) || '')))); again = true; }
+      else if ((q = s.match(/^(.+?) you control of the chosen (type|color)$/)) || (q = s.match(/^(.+?) of the chosen (type|color)$/))) { const kind = q[2]; s = q[1] + (/you control/.test(q[0]) ? ' you control' : ''); quals.push(c => { const ch = String(g.chosen || g.chosenColor || '').toLowerCase(); if (!ch) return false; if (kind === 'color' || COLOR_LETTER[ch]) return effColors(c).includes(COLOR_LETTER[ch]); const p = permTypeInfo(c); return p.subs.has(singularWord(ch)) || (p.changeling && p.types.has('creature')); }); again = true; }
+    } }
+  if (quals.length) { const base = parseSubject(s, g); if (!base) return null; return { self: false, test: c => base.test(c) && quals.every(f => f(c)) }; }
   if (/opponent/.test(s) || /\b(that|with|target|enchanted|equipped|attached|named|who|whose|which|dealt|not)\b/.test(s)) return null;
+  { const yc = /\s+you control$/.test(s), body = s.replace(/\s+you control$/, ''), parts = body.split(/\s*,\s*(?:and\s+|or\s+)?|\s+(?:and|or|and\/or)\s+/).filter(Boolean);   // v0.99.75 a list of types: "Artifacts, creatures, enchantments, and lands you control" (Elspeth's emblem)
+    if (parts.length > 1 && parts.every(x => SUBJECT_TYPES.includes(singularWord(x.replace(/^(?:each|all|other)\s+/, ''))) && !/\s/.test(x.replace(/^(?:each|all|other)\s+/, '')))) {
+      const subs = parts.map(x => parseSubject(x + (yc ? ' you control' : ''), g)); if (subs.every(Boolean)) return { self: false, test: c => subs.some(q => q.test(c)) };
+    } }
   const mine = /\byou control\b/.test(s), general = /^(each|all|every)\b/.test(s) || /^other\b/.test(s);
-  if (!mine && !general && !/^(creatures|lands|artifacts|enchantments|permanents|planeswalkers)\b/.test(s)) return null;
+  if (!mine && !general && !/^(?:non(?:white|blue|black|red|green|artifact|land|token|legendary)\s+)?(creatures|lands|artifacts|enchantments|permanents|planeswalkers)\b/.test(s)) return null;
   s = s.replace(/^(each|all|every)\s+/, '').replace(/\s+you control$/, '').replace(/^(?:a|an)\s+/, '');
   let other = false; if (/^other\s+/.test(s)) { other = true; s = s.replace(/^other\s+/, ''); }
   const conds = []; let noun = null, sub = null;
@@ -530,7 +544,7 @@ function parseSubject(raw, g) {
     const sg = singularWord(w);
     if (sg === 'token') { conds.push(c => !!c.token); continue; }   // "Creature tokens you control"
     if (SUBJECT_TYPES.includes(sg)) { if (noun) conds.push(c => permTypeInfo(c).types.has(noun)); noun = sg; continue; }
-    if (sub) return null;
+    if (sub) { const s1 = sub; conds.push(c => { const p = permTypeInfo(c); return p.subs.has(s1) || (p.changeling && p.types.has('creature')); }); }   // v0.99.75 two subtypes: "Eldrazi Spawn creatures"
     sub = sg;
   }
   if (noun) conds.push(c => permTypeInfo(c).types.has(noun));
@@ -609,10 +623,11 @@ function parseStaticCard(g) {
 }
 function statics() {
   if (!state) return [];
-  const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '') + (c.token && c.tk ? ':' + (c.tk.tx || '').length : '')).join('|');
+  const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '') + (c.token && c.tk ? ':' + (c.tk.tx || '').length : '')).join('|') + '#' + (state.emblems || []).map(e => e.id).join(',');
   if (_stx.sig === sig) return _stx.list;
   const list = [];
   for (const g of state.battlefield) list.push(...parseStaticCard(g));
+  for (const g of state.emblems || []) list.push(...parseStaticCard(g));   // v0.99.75 CR 114.4: an emblem's static abilities work from the command zone (Kaito's "Ninjas you control get +1/+1")
   _stx = { sig, list };
   return list;
 }
@@ -649,7 +664,8 @@ function condHolds2(e) {
   return deliriumCount() >= (e.n || 4);
 }
 function kwGrant(c, kw) {
-  if (!state || !c || permZone(c) !== 'creatures' || !onBattlefield(c)) return null;
+  if (!state || !c || !onBattlefield(c)) return null;
+  if (permZone(c) !== 'creatures' && !['indestructible', 'hexproof', 'shroud'].includes(kw)) return null;   // v0.99.75 these keywords matter on any permanent (Elspeth's emblem makes lands indestructible)
   for (const e of statics()) if (e.kind === 'cs' && e.g.id === c.id && e.kws.includes(kw) && csActive(e)) return e.line;
   for (const e of statics()) if (e.kind === 'cond' && e.g.id === c.id && e.kws.includes(kw) && condHolds2(e)) return 'its delirium ability';
   for (const e of statics()) {
@@ -667,7 +683,7 @@ function hasKw(c, kw) {
   if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
-const GRANTABLE = ['islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
+const GRANTABLE = ['shroud', 'islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
 // Keywords a creature has only because of other permanents' static abilities (shown in the preview).
 function grantedKeywords(c) {
   const out = [];

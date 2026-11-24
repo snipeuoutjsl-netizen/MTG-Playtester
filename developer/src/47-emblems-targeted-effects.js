@@ -15,7 +15,10 @@ function renderEmblems() {
   const list = (state && state.emblems) || [];
   if (!list.length) { if (bar) bar.remove(); return; }
   if (!bar) { bar = h('div', { id: 'emblemBar' }); mat.append(bar); }
-  bar.replaceChildren(...list.map(e => h('div', { class: 'emblem', title: e.tk.tx }, h('b', { text: 'Emblem' }), h('span', { text: ` · ${e.tk.from || ''}` }), h('div', { class: 'etx', text: e.tk.tx }))));
+  // v0.99.75 identical emblems (Kaito's +1 used twice) are one entry with a count; the emblem's own words are always shown
+  const groups = new Map(); for (const e of list) { const k = (e.tk.from || '') + '|' + e.tk.tx; const g0 = groups.get(k); if (g0) g0.n++; else groups.set(k, { e, n: 1 }); }
+  bar.replaceChildren(h('div', { class: 'emb-head', text: 'Command zone' }), ...[...groups.values()].map(({ e, n }) => h('div', { class: 'emblem', title: `Emblem from ${e.tk.from || 'an effect'}${n > 1 ? ` (×${n}: each one applies)` : ''}\n${e.tk.tx}\nEmblems stay for the rest of the game and cannot be removed (rule 114).` },
+    h('div', { class: 'emb-top' }, h('b', { text: 'Emblem' }), h('span', { class: 'emb-src', text: e.tk.from || '' }), n > 1 ? h('em', { class: 'emb-n', text: '×' + n }) : null), h('div', { class: 'etx', text: e.tk.tx }))));
 }
 // the permanent types named by a phrase such as "artifact or creature" / "artifact you control"
 function typeWordsOf(phrase) { return String(phrase || '').toLowerCase().replace(/\byou control\b/g, '').split(/\s*(?:,|\bor\b|\band\/or\b)\s*/).map(w => singularWord(w.trim())).filter(Boolean); }

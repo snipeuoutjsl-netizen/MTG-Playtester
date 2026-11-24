@@ -334,6 +334,7 @@ function resolveTopOfStack() {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
     // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
     { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts; delete c.splicedTx;
+      baseTx=String(baseTx||'').split('\n').filter(l=>!/^(?:As an additional cost to cast this spell\b|This spell costs\b[^.]*\b(?:less|more) to cast\b)/i.test(l.trim())).join('\n');   // v0.99.75 CR 601.2f/601.2b: costs were paid as it was cast; they are not effects of the resolving spell (Lightning Axe asked about "discard a card or pay {5}")
       let stx=applyKickedInstead(baseTx,op0).replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
