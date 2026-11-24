@@ -6713,8 +6713,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.60';
+const APP_VERSION = '0.99.61';
 const CHANGELOG = [
+  { v: '0.99.61', title: 'A real book, and swipe to move on', notes: ['The Library\'s menu book now reads like a book. The left page opens a chapter (Chapter I, The Standard Game; Chapter II, The Commander Game) with the deck in hand, who goes first and "Begin with …" in red ink. The right page is a table of contents with dotted leaders and page numbers. The pages have paper grain, page numbers and a page block, and the links are set as print, not buttons.', 'Standard and Commander are two silk ribbons on top of the book: pick the other ribbon and the page turns to that chapter.', 'The deck pages and the card pages use the same print.', 'Wide screens: the desk now runs the full width of the window. Phones held upright: the open book fits the screen, and the shelves no longer run under the name plate.', 'Phones held upright: swipe the table from right to left to go to the next step (the same as the Next button). The turn bar now wraps, so its Next buttons stay on screen.', 'Fixed: on a phone held upright the opening-hand prompt was covered by the hand.'] },
   { v: '0.99.60', title: 'Updates from the Library, steadier page turns', notes: ['Updates: when a new version is found at start-up, the Library shows an "Update available" button in its top right corner, and the menu book has a "Check for updates" (or "Update to …") entry under Options. Before, the update was only reachable from the game table\'s menu, which the Library covers.', 'Starting a game from the Library no longer closes the Update window.', 'Library: resting the pointer on the edge between two fanned cards no longer flips the book back and forth. A card has to be pointed at for a moment before the page turns, and only one page turns at a time.'] },
   { v: '0.99.59', title: 'Fanned stacks and page turns are back', notes: ['Library: the deck on the desk is laid out in fanned stacks again (up to three different cards a stack, in mana-value order, lands last, the basic lands together), each card set a little lower, to the right and turned, so every name shows. Hovering a card only outlines it in gold, so nothing moves and nothing flickers.', 'The open book turns its page again for every card you point at, and turns back to the deck when you move away. The next card\'s picture is loaded before the page turns, so the page never shows an empty frame.'] },
   { v: '0.99.58', title: 'iPhone fixes and a gear in the Library', notes: ['iPhone and iPad: the app now keeps clear of the status bar (clock, battery), the notch and the home bar when it runs from the home screen. Before, the top bar sat under the clock.', 'Phone held upright: the top bar wraps onto a second row instead of running off the side, and the life totals wrap too, so your life is no longer cut off.', 'Phone held upright: your hand is fanned like real cards held in your hand, spread from one point below the screen, so the top of every card shows.', 'The Library has a gear (Settings) in its top right corner, on the computer and on phones.'] },
@@ -13760,6 +13761,24 @@ function hallFit() {   // scale the fixed stage to fit the window (letterboxed o
   const k = Math.min(vp.clientWidth / W, vp.clientHeight / H) || 1; st.style.setProperty('--hs', String(Math.max(0.2, Math.min(1.6, k))));
 }
 window.addEventListener('resize', () => { if (!hallOpen()) return; if (hallWantsPortrait() !== hallPortrait()) drawHall(); else hallFit(); });
+// v0.99.61 turning to the other chapter: the leaf goes up on the old book, the room is redrawn for the new game mode while the leaf
+// stands on its edge, and the turn finishes on the new book
+function hallTurnTo(k) {
+  if (gameMode() === k) return;
+  const apply = () => { setGameMode(k); hallPage = 0; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); drawHall(); };
+  const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
+  const tome = document.querySelector('#hall .hall-tome');
+  if (calm || !tome || tome.classList.contains('deck-open')) { apply(); return; }
+  const back = k === 'standard', cls = 'tome-leaf ' + (back ? 'from-left' : 'from-right'), D = 230;
+  const leaf = h('div', { class: cls }); tome.append(leaf);
+  const a = wa(leaf, [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: `perspective(1400px) rotateY(${back ? 90 : -90}deg)` }], { duration: D, easing: 'cubic-bezier(.5,0,.9,.6)', fill: 'forwards' });
+  a.onfinish = () => {
+    apply();
+    const t2 = document.querySelector('#hall .hall-tome'); if (!t2) return;
+    const l2 = h('div', { class: cls }); t2.append(l2);
+    wa(l2, [{ transform: `perspective(1400px) rotateY(${back ? 90 : -90}deg)` }, { transform: `perspective(1400px) rotateY(${back ? 180 : -180}deg)` }], { duration: D, easing: 'cubic-bezier(.1,.4,.5,1)' }).onfinish = () => l2.remove();
+  };
+}
 function drawHall() {
   const el = document.getElementById('hall'); if (!el) return;
   const decks = loadDecks(), mode = gameMode(), all = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
@@ -13770,36 +13789,44 @@ function drawHall() {
   const world = h('div', { class: 'hall-world' }); hallHost = { el: world };
   const btn = (text, fn, cls, title) => h('button', { class: 'hall-btn ' + (cls || ''), text, title: title || '', onclick: fn });
   const inGame = !!(state && state.deckName);
-  const modeSeg = FEATURES.commander ? h('div', { class: 'modeseg hall-mode', role: 'tablist', 'aria-label': 'Game mode' }, ...[['standard', 'Standard'], ['commander', 'Commander']].map(([k, lab]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), text: lab, onclick: () => { if (mode === k) return; setGameMode(k); hallPage = 0; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); drawHall(); } }))) : null;
   const playChk = document.getElementById('chkPlay'); const onPlay = playChk ? playChk.checked : true;
-  // v0.99.53 the menu book, regrouped: the left page is for playing (your game, the deck in hand, how to start), the right page for
-  // the library itself (decks, options, help), each under a small heading.
-  const sec = (title, ...kids) => h('div', { class: 'hall-sec' }, h('div', { class: 'hall-h', text: title }), ...kids);
+  // v0.99.61 the menu book as a book: the left page opens a chapter (Standard or Commander: two chapters you turn between with the
+  // ribbons on top), the right page is its table of contents. Everything is set as print and ink, not as buttons.
+  const ROMAN = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x', 'xi', 'xii'];
+  const ink = (text, fn, cls, title) => h('button', { class: 'hall-btn hall-ink ' + (cls || ''), text, title: title || '', onclick: fn });
+  const cmd = mode === 'commander';
+  const chk = (label, checked, onchange, cls) => h('label', { class: 'hall-chk ink-chk ' + (cls || '') }, h('input', { type: 'checkbox', checked, onchange }), h('i', { class: 'ink-box', 'aria-hidden': 'true' }), h('span', { text: label }));
   const left = h('div', { class: 'hall-page left' },
-    inGame ? sec('Your game', btn(`Continue: ${state.deckName}`, () => closeHall(true), 'primary', 'Back to the game in progress (Esc)'), h('div', { class: 'hall-sub', text: `Turn ${state.turn || 1} · the game waits for you` })) : null,
-    sec('New game',
-      h('div', { class: 'hall-deck' }, h('span', { class: 'hall-sub', text: 'Deck in hand' }), h('b', { text: cur || 'none yet' }), h('span', { class: 'hall-sub', text: all.length ? 'Take a book from the shelves to choose another.' : 'Import a deck to fill the shelves.' })),
-      modeSeg,
-      h('label', { class: 'hall-chk' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), ' I go first (on the play)'),
-      btn(inGame ? 'Start a new game' : `New game with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, inGame ? '' : 'primary', 'Shuffle up and deal with the deck in hand')));
-  const link = (text, fn, title) => h('button', { class: 'hall-btn hall-link', text, title: title || '', onclick: fn });
+    h('div', { class: 'tm-chap', text: cmd ? 'Chapter II' : 'Chapter I' }),
+    h('div', { class: 'tm-title', text: cmd ? 'The Commander Game' : 'The Standard Game' }),
+    h('div', { class: 'tm-orn', 'aria-hidden': 'true', text: '\u2767' }),
+    inGame ? h('div', { class: 'tm-para tm-cont' }, ink(`Continue: ${state.deckName}`, () => closeHall(true), 'primary', 'Back to the game in progress (Esc)'), h('span', { class: 'tm-aside', text: ` — turn ${state.turn || 1}, the game waits for you.` })) : null,
+    h('div', { class: 'tm-para' }, h('span', { class: 'bk-lead', text: 'The deck in hand is ' }), h('b', { class: 'tm-deck', text: cur || 'none yet' }), h('span', { class: 'bk-lead', text: '.' })),
+    h('div', { class: 'tm-aside', text: all.length ? 'Take another book from the shelves to choose a different deck.' : (cmd ? 'Import a Commander deck to fill these shelves.' : 'Import a deck to fill the shelves.') }),
+    chk('I go first (on the play)', onPlay, e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } }),
+    h('div', { class: 'tm-begin' }, ink(inGame ? 'Begin a new game' : `Begin with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, 'tm-go' + (inGame ? '' : ' primary'), 'Shuffle up and deal with the deck in hand')),
+    h('div', { class: 'tm-folio', text: cmd ? 'iii' : 'i' }));
+  const entries = [
+    ['Import a deck…', () => openDeckEditor(cmd ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'],
+    ['Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'],
+    ['Settings', () => openSettings()],
+    ['Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }],
+    ['Library look…', () => openHallLook(), 'Choose the wall and the desk'],
+    ['Rules & help', () => openWelcome()],
+    ['How cards are read', () => { try { $('#btnReading').click(); } catch (e) {} }],
+    [`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }],
+    window.desktop ? [window.__updAvail ? `Update to v${window.__updAvail.latest} ●` : 'Check for updates', () => openUpdate(window.__updAvail || undefined), 'Download and install the newest version from GitHub'] : null].filter(Boolean);
   const right = h('div', { class: 'hall-page right' },
-    sec('Decks', h('div', { class: 'hall-links' },
-      link('Import a deck…', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'),
-      link('Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'))),
-    sec('Options', h('div', { class: 'hall-links' },
-      link('Settings', () => openSettings()),
-      link('Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }),
-      link('Library look…', () => openHallLook(), 'Choose the wall and the desk'),
-      window.desktop ? link(window.__updAvail ? `Update to v${window.__updAvail.latest} ●` : 'Check for updates', () => openUpdate(window.__updAvail || undefined), 'Download and install the newest version from GitHub') : null)),
-    sec('Help', h('div', { class: 'hall-links' },
-      link('Rules & help', () => openWelcome()),
-      link('How cards are read', () => { try { $('#btnReading').click(); } catch (e) {} }),
-      link(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }))),
-    h('div', { class: 'hall-foot' },
-      h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
-      h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts')));
-  const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
+    h('div', { class: 'tm-chap', text: 'Contents' }),
+    h('div', { class: 'tm-toc' }, entries.map(([t, fn, ti], i) => h('div', { class: 'tm-toc-row' }, h('button', { class: 'hall-btn hall-link', text: t, title: ti || '', onclick: fn }), h('i', { class: 'tm-dots', 'aria-hidden': 'true' }), h('span', { class: 'tm-num', text: ROMAN[i + 2] || '' })))),
+    h('div', { class: 'tm-foot' },
+      h('div', { class: 'tm-aside hall-archive', text: CARDS.size ? `The Archive holds ${CARDS.size.toLocaleString()} cards.` : 'The Archive is empty: no card data yet.' }),
+      chk('Open the Library when the app starts', lsGet(HALL_KEY, true) !== false, e => lsSet(HALL_KEY, e.target.checked), 'small')),
+    h('div', { class: 'tm-folio', text: cmd ? 'iv' : 'ii' }));
+  // silk ribbons on the top edge: one per chapter; the other chapter's ribbon turns the page to it
+  const ribbons = FEATURES.commander ? h('div', { class: 'tm-ribbons', role: 'tablist', 'aria-label': 'Game mode' }, [['standard', 'Standard'], ['commander', 'Commander']].map(([k, lab]) =>
+    h('button', { class: 'tm-ribbon ' + k + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: mode === k ? `You are in the ${lab} chapter` : `Turn to the ${lab} chapter`, onclick: () => hallTurnTo(k) }, h('span', { text: lab })))) : null;
+  const tome = h('div', { class: 'hall-tome' + (mode === 'commander' ? ' ch-cmd' : '') }, left, h('div', { class: 'hall-spine' }), right, ribbons, h('i', { class: 'tm-edges', 'aria-hidden': 'true' }));
   const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: (deck, name) => deckSpreadEl(deck, name, c => tomeCard(tome, c, name)), layer: null };
   const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: portrait ? 3 : 4, scale: 0.8, scene: hallScene });
   const pager = pages > 1 ? h('div', { class: 'hall-pager' },
@@ -13905,6 +13932,32 @@ function portraitUiSetup() {
   pv.addEventListener('click', () => document.body.classList.remove('pv-on'));
 }
 if (typeof window !== 'undefined') setTimeout(portraitUiSetup, 0);
+
+// v0.99.61 swipe the table to move on: a quick swipe from right to left on an empty part of the table is "Next step" (the same as
+// the Next button / Space). It only counts on the table itself, during your game, with no window open.
+(function swipeNext() {
+  if (typeof document === 'undefined') return;
+  let sw = null;
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch' || !e.isPrimary) return;
+    const t = e.target; if (!t.closest || !t.closest('#mat') || t.closest('.card, [draggable="true"], button, input, #stackStage, #piles, .pile')) { sw = null; return; }
+    sw = { x: e.clientX, y: e.clientY, t: Date.now() };
+  }, true);
+  document.addEventListener('pointerup', e => {
+    if (!sw || e.pointerType !== 'touch') return;
+    const dx = e.clientX - sw.x, dy = e.clientY - sw.y, dt = Date.now() - sw.t; sw = null;
+    if (dt > 700 || dx > -80 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    if (!state || state.phase !== 'play' || document.querySelector('#modalRoot .backdrop:not(.dock)')) return;
+    const b = document.getElementById('btnNextPhase'); if (!b || b.disabled || b.hidden) return;
+    swipeCue(b.textContent.trim()); b.click();
+  }, true);
+  document.addEventListener('pointercancel', () => { sw = null; }, true);
+})();
+function swipeCue(label) {
+  const mat = document.getElementById('mat'); if (!mat) return;
+  const el = h('div', { class: 'swipe-cue', 'aria-hidden': 'true' }, h('span', { text: '‹‹' }), h('b', { text: label || 'Next' }));
+  mat.append(el); setTimeout(() => el.remove(), 700);
+}
 init();
 
 })();

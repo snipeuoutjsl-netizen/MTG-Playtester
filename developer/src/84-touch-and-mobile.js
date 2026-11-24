@@ -81,3 +81,29 @@ function portraitUiSetup() {
   pv.addEventListener('click', () => document.body.classList.remove('pv-on'));
 }
 if (typeof window !== 'undefined') setTimeout(portraitUiSetup, 0);
+
+// v0.99.61 swipe the table to move on: a quick swipe from right to left on an empty part of the table is "Next step" (the same as
+// the Next button / Space). It only counts on the table itself, during your game, with no window open.
+(function swipeNext() {
+  if (typeof document === 'undefined') return;
+  let sw = null;
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch' || !e.isPrimary) return;
+    const t = e.target; if (!t.closest || !t.closest('#mat') || t.closest('.card, [draggable="true"], button, input, #stackStage, #piles, .pile')) { sw = null; return; }
+    sw = { x: e.clientX, y: e.clientY, t: Date.now() };
+  }, true);
+  document.addEventListener('pointerup', e => {
+    if (!sw || e.pointerType !== 'touch') return;
+    const dx = e.clientX - sw.x, dy = e.clientY - sw.y, dt = Date.now() - sw.t; sw = null;
+    if (dt > 700 || dx > -80 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    if (!state || state.phase !== 'play' || document.querySelector('#modalRoot .backdrop:not(.dock)')) return;
+    const b = document.getElementById('btnNextPhase'); if (!b || b.disabled || b.hidden) return;
+    swipeCue(b.textContent.trim()); b.click();
+  }, true);
+  document.addEventListener('pointercancel', () => { sw = null; }, true);
+})();
+function swipeCue(label) {
+  const mat = document.getElementById('mat'); if (!mat) return;
+  const el = h('div', { class: 'swipe-cue', 'aria-hidden': 'true' }, h('span', { text: '‹‹' }), h('b', { text: label || 'Next' }));
+  mat.append(el); setTimeout(() => el.remove(), 700);
+}
