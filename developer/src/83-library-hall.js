@@ -116,15 +116,19 @@ function tomeCard(tome, c, deckName) {
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
   // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck's pages;
   // the new page is swapped in under the leaf, half way through the turn
-  const turn = (swap, back) => {
+  // v0.99.65 the leaf is printed on both sides like a real page: turning to a card, its back carries the card's picture, so the left page is never
+  // blank while it lands; turning back, its front carries the picture that is lifting away
+  const picFace = () => { const src = tome.querySelector('.tome-card .tc-pic img'); return src ? src.cloneNode(true) : null; };
+  const turn = (swap, back, faces) => {
     if (calm) { swap(); return; }
     tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
-    const leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf); tome._busy = true;
+    const f = faces || {};
+    const leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }, h('div', { class: 'tl-face tl-front' }, f.front || null), h('div', { class: 'tl-face tl-back' }, f.back || null)); tome.append(leaf); tome._busy = true;
     const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
     setTimeout(swap, 210 / aspd());
     a.onfinish = () => { leaf.remove(); tome._busy = false; const p = tome._pending; tome._pending = null; if (p) setTimeout(() => tomeCard(tome, p[0], p[1]), 120); };
   };
-  if (!c) { turn(() => { if (tome._card) return; const pg = tome.querySelector('.tome-card'); if (pg) pg.remove(); tome.classList.remove('card-open'); }, true); return; }
+  if (!c) { turn(() => { if (tome._card) return; const pg = tome.querySelector('.tome-card'); if (pg) pg.remove(); tome.classList.remove('card-open'); }, true, { front: picFace() }); return; }
   const rec = c.rec || resolve(c.name) || {}, im = imgFor(c.name, deckName);
   const sym = mc => { try { return mc ? symbols(mc) : ''; } catch (e) { return mc || ''; } };
   const faceEl = f => h('div', { class: 'tc-face' },
@@ -139,10 +143,10 @@ function tomeCard(tome, c, deckName) {
       h('div', { class: 'tc-page tc-txt' }, faceEl(rec), h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
     tome.classList.add('card-open'); };
   // the picture is decoded first, so the page never shows an empty frame
-  if (!im) { turn(() => put(null)); return; }
+  if (!im) { turn(() => put(null), false, { back: h('div', { class: 'tc-noimg', text: c.name }) }); return; }
   const pre = new Image(); pre.alt = c.name; pre.draggable = false; pre.src = im.front;
   const ready = pre.complete && pre.naturalWidth ? Promise.resolve() : (pre.decode ? pre.decode() : new Promise(r => { pre.onload = r; pre.onerror = r; }));
-  ready.catch(() => {}).then(() => { if (tome._card === c) turn(() => put(pre.naturalWidth ? pre : null)); });
+  ready.catch(() => {}).then(() => { if (tome._card === c) turn(() => put(pre.naturalWidth ? pre : null), false, { back: pre.naturalWidth ? pre.cloneNode(true) : h('div', { class: 'tc-noimg', text: c.name }) }); });
 }
 // v0.99.53 Library look: the wall and the desk top, kept in 'mtgpt.hallLook'
 const HALL_WALLS = [['plaster', 'Warm plaster', ''], ['sage', 'Sage plaster', 'hue-rotate(58deg) saturate(.75) brightness(.95)'], ['midnight', 'Midnight', 'hue-rotate(190deg) saturate(.85) brightness(.78)'], ['oxblood', 'Oxblood', 'hue-rotate(-22deg) saturate(1.7) brightness(.8)'], ['ash', 'Ash grey', 'saturate(.15) brightness(1.05)'], ['boards', 'Wood boards', '']];

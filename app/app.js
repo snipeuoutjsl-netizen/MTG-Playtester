@@ -1894,7 +1894,9 @@ function effectOptionsBase(tx, obj) {
   if (!bound.length && (mm = tx.match(/\b(?:each opponent|target opponent|an opponent) loses (\d+) life/i))) { const v = +mm[1]; opts.push({ label: `Opponent loses ${v} life`, fn: () => changeOppLife(-v) }); }
   if (!bound.length && (mm = tx.match(/\bdeals? (\d+) damage to (?:any target|target (?:opponent|player)|each opponent|target creature or player|target player or planeswalker)/i))) { const v = +mm[1]; opts.push({ label: `Deal ${v} damage to the opponent`, fn: () => changeOppLife(-v) }); }
   const ldAll = !!parseLookDistribute(txs.replace(/\n/g, ' '));
-  for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+(?!If you don't\b)/)) {   /* "pay X. If you don't, ..." stays one instruction */ if (bound.length && /\btarget\b/i.test(sent)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
+  let prevSent = ''; for (const sent of txs.replace(/\([^)]*\)/g, '').replace(/\n/g, ' ').split(/(?<=\.)\s+(?!If you don't\b)/)) {   /* "pay X. If you don't, ..." stays one instruction */ const prev = prevSent; prevSent = sent; if (bound.length && /\btarget\b/i.test(sent)) continue;
+    // v0.99.65 "Return target creature card … to the battlefield. It gains haste": "it" is the card just returned, put or created, not the source (the return itself grants that, see applyGraveReturn)
+    if (/^(?:it|that creature|they|those creatures)\b/i.test(sent.trim()) && /\b(?:return|put|create|creates)\b[^.]*\b(?:card|cards|token|tokens|creature|creatures)\b[^.]*\b(?:battlefield|tokens?)\b/i.test(prev) && !/\b(?:return|put) (?:~|this \w+)\b/i.test(prev)) continue; if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
   if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
@@ -6768,8 +6770,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.64';
+const APP_VERSION = '0.99.65';
 const CHANGELOG = [
+  { v: '0.99.65', title: 'A deeper book, and pages printed on both sides', notes: ['The menu book has real depth: the pages rise from a sunken gutter, the page block is several uneven layers that step out at the sides and bottom, and it sits on a thick cover board.', 'The turning page is printed on both sides: turning to a card, its back carries the card picture, so the left page no longer goes blank while the page lands; turning back, the picture lifts away with the page.', 'RULES: "Return target creature card from your graveyard to the battlefield. It gains haste until end of turn." no longer offers to give the spell itself haste: "it" is the card just returned (the return already gives that card haste).'] },
   { v: '0.99.64', title: 'As Foretold', notes: ['RULES (CR 118.9): a permanent that says "you may pay {0} rather than pay the mana cost for a spell you cast with mana value X or less" (As Foretold) now gives each spell it allows a "Pay {0} instead" way to cast. X is read from its time counters, and "once each turn" is kept.', 'A card with no mana cost has mana value 0 (CR 202.3a), so Living End, Ancestral Vision and the like can be cast through As Foretold even with no time counters; they could not be cast at all before.', 'Spells over the limit show why the As Foretold way is not available (its mana value, or already used this turn). Cards that already cost {0} get no extra button.'] },
   { v: '0.99.63', title: 'The deck laid out like Deck stats, and an old book', notes: ['Library desk: the deck is laid out the way the Deck stats window shows it: grouped by card type (Creatures, Instants & Sorceries, Lands …), in mana-value order, one stack per card with its copies stacked straight down. Stacks never overlap, so the flicker is gone.', 'Hovering a card on the desk only turns the book to that card: nothing on the desk moves, grows or glows.', 'The cards are sized so the whole deck is always on screen, whatever the window shape (the desk is closer to you than the wall, so its real on-screen size is measured).', 'The menu book is bigger, lies back on its stand at a slight angle, and looks old: torn page edges, stains, a thick uneven page block and a worn leather cover. Pages turn up out of the book in 3D. Its print is a size larger and nothing is cut off.', 'The Archive line in the book counts the card data you really have: the full file, or the cards looked up for your decks (it used to say empty when only your decks\' cards were saved).'] },
   { v: '0.99.62', title: 'Windows start-up fix, phone fixes, rules batch', notes: ['Windows: after an in-app update the app could fail to open. The restart now hands over cleanly, a window saved off-screen or minimised is brought back on screen, and clicking the app again always shows its window. (This part needs the new installer once; later updates keep it.)', 'Phones and tablets: planeswalker loyalty abilities work again when the card data came from the backup source (MTGJSON writes costs as [+2]:, which the app now reads).', 'Phones: a double tap on a spell opened its choices twice (Kozilek\'s Command and other modal spells), so finishing one left a second copy behind. One double tap is now one action.', 'The target window names the right mode for each target even when the mode quotes an ability ("Sacrifice this token: Add {C}.").', 'Rules: regeneration shields (Regenerate ~ / target creature); "You may pay {X}. If you do, …"; "~ deals N damage to each creature / player / opponent"; spells that exile themselves as they finish; "target opponent loses N life" no longer also offers you; Ancient Stirrings-style reveal filters with subtypes and lists; Equip lines read correctly.'] },
@@ -13815,15 +13818,19 @@ function tomeCard(tome, c, deckName) {
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
   // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck's pages;
   // the new page is swapped in under the leaf, half way through the turn
-  const turn = (swap, back) => {
+  // v0.99.65 the leaf is printed on both sides like a real page: turning to a card, its back carries the card's picture, so the left page is never
+  // blank while it lands; turning back, its front carries the picture that is lifting away
+  const picFace = () => { const src = tome.querySelector('.tome-card .tc-pic img'); return src ? src.cloneNode(true) : null; };
+  const turn = (swap, back, faces) => {
     if (calm) { swap(); return; }
     tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
-    const leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf); tome._busy = true;
+    const f = faces || {};
+    const leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }, h('div', { class: 'tl-face tl-front' }, f.front || null), h('div', { class: 'tl-face tl-back' }, f.back || null)); tome.append(leaf); tome._busy = true;
     const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
     setTimeout(swap, 210 / aspd());
     a.onfinish = () => { leaf.remove(); tome._busy = false; const p = tome._pending; tome._pending = null; if (p) setTimeout(() => tomeCard(tome, p[0], p[1]), 120); };
   };
-  if (!c) { turn(() => { if (tome._card) return; const pg = tome.querySelector('.tome-card'); if (pg) pg.remove(); tome.classList.remove('card-open'); }, true); return; }
+  if (!c) { turn(() => { if (tome._card) return; const pg = tome.querySelector('.tome-card'); if (pg) pg.remove(); tome.classList.remove('card-open'); }, true, { front: picFace() }); return; }
   const rec = c.rec || resolve(c.name) || {}, im = imgFor(c.name, deckName);
   const sym = mc => { try { return mc ? symbols(mc) : ''; } catch (e) { return mc || ''; } };
   const faceEl = f => h('div', { class: 'tc-face' },
@@ -13838,10 +13845,10 @@ function tomeCard(tome, c, deckName) {
       h('div', { class: 'tc-page tc-txt' }, faceEl(rec), h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
     tome.classList.add('card-open'); };
   // the picture is decoded first, so the page never shows an empty frame
-  if (!im) { turn(() => put(null)); return; }
+  if (!im) { turn(() => put(null), false, { back: h('div', { class: 'tc-noimg', text: c.name }) }); return; }
   const pre = new Image(); pre.alt = c.name; pre.draggable = false; pre.src = im.front;
   const ready = pre.complete && pre.naturalWidth ? Promise.resolve() : (pre.decode ? pre.decode() : new Promise(r => { pre.onload = r; pre.onerror = r; }));
-  ready.catch(() => {}).then(() => { if (tome._card === c) turn(() => put(pre.naturalWidth ? pre : null)); });
+  ready.catch(() => {}).then(() => { if (tome._card === c) turn(() => put(pre.naturalWidth ? pre : null), false, { back: pre.naturalWidth ? pre.cloneNode(true) : h('div', { class: 'tc-noimg', text: c.name }) }); });
 }
 // v0.99.53 Library look: the wall and the desk top, kept in 'mtgpt.hallLook'
 const HALL_WALLS = [['plaster', 'Warm plaster', ''], ['sage', 'Sage plaster', 'hue-rotate(58deg) saturate(.75) brightness(.95)'], ['midnight', 'Midnight', 'hue-rotate(190deg) saturate(.85) brightness(.78)'], ['oxblood', 'Oxblood', 'hue-rotate(-22deg) saturate(1.7) brightness(.8)'], ['ash', 'Ash grey', 'saturate(.15) brightness(1.05)'], ['boards', 'Wood boards', '']];
