@@ -42,7 +42,7 @@ function beginWith(name) {
   lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true);
   // v0.99.51 a new game from the Library while one is in progress: windows left open by the old game (a trigger, the stack, a search)
   // belong to it, so they are cleared before the new game is dealt; if starting fails, the table is shown with a message, not a blank screen.
-  setTimeout(() => { try { const mr = document.getElementById('modalRoot'); if (mr) mr.replaceChildren(); try { hideMenu(); } catch (e) {} startGame(); }
+  setTimeout(() => { try { const mr = document.getElementById('modalRoot'); if (mr) [...mr.children].forEach(x => { if (!x.classList.contains('keep')) x.remove(); }); try { hideMenu(); } catch (e) {} startGame(); }
     catch (err) { console.error(err); toast('Could not start the game', String(err && err.message || err)); try { render(); } catch (e) {} } }, reducedMotion() ? 0 : 200);
 }
 // v0.99.51 the deck taken down is laid out on the desk: one column per mana value (lands last), each card once with its count,
@@ -67,7 +67,7 @@ function deckSpreadEl(deck, deckName, onCard) {
         im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
         h('em', { class: 'ds-qty', text: '×' + c.qty }));
       const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
-      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 160); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
+      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 320); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }   // v0.99.60 the pointer must rest on a card for a moment: on the edge between two fanned cards it used to flip the page back and forth
       return card; })));
     el.replaceChildren(...cols);
     requestAnimationFrame(() => { const W = hallPortrait() ? 860 : 1520, H = 280, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
@@ -81,6 +81,7 @@ function deckSpreadEl(deck, deckName, onCard) {
 // leaving the cards turns back to the deck's pages.
 function tomeCard(tome, c, deckName) {
   if (!tome || !tome.isConnected || !tome.classList.contains('deck-open')) return;
+  if (tome._busy) { tome._pending = [c, deckName]; return; }   // v0.99.60 one page turn at a time; the latest request waits for it
   const cur = tome._card || null; if ((c && c.name) === (cur && cur.name) || (!c && !cur)) return;
   tome._card = c;
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
@@ -89,9 +90,10 @@ function tomeCard(tome, c, deckName) {
   const turn = (swap, back) => {
     if (calm) { swap(); return; }
     tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
-    const leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);
+    const leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf); tome._busy = true;
     const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
-    setTimeout(swap, 210 / aspd()); a.onfinish = () => leaf.remove();
+    setTimeout(swap, 210 / aspd());
+    a.onfinish = () => { leaf.remove(); tome._busy = false; const p = tome._pending; tome._pending = null; if (p) setTimeout(() => tomeCard(tome, p[0], p[1]), 120); };
   };
   if (!c) { turn(() => { if (tome._card) return; const pg = tome.querySelector('.tome-card'); if (pg) pg.remove(); tome.classList.remove('card-open'); }, true); return; }
   const rec = c.rec || resolve(c.name) || {}, im = imgFor(c.name, deckName);
@@ -175,7 +177,8 @@ function drawHall() {
     sec('Options', h('div', { class: 'hall-links' },
       link('Settings', () => openSettings()),
       link('Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }),
-      link('Library look…', () => openHallLook(), 'Choose the wall and the desk'))),
+      link('Library look…', () => openHallLook(), 'Choose the wall and the desk'),
+      window.desktop ? link(window.__updAvail ? `Update to v${window.__updAvail.latest} ●` : 'Check for updates', () => openUpdate(window.__updAvail || undefined), 'Download and install the newest version from GitHub') : null)),
     sec('Help', h('div', { class: 'hall-links' },
       link('Rules & help', () => openWelcome()),
       link('How cards are read', () => { try { $('#btnReading').click(); } catch (e) {} }),
@@ -200,6 +203,7 @@ function drawHall() {
   hallScene.layer = stage;
   el.replaceChildren(h('div', { class: 'hall-view' }, stage),
     h('div', { class: 'hall-corner' },
+      window.desktop && window.__updAvail ? h('button', { class: 'hall-upd primary', text: `Update available: v${window.__updAvail.latest}`, title: 'Read what changed and install it', onclick: () => openUpdate(window.__updAvail) }) : null,
       inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null,
       h('button', { class: 'hall-gear iconbtn', title: 'Settings', 'aria-label': 'Settings', onclick: () => openSettings(), html: null }, (() => { const x = h('span'); x.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'; return x; })())));
   applyHallLook(); hallFit(); requestAnimationFrame(hallFit);

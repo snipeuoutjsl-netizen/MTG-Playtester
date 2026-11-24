@@ -1574,6 +1574,17 @@ const { setup } = require('./common.js');
       s.pendingTriggers = []; document.getElementById('modalRoot').innerHTML = ''; return { costs, trig, draws, col }; });
     const c = r.costs;
     return { ok: c.ac === 'Memnite' && c.nt === 'Grizzly Bears,Memnite' && c.nca === 'Sol Ring,Treasure' && c.cl === 'Memnite' && c.bl === 'Forest' && c.tk === 'Treasure' && c.pm.split(',').length === 5 && r.trig === 'false,true,false,false' && r.draws === 5 && r.col === true, why: JSON.stringify(r) }; });
+  await T('UI updater', 'Desktop updates from the Library: when an update was found, the Library shows an "Update available" button and an "Update to v…" entry in the menu book; both open the Update window with "Update now"; starting a game from the Library keeps that window open', async () => { await reset();
+    const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); const keep = window.desktop;
+      window.desktop = { info: async () => ({ running: '0.0.1', source: 'built-in', bundled: '0.0.1' }), ghCheck: async () => ({ ok: true, current: '0.0.1', latest: '9.9.9', newer: true, title: 't', notes: ['n'], bytes: 1 }), ghInstall: async () => ({ ok: true }), onProgress: () => () => {} };
+      window.__updAvail = await window.desktop.ghCheck(); __d.openHall(); await W(300);
+      const banner = !!document.querySelector('#hall .hall-upd'), link = [...document.querySelectorAll('#hall .hall-link')].some(b => /Update to v9\.9\.9/.test(b.textContent));
+      document.querySelector('#hall .hall-upd').click(); await W(300);
+      const isUpd = () => [...document.querySelectorAll('#modalRoot .modal header span')].some(x => x.textContent === 'Update app');
+      const prompt = isUpd(), go = [...document.querySelectorAll('#modalRoot button')].some(b => b.textContent === 'Update now' && !b.hidden);
+      __d.beginWith(__d.currentDeckName()); await W(700); const kept = isUpd();
+      document.getElementById('modalRoot').innerHTML = ''; window.__updAvail = null; window.desktop = keep; return { banner, link, prompt, go, kept }; });
+    return { ok: r.banner && r.link && r.prompt && r.go && r.kept, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();
