@@ -13,7 +13,7 @@ function permChoiceOptions(tx, obj) {   // one sentence is read here; the senten
   const sc = scapeshiftOptions(sents, obj); if (sc) return sc;
   const po = payOrElseOptions(sents, obj); if (po) return po;
   const mp = mayPayOptions(sents, obj); if (mp) return mp;
-  { const md = massDamageOptions(sents[0], obj); if (md && sents.length === 1) return md; }
+  { const md = massDamageOptions(sents[0], obj); if (md && sents.length === 1) return md; if (md) return [...md.map(o => ({ ...o, full: false })), ...massRest(sents, 1, obj)]; }   // v0.99.80 Anger of the Gods: the damage, then the sentences after it
   const gz = graveyardSelfOptions(sents.join(' '), obj); if (gz) return gz;
   if (sents.length > 1 && /^If you (?:do|don't)\b/i.test(sents[1])) return null;   // "Sacrifice X. If you do, ..." is read by the if-you-do reader (CR 608.2c)
   const one = permChoiceOne(sents[0], obj); if (!one) return null;

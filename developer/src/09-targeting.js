@@ -179,8 +179,9 @@ function chooseTargets(title, specs, done, o) {
 // Damage marked on a creature this turn; lethal damage is a state-based action.
 function dealDamageTo(c, n, src) {
   if (!state) return; snap();
+  n = preventDamage(c.id, n, src); if (!(n > 0)) { render(); return; }   // v0.99.80 CR 615 prevention shields
   if (isPlaneswalker(c)) { c.loyalty = Math.max(0, (c.loyalty || 0) - n); log(`${src}: ${n} damage to ${c.name} (loyalty ${c.loyalty})`); checkLoyalty(c); }
-  else { c.dmg = (c.dmg || 0) + n; log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
+  else { c.dmg = (c.dmg || 0) + n; if (!c.dmgBy || c.dmgBy.turn !== state.turn) c.dmgBy = { turn: state.turn, srcs: [] }; c.dmgBy.srcs.push(src); log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
   runToughnessSBA(); render(); flushTriggers();
 }
 // v0.99.62 CR 701.19 regenerate: "the next time this permanent would be destroyed this turn, instead tap it, remove all damage from it,
@@ -214,7 +215,7 @@ function targetedOptions(tx, obj) {
     const s = sentence.replace(/\u2019/g, "'");
     let mm;
     const each = (fnFor, label, oppFn) => { for (const t of first) { const c = live(t); opts.push({ label: label(t), fn: () => { if (t.kind === 'opp') { log(`${src}: ${label(t)} (your opponent's ${/graveyard/.test(t.id) ? 'graveyard' : 'permanent'}: apply it at the table)`); if (oppFn) oppFn(t); render(); return; } fnFor(t, c); } }); } };
-    if ((mm = s.match(/\bdeals? (\d+) damage/i))) { const n = +mm[1]; each((t, c) => { if (t.kind === 'player') { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); } else if (c) dealDamageTo(c, n, src); }, t => `Deal ${n} damage to ${t.name}`); }
+    if ((mm = s.match(/\bdeals? (\d+) damage/i))) { const n = +mm[1]; each((t, c) => { if (t.kind === 'player') { t.id === 'you' ? changeLife(-preventDamage('you', n, src)) : changeOppLife(-n); } else if (c) dealDamageTo(c, n, src); }, t => `Deal ${n} damage to ${t.name}`); }
     else if (/\battach\b/i.test(s) && obj.sourceId) each((t, c) => { if (c) attachTo(obj.sourceId, c.id, src); }, t => `Attach ${src} to ${t.name}`);
     else if (/\bdestroy\b/i.test(s)) { const mvc = /\bif it has mana value (\d+) or (less|greater)\b/i.exec(s); each((t, c) => { if (c) { if (mvc) { const v = c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0); if (mvc[2].toLowerCase() === 'less' ? v > +mvc[1] : v < +mvc[1]) { log(`${src}: ${c.name} has mana value ${v}, not ${mvc[1]} or ${mvc[2]}, so nothing happens to it`); toast('Nothing happens', `${c.name} has mana value ${v}.`); return; } } destroyPerm(c, src); } }, t => `Destroy ${t.name}${mvc ? ` (only if its mana value is ${mvc[1]} or ${mvc[2]})` : ''}`); }
     else if (/\bexile\b/i.test(s) && !/\bexile it\b/i.test(s)) { const srcTx = (obj.sourceId > 0 && (findCard(obj.sourceId) || {}).card) ? String(cardText(findCard(obj.sourceId).card) || '') : ''; const until = !!obj.sourceId && (/\buntil\b[^.]*\bleaves the battlefield/i.test(s) || /leaves the battlefield, return the exiled cards? to the battlefield/i.test(srcTx));

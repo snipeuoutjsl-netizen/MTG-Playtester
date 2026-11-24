@@ -905,6 +905,7 @@ function ptCalc(c) {
     if (e.kind !== 'cond' || e.g.id !== c.id || !(e.p || e.t) || !condHolds2(e)) continue;
     out.p += e.p; out.t += e.t; out.modified = true; out.why.push(`${e.p >= 0 ? '+' : ''}${e.p}/${e.t >= 0 ? '+' : ''}${e.t} from ${e.cond === 'ctrl' ? 'controlling a ' + e.need : 'delirium (' + deliriumCount() + ' card types in your graveyard)'}`);
   }
+  if (state && fxOn(c, 'switch').length % 2) { const p = out.p; out.p = out.t; out.t = p; out.modified = true; out.why.push('power and toughness switched until end of turn (CR 613.4d, applied last)'); }   // v0.99.80
   return out;
 }
 function powerOf(c) { const r = ptCalc(c); return { n: Math.max(0, r.p), star: r.unknown }; }
@@ -1804,11 +1805,12 @@ function effectOptions(tx, obj) {
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
-    if (b2.out.length) { res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))); for (const o of b2.out) { const same = res.find(r => r && r.label === o.label); if (same) { if (o.covers) same.covers = (same.covers || []).concat(o.covers); } else res.push(o); } } }   // v0.99.77 an option offered twice keeps one copy, with what both say they carry out
+    if (b2.out.length) { res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))); for (const o of b2.out) { const same = res.find(r => r && r.label === o.label); if (same) { if (o.covers) same.covers = [...(same.covers || [])].concat(o.covers); } else res.push(o); } } }   // v0.99.77 an option offered twice keeps one copy, with what both say they carry out
+  if (res.some(o => o && o.early)) res = res.filter(o => o && o.early).concat(res.filter(o => !(o && o.early)));   // v0.99.80 CR 614 a replacement the spell sets up ("exile it instead") is in place before its damage is dealt
   // v0.99.79 a "Remember …" note is only for a sentence nothing else carries out: when another option already does it, the note goes
   if (!(obj && obj._noRemCheck) && res.some(o => o && /^Remember \(/.test(o.label || ''))) {
     res = res.filter(o => { if (!o || !/^Remember \(/.test(o.label || '')) return true; const sen = String(o.label).replace(/^Remember \([^)]*\):\s*/, '').replace(/\u2026$/, '');
-      if (res.some(r => r !== o && r && (r.covers || []).some(cv => String(cv).toLowerCase().startsWith(sen.toLowerCase().slice(0, 40))))) return false;
+      if (res.some(r => r !== o && r && [...(r.covers || [])].some(cv => String(cv).toLowerCase().startsWith(sen.toLowerCase().slice(0, 40))))) return false;
       let alt = []; try { alt = effectOptions(sen, Object.assign({}, obj, { _noRemCheck: true })).filter(r => r && typeof r.fn === 'function' && !/^Remember \(/.test(r.label || '') && !r.hidden); } catch (e) { alt = []; }
       return !alt.length || !alt.every(r => res.some(q => q && q.label === r.label)); });
   }
@@ -2025,7 +2027,7 @@ function effectOptionsBase(tx, obj) {
     const ge = graveReturnEffect(tx, src); if (ge && !bound.length) opts.push(ge);
     opts.push(...rollOptionsFor(tx, src));   // v0.96.21 "roll a d20"
     if (/flip a coin/i.test(tx)) { const lm = tx.match(/if you lose the flip,[^.]*?deals? (\d+) damage to you/i); opts.push({ label: lm ? `Flip a coin (lose: take ${lm[1]} damage)` : 'Flip a coin', fn: () => { flipCoinUI(win => { log(`${src}: coin flip - you ${win ? 'win' : 'lose'} the flip`); toast('Coin flip', win ? 'You won the flip.' : 'You lost the flip.' + (lm ? ` ${src} deals ${lm[1]} damage to you.` : '')); if (!win && lm) changeLife(-+lm[1], true); }); } }); }
-    else if ((mm = txs.match(/\b(?:~|it) deals? (\d+) damage to you\b/i))) { const v = +mm[1], cond = /if ~ is tapped/i.test(txs); opts.push({ label: `${cond ? 'If tapped: ' : ''}take ${v} damage`, fn: () => { if (cond) { const f = obj.sourceId && findCard(obj.sourceId); if (f && !f.card.tapped) { toast('Not tapped', `${src} is untapped, so it deals no damage.`); return; } } changeLife(-v, true); } }); }
+    else if ((mm = txs.match(/\b(?:~|it) deals? (\d+) damage to you\b/i))) { const v = +mm[1], cond = /if ~ is tapped/i.test(txs); opts.push({ label: `${cond ? 'If tapped: ' : ''}take ${v} damage`, fn: () => { if (cond) { const f = obj.sourceId && findCard(obj.sourceId); if (f && !f.card.tapped) { toast('Not tapped', `${src} is untapped, so it deals no damage.`); return; } } changeLife(-preventDamage('you', v, src), true); } }); }
     if (obj.sourceId && /\buntap (?:~|this \w+)\b/i.test(txs)) opts.push({ label: `Untap ${src}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield' && f.card.tapped) untapByEffect(f.card.id); } });
     if (obj.sourceId && /^(?:then )?(?:you may )?sacrifice (?:~|it|this \w+)(?: unless it escaped)?\.?$/i.test(txs.trim().replace(/^.*\.\s+(?=then sacrifice)/i, ''))) opts.push({ label: `Sacrifice ${src}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'battlefield') { log(`${src}: sacrificed`); moveCard(f.card.id, 'graveyard'); } } });
     if (obj.sourceId && (mm = txs.match(/return ~ from your graveyard to (your hand|the battlefield)/i))) { const dest = mm[1].toLowerCase(); opts.push({ label: `Return ${src} from the graveyard to ${dest}`, fn: () => { const f = findCard(obj.sourceId); if (f && f.zone === 'graveyard') moveCard(f.card.id, /hand/i.test(dest) ? 'hand' : 'battlefield'); else toast('Not in graveyard', `${src} is no longer in your graveyard.`); } }); }   // v0.94.4 mm was reassigned by later matches, so the click threw (Vengevine/Bloodghast)
@@ -2266,6 +2268,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   if (c.faceOf) { c.name = c.faceOf; delete c.faceOf; delete c.face; }   // a transformed card is its front face again in any other zone (rule 712.14)
   if (c.origName) { c.name = c.origName; delete c.origName; }
   const _mp = c.mutParts ? c : null;
+  if (dest === 'graveyard' && !c.dieExileTurn && (state.fx || []).some(e => e.kind === 'dieexile' && (!e.dealtBy || (c.dmgBy && c.dmgBy.turn === state.turn && c.dmgBy.srcs.includes(e.dealtBy)))) && permZone(c) === 'creatures') c.dieExileTurn = state.turn;   // v0.99.80 "If a creature would die this turn, exile it instead"
   if (c.dieExileTurn === state.turn && dest === 'graveyard') { log(`${c.name} would die, so it is exiled instead`); dest = 'exile'; }   // v0.99.68 "If that creature would die this turn, exile it instead" (CR 614.1a)
   delete c.dieExileTurn;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
@@ -3543,8 +3546,9 @@ function chooseTargets(title, specs, done, o) {
 // Damage marked on a creature this turn; lethal damage is a state-based action.
 function dealDamageTo(c, n, src) {
   if (!state) return; snap();
+  n = preventDamage(c.id, n, src); if (!(n > 0)) { render(); return; }   // v0.99.80 CR 615 prevention shields
   if (isPlaneswalker(c)) { c.loyalty = Math.max(0, (c.loyalty || 0) - n); log(`${src}: ${n} damage to ${c.name} (loyalty ${c.loyalty})`); checkLoyalty(c); }
-  else { c.dmg = (c.dmg || 0) + n; log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
+  else { c.dmg = (c.dmg || 0) + n; if (!c.dmgBy || c.dmgBy.turn !== state.turn) c.dmgBy = { turn: state.turn, srcs: [] }; c.dmgBy.srcs.push(src); log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
   runToughnessSBA(); render(); flushTriggers();
 }
 // v0.99.62 CR 701.19 regenerate: "the next time this permanent would be destroyed this turn, instead tap it, remove all damage from it,
@@ -3578,7 +3582,7 @@ function targetedOptions(tx, obj) {
     const s = sentence.replace(/\u2019/g, "'");
     let mm;
     const each = (fnFor, label, oppFn) => { for (const t of first) { const c = live(t); opts.push({ label: label(t), fn: () => { if (t.kind === 'opp') { log(`${src}: ${label(t)} (your opponent's ${/graveyard/.test(t.id) ? 'graveyard' : 'permanent'}: apply it at the table)`); if (oppFn) oppFn(t); render(); return; } fnFor(t, c); } }); } };
-    if ((mm = s.match(/\bdeals? (\d+) damage/i))) { const n = +mm[1]; each((t, c) => { if (t.kind === 'player') { t.id === 'you' ? changeLife(-n) : changeOppLife(-n); } else if (c) dealDamageTo(c, n, src); }, t => `Deal ${n} damage to ${t.name}`); }
+    if ((mm = s.match(/\bdeals? (\d+) damage/i))) { const n = +mm[1]; each((t, c) => { if (t.kind === 'player') { t.id === 'you' ? changeLife(-preventDamage('you', n, src)) : changeOppLife(-n); } else if (c) dealDamageTo(c, n, src); }, t => `Deal ${n} damage to ${t.name}`); }
     else if (/\battach\b/i.test(s) && obj.sourceId) each((t, c) => { if (c) attachTo(obj.sourceId, c.id, src); }, t => `Attach ${src} to ${t.name}`);
     else if (/\bdestroy\b/i.test(s)) { const mvc = /\bif it has mana value (\d+) or (less|greater)\b/i.exec(s); each((t, c) => { if (c) { if (mvc) { const v = c.token ? 0 : ((cardInfo(c.name) || {}).cmc || 0); if (mvc[2].toLowerCase() === 'less' ? v > +mvc[1] : v < +mvc[1]) { log(`${src}: ${c.name} has mana value ${v}, not ${mvc[1]} or ${mvc[2]}, so nothing happens to it`); toast('Nothing happens', `${c.name} has mana value ${v}.`); return; } } destroyPerm(c, src); } }, t => `Destroy ${t.name}${mvc ? ` (only if its mana value is ${mvc[1]} or ${mvc[2]})` : ''}`); }
     else if (/\bexile\b/i.test(s) && !/\bexile it\b/i.test(s)) { const srcTx = (obj.sourceId > 0 && (findCard(obj.sourceId) || {}).card) ? String(cardText(findCard(obj.sourceId).card) || '') : ''; const until = !!obj.sourceId && (/\buntil\b[^.]*\bleaves the battlefield/i.test(s) || /leaves the battlefield, return the exiled cards? to the battlefield/i.test(srcTx));
@@ -5421,7 +5425,7 @@ function applyLandCost(c, k) {
   if (!k) return;
   if (c.mt) c.mt.life += (k.life || 0) + (k.dmg || 0);
   if (k.life) { state.life -= k.life; log(`${c.name}: paid ${k.life} life for the mana → ${state.life}`); }
-  if (k.dmg) { state.life -= k.dmg; log(`${c.name}: dealt ${k.dmg} damage to you → ${state.life}`); }
+  if (k.dmg) { const d = preventDamage('you', k.dmg, c.name); state.life -= d; log(`${c.name}: dealt ${d} damage to you → ${state.life}`); }
   if (k.noUntap) { c.noUntapNext = state.turn; log(`${c.name}: it doesn't untap during your next untap step`); }
   if (k.oppGain && typeof oppGainBlocked === 'function' && oppGainBlocked()) log(`${c.name}: your opponent can't gain life this turn`);
   else if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }
@@ -7026,8 +7030,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.79';
+const APP_VERSION = '0.99.80';
 const CHANGELOG = [
+  { v: '0.99.80', title: 'A better-looking Library, and more rules', notes: ['LIBRARY: new, sharper textures, all drawn by our own generator (no outside images). The desk is six walnut boards with real growth rings, cathedral arches, pores and a soft lamp sheen in the varnish, drawn from a 4K source so the near boards stay crisp. The shelves, the name plate and the wall boards use the new wood; the plaster wall is finer. Books (the open menu book and every spine) are covered in pebble-grain leather.', 'LIBRARY: lamplight. The corners of the room fall into shadow and a warm pool of light sits over the open book; the shelf fronts catch the light on their top edge.', 'RULES (CR 615): prevention shields. "Prevent the next N damage that would be dealt to any target / you / this creature this turn" (Shieldmate\u2019s Blessing, Barrenton Medic), "Prevent all damage that would be dealt to him this turn" (Gideon) and "The next time a source of your choice would deal damage to you this turn, prevent that damage" (Haazda Shield Mate) now really stop the damage, from spells, sweepers and painlands alike. "Damage can\u2019t be prevented" (Skullcrack) still turns them off.', 'RULES (CR 613.4d): "Switch this creature\u2019s power and toughness until end of turn" (Aeromoeba, Merfolk Thaumaturgist) works, applied after every other change, as the rules say.', 'RULES: "Target creature gets -X/-X until end of turn" (Battle at the Bridge, Sickening Shoal) uses the X you paid; "+X/+X where X is its power" doubles it.', 'RULES (CR 614.1a): "If a creature dealt damage this way would die this turn, exile it instead" (Anger of the Gods, Yamabushi\u2019s Flame) and "If that creature or planeswalker would die this turn, exile it instead" (Fanged Flames) are put in place before the damage, so the creature really is exiled. Anger of the Gods now deals its damage too (the second sentence used to stop it being read).', 'RULES: "Choose one of them. You may play that card this turn." (Jaya, Fiery Negotiator, Party Thrasher) asks which exiled card it was and makes it playable from the exile pile.', 'RULES: "Gain control of target creature until end of turn" (Unwilling Recruit, Threaten effects) on your own creature changes nothing; on your opponent\u2019s it is noted for the real table. 182 fewer sentences are left as Remember notes; 104 more cards are read in full.'] },
   { v: '0.99.79', title: 'Skullcrack, and \u201cRemember\u201d effects carried out', notes: ['Skullcrack resolves in one go: 3 damage to its target, and \u201cPlayers can\u2019t gain life this turn\u201d is a real effect until end of turn (your life gain, lifelink and your opponent\u2019s life gain are stopped); \u201cDamage can\u2019t be prevented this turn\u201d is recorded too. The \u201cor\u201d in \u201ctarget player or planeswalker\u201d no longer stops a spell from resolving by itself.', 'Far fewer \u201cRemember (until end of turn)\u201d notes: a note is never shown next to an option that already does the same thing, and these are now carried out: group pumps and shrinks (\u201cAll creatures get -2/-2\u201d, \u201cAttacking creatures get +1/+0\u201d, any group the sentence names), an Aura\u2019s \u201cEnchanted creature gets \u2026\u201d, Fog (your combat damage is prevented that turn), mana that stays in your pool until end of turn (Grand Warlord Radha), \u201ccan attack this turn as though it didn\u2019t have defender\u201d. Blocking effects (\u201ccan\u2019t block\u201d, \u201ccan\u2019t be blocked\u201d, \u201cblocks if able\u201d) say plainly that blocking is up to your opponent. Across all cards, Remember notes went from 2,551 to about 1,700; most of the rest are for the opponent\u2019s permanents.', '289 rules tests pass, all with real cards.'] },
   { v: '0.99.78', title: 'Kozilek\u2019s Command on mobile, modal spells, cards that size to the table', notes: ['Kozilek\u2019s Command (and every X spell) with automatic land tapping: after you chose modes and X, pressing Cast did nothing when part of your mana could only be spent on that spell (Eldrazi Temple). X counted that mana but the payment that followed left it out. Payment now happens in the spell\u2019s own context, in the payment window too.', 'On phones a slow tap on a button (Cast, Pay and cast, Choose) is always a tap: press-and-hold only opens menus on cards and the table, never on buttons, fields or choices in a window.', 'Modal spells whose number of modes depends on a condition: Flame of Anor (\u201cIf you control a Wizard as you cast this spell, you may choose two instead\u201d) lets you pick one, or up to two while you control a Wizard; when the app cannot check the condition (Go Nuts!\u2019s teamwork, Inscription of Insight\u2019s kicker, See Double\u2019s opponent graveyard) it asks whether it is met. These spells were not read as modal at all before.', 'Cards size themselves to the table on every screen: lands and artifacts/enchantments share their row by how many cards each holds (a big mana base gets the width, an empty zone shrinks to its label); on an upright phone an empty zone shrinks to its label and the cards in the others grow into the room (up to 1.9\u00d7); on tablets and sideways phones cards may grow to 1.5\u00d7.', '287 rules tests pass, all with real cards.'] },
   { v: '0.99.77', title: 'Reading sweep', notes: ['A sweep over every card the app knows found sentences it skipped; these are now carried out: \u201cYou may pay {1}. If you do, target player loses 1 life\u201d and other payments whose result has a target or several parts (Smolder Initiate, Ruthless Sniper); \u201cUntap those creatures\u201d after a group pump (War Flare, Mob Rule); Proliferate (one more of each counter on your permanents, and energy), also as \u201c\u2026, then proliferate\u201d (Tezzeret\u2019s Gambit, Grim Affliction); \u201cSpend this mana only to \u2026\u201d after an ability adds mana (Lord of the Forsaken), which now floats with that restriction; a spell\u2019s \u201cExile [this spell].\u201d is read; \u201cIt gains indestructible until end of turn\u201d and \u201cTap it\u201d on the source itself (Wicked Wolf).', 'Cards the app fully reads went from 11,704 to 11,777 across all 22,743 cards.', 'The Library book has no more \u201c\u2026\u201d: menu entries and buttons lost their trailing dots, and long names wrap and the page scales its writing down instead of being cut off.', '285 rules tests pass, all with real cards.'] },
@@ -13864,7 +13869,7 @@ function permChoiceOptions(tx, obj) {   // one sentence is read here; the senten
   const sc = scapeshiftOptions(sents, obj); if (sc) return sc;
   const po = payOrElseOptions(sents, obj); if (po) return po;
   const mp = mayPayOptions(sents, obj); if (mp) return mp;
-  { const md = massDamageOptions(sents[0], obj); if (md && sents.length === 1) return md; }
+  { const md = massDamageOptions(sents[0], obj); if (md && sents.length === 1) return md; if (md) return [...md.map(o => ({ ...o, full: false })), ...massRest(sents, 1, obj)]; }   // v0.99.80 Anger of the Gods: the damage, then the sentences after it
   const gz = graveyardSelfOptions(sents.join(' '), obj); if (gz) return gz;
   if (sents.length > 1 && /^If you (?:do|don't)\b/i.test(sents[1])) return null;   // "Sacrifice X. If you do, ..." is read by the if-you-do reader (CR 608.2c)
   const one = permChoiceOne(sents[0], obj); if (!one) return null;
@@ -14505,11 +14510,11 @@ function massDamageOptions(tx, obj) {
         if (/without reach/.test(p)) cs = cs.filter(c => !hasKw(c, 'reach')); else if (/with reach/.test(p)) cs = cs.filter(c => hasKw(c, 'reach'));
         if (/\btapped\b/.test(p) && !/untapped/.test(p)) cs = cs.filter(c => c.tapped); if (/untapped/.test(p)) cs = cs.filter(c => !c.tapped);
         for (const nm of (p.match(/non-?([a-z]+)/g) || [])) { const w = nm.replace(/^non-?/, ''); cs = cs.filter(c => { const pi = permTypeInfo(c); return !pi.types.has(w) && !pi.subs.has(w); }); }
-        for (const c of cs) { c.dmg = (c.dmg || 0) + n; log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
+        for (const c of cs) { const d = preventDamage(c.id, n, src); if (!(d > 0)) continue; c.dmg = (c.dmg || 0) + d; if (!c.dmgBy || c.dmgBy.turn !== state.turn) c.dmgBy = { turn: state.turn, srcs: [] }; c.dmgBy.srcs.push(src); log(`${src}: ${d} damage to ${c.name} (${c.dmg} marked this turn)`); }   // v0.99.80 shields and "dealt damage this way"
         if (!/you control/.test(p)) log(`${src}: ${n} damage to each creature your opponents control too (apply it at the table)`);
         if (/planeswalker/.test(p)) log(`${src}: and ${n} damage to each planeswalker`);
       } else if (/^planeswalker/.test(p)) { for (const c of state.battlefield.filter(c => isPlaneswalker(c))) if (!/opponents/.test(p)) { c.loyalty = Math.max(0, (c.loyalty || 0) - n); checkLoyalty(c); } }
-      else if (/^(?:other )?players?$/.test(p)) { changeLife(-n, true); changeOppLife(-n); log(`${src}: ${n} damage to each player`); }
+      else if (/^(?:other )?players?$/.test(p)) { changeLife(-preventDamage('you', n, src), true); changeOppLife(-n); log(`${src}: ${n} damage to each player`); }
       else if (/^opponents?$/.test(p)) { changeOppLife(-n); log(`${src}: ${n} damage to each opponent`); }
     }
     runToughnessSBA(); render(); flushTriggers();
@@ -14646,7 +14651,125 @@ function batch2Options(txs, obj) {
   { const hasT2 = /\btarget\b/i.test(t); const gs2 = !hasT2 && sents.map(x => [x, /^(?:it|~) gains? ([a-z ]+?(?:,? and [a-z ]+?)?) until end of turn\.?$/i.exec(x)]).find(p => p[1]);
     if (gs2) { const kws = gs2[1][1].toLowerCase().split(/\s*(?:,\s*(?:and\s+)?|\band\b)\s*/).map(x => x.trim()).filter(Boolean);
       if (kws.length && kws.every(k => GRANTABLE.includes(k))) out.push({ covers: [gs2[0]], label: `${src} gains ${kws.join(' and ')} until end of turn`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } for (const k of kws) addKwFx(f.card.id, k, { srcName: src }); render(); } }); } }
+  batch3Options(t, sents, obj, src, out, drop);   // v0.99.80 src/87
   return { out, drop };
+}
+// ---- v0.99.80 rules batch 3: sentences the Remember audit still found without an effect behind them
+// Prevention shields (CR 615), switching power and toughness (CR 613.4d), +X/+X and -X/-X pumps, "exile it instead if it would die",
+// "you may play that card this turn" after a card was exiled, and "gain control … until end of turn" on the goldfish table.
+
+// CR 615.1 a prevention shield: { kind: 'shield', who: 'you' | targetId: <permanent>, n: number|Infinity, once?: true (the next time only) }
+function preventDamage(key, n, src) {
+  if (!state || !(n > 0)) return n;
+  if ((state.fx || []).some(e => e.kind === 'noprevent')) return n;   // CR 615.12 "damage can't be prevented"
+  let left = n;
+  for (const e of (state.fx || []).filter(e => e.kind === 'shield' && (key === 'you' ? e.who === 'you' : e.targetId === key))) {
+    if (left <= 0) break;
+    const take = Math.min(left, e.n); left -= take; e.n -= take;
+    log(`${e.srcName || 'A shield'}: prevented ${take} damage to ${key === 'you' ? 'you' : fxTargetName(e)} (CR 615)`);
+    if (e.once || e.n <= 0) state.fx = state.fx.filter(x => x !== e);
+  }
+  return left;
+}
+function addShield(where, n, src, text, once) {
+  const o = { kind: 'shield', n, once: !!once, until: 'eot', srcName: src, text };
+  if (where === 'you') o.who = 'you'; else o.targetId = where;
+  return addFx(o);
+}
+// a permanent's power, read for "where X is its power"
+function b3Power(id) { const f = findCard(id); return f && f.zone === 'battlefield' ? Math.max(0, ptCalc(f.card).p) : 0; }
+
+function batch3Options(t, sents, obj, src, out, drop) {
+  if (!state) return;
+  const perms = () => (obj.targets || []).filter(x => !x.gone && x.kind === 'perm');
+  const players = () => (obj.targets || []).filter(x => !x.gone && x.kind === 'player');
+  const srcPerm = () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; return f && f.zone === 'battlefield' ? f.card : null; };
+  const word = (s) => s.replace(/\.$/, '');
+
+  // 1. CR 615.7 "Prevent the next N damage that would be dealt to <who> this turn." / "Prevent all damage that would be dealt to <who> this turn." /
+  //    "The next time a source of your choice would deal damage to <who> this turn, prevent that damage."
+  for (const s of sents) {
+    let m, n = null, once = false, who = null;
+    if ((m = /^prevent the next (\d+|x) damage that would be dealt to (.+?) this turn\.?$/i.exec(s))) { n = /^x$/i.test(m[1]) ? (obj.xValue || 0) : +m[1]; who = m[2]; }
+    else if ((m = /^prevent all damage that would be dealt to (.+?) this turn\.?$/i.exec(s))) { n = Infinity; who = m[1]; }
+    else if ((m = /^the next time a source of your choice would deal damage to (.+?) this turn, prevent that damage\.?$/i.exec(s))) { n = Infinity; once = true; who = m[1]; }
+    if (n == null) continue;
+    const w = who.toLowerCase(), amount = n === Infinity ? (once ? 'the next damage from one source' : 'all damage') : `the next ${n} damage`;
+    let label, fn;
+    if (/^you$/.test(w)) { label = `Prevent ${amount} that would be dealt to you this turn`; fn = () => { snap(); addShield('you', n, src, word(s), once); log(`${src}: ${amount} that would be dealt to you this turn is prevented`); render(); }; }
+    else if (/^(?:~|him|her|it|this (?:creature|permanent|planeswalker))$/.test(w)) { label = `Prevent ${amount} that would be dealt to ${src} this turn`; fn = () => { const c = srcPerm(); if (!c) { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } snap(); addShield(c.id, n, src, word(s), once); log(`${src}: ${amount} that would be dealt to it this turn is prevented`); render(); }; }
+    else if (/\btarget\b|^any target$/.test(w)) {
+      const ts = (obj.targets || []).filter(x => !x.gone); if (!ts.length && !/^any target$/.test(w) && !/\btarget\b/.test(w)) continue;
+      label = ts.length ? `Prevent ${amount} that would be dealt to ${ts.map(x => x.name).join(', ')} this turn` : `Prevent ${amount} that would be dealt to the target this turn`;
+      fn = () => { snap(); for (const x of ts) { if (x.kind === 'player' && x.id === 'you') addShield('you', n, src, word(s), once); else if (x.kind === 'perm') { const f = findCard(x.id); if (f && f.zone === 'battlefield') addShield(x.id, n, src, word(s), once); } else log(`${src}: ${x.name} is on your opponent's side: apply the prevention at the table`); }
+        log(`${src}: ${amount} that would be dealt to ${ts.map(x => x.name).join(', ') || 'the target'} this turn is prevented`); render(); };
+    } else continue;
+    out.push({ covers: [s], full: sents.length === 1, label, fn });
+    drop.push(new RegExp('^Remember \\(until end of turn\\): ' + s.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+  }
+
+  // 2. CR 613.4d "Switch <its> power and toughness until end of turn." (applied after every other change, see ptCalc)
+  { const ss = sents.find(x => /^switch (?:~'s|this creature's|its|target creature's|that creature's|each creature's) power and toughness until end of turn\.?$/i.test(x));
+    if (ss) { const tgt = /target creature's/i.test(ss), each = /each creature's/i.test(ss);
+      const ids = () => each ? state.battlefield.filter(c => permZone(c) === 'creatures').map(c => c.id) : tgt ? perms().map(x => x.id) : (srcPerm() ? [srcPerm().id] : []);
+      const nm = each ? 'Each creature' : tgt ? (perms().map(x => x.name).join(', ') || 'Target creature') : src;
+      out.push({ covers: [ss], full: sents.length === 1, label: `Switch ${nm}'s power and toughness until end of turn`, fn: () => { const l = ids(); if (!l.length) { toast('No creature', 'There is no creature to switch.'); return; } snap(); for (const id of l) addFx({ kind: 'switch', targetId: id, until: 'eot', srcName: src, text: 'power and toughness switched' }); log(`${src}: ${nm}: power and toughness switched until end of turn (CR 613.4d)`); render(); } });
+      drop.push(/^Remember \(until end of turn\): Switch /i); } }
+
+  // 3. "<who> gets +X/+X until end of turn[, where X is its power]" and -X/-X (X from the spell, or the creature's own power)
+  for (const s of sents) {
+    const m = /^(target creature(?: you control)?|~|this creature|it|that creature|enchanted creature|equipped creature) gets ([+-])(x|\d+)\/([+-])(x|\d+) until end of turn(?:, where x is (its power|[^.]+))?\.?$/i.exec(s);
+    if (!m || !/x/i.test(m[3] + m[5])) continue;
+    const ownPower = /^its power$/i.test(m[6] || ''); if (m[6] && !ownPower) continue;   // other "where X is …" are read by applyWhereX before this
+    if (!ownPower && obj.xValue == null) continue;
+    const subj = m[1].toLowerCase();
+    const who = () => /^target/.test(subj) ? perms().map(x => ({ id: x.id, name: x.name })) : /^(?:enchanted|equipped)/.test(subj) ? (() => { const g = srcPerm(), host = g && g.att != null ? findCard(g.att) : null; return host ? [{ id: host.card.id, name: host.card.name }] : []; })() : (srcPerm() ? [{ id: srcPerm().id, name: src }] : []);
+    const val = (id, sign, part) => sign * (/x/i.test(part) ? (ownPower ? b3Power(id) : obj.xValue) : +part);
+    const sp = m[2] === '-' ? -1 : 1, st = m[4] === '-' ? -1 : 1, xs = ownPower ? 'X is its power' : 'X = ' + obj.xValue;
+    out.push({ covers: [s], full: sents.length === 1, label: `${who().map(x => x.name).join(', ') || m[1]} gets ${m[2]}${m[3].toUpperCase()}/${m[4]}${m[5].toUpperCase()} until end of turn (${xs})`, fn: () => {
+      const l = who(); if (!l.length) { toast('No creature', 'There is no creature to change.'); return; } snap();
+      for (const x of l) { const p = val(x.id, sp, m[3]), tt = val(x.id, st, m[5]); addFx({ kind: 'pt', targetId: x.id, p, t: tt, until: 'eot', srcName: src, srcId: obj.sourceId || null }); log(`${src}: ${x.name} gets ${sgnN(p)}/${sgnN(tt)} until end of turn`); }
+      runToughnessSBA(); render(); } });
+    drop.push(/^Remember \(until end of turn\): .*gets [+-]X\//i);
+  }
+
+  // 4. CR 614.1a "If a creature dealt damage this way would die this turn, exile it instead." / "If that creature or planeswalker would die …" / "If a creature would die this turn, exile it instead."
+  { const es = sents.find(x => /^if (?:a creature|a permanent|a creature or planeswalker|that creature or planeswalker|that permanent|that creature) (?:dealt damage this way )?would die this turn, exile it instead\.?$/i.test(x));
+    if (es) { const all = /^if a creature would die this turn/i.test(es), dealt = /dealt damage this way/i.test(es);
+      out.push({ early: true, covers: [es], full: sents.length === 1, label: all ? 'This turn, a creature that would die is exiled instead' : perms().length ? `If ${perms().map(x => x.name).join(', ')} would die this turn, it is exiled instead` : dealt ? 'A creature dealt damage this way that would die this turn is exiled instead' : 'If the creature would die this turn, it is exiled instead', fn: () => {
+        if (all) { addFx({ kind: 'dieexile', until: 'eot', srcName: src, text: 'If a creature would die this turn, exile it instead' }); log(`${src}: creatures that would die this turn are exiled instead`); render(); return; }
+        if (dealt && !perms().length) { addFx({ kind: 'dieexile', dealtBy: src, until: 'eot', srcName: src, text: `If a creature dealt damage by ${src} would die this turn, exile it instead` }); log(`${src}: a creature dealt damage this way that would die this turn is exiled instead`); render(); return; }
+        const ids = new Set(perms().map(x => x.id));
+        for (const id of ids) { const f = findCard(id); if (f && f.zone === 'battlefield') f.card.dieExileTurn = state.turn; }
+        log(`${src}: ${ids.size ? 'if ' + [...ids].map(id => (findCard(id) || { card: { name: '?' } }).card.name).join(', ') + ' would die this turn, it is exiled instead' : 'no creature of yours was dealt damage this way'}`); render(); } });
+      drop.push(/^Remember \(until end of turn\): If .*would die this turn, exile it instead/i); } }
+
+  // 5. impulse draw told in two sentences: "Exile the top two cards …, then choose one of them. You may play that card this turn." (Party Thrasher, Jaya…)
+  { const ps = sents.find(x => /^(?:until end of turn, )?you may (play|cast) (that card|those cards|the exiled cards?|cards exiled this way|it|them)(?: this turn| until end of turn| until the end of your next turn)?\.?$/i.test(x));
+    const prev = ps ? sents[sents.indexOf(ps) - 1] || '' : '';
+    if (ps && !/\bmill\b|graveyard/i.test(prev) && !/\bexile the top (?:card|(?:a|one|two|three|four|five|six|seven|x|\d+) cards) of your library\.?$/i.test(prev)) {
+      const cast = /you may cast/i.test(ps), many = /those|them|cards/i.test(ps), next = /next turn/i.test(ps);
+      out.push({ covers: [ps], label: `Choose the exiled card${many ? 's' : ''} you may ${cast ? 'cast' : 'play'} ${next ? 'until the end of your next turn' : 'this turn'}`, fn: () => {
+        const pool = state.exile.filter(c => !mayPlayNow(c)).slice(-8).reverse();
+        if (!pool.length) { toast('Nothing exiled', 'There is no card in exile to choose.'); return; }
+        const mm = modal(`${src}: you may ${cast ? 'cast' : 'play'} ${many ? 'these' : 'this'} ${next ? 'until the end of your next turn' : 'this turn'}`, { width: 520 });
+        const pick = new Set([pool[0].id]);
+        const draw = () => mm.body.replaceChildren(h('div', { class: 'muted', text: many ? 'The newest cards in exile are listed first. Tick each card this effect lets you play.' : 'The newest card in exile is listed first. Choose the card this effect lets you play.' }),
+          ...pool.map(c => h('label', { class: 'row' }, h('input', { type: many ? 'checkbox' : 'radio', name: 'b3pick', checked: pick.has(c.id), onchange: () => { if (!many) pick.clear(); if (pick.has(c.id) && many) pick.delete(c.id); else pick.add(c.id); draw(); } }), h('span', { class: 'nm' }, c.name, ' ', symbols((cardInfo(c.name) || {}).mc || '')))));
+        draw();
+        mm.foot.append(h('button', { text: 'Cancel', onclick: () => mm.close() }), h('button', { class: 'primary', text: 'Confirm', onclick: () => { mm.close(); snap(); const got = [];
+          for (const c of pool) if (pick.has(c.id)) { if (next) c.mayPlayUntil = state.turn + 1; else c.mayPlayTurn = state.turn; if (cast) c.mayCastOnly = true; got.push(c.name); }
+          log(`${src}: you may ${cast ? 'cast' : 'play'} ${got.join(', ') || 'nothing'} ${next ? 'until the end of your next turn' : 'this turn'} (from the exile pile)`); render(); } }));
+      } });
+      drop.push(/^Remember \(until end of turn\): (?:Until end of turn, )?You may (?:play|cast) /i);
+    } }
+
+  // 6. "Gain control of target creature until end of turn." The goldfish table has no opponent creatures: your own stays yours, an opponent's is played out at the real table
+  { const gs = sents.find(x => /^(?:until end of turn, )?gain control of target ([a-z ]+?)(?: an opponent controls)?(?: until end of turn)?\.?$/i.test(x) && /until end of turn/i.test(x));
+    if (gs) { const mine = perms(); out.push({ covers: [gs], full: sents.length === 1, label: mine.length ? `Gain control of ${mine.map(x => x.name).join(', ')} until end of turn (you already control it)` : 'Gain control of the creature until end of turn (your opponent\'s creature: move it at the real table)', fn: () => {
+      if (mine.length) log(`${src}: you already control ${mine.map(x => x.name).join(', ')}; nothing changes`);
+      else { addFx({ kind: 'note', until: 'eot', srcName: src, text: 'You control the stolen creature until end of turn (opponent\'s creature, play it out at the table)' }); log(`${src}: gain control of your opponent's creature until end of turn (apply it at the real table)`); } render(); } });
+      drop.push(/^Remember \(until end of turn\): (?:Until end of turn, )?gain control of /i); } }
 }
 init();
 

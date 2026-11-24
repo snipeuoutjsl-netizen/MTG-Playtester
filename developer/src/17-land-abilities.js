@@ -106,7 +106,7 @@ function applyLandCost(c, k) {
   if (!k) return;
   if (c.mt) c.mt.life += (k.life || 0) + (k.dmg || 0);
   if (k.life) { state.life -= k.life; log(`${c.name}: paid ${k.life} life for the mana → ${state.life}`); }
-  if (k.dmg) { state.life -= k.dmg; log(`${c.name}: dealt ${k.dmg} damage to you → ${state.life}`); }
+  if (k.dmg) { const d = preventDamage('you', k.dmg, c.name); state.life -= d; log(`${c.name}: dealt ${d} damage to you → ${state.life}`); }
   if (k.noUntap) { c.noUntapNext = state.turn; log(`${c.name}: it doesn't untap during your next untap step`); }
   if (k.oppGain && typeof oppGainBlocked === 'function' && oppGainBlocked()) log(`${c.name}: your opponent can't gain life this turn`);
   else if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }

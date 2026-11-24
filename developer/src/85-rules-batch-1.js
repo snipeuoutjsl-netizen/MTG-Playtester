@@ -20,11 +20,11 @@ function massDamageOptions(tx, obj) {
         if (/without reach/.test(p)) cs = cs.filter(c => !hasKw(c, 'reach')); else if (/with reach/.test(p)) cs = cs.filter(c => hasKw(c, 'reach'));
         if (/\btapped\b/.test(p) && !/untapped/.test(p)) cs = cs.filter(c => c.tapped); if (/untapped/.test(p)) cs = cs.filter(c => !c.tapped);
         for (const nm of (p.match(/non-?([a-z]+)/g) || [])) { const w = nm.replace(/^non-?/, ''); cs = cs.filter(c => { const pi = permTypeInfo(c); return !pi.types.has(w) && !pi.subs.has(w); }); }
-        for (const c of cs) { c.dmg = (c.dmg || 0) + n; log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
+        for (const c of cs) { const d = preventDamage(c.id, n, src); if (!(d > 0)) continue; c.dmg = (c.dmg || 0) + d; if (!c.dmgBy || c.dmgBy.turn !== state.turn) c.dmgBy = { turn: state.turn, srcs: [] }; c.dmgBy.srcs.push(src); log(`${src}: ${d} damage to ${c.name} (${c.dmg} marked this turn)`); }   // v0.99.80 shields and "dealt damage this way"
         if (!/you control/.test(p)) log(`${src}: ${n} damage to each creature your opponents control too (apply it at the table)`);
         if (/planeswalker/.test(p)) log(`${src}: and ${n} damage to each planeswalker`);
       } else if (/^planeswalker/.test(p)) { for (const c of state.battlefield.filter(c => isPlaneswalker(c))) if (!/opponents/.test(p)) { c.loyalty = Math.max(0, (c.loyalty || 0) - n); checkLoyalty(c); } }
-      else if (/^(?:other )?players?$/.test(p)) { changeLife(-n, true); changeOppLife(-n); log(`${src}: ${n} damage to each player`); }
+      else if (/^(?:other )?players?$/.test(p)) { changeLife(-preventDamage('you', n, src), true); changeOppLife(-n); log(`${src}: ${n} damage to each player`); }
       else if (/^opponents?$/.test(p)) { changeOppLife(-n); log(`${src}: ${n} damage to each opponent`); }
     }
     runToughnessSBA(); render(); flushTriggers();
