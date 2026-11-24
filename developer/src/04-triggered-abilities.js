@@ -348,15 +348,15 @@ function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name,
 const legalSig = (specs, srcId) => specs.map(sp => legalTargets(sp, { srcId }).map(t => String(t.id)).sort().join(',')).join('|');   // the set of things an ability could target right now
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
+  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
   state.ay[key] = { auto: false, sig: (() => { try { const sp = parseTargetSpecs(t._text || t.effect); return sp.length ? legalSig(sp, t.cardId) : null; } catch (e) { return null; } })(), id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
   m.el.classList.add('ay-offer');
   m.body.append(h('div', { class: 'psub', text: `${t.cardName}: ${t._text || t.effect}` }),
     h('div', { class: 'psub', text: `Always put this ability on the stack${tg ? ' targeting ' + tg.map(x => x.name).join(', ') : ''} and apply the same effect for the rest of this game, without asking each time? (You can undo this from \u2699 \u2192 Always yield. It resets when the game ends.)` }));
-  m.foot.append(h('button', { text: 'Ask every time', onclick: () => { m.close(); askAlwaysYield(list, next); } }),
-    h('button', { class: 'primary', text: 'Always yield', onclick: () => { state.ay[key].auto = true; state.ay[key].targets = tg; m.close(); log(`Always yield: ${t.cardName}'s ability will go on the stack automatically this game`); askAlwaysYield(list, next); } }));
+  m.foot.append(h('button', { class: 'primary', text: 'Ask every time', onclick: () => { m.close(); askAlwaysYield(list, next); } }),   // v0.99.76 asking stays the default (Enter): yielding hides every later trigger of this card
+    h('button', { text: 'Always yield', onclick: () => { state.ay[key].auto = true; state.ay[key].targets = tg; m.close(); log(`Always yield: ${t.cardName}'s ability will go on the stack automatically this game`); askAlwaysYield(list, next); } }));
 }
 function ayResolveAuto() {   // resolve always-yield abilities from the top of the stack while their effect is already known
   for (let i = 0; i < 12; i++) {
@@ -425,7 +425,7 @@ function openTriggerBatch(batch) {
     ].filter(Boolean));
   };
   for (const t of [...remaining]) {   // always-yield abilities go on the stack by themselves
-    const e = ayGet(t.cardName, t.effect, t.cardId); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
+    const e = ayGet(t.cardName, t.effect, t.cardId); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect) || (e.targets || []).some(p => p.kind === 'opp')) continue;
     const specs = t.special ? [] : parseTargetSpecs(t.effect);
     if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
     else if (e.sig && e.sig !== legalSig(specs, t.cardId)) { t._ayRefresh = e; log(`Always yield: ${t.cardName} has a different set of possible targets than when you set it, so you choose again`); }   // a new (or missing) possible target: ask again
@@ -762,7 +762,7 @@ function effectOptionsBase(tx, obj) {
   const drawBound = bound.length && /\btarget\b[^.]*\bdraws?\b/i.test(tx);   // v0.94.5 a targeted draw is already offered once, bound to its target: do not add the generic copy
   const ddp = !delayed && !drawBound ? parseDrawDiscard(tx) : null;
   if (ddp) opts.push({ label: ddLabel(ddp), fn: () => runDrawDiscard(ddp, src), full: false });
-  else if (!delayed && !drawBound && !/opponent/i.test(tx) && (fe = forEachAmount(tx, '(?:you draw|draws?)', obj))) { const fd = fe;   // v0.95.3 "draw a card for each <thing>" counts at the moment it resolves
+  else if (!delayed && !drawBound && !/opponent/i.test(tx.replace(/\bfor each opponents? who [^.]+/ig, '')) && (fe = forEachAmount(tx, '(?:you draw|draws?)', obj))) {   /* v0.99.76 "for each opponent who lost life this turn" is a count, not someone else drawing */ const fd = fe;   // v0.95.3 "draw a card for each <thing>" counts at the moment it resolves
     const now = fd.now(), lab = now === null ? `Draw cards (for each ${fd.what}: the app cannot count that, use the card menus)` : `Draw ${fd.per === 1 ? 'a card' : fd.per + ' cards'} for each ${fd.what} (counts when it happens; now ${now})`;
     opts.push({ label: lab, fn: () => { const n = fd.now(); if (n === null) { toast('Count it yourself', `The app cannot count "${fd.what}". Draw the right number of cards by hand.`); return; } snap(); const d = drawCards(n); log(`${src}: drew ${d} (for each ${fd.what} = ${n})`); render(); } });
   }
@@ -870,7 +870,12 @@ function openAbilityEffect(obj, done) {
       const what = untracked ? obj.targets.map(t => t.name.replace(/ \(not tracked here\)$/, '')).join(', ') : '';
       const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
       for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
-      if (!keep.length) { const said = sents.join(' ').replace(/^(?:it|this \w+)\b/i, obj.sourceName || 'It').replace(/\btarget ([^.,;]+?) (?:an opponent controls|you don't control|your opponent controls)\b/gi, "the $1 you chose on your opponent's side").replace(/\btarget ([a-z ]+?)(?=[.,;]| and\b)/gi, 'the $1 you chose'); const msg = untracked ? `${said} Your opponent's permanents are not on this table, so apply it to the real card (mark the damage or remove it there).` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); toast(`${obj.sourceName || 'Ability'} resolves`, msg); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (!keep.length) { const said = sents.join(' ').replace(/^(?:it|this \w+)\b/i, obj.sourceName || 'It').replace(/\btarget ([^.,;]+?) (?:an opponent controls|you don't control|your opponent controls)\b/gi, "the $1 you chose on your opponent's side").replace(/\btarget ([a-z ]+?)(?=[.,;]| and\b)/gi, 'the $1 you chose'); const msg = untracked ? `${said} Your opponent's permanents are not on this table, so apply it to the real card (mark the damage or remove it there).` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); log(`Resolved: ${obj.name}`);
+        if (untracked) {   // v0.99.76 something you must do on the real table is shown in the stack window until you press Done (a toast was easy to miss)
+          const m = modal(`Resolving: ${obj.sourceName || obj.name}`, { width: 520, sticky: true, noClose: true, resolve: true });
+          m.body.append(h('div', { class: 'psub', text: said }), h('div', { class: 'muted small', text: "Your opponent's permanents are not on this table: apply it to the real card (mark the damage, or remove the permanent if it dies)." }));
+          m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); render(); if (done) done(); } })); render(); return; }
+        toast(`${obj.sourceName || 'Ability'} resolves`, msg); render(); if (done) done(); return; }
       if (keep.length < sents.length) { if (untracked) log(`${obj.sourceName || obj.name}: the part about ${what} is applied on the real table (the opponent's permanents are not tracked)`); const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
     }
   }

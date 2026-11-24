@@ -134,6 +134,7 @@ function countForEach(phrase) {
   const bf = state.battlefield;
   const typeOf = c => (c.token ? permTypeLine(c) : (() => { const i = cardInfo(c.name); return i && i.t ? i.t.split(' // ')[0] : ''; })());   // v0.95.0 a token counts as what it is (an artifact creature token is an artifact)
   { const mm = t.match(/\b(white|blue|black|red|green|colorless) mana (?:in your (?:mana )?pool|you have)\b/); if (mm) return (state.manaPool || {})[{ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G', colorless: 'C' }[mm[1]]] || 0; if (/\bmana in your (?:mana )?pool\b/.test(t)) return manaTotal(); }   // Omnath, Locus of Mana
+  if (/^(?:each )?opponents? who (?:lost life|has lost life|was dealt damage|were dealt damage) this turn$/.test(t.trim())) return state.oppLifeLostTurn === state.turn ? 1 : 0;   // v0.99.76 Kaito, Bane of Nightmares (one opponent in a goldfish game)
   if (/basic land type/.test(t)) return domainCount();
   if (/instant and sorcery card/.test(t) || /instant or sorcery card/.test(t)) return state.graveyard.filter(c => /\b(Instant|Sorcery)\b/.test(typeOf(c))).length;
   if (/card in your graveyard/.test(t)) return state.graveyard.length;

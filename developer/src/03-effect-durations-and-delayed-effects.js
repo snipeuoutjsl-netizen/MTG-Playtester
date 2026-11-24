@@ -117,7 +117,7 @@ function kwsIn(text) { return String(text).toLowerCase().split(/,\s*(?:and\s+)?|
 function durationOptions(sentence, obj, targets) {
   const s = String(sentence).replace(/’/g, "'").trim(), src = obj.sourceName || 'this', out = [];
   if (!s) return out;
-  const until = durKey(s), uw = UNTIL_WORDS[until], isDur = DUR_RE.test(s);
+  const until = durKey(s), uw = UNTIL_WORDS[until], isDur = DUR_RE.test(s.replace(/\b(?:who|that|which) (?:lost|gained|has lost|has gained|was dealt|were dealt|attacked|died|entered|cast)\b[^.,;]*?\bthis turn\b/gi, ''));   // v0.99.76 "opponent who lost life this turn" describes what to count, it is not a duration
   let who = (targets && targets.length) ? targets : null, group = null, m;
   if (!who) {
     if (/^(other )?creatures you control\b/i.test(s)) group = { other: /^other/i.test(s) };
