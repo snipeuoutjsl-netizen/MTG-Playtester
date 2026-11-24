@@ -110,3 +110,18 @@ function swipeCue(label) {
   const el = h('div', { class: 'swipe-cue', 'aria-hidden': 'true' }, h('span', { text: '‹‹' }), h('b', { text: label || 'Next' }));
   mat.append(el); setTimeout(() => el.remove(), 700);
 }
+// v0.99.69 upright phones: the hand can be tucked down to a strip (tap the tab), giving the whole height to the table; tap again to raise it
+(function handTab() {
+  if (typeof document === 'undefined') return;
+  const mk = () => {
+    const hw = document.getElementById('handWrap'); if (!hw || document.getElementById('handTab')) return;
+    const b = document.createElement('button'); b.id = 'handTab'; b.className = 'hand-tab'; b.type = 'button';
+    const label = () => { const n = (state && state.hand) ? state.hand.length : 0, t = document.body.classList.contains('hand-tuck'); b.textContent = (t ? '▴ Hand' : '▾ Hand') + (n ? ` (${n})` : ''); b.setAttribute('aria-label', t ? 'Raise the hand' : 'Tuck the hand away'); };
+    b.addEventListener('click', e => { e.stopPropagation(); document.body.classList.toggle('hand-tuck'); label(); try { render(); } catch (er) { /* no game */ } setTimeout(() => window.__placeHandTab && window.__placeHandTab(), 260); });
+    document.body.append(b); label(); new MutationObserver(label).observe(document.getElementById('row-hand') || hw, { childList: true });
+    // the tab floats above everything (the table would otherwise take its taps), pinned to the top edge of the hand
+    const place = () => { if (!document.documentElement.classList.contains('portrait-ui')) return; const r = hw.getBoundingClientRect(); b.style.top = Math.max(0, Math.min(innerHeight - 40, r.top + 4)) + 'px'; };
+    window.__placeHandTab = place; hw.addEventListener('transitionend', place); addEventListener('resize', place); setInterval(place, 600); place();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mk); else mk();
+})();

@@ -1275,7 +1275,7 @@ function filterMatches(filter, card) {
 }
 function fireTrigger(ev, ctx = {}) {
   if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
-  if (!state || !teach('triggerPrompts')) return;
+  if (!state) return;   // v0.99.69 triggered abilities are rules, not a teaching aid: they always trigger (the prompt setting only skips the ordering window)
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
   const inGy = x => state.graveyard.some(g => g.id === x.id);
   // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
@@ -1548,6 +1548,7 @@ function openTriggerBatch(batch) {
   const skip = t => { remaining.splice(remaining.indexOf(t), 1); log(`${t.cardName}: trigger ${t.optional ? 'declined' : 'did not apply'}`); if (!remaining.length) finish(); else draw(); };
   const draw = () => {
     if (!remaining.length) return;
+    if (!teach('triggerPrompts')) { put(remaining[0]); return; }   // v0.99.69 prompts off: each goes on the stack in the order it triggered (targets and modes are still chosen)
     win().body.replaceChildren(...[
       teach('stackGuidance') ? h('div', { class: 'psub', text: remaining.length > 1 ? 'Several abilities triggered at once. You choose the order they go on the stack. The LAST one you put on the stack resolves FIRST.' : 'A triggered ability goes on the stack, then resolves like a spell. Read it: if it says "you may", or has a condition, decide whether it applies.' }) : null,
       ...remaining.map(t => h('div', { class: 'trig' },
@@ -1750,7 +1751,9 @@ function effectOptions(tx, obj) {
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
   tx = applyCondInstead(tx);   // "... deals 4 damage instead if you control three or more artifacts"
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
-  const res = effectOptionsInner(tx, obj), seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
+  let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
+  { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
+    if (b2.out.length) res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))).concat(b2.out.filter(o => !res.some(r => r && r.label === o.label))); }
   // The same draw must not be offered twice ("Draw 1 card" from the plain reader and "You draw 1 card" from the targeted reader): applying both would draw twice.
   const drawN = res.filter(o => o && /^(?:Draw|You draw|.+ draws?) (\d+|a|an) cards?$/i.test(o.label || '') && typeof o.fn === 'function' && !o.hidden);
   const dup = new Set(); if (drawN.length > 1) { const keep = drawN.find(o => !/^Draw /i.test(o.label)) || drawN[0]; for (const o of drawN) if (o !== keep && String(o.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase() === String(keep.label).replace(/^(?:You draw|.+ draws?)/i, 'Draw').toLowerCase()) dup.add(o); }
@@ -1997,13 +2000,15 @@ function openAbilityEffect(obj, done) {
     if (specs.length) { obj._tgtAsked = true; chooseTargets(obj.sourceName || 'Effect', specs, picked => { obj.targets = picked; if (picked[0] && picked[0].kind === 'player') obj.target = picked[0].id; openAbilityEffect(obj, done); }, { srcId: obj.sourceId, onCancel: () => openAbilityEffect(obj, done) }); return; }
   }
   // v0.99.68 CR 115.6 + 608.2b: "up to one target" with no target chosen. The parts that need the target do nothing; any other part still happens.
-  if (Array.isArray(obj.targets) && !obj.targets.length && !obj.special) {
+  const untracked = Array.isArray(obj.targets) && obj.targets.length > 0 && obj.targets.every(t => t.kind === 'opp');   // v0.99.69 only the opponent's (untracked) permanents were chosen
+  if (Array.isArray(obj.targets) && (!obj.targets.length || untracked) && !obj.special) {
     const specs0 = parseTargetSpecs(tx);
-    if (specs0.length && specs0.every(sp => sp.min === 0)) {
+    if (specs0.length && (untracked || specs0.every(sp => sp.min === 0))) {
+      const what = untracked ? obj.targets.map(t => t.name.replace(/ \(not tracked here\)$/, '')).join(', ') : '';
       const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
       for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
-      if (!keep.length) { log(`${obj.sourceName || obj.name}: no target was chosen, so it does nothing`); toast(`${obj.sourceName || 'Ability'} resolves`, 'No target was chosen, so it does nothing.'); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
-      if (keep.length < sents.length) { const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
+      if (!keep.length) { const msg = untracked ? `it affects ${what}. The app does not track your opponent's permanents, so apply it on the real table.` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); toast(`${obj.sourceName || 'Ability'} resolves`, msg); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (keep.length < sents.length) { if (untracked) log(`${obj.sourceName || obj.name}: the part about ${what} is applied on the real table (the opponent's permanents are not tracked)`); const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
     }
   }
   if (!obj.special && obj.sourceName) {   // always yield: apply the effect you picked the first time
@@ -2040,6 +2045,13 @@ function openAbilityEffect(obj, done) {
   const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   for (const o of opts) if (o.special === 'delayedDraw' && !obj._delayedSet) { obj._delayedSet = true; addFx({ kind: 'delayed', when: 'upkeep', draw: 1, text: 'Draw a card.', srcName: obj.sourceName, srcId: obj.sourceId || null }); log(`${obj.sourceName}: you will draw a card at the beginning of the next turn's upkeep`); }
   const used = new Set();
+  // v0.99.69 each effect happens once: applying one locks the buttons that would repeat part of it ("Scry 3" after "Scry 3, then draw a card"),
+  // and when every effect has been applied (and nothing is left to do by hand) the window finishes by itself, so no extra action can follow
+  const applyBtns = [], low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
+  const lockOverlaps = o => { const a = low(o.label); for (const r of applyBtns) if (r.o !== o && !r.b.disabled) { const b2 = low(r.o.label); if (b2 && (a.includes(b2) || b2.includes(a))) { r.b.disabled = true; r.b.title = 'Already done as part of: ' + o.label; } } };
+  let finished = false; const finishNow = () => { if (finished) return; finished = true; m.close(); log(`Resolved: ${obj.name}`); if (done) done(); };
+  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return; if (m.body.querySelector('.gapbox')) return;
+    const wait = () => { if (finished) return; if ([...document.querySelectorAll('.modal')].some(x => x !== m.el && !x.classList.contains('res-panel'))) { setTimeout(wait, 300); return; } setTimeout(finishNow, 350); }; wait(); };
   const box = h('div', { class: 'prelist' });
   for (const o of opts) {
     if (o.special === 'delayedDraw') continue;
@@ -2072,7 +2084,8 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label)) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });
+      applyBtns.push({ o, b });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
   }
@@ -2082,7 +2095,7 @@ function openAbilityEffect(obj, done) {
     opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
     box,
     (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'The app does NOT apply these lines. Do them by hand, then tick them off:' }), ...miss.map(x => h('label', { class: 'chk' }, h('input', { type: 'checkbox' }), ' ', x))) : null; })());
-  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); log(`Resolved: ${obj.name}`); if (done) done(); } }));
+  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => finishNow() }));
 }
 function openCascade(obj, done) {
   const src = cardInfo(obj.sourceName), mv = src ? src.cmc : 0;
@@ -4156,7 +4169,8 @@ function finishMulligan() {
   state.skipDraw = state.onPlay;
   state.pregameDone = false;
   log(`Kept ${state.hand.length} cards${state.mulls ? ` (mulligan ×${state.mulls})` : ''}`);
-  if (!teach('preGame')) { state.pregameDone = true; state.phase = 'play'; log('Pre-game actions screen skipped (turned off in Settings)'); startTurn(); return; }
+  // v0.99.69 the screen can be turned off, but a card in the opening hand that acts now (Leyline: begin the game on the battlefield; reveal it for a first-upkeep effect) still gets its chance (CR 103.6)
+  if (!teach('preGame') && !state.hand.some(c => { try { return beginsOnBattlefield(c) || !!openingReveal(c); } catch (e) { return false; } })) { state.pregameDone = true; state.phase = 'play'; log('Pre-game actions screen skipped (turned off in Settings)'); startTurn(); return; }
   render();
 }
 
@@ -5758,10 +5772,17 @@ function reserveHandSpace() {
   const card = hc.querySelector('.card'), h = card ? card.offsetHeight : 0;
   const cover = h ? Math.round(h * 0.82) + 8 : 0;
   stage.style.setProperty('--handcover', cover + 'px');
+  { const hw = $('#handWrap'); if (hw) stage.style.setProperty('--hand-h', hw.offsetHeight + 'px'); }   // v0.99.69 upright phones keep the whole hand clear of the table
   document.documentElement.style.setProperty('--handcover-root', (h ? h + 28 : 0) + 'px');   // v0.96.14 pop-ups centre in the space ABOVE the hand
 }
 function fitBattlefieldCards() {
   try { reserveHandSpace(); } catch (e) { /* layout only */ }
+  // v0.99.69 upright phones: each zone's share of the height follows how many cards it holds (an empty zone stays small, a busy one grows)
+  try { const mat = $('#mat'); if (mat && document.documentElement.classList.contains('portrait-ui') && state) {
+    const n = { creatures: 0, noncreature: 0, lands: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
+    const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2);
+    mat.style.setProperty('grid-template-rows', `104px minmax(0, ${w('creatures')}fr) auto minmax(0, ${w('noncreature')}fr) minmax(0, ${w('lands')}fr)`, 'important');
+  } else if (mat) mat.style.removeProperty('grid-template-rows'); } catch (e) { /* layout only */ }
   const specs = [
     { id: 'row-creatures', wrap: true },
     { id: 'row-noncreature', wrap: true },
@@ -5800,7 +5821,7 @@ function fitBattlefieldCards() {
       const cols = Math.min(count, idealCols);
       const rows = Math.ceil(count / cols); usedCols = cols;
       scale = Math.min(
-        1,
+        document.documentElement.classList.contains('portrait-ui') ? 1.6 : 1,   // v0.99.69 upright phones: cards grow into the room they have
         (availW - Math.max(0, cols - 1) * gap) / (cols * baseW),
         (availH - Math.max(0, rows - 1) * gap) / (rows * baseH)
       );
@@ -6732,35 +6753,33 @@ async function runBulkDownload(onProgress) {
 // ---- v0.81 Welcome tour: a short walkthrough for first-time users, reopenable from the gear menu.
 function openWelcome(onDone) {
   const P = (...x) => h('p', null, ...x), B = t => h('b', { text: t });
+  // v0.99.69 rewritten for the current app: the Library, phones and tablets, the stack window, how effects and triggers resolve, the end of a game, updates
   const pages = [
-    ['Welcome to the Library of Alexandria', [P('A solo "goldfish" table for Magic: The Gathering. Load your deck, draw a hand, and practise sequencing your turns with no opponent needed. It runs fully offline once your card data is loaded.'),
-      P('This short tour covers getting set up, how a turn works, and how to make the table look the way you like. You can skip it now and reopen it any time from the ', B('⚙ menu → Welcome tour'), '.')]],
-    ['1. Get your card data', [P('The app needs card data (names, costs, types, rules text) to know what each card does. The first time you open it, it offers to download this once (about 150 MB). It also saves every official token and emblem (a few thousand small entries), so tokens work offline too.'),
-      P('Open it later from ', B('⚙ → Card data'), '. Card pictures are separate: ', B('⚙ → Images'), ' downloads them, and you can turn pictures off to use plain text cards.')]],
-    ['2. Add your deck', [P('Open ', B('⚙ → Import / edit deck'), ' (or click ', B('Import a deck'), ' on the start screen) and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line, or a line that says Sideboard, starts your sideboard. You can also drag a .txt decklist file onto the window.'),
-      P('Every session opens in the Library: your decks stand on the shelves on the left, and the open book on the reading desk is the menu (continue your game, start a new one, Settings, Accessibility, help). The deck button at the top left brings you back to the Library at any time (Esc returns to the table). In the Library, each deck is a book: each deck is a book with its name on the spine, ten to a shelf. Click a book to lay it on the desk: it turns to show its cover, with its colours, mana curve, key cards and the librarian\'s notes (games played, average lands kept, mulligans and goldfish kill turn, all from your own games), and ', B('Begin a game with this deck'), ', Edit, Sideboard, art and Delete buttons. ', B('Put it back'), ' (or Escape) returns it.'), P('For Commander, put the commander under a ', B('Commander'), ' heading (or mark it ', B('*CMDR*'), '). On the deck screen (click the deck name) pick ', B('Commander'), ' mode: Commander decks are listed only there. It gives you 40 life, a command zone, the {2} commander tax, a free first mulligan, the choice to return your commander to the command zone, commander damage and a deck check (100 cards, singleton, colour identity).')]],
-    ['3. Start a game', [P('Pick your deck and press ', B('New game'), '. Tick ', B('On the play'), ' if you go first (no draw on turn 1). You get your opening hand and can mulligan. Turn 1 starts in Main phase 1.'),
-      P('Move through the turn with ', B('Next phase'), ' or the Space bar, and ', B('Next turn'), ' (N) when you are done. The turn-flow bar between the battlefield and your lower zones shows every step, lights the one you are in and fills up like a loading bar as the turn goes on. It never moves or changes size. If a zone fills up, its cards shrink automatically so all of them stay visible.')]],
-    ['4. Playing cards', [P('Drag a card from your hand onto the battlefield, or click it for a menu (play, cast, discard, and more). Lands tap for mana when you click them. Spells go on the stack; resolve them from the stack window or the card in the middle of the table.'),
-      P('While something is on the stack, only responses are possible: instants, abilities and resolving. Made a mistake? ', B('Ctrl+Z'), ' undoes it. Handy keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.'),
-      P('Tired of the same trigger asking every time? The first time an ability goes on the stack you are asked about ', B('Always yield'), ': say yes and it goes on the stack, picks the same targets and applies the same effect by itself for the rest of that game. Review or remove them under ', B('\u2630 \u2192 Always yield'), '.'),
-      P('Tokens never have official art here, so the app draws generic art for every token. Open ', B('\u2630 \u2192 Token glossary & art'), ' to browse every token and add your own picture to any of them.'),
-      ...(FEATURES.multiplayer ? [P('To play a friend on the same network open ', B('☰ → Multiplayer (LAN)'), ': one player makes an invite code, the other pastes it and sends back a reply code. You each play your own deck and see each other\'s battlefield, graveyard, exile, life and chat live (hands and libraries stay private), and combat damage you deal goes to their real life total.')] : []),
-      P('For coin flips and die rolls open ', B('☰ → Dice & coin'), ': a real coin or die tumbles and lands on the actual random result. Cards that say "flip a coin" or "roll a d20" use it too. When a game ends (0 life, ten poison, empty library) a ', B('Next round'), ' screen offers a rematch, sideboarding or another deck.')]],
-    ['5. Settings', [P('The ', B('⚙ gear'), ' holds settings and updates (Settings, Update app, Import / edit deck, Card data, Images, help). The ', B('☰ Game tools'), ' button beside it holds the in-game tools (Active effects, Cost effects, Deck stats, Always yield, Token glossary, Dice & coin).'), P('Open ', B('⚙ → Settings'), '. The tabs are:'),
-      h('ul', null, h('li', null, B('Look & feel'), ' – interface theme, one-click sets, card sizes, turn-flow bar opacity, foil, card sleeves and the cursor.'), h('li', null, B('Accessibility'), ' – interface size, high contrast, calm motion, larger click targets, strong keyboard focus and screen-reader log announcements.'), h('li', null, B('Board layout'), ' – lanes, zone rail, piles and the board effects.'), h('li', null, B('Playmat & frame'), ' – playmat picture, colour and motion, and the frame around the board.'), h('li', null, B('Animations'), ' – every effect has its own switch, including the dice and coin.'), h('li', null, B('Sound'), ' – effect volume, and background music with several generated songs (low-fi, boom-bap, rain, jazz-hop, arcade, golden hour).'), h('li', null, B('Tutor mode'), ' – the teaching aids, grouped by when you meet them, each one on its own switch.'), h('li', null, B('Legal notice'), ' – fan content and privacy information.'))]],
-    ['6. Themes, playmats and sleeves', [P('Under ', B('Settings → Look & feel'), ' the ', B('One-click set'), ' picker changes everything at once: interface theme, card sleeve, playmat, board frame and (if ticked) a matching song. Or choose each part yourself.'),
-      P('Pick a built-in playmat under ', B('Settings → Playmat & frame'), ', or ', B('Custom playmat → Upload'), ' to use your own picture; choose a built-in sleeve or ', B('Upload sleeve…'), ' under Look & feel. Your choices are saved on this computer.')]],
-    ['7. What the icons and colours mean', [P('Cards in your hand glow to tell you what you can do: ', B('Playable'), ' (green), ', B('Can\'t pay'), ' (not enough or wrong mana), ', B('Wrong timing'), ' (sorcery-speed card outside your main phase), ', B('Instant speed'), ' (can be cast in response), and ', B('Selected'), '.'),
-      P('The row of small icons at the top shows game states (monarch, initiative, storm count, energy, poison and more); they light up when active, and you can click them to change them. Tapped cards are turned sideways, summoning-sick creatures are dimmed, and a count badge like ', B('×4'), ' means identical cards are piled together (click it to spread them out).'),
-      P('Round icons on a creature are keywords it has right now. ', B('Card outline key'), ' in the \u2630 Game tools menu explains the glow colours. The Stack panel shows what is waiting to resolve.')]],
-    ['8. Learning and honesty', [P('Tutor mode adds hints such as phase pauses, mana payment help and rules reminders. Turn off whatever you do not want.'),
-      P('A small ', B('\u26a0'), ' on a permanent means part of its rules text is only a reminder: the app does not apply it, so do it by hand. Hover the badge to see which lines. A power/toughness shown with a ', B('?'), ' means a condition on the card could not be read.'),
-      P('The app reads the rules text on each card and applies what it understands, then tells you what is left for you to do by hand. ', B('⚙ → How the app reads cards'), ' shows, card by card, which lines it handles and which it does not. When in doubt, the official rules text is what counts.'),
-      P('In "How the app reads cards", ', B('understood'), ' means the app carries out every part of that line; ', B('partly'), ' or ', B('by hand'), ' means some of it is left to you, and the app says which part.')]],
-    ['9. Updates', [P('The version number at the top right shows what changed in each release when you click it. New versions are published on GitHub.'),
-      P('Open ', B('⚙ → Update app'), ' to check for a new version. If one is found it shows what is new and installs it; restart the app when asked. A few releases change the app shell itself (for example graphics settings); for those, run the installer from the Windows or SteamDeck-and-Linux folder once.'),
-      P('Your decks, settings, playmats and sleeves stay on this computer through updates. You can reopen this tour any time from ', B('⚙ → Welcome tour'), ' or from the Settings window.')]]
+    ['Welcome to the Library of Alexandria', [P('A solo "goldfish" table for Magic: The Gathering. Load your deck, draw a hand, and practise sequencing your turns with no opponent needed. It runs offline once your card data is loaded, on a computer or as an app on your phone or tablet.'),
+      P('This tour covers getting set up, the Library, how a turn works, playing on a phone, and making the table your own. Skip it now and reopen it any time from ', B('⚙ → Welcome tour'), '.')]],
+    ['1. Card data', [P('The app reads each card’s name, cost, types and rules text to know what it does. The first time, it offers to download this once (about 150 MB) from Scryfall, with every official token and emblem; if Scryfall cannot be reached it uses MTGJSON instead. Without the full file it still learns the cards in your decks as their pictures download.'),
+      P('Open it later from ', B('⚙ → Card data'), '. Pictures are separate: ', B('⚙ → Images'), ' downloads them, or turn pictures off to play with plain text cards.')]],
+    ['2. The Library', [P('Every session opens in the Library. Your decks are books on the shelves; the open book on the desk is the menu. Its left page is a chapter for the game mode (pick the ', B('Standard'), ' or ', B('Commander'), ' ribbon to turn to the other), with your deck, who goes first and ', B('Begin a new game'), '. The right page is the contents: Import a deck, Scan all decks, Settings, Accessibility, Library look, Rules & help, How cards are read, What’s new and Check for updates.'),
+      P('Click a book to take it down. The desk then lays out the whole deck by card type and mana value, like Deck stats; rest the pointer (or your finger) on a card and the book turns to that card’s page. The book also offers ', B('Begin a game with this deck'), ', Edit list, Sideboard, Box art, Card art & printings, Buy this deck, Put it back and Delete deck. Click another book to swap.'),
+      P(B('Return to the Library'), ' at the top left of the table brings you back here and keeps your game; Esc goes back to the table.')]],
+    ['3. Add a deck', [P('Choose ', B('Import a deck'), ' in the book (or ', B('⚙ → Import / edit deck'), ') and paste a decklist, one card per line like ', B('4 Lightning Bolt'), '. A blank line or a line that says Sideboard starts the sideboard; a Commander section makes it a Commander deck, found under the Commander chapter. You can also drop a .txt decklist file onto the window.')]],
+    ['4. A turn', [P('Set ', B('On the play'), ' if you go first (no draw on turn 1), then start the game. You see your opening hand and can mulligan. Cards that act from the opening hand (a Leyline, a card you reveal for its first-upkeep effect) are offered before turn 1.'),
+      P('Move on with ', B('Next phase'), ' (Space) and end the turn with ', B('Next turn'), ' (N). The turn bar between the battlefield zones shows every step and fills as the turn goes on. Cards shrink when a zone gets crowded, and identical lands or artifacts pile up only when they would not otherwise fit.')]],
+    ['5. Casting and the stack', [P('Drag a card onto the battlefield, double-click it, or click it for its menu. Lands tap for mana when you click them. Casting follows the rules’ order: modes and targets first (an “up to one” target may be none), then X and how to pay. Planeswalker abilities ask for their targets when you activate them.'),
+      P('The stack window, docked at the top right of the table, shows what is waiting: resolve the top object, pass priority, or mark it countered. When something resolves, its choices appear inside that window. Effects that simply happen (“gain 3 life and draw a card”) are applied by themselves; anything optional or with a choice waits for you, and each effect can be applied only once.'),
+      P('Triggered abilities go on the stack when they trigger; if several trigger together you choose the order. The first time one triggers you can choose ', B('Always yield'), ' so it handles itself for the rest of the game (review under ', B('☰ → Always yield'), '). Made a mistake? ', B('Ctrl+Z'), ' undoes it. Keys: ', B('D'), ' draw, ', B('U'), ' untap all, ', B('S'), ' shuffle, ', B('T'), ' tap the selected card.')]],
+    ['6. On a phone or tablet', [P('Open the web version and add it to your home screen (Safari → Share → Add to Home Screen; Chrome → Install app). Held upright, the table is one column: your piles, creatures, the turn bar, other permanents and lands, with your hand fanned at the bottom; turned sideways it shows the full table.'),
+      P('Double-tap a card to play or cast it, press and hold for its menu, drag to move it, and swipe the table left to go to the next step. ', B('Stack & log'), ' opens the stack, the card preview and the game log. Upright, ', B('▾ Hand'), ' tucks your hand down to a strip to see the whole table, and ', B('⋯'), ' beside the game-state icons shows the ones that are not active (to add energy or poison).')]],
+    ['7. Settings and tools', [P('The ', B('⚙ gear'), ' holds settings and updates (Settings, Update app, Import / edit deck, Card data, Images, help). The ', B('☰ Game tools'), ' button holds the in-game tools: lasting effects, cost effects, deck stats, Always yield, the token glossary, dice & coin', FEATURES.multiplayer ? ' and multiplayer' : '', '.'),
+      h('ul', null, h('li', null, B('Look & feel'), ': interface theme, one-click sets, card sizes, foil, sleeves, cursor.'), h('li', null, B('Accessibility'), ': interface size, high contrast, calm motion, larger targets, keyboard focus, screen-reader announcements.'), h('li', null, B('Board layout'), ': lanes, the zone rail, piles.'), h('li', null, B('Playmat & frame'), ': built-in playmats or your own picture.'), h('li', null, B('Animations'), ' and ', B('Sound'), ': what moves and what you hear.'), h('li', null, B('Tutor mode'), ': hints and pop-ups you can switch off one by one (the Pay window, phase pauses, the trigger-ordering window and more). Turning a hint off never turns off a rule: triggers still trigger and costs are still paid.'))]],
+    ['8. What the colours and icons mean', [P('Cards in your hand glow: ', B('green'), ' you can play it now, ', B('red'), ' the timing is fine but you cannot pay, ', B('gold'), ' wrong timing; a lightning badge means instant speed. ', B('Card outline key'), ' in the ☰ menu explains them.'),
+      P('The small icons above the life totals are game states (storm count, monarch, city’s blessing, delirium, energy, poison…); they light up when active and you can click them. Tapped cards are turned sideways, summoning-sick creatures are dimmed, a badge like ', B('×4'), ' is a pile (click to spread it), and round icons on a creature are the keywords it has right now.')]],
+    ['9. What the app does, and what it leaves to you', [P('The app reads each card’s rules text and carries out what it understands. A small ', B('⚠'), ' on a permanent means part of its text is only a reminder: do that part by hand (hover it to see which). The app does not track your opponent’s permanents: an effect on one of them is noted in the log for you to apply on the real table.'),
+      P(B('⚙ → How the app reads cards'), ' (or How cards are read in the book) shows, card by card, which lines it handles: ', B('understood'), ' means it carries out every part of the line; ', B('partly'), ' means some of it is left to you, and it says which. When in doubt, the official rules text is what counts.')]],
+    ['10. The end of a game', [P('When a player reaches 0 life (or ten poison, or draws from an empty library) the game ends with a ', B('Victory'), ' or ', B('Defeat'), ' screen: play the next round with the same deck, sideboard first, or choose another deck. Your session record is kept, and the Library notes which turn each deck won on.'),
+      P('Coin flips and die rolls (', B('☰ → Dice & coin'), ') use a real random result, and cards that say "flip a coin" or "roll a d20" use them too. Tokens get generated art; add your own picture to any token in ', B('☰ → Token glossary & art'), '.'), ...(FEATURES.multiplayer ? [P('To play a friend on the same network open ', B('☰ → Multiplayer (LAN)'), ': one player makes an invite code, the other answers it, and you see each other’s battlefield, graveyard, exile, life and chat live.')] : [])]],
+    ['11. Updates', [P('Click the version number at the top to see what changed. ', B('Check for updates'), ' in the book (or ', B('⚙ → Update app'), ') finds a new version, shows what is new and installs it; restart when asked. On a phone the web app updates itself the next time you open it.'),
+      P('On Windows a few releases change the app’s own window code; when one does, the update says so and you run the new Setup file from the releases page once. Your decks, settings, playmats and sleeves stay on your device through every update.')]]
   ];
   let i = 0;
   const m = modal('Welcome', { width: 600, sticky: true, onClose: () => { lsSet('mtgpt.welcomeSeen', true); if (onDone) onDone(); } });
@@ -6794,8 +6813,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.68';
+const APP_VERSION = '0.99.69';
 const CHANGELOG = [
+  { v: '0.99.69', title: 'Triggers always trigger, a roomier phone table, self-installing Windows updates', notes: ['RULES FIX: turning off "Triggered ability prompts" (a Tutor mode hint) switched off triggered abilities altogether, so cards like Skysovereign did nothing when they entered or attacked. Triggers are rules, not hints: they always trigger now; with the hint off they go on the stack by themselves in the order they happened (you still choose their targets).', 'Likewise, a Leyline or a card you reveal from your opening hand still gets its pre-game chance when the Pre-game screen is turned off.', 'Resolving window: each effect can be applied once, applying one locks any button that would repeat part of it, and the window finishes by itself when every effect is done, so nothing extra can be done that the card does not say. An ability aimed at an opponent\'s permanent (which the app does not track) is noted in the log for you to apply on the table instead of offering buttons.', 'NEW rules: "Put a +1/+1 counter on each [other] [Dragon] creature you control"; "Each opponent loses N life. You gain life equal to the life lost this way"; damage to "that creature\'s controller"; "You gain life equal to the number of …" / the greatest power among your creatures. 103 more Modern-legal cards are read in full.', 'Phones held upright: zones share the height by how many cards they hold, cards grow into the room they have, and lands or artifacts pile only when they would not fit side by side (on every device). Only active game-state icons show (⋯ shows the rest), and the ▾ Hand tab tucks your hand down to a strip.', 'Windows: the installed app now updates itself with the full Setup installer (checked against GitHub\'s checksum), so the window code is updated too. This needs this version\'s installer once; after that, Update now does everything.', 'The Welcome tour is rewritten for the current app: the Library and its book, phones and tablets, the stack window, how effects and triggers resolve, the end of a game and updates.'] },
   { v: '0.99.68', title: 'Loyalty abilities by the rules, and more cards read', notes: ['RULES (CR 602.2b): a planeswalker\'s loyalty ability now asks for its targets when you activate it, before the loyalty is paid and before it goes on the stack (it used to ask when it resolved).', 'RULES (CR 115.6): "up to one target" really can be none. Karn, the Great Creator\'s +1 with no artifact chosen does nothing; the parts of an ability that do not need the target still happen.', 'Effects that must all happen are no longer offered as buttons: Ugin\'s +2 "You gain 3 life and draw a card" just happens. This only applies when every part is understood, nothing is optional or chosen, and no part opens its own window.', 'NEW: "It doesn\'t untap during its controller\'s next untap step" (Frost Breath, Icefall Regent and the like) keeps the creature tapped for exactly one untap step.', 'NEW: "If that creature would die this turn, exile it instead" (Puncturing Blow and others).', 'NEW: "Create a … token. It gains haste until end of turn": the token has haste.', 'NEW: impulse draw. "Exile the top card(s) of your library. You may play it this turn" and "until the end of your next turn" exile the cards and keep them playable from the exile pile for exactly that long ("cast" lets you cast, not play a land).', 'Card reading: a "look at the top N" sort is credited for each sentence it carries out (Commune with Evil, Discerning Taste…). 144 more Modern-legal cards are now read in full.', 'Phones held upright: the table ends where the fanned hand begins, so no battlefield card sits under your hand.'] },
   { v: '0.99.67', title: 'Phone fixes and a clean-up', notes: ['Kozilek\'s Command and other modal spells with X: the modes you chose were lost when the X window paid automatically (Pay window turned off) or X made the spell free, so the resolving window offered every mode (with "Exile You" for the creature and graveyard modes). The chosen modes now always stay with the spell. ', 'Phones: the Victory / Defeat screen (Next round, Sideboard, Choose another deck) now comes up when a player reaches 0 life even with animations off, as they often are on phones. It used to be started by the life animation, so with no animation there was no screen.', 'Phones: the top bar no longer slides under the iPhone status bar. The upright layout is shrunk to fit the screen and the space kept for the status bar and home bar was shrunk with it; it is now scaled back to the real size.', 'Clean-up: 16 pieces of code nothing used any more (an old hand-sort menu, an old ability window and others) and 134 style rules for screens that no longer exist (the old desk stacks and piles, old phase bar, old stack list…) were removed. The app is a little smaller and nothing you see changes.'] },
   { v: '0.99.66', title: 'Choices inside the stack window', notes: ['When a spell or ability resolves, its choices (Apply buttons, Done) now appear inside the stack window, under the card that is resolving, instead of in a separate narrow window. On phones the stack window spans the screen, so the choices are full width and easy to tap; on the computer the stack window widens while it holds them.', 'One Done button finishes the effect (the separate Finish button is gone while the choices are shown).', 'Escape still closes the window it should.'] },
@@ -7196,7 +7216,7 @@ function makeProgress() {
   return { el: h('div', { class: 'upd-prog' }, bar, txt), set(pct, t) { bar.classList.remove('indet'); fill.style.width = Math.max(0, Math.min(100, pct)) + '%'; bar.setAttribute('aria-valuenow', String(Math.round(pct))); txt.textContent = t || ''; }, indet(t) { bar.classList.add('indet'); txt.textContent = t || ''; } };
 }
 // Runs the GitHub install and drives a progress bar; resolves with the result of ghInstall.
-async function installWithProgress(prog, bytesHint) {
+async function installWithProgress(prog, bytesHint, viaInstaller) {
   prog.indet('Starting\u2026');
   let off = null;
   if (window.desktop && typeof window.desktop.onProgress === 'function') off = window.desktop.onProgress(d => {
@@ -7205,7 +7225,10 @@ async function installWithProgress(prog, bytesHint) {
     else if (d.phase === 'install') prog.set(96, 'Installing\u2026');
     else if (d.phase === 'done') prog.set(100, 'Done');
   }); else prog.indet('Downloading and checking files\u2026');
-  try { const r = await window.desktop.ghInstall(); if (r && r.ok && !r.upToDate) prog.set(100, 'Installed and verified'); return r; }
+  try {
+    // v0.99.69 installed Windows copies run the newest Setup installer (it updates the window code too, then reopens the app); others replace the game files
+    if (viaInstaller) { const r = await window.desktop.installerUpdate(); if (r && r.ok) { prog.set(100, 'Installing. The app closes and opens again by itself.'); return r; } prog.indet('The installer route did not work (' + ((r && r.error) || 'no answer') + '). Updating the game files instead\u2026'); }
+    const r = await window.desktop.ghInstall(); if (r && r.ok && !r.upToDate) prog.set(100, 'Installed and verified'); return r; }
   finally { if (off) off(); }
 }
 // v0.94.7 ONE update window. The start-up notice and ⚙ → Update app are the same window: `openUpdate(pre)` shows a result that was already fetched
@@ -7215,6 +7238,7 @@ async function openUpdate(pre) {
   const m = modal('Update app', { width: 560, sticky: !!pre });
   try { const bd = m.el.closest('.backdrop') || m.el.parentElement; if (bd) bd.classList.add('keep'); } catch (e) {}   // v0.99.60 starting a game from the Library must not close this window
   const info = await window.desktop.info();
+  const canInst = !!(window.desktop.canInstaller && await window.desktop.canInstaller().catch(() => false));   // v0.99.69 this copy can update itself with the Setup installer
   const body = h('div'), prog = makeProgress(), status = h('p', { class: 'small', style: 'color:var(--gold)' }), note = h('p', { class: 'small', style: 'color:var(--gold)' });
   prog.el.hidden = true;
   const restartBtn = h('button', { class: 'primary', text: 'Restart now', hidden: true, onclick: () => window.desktop.restart() });
@@ -7231,11 +7255,12 @@ async function openUpdate(pre) {
     if (!r.newer) { body.append(h('p', null, 'You have the newest version (', h('b', { text: r.current }), ').')); return; }
     cur = r;
     body.append(h('p', null, `You have version ${r.current}. Version `, h('b', { text: r.latest }), ' is ready on GitHub', r.bytes ? ` (${fmtMB(r.bytes)}).` : '.'), r.title ? h('div', { class: 'ptitle', text: r.title }) : null, r.notes && r.notes.length ? h('ul', { class: 'small upd-notes' }, ...r.notes.map(n => h('li', { text: n }))) : null);
-    if (r.needsInstaller) { status.textContent = 'This release also changes the app shell, so it cannot be installed from inside the app. Download the full package from the release page and run Build-Installer.bat once.'; go.textContent = 'Open release page'; go.hidden = false; go.onclick = () => window.open(RELEASES_URL, '_blank'); return; }
+    if (r.needsInstaller && !canInst) { status.textContent = 'This release also changes the app\u2019s window code, so it cannot be installed from inside this copy. Download MTG-Playtester-Setup from the release page and run it once; later updates then install themselves.'; go.textContent = 'Open release page'; go.hidden = false; go.onclick = () => window.open(RELEASES_URL, '_blank'); return; }
     go.textContent = 'Update now'; go.hidden = false; skip.hidden = false;
     go.onclick = async () => {
       go.disabled = later.disabled = skip.disabled = true; prog.el.hidden = false; status.textContent = '';
-      const res = await installWithProgress(prog, r.bytes);
+      const res = await installWithProgress(prog, r.bytes, canInst);
+      if (res && res.ok && res.installer) { status.textContent = `Installing version ${res.version || r.latest}. The app closes now and opens again when it is done (about half a minute).`; return; }
       if (!res || !res.ok) { prog.el.hidden = true; status.textContent = 'Update failed: ' + ((res && res.error) || 'unknown error') + ' Nothing was changed.'; go.textContent = 'Try again'; go.disabled = later.disabled = skip.disabled = false; return; }
       afterInstall(res.version);
     };
@@ -8973,7 +8998,7 @@ function drawStateIcons() {
     e.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GS_ICON[s.on || s.key !== 'day' ? s.key : 'dayoff'] || ''}</svg>`;
     if (s.count !== '' && s.count !== undefined) e.append(h('i', { text: String(s.count) }));
     e._s = s; return e;
-  }));
+  }), h('button', { class: 'sti-more', text: document.body.classList.contains('gs-all') ? '×' : '⋯', title: 'Show every game-state icon (to add energy, poison…)', 'aria-label': 'Show all game-state icons', onclick: ev => { ev.stopPropagation(); document.body.classList.toggle('gs-all'); drawStateIcons(); } }));   // v0.99.69 upright phones show only the active ones
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('#gstates .sti'); if (!b || !state || !b._s) return;
@@ -9059,6 +9084,13 @@ function landPileKey(c) {
   const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
   return { key: 'lands#cols:' + cols.join('') + '~' + extra, cap: cols.length ? cols.join(' ') : 'No mana' };
 }
+function roomForAll(z, n) {
+  if (window.__forcePiles) return false;   // tests of the pile rules
+  const zone = document.getElementById('zone-' + z); if (!zone || !zone.clientWidth) return false;
+  const img = document.body.classList.contains('imgmode'), k = 0.85 * (settings.bfs || 1), w = (img ? 100 : 112) * k + 8, hh = (img ? 140 : 84) * k + 8;
+  const cols = Math.floor((zone.clientWidth - 20) / w), rows = Math.max(1, Math.floor((zone.clientHeight - 40) / hh));
+  return cols * rows >= n + (n > 3 ? 1 : 0);   // one spare place, so a tapped (wider) card does not tip it over
+}
 // Rows of the battlefield with identical cards folded into one (v0.67).
 function battlefieldRows(cards) {
   const out = { creatures: [], noncreature: [], lands: [] };
@@ -9071,6 +9103,13 @@ function battlefieldRows(cards) {
       if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else if (plain) { const ap = artPileKey(c); k = ap.key; cap = ap.cap; } else k = z + '#' + groupKey(c);
       let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: (z === 'lands' && layV('mix')) || plain, cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
     } else out[z].push({ key: null, zone: z, cards: [c] });
+  }
+  // v0.99.69 piles only when they are needed: if every card of a zone fits side by side at a readable size (85% of normal) in the zone as it is
+  // on this screen right now, the zone shows them one by one; a crowded zone piles as before. Re-decided on every draw, so it follows the device,
+  // the window size and the board.
+  for (const z of ['lands', 'noncreature', 'creatures']) {
+    const singles = out[z].reduce((n, g) => n + g.cards.length, 0); if (!singles || !out[z].some(g => g.cards.length > 1)) continue;
+    if (roomForAll(z, singles)) { const flat = []; for (const g of out[z]) { if (g.cards.length > 1 && !expandedGroups.has(g.key)) for (const c of g.cards) flat.push({ key: null, zone: z, cards: [c] }); else flat.push(g); } out[z] = flat; }
   }
   for (const z of ['creatures', 'noncreature']) {   // token bundles (fives, tens, fifties...)
     const list = out[z]; out[z] = [];
@@ -9485,7 +9524,7 @@ function openSettings() {
     ['durationHints','Effect timers','Hourglass badge on permanents with a lasting effect, the explanation in the Active effects window, and a reminder when an effect tied to a source ends'],
     ['replaceNotes','Replacement-effect notes','Log line showing which replacement effects changed an event and in what order (the order choice itself is always asked when it matters)'],
     ['costGuidance','Cost explanations','Explains alternative costs, taxes and Delve/Convoke when you cast (the cost windows themselves always appear)'],
-    ['triggerPrompts','Triggered ability prompts','Stops to show detected triggered abilities'],
+    ['triggerPrompts','Triggered ability prompts','Shows a window to order abilities that trigger together. Off: they still trigger, and go on the stack by themselves in the order they happened (you still pick their targets)'],
     ['gapBadges','Warning badge on cards with rules the app cannot apply','A small \u26a0 on a permanent when part of its rules text is only a reminder (hover it to see which lines)'],
     ['gapNotes','Log rules the app cannot apply','When a card enters, logs any of its rules the app only reminds you of'],
     ['dredgePrompts','Dredge prompt','When you would draw and have a dredge card in your graveyard, asks whether to dredge instead (the dredge rule itself is always correct)'],
@@ -14090,6 +14129,21 @@ function swipeCue(label) {
   const el = h('div', { class: 'swipe-cue', 'aria-hidden': 'true' }, h('span', { text: '‹‹' }), h('b', { text: label || 'Next' }));
   mat.append(el); setTimeout(() => el.remove(), 700);
 }
+// v0.99.69 upright phones: the hand can be tucked down to a strip (tap the tab), giving the whole height to the table; tap again to raise it
+(function handTab() {
+  if (typeof document === 'undefined') return;
+  const mk = () => {
+    const hw = document.getElementById('handWrap'); if (!hw || document.getElementById('handTab')) return;
+    const b = document.createElement('button'); b.id = 'handTab'; b.className = 'hand-tab'; b.type = 'button';
+    const label = () => { const n = (state && state.hand) ? state.hand.length : 0, t = document.body.classList.contains('hand-tuck'); b.textContent = (t ? '▴ Hand' : '▾ Hand') + (n ? ` (${n})` : ''); b.setAttribute('aria-label', t ? 'Raise the hand' : 'Tuck the hand away'); };
+    b.addEventListener('click', e => { e.stopPropagation(); document.body.classList.toggle('hand-tuck'); label(); try { render(); } catch (er) { /* no game */ } setTimeout(() => window.__placeHandTab && window.__placeHandTab(), 260); });
+    document.body.append(b); label(); new MutationObserver(label).observe(document.getElementById('row-hand') || hw, { childList: true });
+    // the tab floats above everything (the table would otherwise take its taps), pinned to the top edge of the hand
+    const place = () => { if (!document.documentElement.classList.contains('portrait-ui')) return; const r = hw.getBoundingClientRect(); b.style.top = Math.max(0, Math.min(innerHeight - 40, r.top + 4)) + 'px'; };
+    window.__placeHandTab = place; hw.addEventListener('transitionend', place); addEventListener('resize', place); setInterval(place, 600); place();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mk); else mk();
+})();
 // ---------------------------------------------------------------- v0.99.62 rules batch 1 (from the coverage scan of every Modern card)
 // Mass damage (CR 120): "~ deals N damage to each creature [and each player]" with the usual qualifiers. Your opponent's creatures are not
 // on this table, so damage to them is only logged; your creatures are marked and the state-based actions do the rest.
@@ -14130,6 +14184,52 @@ function exileSelfOnResolve(c) {
   const nm = String(c.name || '').split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   if (!new RegExp('(?:^|[.\\n]\\s*)Exile (?:' + nm + '|this spell|this card)\\.\\s*$', 'i').test(t.trim())) return null;
   state.exile.push(c); return 'exile (it exiles itself, CR 608.2n)';
+}
+// ---- v0.99.69 rules batch 2: common sentences that were read as "understood" but had no effect behind them
+// Each reader returns options { label, fn, full?, covers? } and may name labels of other options it replaces (supersedes).
+const B2_NUM = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+const b2n = w => /^\d+$/.test(w) ? +w : (B2_NUM[String(w).toLowerCase()] || 1);
+// does permanent c match a phrase like "creature", "other Dragon creature", "artifact creature", "Elf"? (types by current type, other words as subtypes)
+function b2Matches(c, phrase) {
+  const words = String(phrase).toLowerCase().replace(/s\b/g, '').split(/\s+/).filter(w => w && !/^(?:other|and|or)$/.test(w));
+  const ti = (() => { try { return permTypeInfo(c); } catch (e) { return null; } })(), line = (c.token ? permTypeLine(c) : ((cardInfo(c.name) || {}).t || '')).toLowerCase();
+  const sub = (line.split('—')[1] || '');
+  return words.every(w => /^(?:creature|artifact|enchantment|land|planeswalker|battle)$/.test(w) ? (ti ? ti.types.has(w) : line.includes(w)) : w === 'permanent' ? true : w === 'token' ? !!c.token : w === 'nontoken' ? !c.token : new RegExp('\\b' + w + 's?\\b').test(sub) || (/\bchangeling\b/i.test(cardText(c) || '') && ti && ti.types.has('creature')));
+}
+function batch2Options(txs, obj) {
+  const out = [], drop = []; if (!state) return { out, drop };
+  const t = String(txs || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), src = obj.sourceName || '~', sents = t.split(/(?<=\.)\s+/);
+  let m;
+  // 1. "Put a +1/+1 counter on each [other] [<subtype>] creature you control [with a +1/+1 counter on it]." (CR 122.1)
+  if ((m = /\bput (a|an|one|two|three|four|\d+) \+1\/\+1 counters? on each (other )?([a-z][a-z' -]*?) you control( with (?:a|an) \+1\/\+1 counter on it)?\.?(?=\s|$)/i.exec(t)) && !/\btarget\b/i.test(m[0])) {
+    const n = b2n(m[1]), other = !!m[2], ph = m[3], withC = !!m[4];
+    out.push({ full: sents.length === 1, covers: [sents.find(x => x.includes(m[0].slice(0, 30))) || m[0]], label: `Put ${n === 1 ? 'a' : n} +1/+1 counter${n === 1 ? '' : 's'} on each ${other ? 'other ' : ''}${ph} you control${withC ? ' with a +1/+1 counter on it' : ''}`, fn: () => {
+      const ids = state.battlefield.filter(c => !c.opp && (!other || c.id !== obj.sourceId) && b2Matches(c, ph) && (!withC || ((c.counters && c.counters.plus) || 0) > 0)).map(c => c.id);
+      for (const id of ids) addCounter(id, n, 'plus'); log(`${src}: put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${ids.length} permanent${ids.length === 1 ? '' : 's'}`); render(); } });
+  }
+  // 2. "Each opponent loses N life. You gain life equal to the life lost this way." / "Target player loses N life and you gain life equal to the life lost this way." (CR 119.3)
+  if ((m = /\b(each opponent|target opponent|an opponent|target player|each player) loses (\d+|x) life(?:\.\s*| and )you gain life equal to the life lost this way\.?/i.exec(t))) {
+    const raw = m[2].toLowerCase(), n = raw === 'x' ? (obj.xValue || 0) : +raw, who = m[1].toLowerCase(), self = who === 'target player' && obj.target === 'you', each = who === 'each player';
+    out.push({ full: m[0].length >= t.length - 1, covers: m[0].split(/(?<=\.)\s+/), label: self ? `You lose ${n} life and gain ${n} life` : `Opponent loses ${n} life; you gain ${n} life${each ? ' (and you lose ' + n + ')' : ''}`, fn: () => {
+      if (self) { changeLife(-n, true); changeLife(n, true); } else { changeOppLife(-n); if (each) changeLife(-n, true); changeLife(each ? 2 * n : n, true); }
+      log(`${src}: ${self ? 'you' : 'the opponent'} lost ${n} life${each ? ' (you too)' : ''}; you gained life equal to the life lost (${each ? 2 * n : n})`); render(); } });
+    drop.push(new RegExp('^(?:opponent|each opponent) loses ' + n + ' life$', 'i'));
+  }
+  // 3. "~ deals N damage to that creature's / permanent's / land's / artifact's controller." The controller of the chosen target (CR 109.4)
+  if ((m = /(?<![\w])(?:~|it) deals (\d+) damage to that (creature|permanent|land|artifact|enchantment|planeswalker)'s controller\.?/i.exec(t))) {
+    const n = +m[1], tgt = (obj.targets || []).find(x => x.kind === 'perm'), f = tgt && findCard(tgt.id), mine = !!(f && !f.card.opp);
+    out.push({ covers: [m[0]], label: `${src} deals ${n} damage to that ${m[2]}'s controller (${tgt ? (mine ? 'you' : 'your opponent') : 'its controller'})`, fn: () => { if (mine) changeLife(-n, true); else changeOppLife(-n); log(`${src}: ${n} damage to ${mine ? 'you' : 'the opponent'} (the controller of ${tgt ? tgt.name : 'that ' + m[2]})`); render(); } });
+  }
+  // 4. "You gain life equal to <amount>": the number of <things>, the greatest power among creatures you control, its/~'s power or toughness
+  if ((m = /^you gain life equal to (?:the number of ([^.]+?)|(the greatest power among creatures you control)|(?:its|~'s) (power|toughness))\.?$/i.exec(sents.find(x => /^you gain life equal to /i.test(x)) || ''))) {
+    let amt = null, what = '';
+    if (m[1] && /^cards in your hand$/i.test(m[1].trim())) { what = 'the number of cards in your hand'; amt = () => state.hand.length; }
+    else if (m[1] && countPhraseKnown(m[1])) { const q0 = eachQty(m[1], obj); if (q0 !== null && q0 !== undefined) { what = 'the number of ' + m[1]; amt = () => eachQty(m[1], obj) || 0; } }
+    else if (m[2]) { what = m[2]; amt = () => Math.max(0, ...state.battlefield.filter(c => !c.opp && permTypeInfo(c).types.has('creature')).map(c => ptCalc(c).p)); }
+    else if (m[3] && obj.sourceId) { what = `${src}'s ${m[3]}`; amt = () => { const f = findCard(obj.sourceId); return f ? Math.max(0, ptCalc(f.card)[m[3] === 'power' ? 'p' : 't']) : 0; }; }
+    if (amt) out.push({ full: sents.length === 1, covers: [m[0]], label: `Gain life equal to ${what} (now ${amt()})`, fn: () => { const v = amt(); changeLife(v, true); log(`${src}: you gained ${v} life (${what})`); render(); } });
+  }
+  return { out, drop };
 }
 init();
 

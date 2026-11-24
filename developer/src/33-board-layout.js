@@ -62,6 +62,13 @@ function landPileKey(c) {
   const ord = 'WUBRGC'; cols.sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
   return { key: 'lands#cols:' + cols.join('') + '~' + extra, cap: cols.length ? cols.join(' ') : 'No mana' };
 }
+function roomForAll(z, n) {
+  if (window.__forcePiles) return false;   // tests of the pile rules
+  const zone = document.getElementById('zone-' + z); if (!zone || !zone.clientWidth) return false;
+  const img = document.body.classList.contains('imgmode'), k = 0.85 * (settings.bfs || 1), w = (img ? 100 : 112) * k + 8, hh = (img ? 140 : 84) * k + 8;
+  const cols = Math.floor((zone.clientWidth - 20) / w), rows = Math.max(1, Math.floor((zone.clientHeight - 40) / hh));
+  return cols * rows >= n + (n > 3 ? 1 : 0);   // one spare place, so a tapped (wider) card does not tip it over
+}
 // Rows of the battlefield with identical cards folded into one (v0.67).
 function battlefieldRows(cards) {
   const out = { creatures: [], noncreature: [], lands: [] };
@@ -74,6 +81,13 @@ function battlefieldRows(cards) {
       if (z === 'lands' && layV('mix')) { const lp = landPileKey(c); k = lp.key; cap = lp.cap; } else if (plain) { const ap = artPileKey(c); k = ap.key; cap = ap.cap; } else k = z + '#' + groupKey(c);
       let g = groups.get(k); if (!g) { g = { key: k, zone: z, cards: [], pile: (z === 'lands' && layV('mix')) || plain, cap }; groups.set(k, g); out[z].push(g); } g.cards.push(c);
     } else out[z].push({ key: null, zone: z, cards: [c] });
+  }
+  // v0.99.69 piles only when they are needed: if every card of a zone fits side by side at a readable size (85% of normal) in the zone as it is
+  // on this screen right now, the zone shows them one by one; a crowded zone piles as before. Re-decided on every draw, so it follows the device,
+  // the window size and the board.
+  for (const z of ['lands', 'noncreature', 'creatures']) {
+    const singles = out[z].reduce((n, g) => n + g.cards.length, 0); if (!singles || !out[z].some(g => g.cards.length > 1)) continue;
+    if (roomForAll(z, singles)) { const flat = []; for (const g of out[z]) { if (g.cards.length > 1 && !expandedGroups.has(g.key)) for (const c of g.cards) flat.push({ key: null, zone: z, cards: [c] }); else flat.push(g); } out[z] = flat; }
   }
   for (const z of ['creatures', 'noncreature']) {   // token bundles (fives, tens, fifties...)
     const list = out[z]; out[z] = [];

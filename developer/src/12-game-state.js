@@ -216,7 +216,8 @@ function finishMulligan() {
   state.skipDraw = state.onPlay;
   state.pregameDone = false;
   log(`Kept ${state.hand.length} cards${state.mulls ? ` (mulligan ×${state.mulls})` : ''}`);
-  if (!teach('preGame')) { state.pregameDone = true; state.phase = 'play'; log('Pre-game actions screen skipped (turned off in Settings)'); startTurn(); return; }
+  // v0.99.69 the screen can be turned off, but a card in the opening hand that acts now (Leyline: begin the game on the battlefield; reveal it for a first-upkeep effect) still gets its chance (CR 103.6)
+  if (!teach('preGame') && !state.hand.some(c => { try { return beginsOnBattlefield(c) || !!openingReveal(c); } catch (e) { return false; } })) { state.pregameDone = true; state.phase = 'play'; log('Pre-game actions screen skipped (turned off in Settings)'); startTurn(); return; }
   render();
 }
 

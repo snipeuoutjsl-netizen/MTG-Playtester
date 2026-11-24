@@ -250,10 +250,17 @@ function reserveHandSpace() {
   const card = hc.querySelector('.card'), h = card ? card.offsetHeight : 0;
   const cover = h ? Math.round(h * 0.82) + 8 : 0;
   stage.style.setProperty('--handcover', cover + 'px');
+  { const hw = $('#handWrap'); if (hw) stage.style.setProperty('--hand-h', hw.offsetHeight + 'px'); }   // v0.99.69 upright phones keep the whole hand clear of the table
   document.documentElement.style.setProperty('--handcover-root', (h ? h + 28 : 0) + 'px');   // v0.96.14 pop-ups centre in the space ABOVE the hand
 }
 function fitBattlefieldCards() {
   try { reserveHandSpace(); } catch (e) { /* layout only */ }
+  // v0.99.69 upright phones: each zone's share of the height follows how many cards it holds (an empty zone stays small, a busy one grows)
+  try { const mat = $('#mat'); if (mat && document.documentElement.classList.contains('portrait-ui') && state) {
+    const n = { creatures: 0, noncreature: 0, lands: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
+    const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2);
+    mat.style.setProperty('grid-template-rows', `104px minmax(0, ${w('creatures')}fr) auto minmax(0, ${w('noncreature')}fr) minmax(0, ${w('lands')}fr)`, 'important');
+  } else if (mat) mat.style.removeProperty('grid-template-rows'); } catch (e) { /* layout only */ }
   const specs = [
     { id: 'row-creatures', wrap: true },
     { id: 'row-noncreature', wrap: true },
@@ -292,7 +299,7 @@ function fitBattlefieldCards() {
       const cols = Math.min(count, idealCols);
       const rows = Math.ceil(count / cols); usedCols = cols;
       scale = Math.min(
-        1,
+        document.documentElement.classList.contains('portrait-ui') ? 1.6 : 1,   // v0.99.69 upright phones: cards grow into the room they have
         (availW - Math.max(0, cols - 1) * gap) / (cols * baseW),
         (availH - Math.max(0, rows - 1) * gap) / (rows * baseH)
       );

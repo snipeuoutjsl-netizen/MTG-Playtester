@@ -102,7 +102,8 @@ ipcMain.handle('upd:url', async (e, base) => {
 // ------------------------------------------------------------------ GitHub updates (v0.66)
 // Each GitHub release carries index.html, app.js, style.css, package.json, latest.json (version, notes, SHA-256 of every file) and update.json (what older shells read).
 // The file names come from APP_FILES here, never from the downloaded manifest, and every file must match its SHA-256 before anything is installed.
-const SHELL_VERSION = 4;   // v0.96.8: unchanged files are reused, no-cache + timeouts
+const SHELL_VERSION = 5;   // v0.99.69: installed Windows copies update with the full Setup installer
+// (older line kept for history:) const SHELL_VERSION = 4;   // v0.96.8: unchanged files are reused, no-cache + timeouts
 // (older line kept for history:) const SHELL_VERSION = 3;   // v0.94.0: download progress events
 const SHELL_MIN_FOR_FILES = 2;   // the oldest shell that can still install this release's files (written to latest.json as "shell"); raise it only when files need newer shell features   // bump when main.js / preload.js change in a way a file update cannot deliver
 const GH_BASE = process.env.MTGPT_UPDATE_BASE || 'https://github.com/snipeuoutjsl-netizen/MTG-Playtester/releases/latest/download';
@@ -145,7 +146,7 @@ ipcMain.handle('upd:ghinstall', async (ev) => {
   try {
     const man = await ghManifest();
     if (!man) throw new Error('No release with a latest.json file was found on GitHub. The newest release must be published (not a draft or pre-release) and include latest.json.');
-    if (Number(man.shell || 0) > SHELL_VERSION) throw new Error('This release needs a new app shell. Download the full package from the release page and run Build-Installer.bat once.');
+    if (Number(man.shell || 0) > SHELL_VERSION) throw new Error('This release needs a new app window. Download MTG-Playtester-Setup from the release page and run it once; later updates then install themselves.');
     if (!newer(man.version, readVersion(activeDir()))) return { ok: true, upToDate: true, version: readVersion(activeDir()) };
     const tmp = path.join(app.getPath('temp'), 'mtgpt-update');
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -167,6 +168,38 @@ ipcMain.handle('upd:ghinstall', async (ev) => {
     send({ phase: 'install' });
     const r = installFrom(tmp); send({ phase: 'done' }); return r;
   } catch (e) { return { ok: false, error: /fetch failed|ENOTFOUND|ECONN|ERR_/i.test(e.message) ? 'Could not reach GitHub (are you online?).' : e.message }; }
+});
+// v0.99.69 installed Windows copies (not the portable one) update by running the newest Setup installer, so the window code (this file)
+// is updated too and the app can never end up with new game files in an old shell. The installer is the one published on the GitHub
+// release; its size and SHA-256 (GitHub's own digest of the asset) are checked before it is run. It installs silently and starts the app again.
+const GH_API = process.env.MTGPT_UPDATE_API || 'https://api.github.com/repos/snipeuoutjsl-netizen/MTG-Playtester/releases/latest';
+const isInstalledWin = () => process.platform === 'win32' && !process.env.PORTABLE_EXECUTABLE_DIR && /\\Programs\\/i.test(process.execPath);
+ipcMain.handle('upd:caninstaller', () => isInstalledWin());
+ipcMain.handle('upd:installer', async (ev) => {
+  const send = d => { try { ev.sender.send('upd:progress', d); } catch (e) { /* window gone */ } };
+  try {
+    if (!isInstalledWin()) throw new Error('Installer updates are only for the installed Windows app.');
+    const rel = await (await net.fetch(GH_API, { cache: 'no-store', headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(20000) })).json();
+    const asset = (rel.assets || []).find(a => /^MTG-Playtester-Setup-[\d.]+\.exe$/.test(a.name || ''));
+    if (!asset) throw new Error('The newest release has no Setup installer yet (it is built a few minutes after a release). Try again shortly.');
+    const want = String(asset.digest || '').replace(/^sha256:/i, '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(want)) throw new Error('GitHub did not give a checksum for the installer, so it was not run.');
+    const total = Number(asset.size) || 0; let done = 0; send({ phase: 'start', total, done: 0 });
+    const res = await net.fetch(asset.browser_download_url, { cache: 'no-store', signal: AbortSignal.timeout(600000) });
+    if (!res.ok) throw new Error('Could not download the installer (HTTP ' + res.status + ').');
+    const chunks = []; const rd = res.body.getReader();
+    for (;;) { const { done: end, value } = await rd.read(); if (end) break; done += value.length; if (done > 400 * 1024 * 1024) throw new Error('The installer is unexpectedly large, so it was not run.'); chunks.push(Buffer.from(value)); send({ phase: 'download', file: asset.name, done, total }); }
+    const buf = Buffer.concat(chunks); send({ phase: 'verify', file: asset.name, done, total });
+    if ((total && buf.length !== total) || sha256(buf) !== want) throw new Error('The installer did not match its published checksum, so it was not run.');
+    const exe = path.join(app.getPath('temp'), asset.name); fs.writeFileSync(exe, buf);
+    send({ phase: 'install' });
+    try { for (const w of BrowserWindow.getAllWindows()) saveBounds(w); } catch (e) { /* ignore */ }
+    try { fs.rmSync(overrideDir(), { recursive: true, force: true }); } catch (e) { /* ignore */ }   // the installer carries the new game files itself
+    const { spawn } = require('child_process');
+    spawn(exe, ['/S', '--force-run'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    setTimeout(() => { try { app.releaseSingleInstanceLock(); } catch (e) { /* ignore */ } app.exit(0); }, 600);
+    return { ok: true, installer: true, version: String(rel.tag_name || '').replace(/^v/, '') };
+  } catch (e) { return { ok: false, error: /fetch failed|ENOTFOUND|ECONN|ERR_|aborted|timed? ?out/i.test(e.message) ? 'Could not reach GitHub (are you online?).' : e.message }; }
 });
 ipcMain.handle('upd:reset', () => { fs.rmSync(overrideDir(), { recursive: true, force: true }); return { ok: true }; });
 // v0.99.62 hand over cleanly: release the one-window lock before the new copy starts, so it does not find the old one still holding it and quit

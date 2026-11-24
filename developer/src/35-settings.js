@@ -232,7 +232,7 @@ function openSettings() {
     ['durationHints','Effect timers','Hourglass badge on permanents with a lasting effect, the explanation in the Active effects window, and a reminder when an effect tied to a source ends'],
     ['replaceNotes','Replacement-effect notes','Log line showing which replacement effects changed an event and in what order (the order choice itself is always asked when it matters)'],
     ['costGuidance','Cost explanations','Explains alternative costs, taxes and Delve/Convoke when you cast (the cost windows themselves always appear)'],
-    ['triggerPrompts','Triggered ability prompts','Stops to show detected triggered abilities'],
+    ['triggerPrompts','Triggered ability prompts','Shows a window to order abilities that trigger together. Off: they still trigger, and go on the stack by themselves in the order they happened (you still pick their targets)'],
     ['gapBadges','Warning badge on cards with rules the app cannot apply','A small \u26a0 on a permanent when part of its rules text is only a reminder (hover it to see which lines)'],
     ['gapNotes','Log rules the app cannot apply','When a card enters, logs any of its rules the app only reminds you of'],
     ['dredgePrompts','Dredge prompt','When you would draw and have a dredge card in your graveyard, asks whether to dredge instead (the dredge rule itself is always correct)'],

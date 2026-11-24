@@ -1,0 +1,46 @@
+// ---- v0.99.69 rules batch 2: common sentences that were read as "understood" but had no effect behind them
+// Each reader returns options { label, fn, full?, covers? } and may name labels of other options it replaces (supersedes).
+const B2_NUM = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+const b2n = w => /^\d+$/.test(w) ? +w : (B2_NUM[String(w).toLowerCase()] || 1);
+// does permanent c match a phrase like "creature", "other Dragon creature", "artifact creature", "Elf"? (types by current type, other words as subtypes)
+function b2Matches(c, phrase) {
+  const words = String(phrase).toLowerCase().replace(/s\b/g, '').split(/\s+/).filter(w => w && !/^(?:other|and|or)$/.test(w));
+  const ti = (() => { try { return permTypeInfo(c); } catch (e) { return null; } })(), line = (c.token ? permTypeLine(c) : ((cardInfo(c.name) || {}).t || '')).toLowerCase();
+  const sub = (line.split('—')[1] || '');
+  return words.every(w => /^(?:creature|artifact|enchantment|land|planeswalker|battle)$/.test(w) ? (ti ? ti.types.has(w) : line.includes(w)) : w === 'permanent' ? true : w === 'token' ? !!c.token : w === 'nontoken' ? !c.token : new RegExp('\\b' + w + 's?\\b').test(sub) || (/\bchangeling\b/i.test(cardText(c) || '') && ti && ti.types.has('creature')));
+}
+function batch2Options(txs, obj) {
+  const out = [], drop = []; if (!state) return { out, drop };
+  const t = String(txs || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(), src = obj.sourceName || '~', sents = t.split(/(?<=\.)\s+/);
+  let m;
+  // 1. "Put a +1/+1 counter on each [other] [<subtype>] creature you control [with a +1/+1 counter on it]." (CR 122.1)
+  if ((m = /\bput (a|an|one|two|three|four|\d+) \+1\/\+1 counters? on each (other )?([a-z][a-z' -]*?) you control( with (?:a|an) \+1\/\+1 counter on it)?\.?(?=\s|$)/i.exec(t)) && !/\btarget\b/i.test(m[0])) {
+    const n = b2n(m[1]), other = !!m[2], ph = m[3], withC = !!m[4];
+    out.push({ full: sents.length === 1, covers: [sents.find(x => x.includes(m[0].slice(0, 30))) || m[0]], label: `Put ${n === 1 ? 'a' : n} +1/+1 counter${n === 1 ? '' : 's'} on each ${other ? 'other ' : ''}${ph} you control${withC ? ' with a +1/+1 counter on it' : ''}`, fn: () => {
+      const ids = state.battlefield.filter(c => !c.opp && (!other || c.id !== obj.sourceId) && b2Matches(c, ph) && (!withC || ((c.counters && c.counters.plus) || 0) > 0)).map(c => c.id);
+      for (const id of ids) addCounter(id, n, 'plus'); log(`${src}: put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${ids.length} permanent${ids.length === 1 ? '' : 's'}`); render(); } });
+  }
+  // 2. "Each opponent loses N life. You gain life equal to the life lost this way." / "Target player loses N life and you gain life equal to the life lost this way." (CR 119.3)
+  if ((m = /\b(each opponent|target opponent|an opponent|target player|each player) loses (\d+|x) life(?:\.\s*| and )you gain life equal to the life lost this way\.?/i.exec(t))) {
+    const raw = m[2].toLowerCase(), n = raw === 'x' ? (obj.xValue || 0) : +raw, who = m[1].toLowerCase(), self = who === 'target player' && obj.target === 'you', each = who === 'each player';
+    out.push({ full: m[0].length >= t.length - 1, covers: m[0].split(/(?<=\.)\s+/), label: self ? `You lose ${n} life and gain ${n} life` : `Opponent loses ${n} life; you gain ${n} life${each ? ' (and you lose ' + n + ')' : ''}`, fn: () => {
+      if (self) { changeLife(-n, true); changeLife(n, true); } else { changeOppLife(-n); if (each) changeLife(-n, true); changeLife(each ? 2 * n : n, true); }
+      log(`${src}: ${self ? 'you' : 'the opponent'} lost ${n} life${each ? ' (you too)' : ''}; you gained life equal to the life lost (${each ? 2 * n : n})`); render(); } });
+    drop.push(new RegExp('^(?:opponent|each opponent) loses ' + n + ' life$', 'i'));
+  }
+  // 3. "~ deals N damage to that creature's / permanent's / land's / artifact's controller." The controller of the chosen target (CR 109.4)
+  if ((m = /(?<![\w])(?:~|it) deals (\d+) damage to that (creature|permanent|land|artifact|enchantment|planeswalker)'s controller\.?/i.exec(t))) {
+    const n = +m[1], tgt = (obj.targets || []).find(x => x.kind === 'perm'), f = tgt && findCard(tgt.id), mine = !!(f && !f.card.opp);
+    out.push({ covers: [m[0]], label: `${src} deals ${n} damage to that ${m[2]}'s controller (${tgt ? (mine ? 'you' : 'your opponent') : 'its controller'})`, fn: () => { if (mine) changeLife(-n, true); else changeOppLife(-n); log(`${src}: ${n} damage to ${mine ? 'you' : 'the opponent'} (the controller of ${tgt ? tgt.name : 'that ' + m[2]})`); render(); } });
+  }
+  // 4. "You gain life equal to <amount>": the number of <things>, the greatest power among creatures you control, its/~'s power or toughness
+  if ((m = /^you gain life equal to (?:the number of ([^.]+?)|(the greatest power among creatures you control)|(?:its|~'s) (power|toughness))\.?$/i.exec(sents.find(x => /^you gain life equal to /i.test(x)) || ''))) {
+    let amt = null, what = '';
+    if (m[1] && /^cards in your hand$/i.test(m[1].trim())) { what = 'the number of cards in your hand'; amt = () => state.hand.length; }
+    else if (m[1] && countPhraseKnown(m[1])) { const q0 = eachQty(m[1], obj); if (q0 !== null && q0 !== undefined) { what = 'the number of ' + m[1]; amt = () => eachQty(m[1], obj) || 0; } }
+    else if (m[2]) { what = m[2]; amt = () => Math.max(0, ...state.battlefield.filter(c => !c.opp && permTypeInfo(c).types.has('creature')).map(c => ptCalc(c).p)); }
+    else if (m[3] && obj.sourceId) { what = `${src}'s ${m[3]}`; amt = () => { const f = findCard(obj.sourceId); return f ? Math.max(0, ptCalc(f.card)[m[3] === 'power' ? 'p' : 't']) : 0; }; }
+    if (amt) out.push({ full: sents.length === 1, covers: [m[0]], label: `Gain life equal to ${what} (now ${amt()})`, fn: () => { const v = amt(); changeLife(v, true); log(`${src}: you gained ${v} life (${what})`); render(); } });
+  }
+  return { out, drop };
+}
