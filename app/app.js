@@ -6713,8 +6713,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.58';
+const APP_VERSION = '0.99.59';
 const CHANGELOG = [
+  { v: '0.99.59', title: 'Fanned stacks and page turns are back', notes: ['Library: the deck on the desk is laid out in fanned stacks again (up to three different cards a stack, in mana-value order, lands last, the basic lands together), each card set a little lower, to the right and turned, so every name shows. Hovering a card only outlines it in gold, so nothing moves and nothing flickers.', 'The open book turns its page again for every card you point at, and turns back to the deck when you move away. The next card\'s picture is loaded before the page turns, so the page never shows an empty frame.'] },
   { v: '0.99.58', title: 'iPhone fixes and a gear in the Library', notes: ['iPhone and iPad: the app now keeps clear of the status bar (clock, battery), the notch and the home bar when it runs from the home screen. Before, the top bar sat under the clock.', 'Phone held upright: the top bar wraps onto a second row instead of running off the side, and the life totals wrap too, so your life is no longer cut off.', 'Phone held upright: your hand is fanned like real cards held in your hand, spread from one point below the screen, so the top of every card shows.', 'The Library has a gear (Settings) in its top right corner, on the computer and on phones.'] },
   { v: '0.99.57', title: 'No more flicker on the desk', notes: ['Library: hovering the cards laid out on the desk no longer flickers. A hovered card used to lift up a little; near its bottom edge, the lift moved it out from under the pointer and back, over and over. It now just gets a gold outline.', 'The open book only changes to a new card once its picture is ready, so the page never flashes empty between cards.'] },
   { v: '0.99.56', title: 'One stack window', notes: ['The stack has one window now, a tidy panel docked at the top right of the table (next to your library). It no longer sits in the middle of the table, no longer darkens the screen, and on phones the extra floating "The Stack" window is gone.', 'Each object on the stack is one row: a slice of its art, its name, what it is (your spell, an opponent\'s spell, a triggered or activated ability) and its targets or chosen modes. The top one is marked NEXT. Your buttons (Pass priority, Copy, Countered, Resolve top) sit together at the bottom.', 'Fold the window to a single line with the arrow (or by clicking its title bar). The folded bar keeps the main button, so you can resolve without unfolding it.', 'The same window shows a spell or ability being resolved (Finish) and cards to choose from your hand.', 'The Stack box in the right column now just says what is on the stack and keeps the tools for adding your opponent\'s spells. The topbar stack button unfolds the window.'] },
@@ -13660,29 +13661,27 @@ function beginWith(name) {
 function deckSpreadEl(deck, deckName, onCard) {
   const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
   const build = () => {
-    // v0.99.54 one pile per card: its copies lie on top of each other (a pile of four Thoughtseize is four cards deep), and the piles
-    // are dealt out in mana-value order (lands last) on a grid sized to fill the desk without any two piles overlapping.
+    // v0.99.59 back to fanned stacks: at most three different cards a stack (mana-value order, lands last, the basic lands share one),
+    // each card set a little lower, to the right and turned, so every name shows. Hovering only outlines a card (no lifting: that flickered).
     const tot = new Map();
     for (const x of deck.main) { const rec = resolve(x.name), nm = rec ? rec.name : x.name, o = tot.get(nm) || { name: nm, rec, qty: 0 }; o.qty += (x.qty || x.n || 1); tot.set(nm, o); }
     const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
     const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
-    const piles = [...all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), ...all.filter(c => isLand(c) && !isBasic(c)).sort(byName), ...all.filter(isBasic).sort(byName)];
-    const W = hallPortrait() ? 860 : 1520, H = hallPortrait() ? 290 : 290, GAP = 14, N = Math.max(1, piles.length);
-    let best = { r: 1, cw: 0, ch: 0 };
-    for (let r = 1; r <= 4; r++) { const cols = Math.ceil(N / r), cw0 = (W - GAP * (cols - 1)) / cols - 6, ch = Math.min(cw0 * 1.395, (H - GAP * (r - 1)) / r - 6), cw = ch / 1.395; if (cw > best.cw) best = { r, cw, ch, cols }; }
-    const cw = Math.min(150, Math.floor(best.cw)), ch = Math.round(cw * 1.395);
-    el.style.setProperty('--cw', cw + 'px'); el.style.setProperty('--ch', ch + 'px'); el.style.setProperty('--cols', String(Math.ceil(N / best.r)));
-    const cards = piles.map(c => {
-      const im = imgFor(c.name, deckName), layers = Math.min(4, c.qty) - 1;
-      const card = h('div', { class: 'ds-card' + (im ? ' img' : ''), title: `${c.qty} × ${c.name}`, tabindex: 0 },
+    const spells = all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), lands = all.filter(c => isLand(c) && !isBasic(c)).sort(byName), basics = all.filter(isBasic).sort(byName);
+    const stacks = [], chunk3 = list => { for (let i = 0; i < list.length; i += 3) stacks.push(list.slice(i, i + 3)); };
+    const mvs = [...new Set(spells.map(mv))]; for (const v of mvs) chunk3(spells.filter(c => mv(c) === v));
+    chunk3(lands); if (basics.length) stacks.push(basics);
+    const STRIP = 32, CH = 206, DX = 7;
+    const cols = stacks.map(list => h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + CH + 6}px;width:${148 + DX * (list.length - 1)}px` }, list.map((c, i) => {
+      const k = i - (list.length - 1) / 2;
+      const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;left:${i * DX}px;z-index:${i + 1};--rot:${(k * 2.2).toFixed(1)}deg`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
         im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
         h('em', { class: 'ds-qty', text: '×' + c.qty }));
       const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
-      const pile = h('div', { class: 'ds-pile', style: `--layers:${layers}` }, Array.from({ length: layers }, (_, i) => h('i', { class: 'ds-under', style: `--k:${layers - i}` })), card);
-      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 220); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
-      return pile; });
-    el.replaceChildren(...cards);
-    el.style.removeProperty('--dsk');
+      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 160); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
+      return card; })));
+    el.replaceChildren(...cols);
+    requestAnimationFrame(() => { const W = hallPortrait() ? 860 : 1520, H = 280, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
   };
   if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 600); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
   build();
@@ -13695,38 +13694,35 @@ function tomeCard(tome, c, deckName) {
   if (!tome || !tome.isConnected || !tome.classList.contains('deck-open')) return;
   const cur = tome._card || null; if ((c && c.name) === (cur && cur.name) || (!c && !cur)) return;
   tome._card = c;
-  const fill = () => {
-    let pg = tome.querySelector('.tome-card');
-    if (!c) { if (pg) pg.remove(); tome.classList.remove('card-open'); return; }
-    if (!pg) { pg = h('div', { class: 'tome-card' }); tome.append(pg); }
-    const rec = c.rec || resolve(c.name) || {}, im = imgFor(c.name, deckName);
-    const sym = mc => { try { return mc ? symbols(mc) : ''; } catch (e) { return mc || ''; } };
-    const faceEl = f => h('div', { class: 'tc-face' },
-      h('div', { class: 'tc-title' }, h('b', { text: f.name || c.name }), h('span', { class: 'tc-mc' }, sym(f.mc))),
-      h('div', { class: 'tc-type', text: f.t || '' }),
-      ...String(f.tx || '').split('\n').filter(Boolean).map(line => h('p', { text: line })),
-      f.pt ? h('div', { class: 'tc-pt', text: f.pt }) : null);
-    const faces = [rec];
-    // v0.99.57 the picture is decoded before it replaces the old one, so the page never shows an empty frame (that was the flicker)
-    const put = pic => { if (tome._card !== c || !pg.isConnected) return;
-      pg.replaceChildren(
-        h('div', { class: 'tc-page tc-pic' }, pic || h('div', { class: 'tc-noimg', text: c.name })),
-        h('div', { class: 'tc-page tc-txt' }, ...faces.map(faceEl),
-          h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
-      tome.classList.add('card-open'); };
-    if (!im) { put(null); return; }
-    const pre = new Image(); pre.alt = c.name; pre.draggable = false; pre.src = im.front;
-    const ready = pre.complete && pre.naturalWidth ? Promise.resolve() : (pre.decode ? pre.decode() : new Promise(r => { pre.onload = r; pre.onerror = r; }));
-    ready.catch(() => {}).then(() => put(pre.naturalWidth ? pre : null));
-  };
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
-  if (calm) { fill(); return; }
-  if (c && cur) { fill(); return; }   // card to card: same page, new picture (no flicker of turning leaves)
-  // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck
-  tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
-  const back = !c, leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);
-  const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
-  setTimeout(fill, 210 / aspd()); a.onfinish = () => leaf.remove();
+  // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck's pages;
+  // the new page is swapped in under the leaf, half way through the turn
+  const turn = (swap, back) => {
+    if (calm) { swap(); return; }
+    tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
+    const leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);
+    const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
+    setTimeout(swap, 210 / aspd()); a.onfinish = () => leaf.remove();
+  };
+  if (!c) { turn(() => { if (tome._card) return; const pg = tome.querySelector('.tome-card'); if (pg) pg.remove(); tome.classList.remove('card-open'); }, true); return; }
+  const rec = c.rec || resolve(c.name) || {}, im = imgFor(c.name, deckName);
+  const sym = mc => { try { return mc ? symbols(mc) : ''; } catch (e) { return mc || ''; } };
+  const faceEl = f => h('div', { class: 'tc-face' },
+    h('div', { class: 'tc-title' }, h('b', { text: f.name || c.name }), h('span', { class: 'tc-mc' }, sym(f.mc))),
+    h('div', { class: 'tc-type', text: f.t || '' }),
+    ...String(f.tx || '').split('\n').filter(Boolean).map(line => h('p', { text: line })),
+    f.pt ? h('div', { class: 'tc-pt', text: f.pt }) : null);
+  const put = pic => { if (tome._card !== c || !tome.isConnected) return;
+    let pg = tome.querySelector('.tome-card'); if (!pg) { pg = h('div', { class: 'tome-card' }); tome.append(pg); }
+    pg.replaceChildren(
+      h('div', { class: 'tc-page tc-pic' }, pic || h('div', { class: 'tc-noimg', text: c.name })),
+      h('div', { class: 'tc-page tc-txt' }, faceEl(rec), h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
+    tome.classList.add('card-open'); };
+  // the picture is decoded first, so the page never shows an empty frame
+  if (!im) { turn(() => put(null)); return; }
+  const pre = new Image(); pre.alt = c.name; pre.draggable = false; pre.src = im.front;
+  const ready = pre.complete && pre.naturalWidth ? Promise.resolve() : (pre.decode ? pre.decode() : new Promise(r => { pre.onload = r; pre.onerror = r; }));
+  ready.catch(() => {}).then(() => { if (tome._card === c) turn(() => put(pre.naturalWidth ? pre : null)); });
 }
 // v0.99.53 Library look: the wall and the desk top, kept in 'mtgpt.hallLook'
 const HALL_WALLS = [['plaster', 'Warm plaster', ''], ['sage', 'Sage plaster', 'hue-rotate(58deg) saturate(.75) brightness(.95)'], ['midnight', 'Midnight', 'hue-rotate(190deg) saturate(.85) brightness(.78)'], ['oxblood', 'Oxblood', 'hue-rotate(-22deg) saturate(1.7) brightness(.8)'], ['ash', 'Ash grey', 'saturate(.15) brightness(1.05)'], ['boards', 'Wood boards', '']];
