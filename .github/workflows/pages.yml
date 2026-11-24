@@ -11,9 +11,8 @@ permissions:
   id-token: write
 concurrency: { group: pages, cancel-in-progress: true }
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment: { name: github-pages, url: '${{ steps.dep.outputs.page_url }}' }
     steps:
       - uses: actions/checkout@v4
       - name: Collect the web files
@@ -25,5 +24,11 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: site }
+  # a separate job, so the uploaded artifact is fully registered before the deployment looks for it
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: '${{ steps.dep.outputs.page_url }}' }
+    steps:
       - id: dep
         uses: actions/deploy-pages@v4
