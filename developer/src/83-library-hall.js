@@ -97,15 +97,21 @@ function tomeCard(tome, c, deckName) {
       ...String(f.tx || '').split('\n').filter(Boolean).map(line => h('p', { text: line })),
       f.pt ? h('div', { class: 'tc-pt', text: f.pt }) : null);
     const faces = [rec];
-    pg.replaceChildren(
-      h('div', { class: 'tc-page tc-pic' }, im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : h('div', { class: 'tc-noimg', text: c.name })),
-      h('div', { class: 'tc-page tc-txt' }, ...faces.map(faceEl),
-        h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
-    tome.classList.add('card-open');
+    // v0.99.57 the picture is decoded before it replaces the old one, so the page never shows an empty frame (that was the flicker)
+    const put = pic => { if (tome._card !== c || !pg.isConnected) return;
+      pg.replaceChildren(
+        h('div', { class: 'tc-page tc-pic' }, pic || h('div', { class: 'tc-noimg', text: c.name })),
+        h('div', { class: 'tc-page tc-txt' }, ...faces.map(faceEl),
+          h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
+      tome.classList.add('card-open'); };
+    if (!im) { put(null); return; }
+    const pre = new Image(); pre.alt = c.name; pre.draggable = false; pre.src = im.front;
+    const ready = pre.complete && pre.naturalWidth ? Promise.resolve() : (pre.decode ? pre.decode() : new Promise(r => { pre.onload = r; pre.onerror = r; }));
+    ready.catch(() => {}).then(() => put(pre.naturalWidth ? pre : null));
   };
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
   if (calm) { fill(); return; }
-  if (c && cur) { fill(); const pg = tome.querySelector('.tome-card'); if (pg) wa(pg, [{ opacity: .55 }, { opacity: 1 }], { duration: 160 }); return; }   // card to card: same page, new picture (no flicker of turning leaves)
+  if (c && cur) { fill(); return; }   // card to card: same page, new picture (no flicker of turning leaves)
   // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck
   tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
   const back = !c, leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);

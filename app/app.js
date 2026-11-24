@@ -6703,8 +6703,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.56';
+const APP_VERSION = '0.99.57';
 const CHANGELOG = [
+  { v: '0.99.57', title: 'No more flicker on the desk', notes: ['Library: hovering the cards laid out on the desk no longer flickers. A hovered card used to lift up a little; near its bottom edge, the lift moved it out from under the pointer and back, over and over. It now just gets a gold outline.', 'The open book only changes to a new card once its picture is ready, so the page never flashes empty between cards.'] },
   { v: '0.99.56', title: 'One stack window', notes: ['The stack has one window now, a tidy panel docked at the top right of the table (next to your library). It no longer sits in the middle of the table, no longer darkens the screen, and on phones the extra floating "The Stack" window is gone.', 'Each object on the stack is one row: a slice of its art, its name, what it is (your spell, an opponent\'s spell, a triggered or activated ability) and its targets or chosen modes. The top one is marked NEXT. Your buttons (Pass priority, Copy, Countered, Resolve top) sit together at the bottom.', 'Fold the window to a single line with the arrow (or by clicking its title bar). The folded bar keeps the main button, so you can resolve without unfolding it.', 'The same window shows a spell or ability being resolved (Finish) and cards to choose from your hand.', 'The Stack box in the right column now just says what is on the stack and keeps the tools for adding your opponent\'s spells. The topbar stack button unfolds the window.'] },
   { v: '0.99.55', title: 'Upright on phones', notes: ['Phones (and small tablets) held upright now get their own layout instead of a "turn sideways" screen. The table is one column: deck, graveyard and exile along the top, then creatures, other permanents and lands, with your hand at the bottom. The top bar scrolls sideways.', 'Upright, the stack and the game log open from the "Stack & log" button in the top bar, and tapping a card shows its preview over the table for a moment (tap the preview to close it).', 'The Library upright: three shelves above the open book, which is drawn large across the desk so its pages can be read, and the deck\'s piles below it. A book taken down goes into the open book.', 'Turning the phone sideways switches back to the full table and the wide Library.'] },
   { v: '0.99.54', title: 'Phones and tablets', notes: ['The app now runs in the browser on phones and tablets (iPhone, iPad, Android) and can be installed to the home screen like an app. It keeps working offline once loaded. Address: snipeuoutjsl-netizen.github.io/MTG-Playtester', 'Touch: drag a card with your finger to play it or move it, press and hold for the card menu (the right-click menu), and double-tap for a double-click.', 'Small screens get the whole table fitted to the screen (pinch to zoom still works). Phones are asked to turn sideways, because the table needs the width.', 'The deck on the Library desk is now one pile per card, its copies stacked underneath, dealt out on a grid that never overlaps. Moving from card to card changes the open book\'s page without the turning leaf, which removes the flicker.'] },
@@ -13695,15 +13696,21 @@ function tomeCard(tome, c, deckName) {
       ...String(f.tx || '').split('\n').filter(Boolean).map(line => h('p', { text: line })),
       f.pt ? h('div', { class: 'tc-pt', text: f.pt }) : null);
     const faces = [rec];
-    pg.replaceChildren(
-      h('div', { class: 'tc-page tc-pic' }, im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : h('div', { class: 'tc-noimg', text: c.name })),
-      h('div', { class: 'tc-page tc-txt' }, ...faces.map(faceEl),
-        h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
-    tome.classList.add('card-open');
+    // v0.99.57 the picture is decoded before it replaces the old one, so the page never shows an empty frame (that was the flicker)
+    const put = pic => { if (tome._card !== c || !pg.isConnected) return;
+      pg.replaceChildren(
+        h('div', { class: 'tc-page tc-pic' }, pic || h('div', { class: 'tc-noimg', text: c.name })),
+        h('div', { class: 'tc-page tc-txt' }, ...faces.map(faceEl),
+          h('div', { class: 'tc-foot', text: `${c.qty} in this deck · mana value ${(+rec.cmc || 0)}` })));
+      tome.classList.add('card-open'); };
+    if (!im) { put(null); return; }
+    const pre = new Image(); pre.alt = c.name; pre.draggable = false; pre.src = im.front;
+    const ready = pre.complete && pre.naturalWidth ? Promise.resolve() : (pre.decode ? pre.decode() : new Promise(r => { pre.onload = r; pre.onerror = r; }));
+    ready.catch(() => {}).then(() => put(pre.naturalWidth ? pre : null));
   };
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
   if (calm) { fill(); return; }
-  if (c && cur) { fill(); const pg = tome.querySelector('.tome-card'); if (pg) wa(pg, [{ opacity: .55 }, { opacity: 1 }], { duration: 160 }); return; }   // card to card: same page, new picture (no flicker of turning leaves)
+  if (c && cur) { fill(); return; }   // card to card: same page, new picture (no flicker of turning leaves)
   // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck
   tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
   const back = !c, leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);
