@@ -46,6 +46,7 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) you cast /.test(cond)) { ev = 'cast'; filter = cond.replace(/^(?:when|whenever) you cast /, ''); }
     else if ((cAny = cond.match(/^(?:when|whenever) a player casts a spell(?: with mana value (equal to the number of ([a-z+\/-]+) counters on (?:~|this \w+)|(\d+)(?: or (less|greater))?))?$/)) && /^counter that spell\.?$/i.test(cm[2].trim())) {   // v0.96.31 Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
       ev = 'cast-any'; castAny = { counters: cAny[2] || '', mv: cAny[3] !== undefined ? +cAny[3] : null, cmp: cAny[4] || 'equal' }; }
+    else if ((q0 = cond.match(/^(?:when|whenever) (?:a player|any player) casts (.+)$/))) { ev = 'cast'; filter = q0[1]; }   // v0.99.71 in a goldfish game only you cast spells (Vexing Bauble)
     else if (/^(?:when|whenever) (?:~|this \w+) mutates$/.test(cond)) ev = 'mutates-self';
     else if ((q0 = cond.match(/^when (?:~|this class) becomes level (\d+)$/))) { ev = 'class-level'; filter = q0[1]; }   // CR 716.2c
     else if (/^(?:when|whenever) (?:~|this \w+) enters/.test(cond)) ev = 'etb-self';

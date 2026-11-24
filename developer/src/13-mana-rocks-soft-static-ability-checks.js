@@ -55,6 +55,8 @@ const STEP_RESTRICTIONS = [
 // Parse one "Activate only ..." phrase into a restriction record, or null when the app does not know it.
 function parseRestrictionPart(p) {
   p = p.trim().replace(/[.]$/, ''); let m;
+  if ((m = p.match(/^(if .+?) or (if .+)$/i))) { const a = parseRestrictionPart(m[1]), b = parseRestrictionPart(m[2]); if (a && b) return { kind: 'any', parts: [a, b], label: a.label + ' or ' + b.label }; }   // v0.99.71 "if this land entered this turn or if you control a basic land"
+  if (/^if (?:~|this (?:land|creature|artifact|permanent)|it) entered (?:the battlefield )?this turn$/i.test(p)) return { kind: 'entered', label: 'if it entered this turn' };
   if (/^(?:as a sorcery|any time you could cast a sorcery)$/i.test(p)) return { kind: 'sorcery', label: 'as a sorcery (your main phase, empty stack)' };
   if (/^if (?:this creature|~|it) attacked this turn$/i.test(p)) return { kind: 'attacked', label: 'if this creature attacked this turn' };   // CR 702.142a (boast)
   if (/^once each turn$/i.test(p)) return { kind: 'once', label: 'once each turn' };
@@ -78,6 +80,8 @@ function checkRestrictionPart(rec, card) {
   switch (rec.kind) {
     case 'sorcery': return canPlaySorcerySpeedNow() ? { ok: true, why: '' } : { ok: false, why: 'This can only be activated at sorcery speed: your main phase with an empty stack.' };
     case 'myturn': return { ok: true, why: '' };
+    case 'any': { const rs = rec.parts.map(x => checkRestrictionPart(x, card)); if (rs.some(r => r.ok === true)) return { ok: true, why: '' }; if (rs.every(r => r.ok === false)) return { ok: false, why: 'Needs ' + rec.label + '.' }; return { ok: null, why: '' }; }
+    case 'entered': return card && card.enteredTurn === state.turn ? { ok: true, why: '' } : { ok: false, why: 'It did not enter the battlefield this turn.' };
     case 'attacked': return card && state.combat && state.combat.declared && (state.combat.attackers || []).some(a => (a.id ?? a) === card.id) ? { ok: true, why: '' } : { ok: false, why: 'This creature has not attacked this turn.' };
     case 'oppturn': return { ok: false, why: "This can only be activated during an opponent's turn. A goldfish game only has your turns, so it is never available here." };
     case 'once': return card && state.usedAb && state.usedAb[card.id] ? { ok: false, why: 'This ability can only be activated once each turn, and you already did.' } : { ok: true, why: '' };
@@ -181,6 +185,7 @@ function landManaColors(c) {
   const i = cardInfo(c.name), key = norm(c.name);
   const prod = (i && i.prod && i.prod.length) ? i.prod : BASIC_PRODUCES[key] || [];
   const out = new Set(prod.map(x=>String(x).toUpperCase()).filter(x=>/^[WUBRGC]$/.test(x)));
+  for (const k of landBlockedColors(c)) out.delete(k);   // v0.99.71 a restricted ability (Verge lands) adds nothing while its condition is not met
   for (const t of eff.types) out.add(({Plains:'W',Island:'U',Swamp:'B',Mountain:'R',Forest:'G'})[t]);
   return [...out].filter(Boolean);
 }
@@ -212,7 +217,7 @@ function tapForMana(id) {
     if (!fresh || fresh.zone!=='battlefield' || fresh.card.tapped) return;
     snap();
     fresh.card.tapped=true; noteManaTap(fresh.card,[color]); fireTrigger('tapmana',{card:fresh.card});
-    addFloatingMana(color); applyLandCost(fresh.card,landTapCost(fresh.card));
+    addFloatingMana(color); applyLandCost(fresh.card,landColorCost(fresh.card,color));
     log(`${fresh.card.name} tapped → floated ${color}`);
     render();
   });

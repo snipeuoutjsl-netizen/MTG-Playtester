@@ -395,7 +395,7 @@ function parseLookDistribute(tx, inner) {
             return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : w === 'colorless' ? !/\{[^}]*[WUBRG]/.test(info.mc || '') : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
           else { ok = false; } }
       }
-      slots.push({ dest, count, max, filt, fdesc: fdesc.trim(), label: `${count === 'rest' ? 'the rest' : count === 'any' ? 'any number' : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : dest === 'battlefield' ? `${fdesc ? '(' + fdesc.trim() + ') ' : ''}onto the battlefield${max ? ' (up to ' + max + ')' : ''}` : 'exiled'}`, short: nm });
+      slots.push({ dest, count, max, filt, fdesc: fdesc.trim(), label: `${count === 'rest' ? 'the rest' : count === 'any' ? (max ? `up to ${max === 1 ? 'one' : max}${fdesc.trim() ? ' ' + fdesc.trim() + (max === 1 ? '' : 's') : ''}` : 'any number') : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : dest === 'battlefield' ? `${fdesc ? '(' + fdesc.trim() + ') ' : ''}onto the battlefield${max ? ' (up to ' + max + ')' : ''}` : 'exiled'}`, short: nm });
     }
   }
   if (!slots.length) return null;
@@ -738,6 +738,9 @@ function countExpr(expr) {
     const t = m[1].toLowerCase(), n = state.graveyard.filter(x => !x.token && new RegExp('\\b' + t + '\\b', 'i').test(frontType(x))).length;
     return { n, why: `${n} ${t} card${n === 1 ? '' : 's'} in your graveyard` };
   }
+  if ((m = expr.match(/^twice (?:the number of )?(.+)$/i))) { const r = countExpr(m[1]); return r && { n: 2 * r.n, why: 'twice ' + r.why }; }   // Masumaro, First to Live
+  if (/\b(?:your opponents|an opponent|each opponent) controls?$/i.test(expr)) return { n: 0, why: 'the goldfish opponent controls no permanents' };   // Gaea's Avenger: the app does not track an opposing board
+  if (/^cards? in all graveyards$/i.test(expr)) return { n: state.graveyard.length, why: `${state.graveyard.length} cards in graveyards (only yours is tracked)` };   // Lord of Extinction
   if (/^cards? in your hand$/i.test(expr)) return { n: state.hand.length, why: `${state.hand.length} cards in your hand` };
   if (/^cards? in your graveyard$/i.test(expr)) return { n: state.graveyard.length, why: `${state.graveyard.length} cards in your graveyard` };
   if (/^cards? in your library$/i.test(expr)) return { n: state.library.length, why: `${state.library.length} cards in your library` };
@@ -753,7 +756,7 @@ function cdaValues(c) {
   const i = cardInfo(c.name); if (!i || !i.tx) return null;
   const tx = i.tx.replace(selfNameRe(i.name), '~').replace(/’/g, "'");
   let m;
-  if ((m = tx.match(/power and toughness are each equal to (?:the )?(.+?)(?:\.|$)/im))) { const pm = m[1].match(/^(.+?) (plus|minus) (\d+)$/i); const r = countExpr(pm ? pm[1] : m[1]); const k = pm ? (/plus/i.test(pm[2]) ? 1 : -1) * +pm[3] : 0; return r && { p: r.n + k, t: r.n + k, why: [r.why + (k ? ` ${k > 0 ? 'plus' : 'minus'} ${Math.abs(k)}` : '')] }; }
+  if ((m = tx.match(/power and toughness are each equal to (?:the )?(.+?)(?:\.|$)/im))) { const pm = m[1].match(/^(.+?) (plus|minus) (\d+)$/i), lead = !pm && m[1].match(/^(\d+) plus (.+)$/i); const r = countExpr(pm ? pm[1] : lead ? lead[2] : m[1]); const k = pm ? (/plus/i.test(pm[2]) ? 1 : -1) * +pm[3] : lead ? +lead[1] : 0; return r && { p: r.n + k, t: r.n + k, why: [r.why + (k ? ` ${k > 0 ? 'plus' : 'minus'} ${Math.abs(k)}` : '')] }; }
   if ((m = tx.match(/power is equal to (?:the )?(.+?) and its toughness is equal to (?:the )?(.+?)(?:\.|$)/im))) {
     const rp = countExpr(m[1]); if (!rp) return null;
     const tm = m[2].match(/^that number(?: plus (\d+))?$/i);

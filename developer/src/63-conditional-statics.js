@@ -46,6 +46,7 @@ function evalCond(text, g) {
   { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
   { const ik = IND_COND_KEY(t); if (ik) { const g = gameStates().find(x => x.key === ik); return g ? !!g.on : null; } }   // the top-bar game-state checks are the one source of truth (Metalcraft, Threshold, Delirium, Revolt, Morbid ...)
+  if (/^(?:~|it|this (?:permanent|creature|card)) is a creature$/.test(t)) { if (!g || g.id < 0) return true; try { return permTypeInfo(g).types.has('creature'); } catch (e) { return null; } }   // v0.99.71 Triton Wavebreaker: "As long as this permanent is a creature, it has prowess" (off while bestowed)
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
   if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
   if ((m = t.match(/^(?:there are )?(\w+) or more (.+?) (?:are )?in your graveyard$/)) && !/^there are/.test(t)) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }   // "seven or more cards are in your graveyard" (threshold)
@@ -123,6 +124,10 @@ function noteGapsOnEnter(c) {
 
 // Is this condition / count wording one the evaluator understands? (checked against an empty board, so only the wording matters)
 const CS_STUB = () => ({ graveyard: [], hand: [], battlefield: [], life: 20, turn: 0, combat: null, manaPool: {}, spellsCast: { turn: 0, n: 0 } });
+function cdaUnderstood(name) {   // v0.99.71 does cdaValues() read this card's P/T wording? (checked against an empty board, so only the wording matters)
+  const old = state; state = Object.assign(CS_STUB(), { exile: [], library: [] });
+  try { return !!cdaValues({ name }); } catch (e) { return false; } finally { state = old; }
+}
 function csUnderstood(cond, thing) {
   const old = state; state = CS_STUB();
   try { const g = { id: -1, tapped: false, counters: { plus: 0, minus: 0 }, name: 'x' }; return cond !== null ? evalCond(cond, g) !== null : csCount(thing, g) !== null; }

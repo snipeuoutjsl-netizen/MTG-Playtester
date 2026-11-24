@@ -29,6 +29,10 @@ function landManaAbilities(c) {
       else if ((q = sn.match(/^If a card is exiled with ~, add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.altExiled = [...q[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);   // imprint-style: "If a card is exiled with this land, add {C}{C} instead"
       else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; 
       else if ((q = sn.match(/^You lose (\d+) life\.?$/i))) ab.dmg += +q[1];
+      else if ((q = sn.match(/^Activate (?:this ability )?only (.+?)\.?$/i))) ab.cond = q[1].trim();   // v0.99.71 CR 602.5b: Verge lands ("Activate only if you control a Plains or a Swamp"), Spire of Industry, Gathering Place
+      else if (/^~ doesn'?t untap during your next untap step\.?$/i.test(sn)) ab.noUntap = true;   // Waterveil Cavern style: CR 502.3 the next untap step skips it
+      else if ((q = sn.match(/^Each opponent gains (\w+) life\.?$/i)) && numOf(q[1])) ab.oppGain = numOf(q[1]);   // Grove of the Burnwillows
+      else if ((q = sn.match(/^If that mana is spent on (?:an? )?(.+?), that spell can'?t be countered\.?$/i))) { ab.noCounter = true; ab.ncOn = q[1]; }   // Boseiju, Who Shelters All
       else if (sn.trim()) ab.unread.push(sn.trim()); }   // v0.96.6 every sentence of the ability is read; what is not understood is reported, never skipped silently
     out.push(ab);
   }
@@ -39,6 +43,7 @@ function spendOnlyOk(only, ctx) {
   if (!only) return true; if (!ctx) return false;
   const i = ctx.token ? null : cardInfo(ctx.name), t = (i && i.t) || '', lo = only.toLowerCase();
   { const ct = lo.match(/creature spell of the ([a-z' -]+?) type/); if (ct && ct[1] !== 'chosen') return /\bCreature\b/.test(t) && (new RegExp('\\b' + ct[1].replace(/[^a-z ]/g, '') + '\\b', 'i').test(t) || /\bChangeling\b/i.test((i && i.tx) || '')); }
+  if (/^instant or sorcery spells?$/.test(lo)) return /\b(?:Instant|Sorcery)\b/.test(t);
   if (/colorless eldrazi/.test(lo)) return !!i && !(i.col && i.col.length) && /\bEldrazi\b/.test(t);
   if (/\bartifact (?:spells|abilities)?/.test(lo) && /artifact/.test(lo)) return /\bArtifact\b/.test(t);
   if (/\bcreature spells?\b/.test(lo)) return /\bCreature\b/.test(t);
@@ -56,6 +61,24 @@ function landMulti(c, anyCtx) {
   return best;
 }
 // Damage or life you pay each time a one-ability land is tapped (Mana Confluence, City of Brass). Lands with several abilities are left alone.
+// v0.99.71 CR 602.5b + 605.3: a land with several mana abilities pays the cost of the ability that made the colour (a painland's {C} is free, its coloured mana deals 1 damage);
+// an ability whose "Activate only ..." restriction is not met is not available at all.
+function landAbUsable(ab, c) { return !ab.cond || staticCheck(ab.cond, c).ok !== false; }
+function abColors(ab) { if (ab.fixed) return ab.fixed.length === 1 ? ab.fixed : []; if (ab.choice) return ab.choice; if (ab.any) return ['W', 'U', 'B', 'R', 'G']; if (ab.per) return [ab.per.col]; return []; }
+function landColorAbility(c, col) {
+  const abs = landManaAbilities(c).filter(ab => landAbUsable(ab, c) && (col == null || abColors(ab).includes(col)));
+  if (!abs.length) return null;
+  const w = ab => (ab.dmg || 0) + (ab.life || 0) + (ab.noUntap ? 3 : 0) + (ab.oppGain ? 1 : 0);
+  return abs.slice().sort((a, b) => w(a) - w(b))[0];
+}
+function landColorCost(c, col) { const ab = landColorAbility(c, col); return ab ? { dmg: ab.dmg, life: ab.life, noUntap: ab.noUntap, oppGain: ab.oppGain } : landTapCost(c); }
+function landBlockedColors(c) {   // colours that only a restricted (unusable right now) ability of this land makes
+  const abs = landManaAbilities(c); if (!abs.some(ab => ab.cond)) return [];
+  const ok = new Set(), bad = new Set();
+  for (const ab of abs) for (const k of abColors(ab)) (landAbUsable(ab, c) ? ok : bad).add(k);
+  return [...bad].filter(k => !ok.has(k));
+}
+let LAND_PAY_COLS = new Map();   // card id -> the colour the last payment plan used it for (so its cost is the right ability's)
 function landTapCost(c) { const a = landManaAbilities(c); return a.length === 1 && (a[0].dmg || a[0].life) ? { dmg: a[0].dmg, life: a[0].life } : null; }
 // Mana taps (v0.72). A permanent tapped for mana remembers what it made (c.mt). Untapping it while that mana still floats takes the mana back out
 // of the pool (and returns any life or damage the tap cost); once the mana is spent or has emptied, it stays tapped until a card effect or the untap step untaps it.
@@ -78,6 +101,8 @@ function applyLandCost(c, k) {
   if (c.mt) c.mt.life += (k.life || 0) + (k.dmg || 0);
   if (k.life) { state.life -= k.life; log(`${c.name}: paid ${k.life} life for the mana → ${state.life}`); }
   if (k.dmg) { state.life -= k.dmg; log(`${c.name}: dealt ${k.dmg} damage to you → ${state.life}`); }
+  if (k.noUntap) { c.noUntapNext = state.turn; log(`${c.name}: it doesn't untap during your next untap step`); }
+  if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }
 }
 // "enters with N <kind> counters on it" (Dark Depths: ten ice counters)
 function etbCounters(c) {

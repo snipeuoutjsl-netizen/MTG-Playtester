@@ -67,6 +67,7 @@ function openLoyalty(c) {
 }
 
 function resolvePendingTrigger(){
+  if (gameIsOver()) return;   // v0.99.71 the game is over: nothing more is put on the stack or resolved until you choose Keep playing
   if(!state||!state.pendingTriggers.length||legendOpen)return;
   if(state.pendingTriggers[0].kind==='ability'){
     const batch=[]; while(state.pendingTriggers.length && state.pendingTriggers[0].kind==='ability') batch.push(state.pendingTriggers.shift());

@@ -688,7 +688,7 @@ function manaPaymentAllocation(parts, pool, sources, chosen) {
   const poolUsed = Object.keys(pool).reduce((a, k) => a + (pool[k] || 0) - p[k], 0);
   if (life) Object.defineProperty(p, '_life', { value: life, enumerable: false, writable: true, configurable: true });   // paid by whoever spends this pool: see settlePhyrexianLife
   if (!owner) return { ok: false, pool: p, used: [], poolUsed, needLands: pips.length + generic, life: 0 };
-  const used = [...owner.keys()];
+  const used = [...owner.keys()]; LAND_PAY_COLS = new Map(); for (const [si, pi] of owner) if (sources[si] && sources[si].card) LAND_PAY_COLS.set(sources[si].card.id, pips[pi]);
   const spare = avail.filter(i => !used.includes(i)).sort((a, b) => ((sources[a].sac ? 1 : 0) - (sources[b].sac ? 1 : 0)) || (sources[a].colors.size - sources[b].colors.size));
   for (const i of spare) { if (generic <= 0) break; used.push(i); generic--; }
   return { ok: generic <= 0, life, pool: p, used, poolUsed, needLands: pips.length + parts.generic + parts.flexible.length - (parts.generic + parts.flexible.length - Math.max(0, generic)) };
@@ -745,9 +745,10 @@ function tapManaIds(manaIds){
   const sacs=[];
   for(const [mid,n] of used){const mf=findCard(mid);if(mf&&mf.zone==='battlefield'){const rr=!isLandName(mf.card.name)&&rockInfo(mf.card); if(rr&&rr.sac){ if(rr.tap) mf.card.tapped=true; sacs.push([mf.card,rr]); if(rr.fixed&&n<rr.fixed.length){ rr.fixed.slice(n).forEach(col=>addFloatingMana(col)); } continue; }
     mf.card.tapped=true; mf.card.mt={cols:[],spent:true,life:0}; fireTrigger('tapmana',{card:mf.card});
-    if(isLandName(mf.card.name)){ const lm=landMulti(mf.card); if(lm){ applyLandCost(mf.card,{dmg:lm.dmg,life:lm.life}); if(n<lm.fixed.length){ if(lm.only) log(`${mf.card.name}: ${lm.fixed.length-n} unused restricted mana is lost`); else { lm.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${lm.fixed.length-n} unused mana floats`); } } } else applyLandCost(mf.card,landTapCost(mf.card)); }
+    if(isLandName(mf.card.name)){ const lm=landMulti(mf.card); if(lm){ applyLandCost(mf.card,{dmg:lm.dmg,life:lm.life}); if(n<lm.fixed.length){ if(lm.only) log(`${mf.card.name}: ${lm.fixed.length-n} unused restricted mana is lost`); else { lm.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${lm.fixed.length-n} unused mana floats`); } } } else applyLandCost(mf.card,landColorCost(mf.card,LAND_PAY_COLS.has(mid)?LAND_PAY_COLS.get(mid):null)); }
     const r=!isLandName(mf.card.name)&&rockInfo(mf.card);   // a multi-mana rock taps once: unused mana floats
     if(r&&r.fixed&&n<r.fixed.length){ r.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${r.fixed.length-n} unused mana floats`); }}}
+  LAND_PAY_COLS = new Map();
   for(const [c,rr] of sacs) manaSacrifice(c,rr);   // after every source has paid, so a dies trigger cannot change the payment
 }
 function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){

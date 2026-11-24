@@ -6,7 +6,7 @@
 function noteUncounterableMana(spell, manaIds) {
   if (!spell || spell.ability) return; delete spell.noCounterMana;
   for (const id of (manaIds || [])) { const f = findCard(id); if (!f || f.zone !== 'battlefield') continue; let ab = []; try { ab = landManaAbilities(f.card) || []; } catch (e) { ab = []; }
-    for (const a of ab) if (a.noCounter && spendOnlyOk(a.only, spell)) { spell.noCounterMana = f.card.name; log(`${spell.name}: paid with mana from ${f.card.name}, so it can't be countered`); return; } }
+    for (const a of ab) if (a.noCounter && spendOnlyOk(a.only, spell) && (!a.ncOn || spendOnlyOk(a.ncOn, spell))) { spell.noCounterMana = f.card.name; log(`${spell.name}: paid with mana from ${f.card.name}, so it can't be countered`); return; } }
 }
 function spellTypeWords(sc) { const t = (sc.token ? '' : ((cardInfo(sc.name) || {}).t || '')).split(' // ')[0]; const [a, b] = t.split('—'); return { types: new Set(String(a || '').toLowerCase().split(/\s+/).filter(Boolean)), subs: new Set(String(b || '').toLowerCase().split(/\s+/).filter(Boolean)), changeling: /\bchangeling\b/i.test((cardInfo(sc.name) || {}).tx || '') }; }
 function cantBeCounteredWhy(sc) {

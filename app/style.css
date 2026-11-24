@@ -2439,9 +2439,10 @@ html.portrait-ui #stackStage.sk.has-panel { width: auto; max-height: calc(100% -
 /* v0.99.68 upright: the table ends where the fanned hand begins, so no battlefield row sits under the hand (cards shrink to fit instead) */
 html.portrait-ui body:not(.mullhand):not(.mullpick) #mat { padding-bottom: calc(var(--hand-h, 200px) + 6px) !important; }
 /* v0.99.69 upright phones: only active game-state icons (⋯ shows the rest); a tab tucks the hand down to a strip */
-#gstates .sti-more { display: none; }
-html.portrait-ui #gstates .sti-more { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 30px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 16px; padding: 0 8px; }
-html.portrait-ui body:not(.gs-all) #gstates .sti.off { display: none; }
+#gstates .sti-more, #gamebar #gstates.hudbox button.sti-more { display: none; }
+#gstates.gs-trim .sti.off { display: none; }
+#gstates.gs-trim .sti-more, body.gs-all #gstates .sti-more, #gamebar #gstates.hudbox.gs-trim button.sti-more, body.gs-all #gamebar #gstates.hudbox button.sti-more { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; min-width: 0; min-height: 0; padding: 0; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--line); background: rgba(0,0,0,.22); color: var(--muted); font-size: 14px; line-height: 1; }
+html.portrait-ui #gamebar #gstates.hudbox.gs-trim button.sti-more, html.portrait-ui body.gs-all #gamebar #gstates.hudbox button.sti-more { width: 30px; height: 30px; font-size: 16px; }
 .hand-tab { display: none; }
 html.portrait-ui body:not(.mullhand):not(.mullpick):not(.hall-on) .hand-tab { display: block; position: absolute; left: 50%; top: -14px; transform: translateX(-50%); z-index: 60; padding: 5px 16px; border-radius: 999px 999px 0 0; border: 1px solid rgba(227,185,92,.45); border-bottom: 0; background: rgba(14,16,20,.92); color: #e9d9b0; font: 600 13px system-ui, sans-serif; letter-spacing: .03em; }
 html.portrait-ui #handWrap { transition: transform .22s ease; }
@@ -2464,3 +2465,42 @@ html.portrait-ui #modalRoot .backdrop.resolve .modal { width: 100% !important; m
 /* upright: with a deck on the desk the book rises over the lower shelf, so the deck's cards start below it */
 #hall.portrait .hall-stage:has(.dbx-pull) .hall-tome { top: 690px; }
 #hall.portrait .hall-spread.dk { top: 1330px; }
+/* v0.99.71 the open book: pages rise out of the spine (each page is hinged on the gutter and bows towards you), and the deck is written onto them in ink */
+#hall .hall-tome .hall-page.left { transform-origin: 100% 50%; transform: rotateY(9deg); }
+#hall .hall-tome .hall-page.right { transform-origin: 0 50%; transform: rotateY(-9deg); }
+#hall .hall-tome .hall-page.left::before, #hall .hall-tome .hall-page.right::before { content: ''; position: absolute; top: 0; bottom: 0; width: 34%; pointer-events: none; z-index: 1; }
+#hall .hall-tome .hall-page.left::before { right: 0; background: linear-gradient(90deg, rgba(255,250,235,0) 0%, rgba(255,250,235,.16) 45%, rgba(110,70,25,.10) 80%, rgba(60,35,10,.38) 100%); }
+#hall .hall-tome .hall-page.right::before { left: 0; background: linear-gradient(270deg, rgba(255,250,235,0) 0%, rgba(255,250,235,.16) 45%, rgba(110,70,25,.10) 80%, rgba(60,35,10,.38) 100%); }
+#hall .hall-tome .hall-spine { box-shadow: inset 0 0 10px rgba(30,15,4,.65); }
+#hall .hall-tome.deck-open > .hall-page > .ti-page { visibility: visible; position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; gap: 5px; padding: 24px 30px 26px; box-sizing: border-box; overflow: hidden; background: none; }
+#hall .hall-tome.deck-open > .hall-page.left > .ti-page { padding-right: 36px; }
+#hall .hall-tome.deck-open > .hall-page.right > .ti-page { padding-left: 36px; }
+#hall .tome-ink { --ink: #2e1a0a; color: var(--ink); font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif; font-size: 14px; line-height: 1.3;
+  text-shadow: 0 0 .6px rgba(46,26,10,.55), .3px .3px 0 rgba(255,245,220,.25); }
+#hall .tome-ink * { color: inherit; }
+#hall .tome-ink h3 { margin: 0; font: italic 700 23px/1.1 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif; color: #4a1c08; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#hall .tome-ink h3::first-letter { font: 700 30px 'Cinzel Decorative', Georgia, serif; color: #8e1f0b; }
+#hall .tome-ink .ti-sub, #hall .tome-ink .ti-foot { font-style: italic; color: #5e4120; font-size: 13px; }
+#hall .tome-ink .ti-cols { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13.5px; }
+#hall .tome-ink .ti-col { display: inline-flex; align-items: center; gap: 5px; }
+#hall .tome-ink .ti-col .dbx-pip { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(40,20,5,.55); opacity: .85; }
+#hall .tome-ink .fhead { margin: 4px 0 0; font: 700 11px 'Cinzel Decorative', Georgia, serif; letter-spacing: .14em; color: #8e1f0b; border-bottom: 1px solid rgba(110,60,20,.35); padding-bottom: 1px; }
+#hall .tome-ink .ti-ledger { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+#hall .tome-ink .ti-row { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: 14px; }
+#hall .tome-ink .ti-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hall .tome-ink .ti-row i { flex: 1; border-bottom: 1px dotted rgba(70,40,12,.55); transform: translateY(-3px); min-width: 8px; }
+#hall .tome-ink .ti-row b { font-weight: 700; }
+#hall .tome-ink .ti-curve { height: 62px; margin: 14px 0 12px; gap: 6px; }
+#hall .tome-ink .ti-curve .dbx-cbar i { background: repeating-linear-gradient(135deg, rgba(70,38,12,.55) 0 1.5px, transparent 1.5px 4px); border: 1.3px solid rgba(60,32,10,.85); border-bottom: 0; border-radius: 2px 2px 0 0; box-shadow: none; box-sizing: border-box; }
+#hall .tome-ink .ti-curve .dbx-cbar b { top: -15px; font-size: 11.5px; color: var(--ink); }
+#hall .tome-ink .ti-curve .dbx-cbar span { bottom: -15px; font-size: 11.5px; color: #5e4120; }
+#hall .tome-ink .ti-curve { border-bottom: 1.3px solid rgba(60,32,10,.7); }
+#hall .tome-ink .ti-key .ti-row { font-size: 14px; }
+#hall .tome-ink .lib-notes { background: none; border: 0; border-left: 2px solid rgba(142,31,11,.45); padding: 0 0 0 9px; margin-top: 4px; font-size: 13px; font-style: italic; color: #3b2410; }
+#hall .tome-ink .lib-notes .fhead { font-style: normal; border: 0; margin: 0 0 1px; }
+#hall .tome-ink .dbx-acts { margin-top: auto; display: flex; flex-wrap: wrap; gap: 2px 12px; }
+#hall .tome-ink button { background: none !important; border: 0 !important; box-shadow: none !important; padding: 1px 0 !important; min-height: 0 !important; font: 15px 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif !important; color: var(--ink) !important; text-decoration: underline dotted rgba(70,40,12,.5); text-underline-offset: 3px; cursor: pointer; }
+#hall .tome-ink button:hover, #hall .tome-ink button:focus-visible { color: #8e1f0b !important; outline: none; }
+#hall .tome-ink button.primary { width: 100%; text-align: left; font: italic 700 19px 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif !important; color: #8e1f0b !important; text-decoration: none; margin-bottom: 2px; }
+#hall .tome-ink button.primary::after { content: ' \2767'; font-style: normal; }
+#hall .tome-ink button.danger { color: #8e1f0b !important; opacity: .8; }

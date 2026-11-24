@@ -63,10 +63,39 @@ function deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, on
   stage.addEventListener('click', () => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick());
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
   // v0.99.44 no tilt on the shelf: hovering only lifts the book
-  const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
+  const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), 'data-deck': deckName, style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
   return tile;
 }
 // Take a book off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
+// v0.99.71 the deck taken off the shelf stays on the desk while you edit its list, art or sideboard: only "Put it back", another deck, or using it puts it away.
+let DESK_DECK = null, DESK_QUIET = false;
+function restoreDeskDeck(root) {
+  if (!DESK_DECK || !root) return; if (!loadDecks()[DESK_DECK]) { DESK_DECK = null; return; }
+  const live = [...root.querySelectorAll('.dbx-pull')].find(x => x._deck === DESK_DECK && x._tile && x._tile.isConnected); if (live) return;
+  root.querySelectorAll('.dbx-pull').forEach(x => x.remove());
+  const tile = [...root.querySelectorAll('.bk-tile')].find(t => t.dataset.deck === DESK_DECK); const st = tile && tile.querySelector('.bk-stage'); if (!st) return;
+  DESK_QUIET = true; try { st.click(); } finally { DESK_QUIET = false; }
+}
+// v0.99.71 the deck written into the open book: a ledger of what is in it (types with leaders, colours by name, curve drawn in ink, average mana value,
+// land share), and on the facing page the key cards, the librarian's notes and the actions as rubricated lines.
+function tomeDeckPages(d, sm, acts) {
+  const main = d.deck.main, total = sum(main), side = sum(d.deck.side || []);
+  let mvSum = 0, mvN = 0; for (const { qty, name } of main) { const i = cardInfo(name); if (i && !/\bLand\b/.test(i.t || '')) { mvSum += (i.cmc || 0) * qty; mvN += qty; } }
+  const lands = sm.types.Land || 0, maxC = Math.max(1, ...sm.curve), CN = { W: 'White', U: 'Blue', B: 'Black', R: 'Red', G: 'Green' };
+  const PL = { Creature: 'Creatures', Instant: 'Instants', Sorcery: 'Sorceries', Artifact: 'Artifacts', Enchantment: 'Enchantments', Planeswalker: 'Planeswalkers', Land: 'Lands' };
+  const left = h('div', { class: 'ti-page tome-ink left' },
+    h('h3', { text: d.deckName }),
+    h('div', { class: 'ti-sub', text: `${total} cards${side ? ` · sideboard ${side}` : ''}${d.dk.sb ? ' · sideboarded' : ''}${d.isCur ? ' · in use' : ''}` }),
+    h('div', { class: 'ti-cols' }, d.cols.length ? d.cols.map(c => h('span', { class: 'ti-col' }, h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }), CN[c] || c)) : h('span', { text: 'Colourless' })),
+    h('div', { class: 'ti-ledger' }, Object.entries(sm.types).filter(e => e[1]).map(([k, n]) => h('div', { class: 'ti-row' }, h('span', { text: PL[k] || k }), h('i'), h('b', { text: String(n) })))),
+    h('div', { class: 'fhead', text: 'Mana curve' }),
+    h('div', { class: 'dbx-curve ti-curve', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i}${i === 6 ? '+' : ''}`).join(', ') }, sm.curve.map((n, i) => h('div', { class: 'dbx-cbar' }, h('b', { text: n ? String(n) : '' }), h('i', { style: `height:${n ? Math.max(6, Math.round(100 * n / maxC)) : 0}%` }), h('span', { text: i === 6 ? '6+' : String(i) })))),
+    h('div', { class: 'ti-foot', text: `${mvN ? `Average mana value ${(mvSum / mvN).toFixed(2)}` : 'No spells'} · ${lands} land${lands === 1 ? '' : 's'} (${total ? Math.round(100 * lands / total) : 0}%)` }));
+  const right = h('div', { class: 'ti-page tome-ink right' },
+    sm.top.length ? h('div', { class: 'ti-key' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { class: 'ti-row' }, h('span', { text: x.name }), h('i'), h('b', { text: '× ' + x.qty })))) : null,
+    typeof libraryNotesEl === 'function' ? libraryNotesEl(d.deckName) : null, acts);
+  return [left, right];
+}
 function pullDeckBox(m, tile, d) {
   if (tile.classList.contains('out')) return;
   // v0.99.49 clicking another book swaps them: the one on the desk floats back to its slot while the new one comes down.
@@ -77,6 +106,7 @@ function pullDeckBox(m, tile, d) {
   const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big, shadow); tiltWith(turn, big);
   const sm = deckSummary(d.deck), maxC = Math.max(1, ...sm.curve);
   const btn = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => { putBack(true); fn(); } });
+  const keep = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => fn() });   // the book stays on the desk
   const info = h('div', { class: 'dbx-info' },
     h('h3', { text: d.deckName }), h('div', { class: 'muted small', text: `${sum(d.deck.main)} cards${d.deck.side.length ? ` · sideboard ${sum(d.deck.side)}` : ''}${d.dk.sb ? ' · sideboarded list in use' : ''}${d.isCur ? ' · the deck in use' : ''}` }),
     h('div', { class: 'dbx-pips' }, d.cols.length ? d.cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}`, title: c })) : h('span', { class: 'muted small', text: 'Colourless' })),
@@ -86,8 +116,8 @@ function pullDeckBox(m, tile, d) {
     sm.top.length ? h('div', { class: 'dbx-top' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { text: `${x.qty} × ${x.name}` }))) : null,
     h('div', { class: 'dbx-acts' },
       btn(d.beginLabel || (d.isCur ? 'Keep using this deck' : 'Use this deck'), d.onPick, 'primary'),
-      btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
-      btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
+      keep('Edit list', d.onEdit), d.onSide ? keep('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
+      keep('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), keep('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
       btn('Buy this deck…', () => openBuyDeck(Object.assign({}, d.deck, { name: d.deckName })), '', 'Open TCGplayer with this list (and your chosen printings) ready to add to the cart'),
       h('button', { text: 'Put it back', onclick: () => putBack() }),
       h('button', { class: 'danger', text: 'Delete deck\u2026', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
@@ -95,12 +125,16 @@ function pullDeckBox(m, tile, d) {
   const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, sc3 ? null : info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
-  if (sc3) {   // two pages: the deck on the left, key cards and the buttons on the right
-    const R = [...info.children].filter(x => x.classList.contains('dbx-top') || x.classList.contains('dbx-acts')), Lp = [...info.children].filter(x => !R.includes(x));
-    info.replaceChildren(h('div', { class: 'ti-page' }, ...Lp), h('div', { class: 'ti-page' }, ...R));
+  let inked = null;
+  if (sc3) {   // v0.99.71 two pages written straight onto the book's own pages (they bend into the spine with them): the deck on the left, key cards, notes and what to do on the right
+    const pl = sc3.tome.querySelector('.hall-page.left'), pr = sc3.tome.querySelector('.hall-page.right'), acts = info.querySelector('.dbx-acts');
+    if (pl && pr && acts) { inked = tomeDeckPages(d, sm, acts); pl.append(inked[0]); pr.append(inked[1]); info.replaceChildren(); }
+    else { const R = [...info.children].filter(x => x.classList.contains('dbx-top') || x.classList.contains('dbx-acts')), Lp = [...info.children].filter(x => !R.includes(x));
+      info.replaceChildren(h('div', { class: 'ti-page' }, ...Lp), h('div', { class: 'ti-page' }, ...R)); }
     info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }
   const spread = sc3 && sc3.spread && sc3.layer ? sc3.spread(d.deck, d.deckName) : null; if (spread) sc3.layer.append(spread);
-  const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
+  ov._deck = d.deckName; ov._tile = tile; DESK_DECK = d.deckName;
+  const motion = !DESK_QUIET && animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
   // v0.99.49 one continuous float: the book slides forward out of its slot, then travels along a gentle arc to the desk,
   // turning to show its cover on the way, and settles onto its shadow. Putting it back plays the same path in reverse.
   const posIn = (el, root) => { let x = 0, y = 0; for (let e = el; e && e !== root; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return [x, y]; };
@@ -149,13 +183,13 @@ function pullDeckBox(m, tile, d) {
   if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: 420, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); putBack(); } };
   document.addEventListener('keydown', esc, true);
-  setTimeout(() => { const f = info.querySelector('button.primary'); if (f) f.focus(); }, 30);
+  setTimeout(() => { const f = (inked && inked[1].querySelector('button.primary')) || info.querySelector('button.primary'); if (f) f.focus(); }, 30);
   let gone = false;
   m.el._dbxPut = () => putBack(); m.el._dbxPutOv = ov;
   function putBack(now) {
-    if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
+    if (gone) return; gone = true; document.removeEventListener('keydown', esc, true); if (DESK_DECK === d.deckName) DESK_DECK = null;
     ov.style.pointerEvents = 'none'; ov.classList.add('leaving'); if (m.el._dbxPut && m.el._dbxPutOv === ov) { m.el._dbxPut = null; m.el._dbxPutOv = null; }
-    if (sc3) { info.remove(); if (spread) spread.remove(); sc3.tome.querySelectorAll('.tome-card, .tome-leaf').forEach(x => x.remove()); sc3.tome.classList.remove('card-open'); sc3.tome._card = null; if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
+    if (sc3) { info.remove(); if (inked) inked.forEach(x => x.remove()); if (spread) spread.remove(); sc3.tome.querySelectorAll('.tome-card, .tome-leaf').forEach(x => x.remove()); sc3.tome.classList.remove('card-open'); sc3.tome._card = null; if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
     info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });

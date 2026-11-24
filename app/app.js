@@ -478,7 +478,7 @@ function parseLookDistribute(tx, inner) {
             return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : w === 'colorless' ? !/\{[^}]*[WUBRG]/.test(info.mc || '') : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
           else { ok = false; } }
       }
-      slots.push({ dest, count, max, filt, fdesc: fdesc.trim(), label: `${count === 'rest' ? 'the rest' : count === 'any' ? 'any number' : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : dest === 'battlefield' ? `${fdesc ? '(' + fdesc.trim() + ') ' : ''}onto the battlefield${max ? ' (up to ' + max + ')' : ''}` : 'exiled'}`, short: nm });
+      slots.push({ dest, count, max, filt, fdesc: fdesc.trim(), label: `${count === 'rest' ? 'the rest' : count === 'any' ? (max ? `up to ${max === 1 ? 'one' : max}${fdesc.trim() ? ' ' + fdesc.trim() + (max === 1 ? '' : 's') : ''}` : 'any number') : count === 1 ? 'one' : count} ${dest === 'hand' ? 'into your hand' : dest === 'bottom' ? 'on the bottom of your library' : dest === 'graveyard' ? 'into your graveyard' : dest === 'top' ? 'on top of your library' : dest === 'battlefield' ? `${fdesc ? '(' + fdesc.trim() + ') ' : ''}onto the battlefield${max ? ' (up to ' + max + ')' : ''}` : 'exiled'}`, short: nm });
     }
   }
   if (!slots.length) return null;
@@ -821,6 +821,9 @@ function countExpr(expr) {
     const t = m[1].toLowerCase(), n = state.graveyard.filter(x => !x.token && new RegExp('\\b' + t + '\\b', 'i').test(frontType(x))).length;
     return { n, why: `${n} ${t} card${n === 1 ? '' : 's'} in your graveyard` };
   }
+  if ((m = expr.match(/^twice (?:the number of )?(.+)$/i))) { const r = countExpr(m[1]); return r && { n: 2 * r.n, why: 'twice ' + r.why }; }   // Masumaro, First to Live
+  if (/\b(?:your opponents|an opponent|each opponent) controls?$/i.test(expr)) return { n: 0, why: 'the goldfish opponent controls no permanents' };   // Gaea's Avenger: the app does not track an opposing board
+  if (/^cards? in all graveyards$/i.test(expr)) return { n: state.graveyard.length, why: `${state.graveyard.length} cards in graveyards (only yours is tracked)` };   // Lord of Extinction
   if (/^cards? in your hand$/i.test(expr)) return { n: state.hand.length, why: `${state.hand.length} cards in your hand` };
   if (/^cards? in your graveyard$/i.test(expr)) return { n: state.graveyard.length, why: `${state.graveyard.length} cards in your graveyard` };
   if (/^cards? in your library$/i.test(expr)) return { n: state.library.length, why: `${state.library.length} cards in your library` };
@@ -836,7 +839,7 @@ function cdaValues(c) {
   const i = cardInfo(c.name); if (!i || !i.tx) return null;
   const tx = i.tx.replace(selfNameRe(i.name), '~').replace(/’/g, "'");
   let m;
-  if ((m = tx.match(/power and toughness are each equal to (?:the )?(.+?)(?:\.|$)/im))) { const pm = m[1].match(/^(.+?) (plus|minus) (\d+)$/i); const r = countExpr(pm ? pm[1] : m[1]); const k = pm ? (/plus/i.test(pm[2]) ? 1 : -1) * +pm[3] : 0; return r && { p: r.n + k, t: r.n + k, why: [r.why + (k ? ` ${k > 0 ? 'plus' : 'minus'} ${Math.abs(k)}` : '')] }; }
+  if ((m = tx.match(/power and toughness are each equal to (?:the )?(.+?)(?:\.|$)/im))) { const pm = m[1].match(/^(.+?) (plus|minus) (\d+)$/i), lead = !pm && m[1].match(/^(\d+) plus (.+)$/i); const r = countExpr(pm ? pm[1] : lead ? lead[2] : m[1]); const k = pm ? (/plus/i.test(pm[2]) ? 1 : -1) * +pm[3] : lead ? +lead[1] : 0; return r && { p: r.n + k, t: r.n + k, why: [r.why + (k ? ` ${k > 0 ? 'plus' : 'minus'} ${Math.abs(k)}` : '')] }; }
   if ((m = tx.match(/power is equal to (?:the )?(.+?) and its toughness is equal to (?:the )?(.+?)(?:\.|$)/im))) {
     const rp = countExpr(m[1]); if (!rp) return null;
     const tm = m[2].match(/^that number(?: plus (\d+))?$/i);
@@ -1185,6 +1188,7 @@ function parseTriggers(c) {
     else if (/^(?:when|whenever) you cast /.test(cond)) { ev = 'cast'; filter = cond.replace(/^(?:when|whenever) you cast /, ''); }
     else if ((cAny = cond.match(/^(?:when|whenever) a player casts a spell(?: with mana value (equal to the number of ([a-z+\/-]+) counters on (?:~|this \w+)|(\d+)(?: or (less|greater))?))?$/)) && /^counter that spell\.?$/i.test(cm[2].trim())) {   // v0.96.31 Chalice of the Void: "Whenever a player casts a spell with mana value equal to the number of charge counters on this artifact, counter that spell."
       ev = 'cast-any'; castAny = { counters: cAny[2] || '', mv: cAny[3] !== undefined ? +cAny[3] : null, cmp: cAny[4] || 'equal' }; }
+    else if ((q0 = cond.match(/^(?:when|whenever) (?:a player|any player) casts (.+)$/))) { ev = 'cast'; filter = q0[1]; }   // v0.99.71 in a goldfish game only you cast spells (Vexing Bauble)
     else if (/^(?:when|whenever) (?:~|this \w+) mutates$/.test(cond)) ev = 'mutates-self';
     else if ((q0 = cond.match(/^when (?:~|this class) becomes level (\d+)$/))) { ev = 'class-level'; filter = q0[1]; }   // CR 716.2c
     else if (/^(?:when|whenever) (?:~|this \w+) enters/.test(cond)) ev = 'etb-self';
@@ -2312,6 +2316,7 @@ function openLoyalty(c) {
 }
 
 function resolvePendingTrigger(){
+  if (gameIsOver()) return;   // v0.99.71 the game is over: nothing more is put on the stack or resolved until you choose Keep playing
   if(!state||!state.pendingTriggers.length||legendOpen)return;
   if(state.pendingTriggers[0].kind==='ability'){
     const batch=[]; while(state.pendingTriggers.length && state.pendingTriggers[0].kind==='ability') batch.push(state.pendingTriggers.shift());
@@ -3086,7 +3091,7 @@ function manaPaymentAllocation(parts, pool, sources, chosen) {
   const poolUsed = Object.keys(pool).reduce((a, k) => a + (pool[k] || 0) - p[k], 0);
   if (life) Object.defineProperty(p, '_life', { value: life, enumerable: false, writable: true, configurable: true });   // paid by whoever spends this pool: see settlePhyrexianLife
   if (!owner) return { ok: false, pool: p, used: [], poolUsed, needLands: pips.length + generic, life: 0 };
-  const used = [...owner.keys()];
+  const used = [...owner.keys()]; LAND_PAY_COLS = new Map(); for (const [si, pi] of owner) if (sources[si] && sources[si].card) LAND_PAY_COLS.set(sources[si].card.id, pips[pi]);
   const spare = avail.filter(i => !used.includes(i)).sort((a, b) => ((sources[a].sac ? 1 : 0) - (sources[b].sac ? 1 : 0)) || (sources[a].colors.size - sources[b].colors.size));
   for (const i of spare) { if (generic <= 0) break; used.push(i); generic--; }
   return { ok: generic <= 0, life, pool: p, used, poolUsed, needLands: pips.length + parts.generic + parts.flexible.length - (parts.generic + parts.flexible.length - Math.max(0, generic)) };
@@ -3143,9 +3148,10 @@ function tapManaIds(manaIds){
   const sacs=[];
   for(const [mid,n] of used){const mf=findCard(mid);if(mf&&mf.zone==='battlefield'){const rr=!isLandName(mf.card.name)&&rockInfo(mf.card); if(rr&&rr.sac){ if(rr.tap) mf.card.tapped=true; sacs.push([mf.card,rr]); if(rr.fixed&&n<rr.fixed.length){ rr.fixed.slice(n).forEach(col=>addFloatingMana(col)); } continue; }
     mf.card.tapped=true; mf.card.mt={cols:[],spent:true,life:0}; fireTrigger('tapmana',{card:mf.card});
-    if(isLandName(mf.card.name)){ const lm=landMulti(mf.card); if(lm){ applyLandCost(mf.card,{dmg:lm.dmg,life:lm.life}); if(n<lm.fixed.length){ if(lm.only) log(`${mf.card.name}: ${lm.fixed.length-n} unused restricted mana is lost`); else { lm.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${lm.fixed.length-n} unused mana floats`); } } } else applyLandCost(mf.card,landTapCost(mf.card)); }
+    if(isLandName(mf.card.name)){ const lm=landMulti(mf.card); if(lm){ applyLandCost(mf.card,{dmg:lm.dmg,life:lm.life}); if(n<lm.fixed.length){ if(lm.only) log(`${mf.card.name}: ${lm.fixed.length-n} unused restricted mana is lost`); else { lm.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${lm.fixed.length-n} unused mana floats`); } } } else applyLandCost(mf.card,landColorCost(mf.card,LAND_PAY_COLS.has(mid)?LAND_PAY_COLS.get(mid):null)); }
     const r=!isLandName(mf.card.name)&&rockInfo(mf.card);   // a multi-mana rock taps once: unused mana floats
     if(r&&r.fixed&&n<r.fixed.length){ r.fixed.slice(n).forEach(col=>addFloatingMana(col)); log(`${mf.card.name}: ${r.fixed.length-n} unused mana floats`); }}}
+  LAND_PAY_COLS = new Map();
   for(const [c,rr] of sacs) manaSacrifice(c,rr);   // after every source has paid, so a dies trigger cannot change the payment
 }
 function commitSpellToStack(id,manaIds=[],reopen=true,x,modes,ci){
@@ -3594,6 +3600,7 @@ function finishResolving() {   // the spell whose effect was just applied (or sk
   state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || exileSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
 }
 function resolveTopOfStack() {
+  if (gameIsOver()) return;   // v0.99.71 the game is over: nothing more is put on the stack or resolved until you choose Keep playing
   if(!state||!state.stack.length) return; snap();
   noteFlightFrom(state.stack[state.stack.length-1].id,`#stackStage .ss-card.top`);
   const c=state.stack.pop(); state.priority={active:false,passed:false};
@@ -4553,6 +4560,8 @@ const STEP_RESTRICTIONS = [
 // Parse one "Activate only ..." phrase into a restriction record, or null when the app does not know it.
 function parseRestrictionPart(p) {
   p = p.trim().replace(/[.]$/, ''); let m;
+  if ((m = p.match(/^(if .+?) or (if .+)$/i))) { const a = parseRestrictionPart(m[1]), b = parseRestrictionPart(m[2]); if (a && b) return { kind: 'any', parts: [a, b], label: a.label + ' or ' + b.label }; }   // v0.99.71 "if this land entered this turn or if you control a basic land"
+  if (/^if (?:~|this (?:land|creature|artifact|permanent)|it) entered (?:the battlefield )?this turn$/i.test(p)) return { kind: 'entered', label: 'if it entered this turn' };
   if (/^(?:as a sorcery|any time you could cast a sorcery)$/i.test(p)) return { kind: 'sorcery', label: 'as a sorcery (your main phase, empty stack)' };
   if (/^if (?:this creature|~|it) attacked this turn$/i.test(p)) return { kind: 'attacked', label: 'if this creature attacked this turn' };   // CR 702.142a (boast)
   if (/^once each turn$/i.test(p)) return { kind: 'once', label: 'once each turn' };
@@ -4576,6 +4585,8 @@ function checkRestrictionPart(rec, card) {
   switch (rec.kind) {
     case 'sorcery': return canPlaySorcerySpeedNow() ? { ok: true, why: '' } : { ok: false, why: 'This can only be activated at sorcery speed: your main phase with an empty stack.' };
     case 'myturn': return { ok: true, why: '' };
+    case 'any': { const rs = rec.parts.map(x => checkRestrictionPart(x, card)); if (rs.some(r => r.ok === true)) return { ok: true, why: '' }; if (rs.every(r => r.ok === false)) return { ok: false, why: 'Needs ' + rec.label + '.' }; return { ok: null, why: '' }; }
+    case 'entered': return card && card.enteredTurn === state.turn ? { ok: true, why: '' } : { ok: false, why: 'It did not enter the battlefield this turn.' };
     case 'attacked': return card && state.combat && state.combat.declared && (state.combat.attackers || []).some(a => (a.id ?? a) === card.id) ? { ok: true, why: '' } : { ok: false, why: 'This creature has not attacked this turn.' };
     case 'oppturn': return { ok: false, why: "This can only be activated during an opponent's turn. A goldfish game only has your turns, so it is never available here." };
     case 'once': return card && state.usedAb && state.usedAb[card.id] ? { ok: false, why: 'This ability can only be activated once each turn, and you already did.' } : { ok: true, why: '' };
@@ -4679,6 +4690,7 @@ function landManaColors(c) {
   const i = cardInfo(c.name), key = norm(c.name);
   const prod = (i && i.prod && i.prod.length) ? i.prod : BASIC_PRODUCES[key] || [];
   const out = new Set(prod.map(x=>String(x).toUpperCase()).filter(x=>/^[WUBRGC]$/.test(x)));
+  for (const k of landBlockedColors(c)) out.delete(k);   // v0.99.71 a restricted ability (Verge lands) adds nothing while its condition is not met
   for (const t of eff.types) out.add(({Plains:'W',Island:'U',Swamp:'B',Mountain:'R',Forest:'G'})[t]);
   return [...out].filter(Boolean);
 }
@@ -4710,7 +4722,7 @@ function tapForMana(id) {
     if (!fresh || fresh.zone!=='battlefield' || fresh.card.tapped) return;
     snap();
     fresh.card.tapped=true; noteManaTap(fresh.card,[color]); fireTrigger('tapmana',{card:fresh.card});
-    addFloatingMana(color); applyLandCost(fresh.card,landTapCost(fresh.card));
+    addFloatingMana(color); applyLandCost(fresh.card,landColorCost(fresh.card,color));
     log(`${fresh.card.name} tapped → floated ${color}`);
     render();
   });
@@ -5194,6 +5206,10 @@ function landManaAbilities(c) {
       else if ((q = sn.match(/^If a card is exiled with ~, add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.altExiled = [...q[1].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]);   // imprint-style: "If a card is exiled with this land, add {C}{C} instead"
       else if ((q = sn.match(/^If you control (.+?), add ((?:\{[WUBRGC]\})+) instead\.?$/i))) ab.alt = { need: q[1].split(/,? and /).map(x => x.replace(/^(?:an?|the) /i, '').trim()), fixed: [...q[2].matchAll(/\{([WUBRGC])\}/g)].map(x => x[1]) }; 
       else if ((q = sn.match(/^You lose (\d+) life\.?$/i))) ab.dmg += +q[1];
+      else if ((q = sn.match(/^Activate (?:this ability )?only (.+?)\.?$/i))) ab.cond = q[1].trim();   // v0.99.71 CR 602.5b: Verge lands ("Activate only if you control a Plains or a Swamp"), Spire of Industry, Gathering Place
+      else if (/^~ doesn'?t untap during your next untap step\.?$/i.test(sn)) ab.noUntap = true;   // Waterveil Cavern style: CR 502.3 the next untap step skips it
+      else if ((q = sn.match(/^Each opponent gains (\w+) life\.?$/i)) && numOf(q[1])) ab.oppGain = numOf(q[1]);   // Grove of the Burnwillows
+      else if ((q = sn.match(/^If that mana is spent on (?:an? )?(.+?), that spell can'?t be countered\.?$/i))) { ab.noCounter = true; ab.ncOn = q[1]; }   // Boseiju, Who Shelters All
       else if (sn.trim()) ab.unread.push(sn.trim()); }   // v0.96.6 every sentence of the ability is read; what is not understood is reported, never skipped silently
     out.push(ab);
   }
@@ -5204,6 +5220,7 @@ function spendOnlyOk(only, ctx) {
   if (!only) return true; if (!ctx) return false;
   const i = ctx.token ? null : cardInfo(ctx.name), t = (i && i.t) || '', lo = only.toLowerCase();
   { const ct = lo.match(/creature spell of the ([a-z' -]+?) type/); if (ct && ct[1] !== 'chosen') return /\bCreature\b/.test(t) && (new RegExp('\\b' + ct[1].replace(/[^a-z ]/g, '') + '\\b', 'i').test(t) || /\bChangeling\b/i.test((i && i.tx) || '')); }
+  if (/^instant or sorcery spells?$/.test(lo)) return /\b(?:Instant|Sorcery)\b/.test(t);
   if (/colorless eldrazi/.test(lo)) return !!i && !(i.col && i.col.length) && /\bEldrazi\b/.test(t);
   if (/\bartifact (?:spells|abilities)?/.test(lo) && /artifact/.test(lo)) return /\bArtifact\b/.test(t);
   if (/\bcreature spells?\b/.test(lo)) return /\bCreature\b/.test(t);
@@ -5221,6 +5238,24 @@ function landMulti(c, anyCtx) {
   return best;
 }
 // Damage or life you pay each time a one-ability land is tapped (Mana Confluence, City of Brass). Lands with several abilities are left alone.
+// v0.99.71 CR 602.5b + 605.3: a land with several mana abilities pays the cost of the ability that made the colour (a painland's {C} is free, its coloured mana deals 1 damage);
+// an ability whose "Activate only ..." restriction is not met is not available at all.
+function landAbUsable(ab, c) { return !ab.cond || staticCheck(ab.cond, c).ok !== false; }
+function abColors(ab) { if (ab.fixed) return ab.fixed.length === 1 ? ab.fixed : []; if (ab.choice) return ab.choice; if (ab.any) return ['W', 'U', 'B', 'R', 'G']; if (ab.per) return [ab.per.col]; return []; }
+function landColorAbility(c, col) {
+  const abs = landManaAbilities(c).filter(ab => landAbUsable(ab, c) && (col == null || abColors(ab).includes(col)));
+  if (!abs.length) return null;
+  const w = ab => (ab.dmg || 0) + (ab.life || 0) + (ab.noUntap ? 3 : 0) + (ab.oppGain ? 1 : 0);
+  return abs.slice().sort((a, b) => w(a) - w(b))[0];
+}
+function landColorCost(c, col) { const ab = landColorAbility(c, col); return ab ? { dmg: ab.dmg, life: ab.life, noUntap: ab.noUntap, oppGain: ab.oppGain } : landTapCost(c); }
+function landBlockedColors(c) {   // colours that only a restricted (unusable right now) ability of this land makes
+  const abs = landManaAbilities(c); if (!abs.some(ab => ab.cond)) return [];
+  const ok = new Set(), bad = new Set();
+  for (const ab of abs) for (const k of abColors(ab)) (landAbUsable(ab, c) ? ok : bad).add(k);
+  return [...bad].filter(k => !ok.has(k));
+}
+let LAND_PAY_COLS = new Map();   // card id -> the colour the last payment plan used it for (so its cost is the right ability's)
 function landTapCost(c) { const a = landManaAbilities(c); return a.length === 1 && (a[0].dmg || a[0].life) ? { dmg: a[0].dmg, life: a[0].life } : null; }
 // Mana taps (v0.72). A permanent tapped for mana remembers what it made (c.mt). Untapping it while that mana still floats takes the mana back out
 // of the pool (and returns any life or damage the tap cost); once the mana is spent or has emptied, it stays tapped until a card effect or the untap step untaps it.
@@ -5243,6 +5278,8 @@ function applyLandCost(c, k) {
   if (c.mt) c.mt.life += (k.life || 0) + (k.dmg || 0);
   if (k.life) { state.life -= k.life; log(`${c.name}: paid ${k.life} life for the mana → ${state.life}`); }
   if (k.dmg) { state.life -= k.dmg; log(`${c.name}: dealt ${k.dmg} damage to you → ${state.life}`); }
+  if (k.noUntap) { c.noUntapNext = state.turn; log(`${c.name}: it doesn't untap during your next untap step`); }
+  if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }
 }
 // "enters with N <kind> counters on it" (Dark Depths: ten ice counters)
 function etbCounters(c) {
@@ -6815,8 +6852,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.70';
+const APP_VERSION = '0.99.71';
 const CHANGELOG = [
+  { v: '0.99.71', title: 'Ink on the page, a deck that stays on the desk, land rules', notes: ['The open book in the Library now looks like a book: its pages rise out of the spine, and the deck is written onto them in ink (a ledger of card types, the colours by name, the mana curve drawn in ink, the average mana value and the share of lands). Key cards, the librarian\u2019s notes and what you can do sit on the facing page, so nothing is cut off.', 'A deck you take off the shelf stays on the desk while you edit its list, box art, card art or sideboard. Only Put it back, another deck or using it puts it away.', 'Game-state icons above the table follow one rule on every screen: all of them when they fit on one line, otherwise the active ones and a \u22ef button for the rest (it was showing on desktop and pushing the icons onto two lines).', 'When the game ends, a trigger from the lethal hit (Psychic Frog\u2019s draw, for example) no longer pops up over the result. Choose Keep playing and it goes on the stack as normal.', 'Land rules read from the card: Verge lands add their second colour only while you control the right basic type; Spire of Industry adds a colour (for 1 life) only with an artifact; Gathering Place and Mirrex check whether they entered this turn; a painland\u2019s {C} is free and only its coloured mana deals damage, whether you tap it by hand or the payment taps it (painlands used to deal no damage at all); Waterveil Cavern\u2019s coloured mana keeps it tapped next turn; Grove of the Burnwillows gives the opponent life; Boseiju makes instants and sorceries paid with it uncounterable.', 'More cards read: \u201cWhenever a player casts a spell\u201d (Vexing Bauble); power and toughness such as \u201c1 plus the number of artifacts your opponents control\u201d (Gaea\u2019s Avenger), \u201ctwice the number of cards in your hand\u201d (Masumaro) and \u201ccards in all graveyards\u201d; Triton Wavebreaker has prowess while it is a creature. Power and toughness wording the app cannot work out is now reported as a gap instead of shown as handled.', 'Look-at-the-top choices name their limit (\u201cup to one instant or sorcery into your hand\u201d for Peer Through Depths, not \u201cany number\u201d).', 'Every rules test now uses real cards with their Oracle text; the invented test cards are gone. 272 rules tests pass.'] },
   { v: '0.99.70', title: 'Settings regrouped, a matching Library, more cards read', notes: ['Settings regrouped into fewer, clearer tabs: Look & feel; Table (board layout, playmat and frame together); Library (wall, desk and whether the app opens there, which used to be a separate window); Motion & sound (animations and sound together); Accessibility; Tutor mode; Card data & updates (card data, pictures, Update app and the update check in one place); Legal notice. Search still finds any setting.', 'Library: the Back to the table and gear buttons are now walnut-and-brass plaques like the sign, the Standard and Commander ribbons are no longer hidden behind the page, phones say "Tap a book" instead of "Click", and upright the book rises when a deck is on the desk so the deck\'s cards are never under it.', 'NEW rules: token copies ("Create a token that\'s a copy of target creature / ~ / it", with "except it has haste"); a token created with a quoted ability (Eldrazi Spawn\'s "Sacrifice this creature: Add {C}.") has it; "You draw a card and lose 1 life" is one effect; "Target creature\'s controller loses N life" takes it from that creature\'s controller. 98 more Modern-legal cards are read in full (11,530).'] },
   { v: '0.99.69', title: 'Triggers always trigger, a roomier phone table, self-installing Windows updates', notes: ['RULES FIX: turning off "Triggered ability prompts" (a Tutor mode hint) switched off triggered abilities altogether, so cards like Skysovereign did nothing when they entered or attacked. Triggers are rules, not hints: they always trigger now; with the hint off they go on the stack by themselves in the order they happened (you still choose their targets).', 'Likewise, a Leyline or a card you reveal from your opening hand still gets its pre-game chance when the Pre-game screen is turned off.', 'Resolving window: each effect can be applied once, applying one locks any button that would repeat part of it, and the window finishes by itself when every effect is done, so nothing extra can be done that the card does not say. An ability aimed at an opponent\'s permanent (which the app does not track) is noted in the log for you to apply on the table instead of offering buttons.', 'NEW rules: "Put a +1/+1 counter on each [other] [Dragon] creature you control"; "Each opponent loses N life. You gain life equal to the life lost this way"; damage to "that creature\'s controller"; "You gain life equal to the number of …" / the greatest power among your creatures. 103 more Modern-legal cards are read in full.', 'Phones held upright: zones share the height by how many cards they hold, cards grow into the room they have, and lands or artifacts pile only when they would not fit side by side (on every device). Only active game-state icons show (⋯ shows the rest), and the ▾ Hand tab tucks your hand down to a strip.', 'Windows: the installed app now updates itself with the full Setup installer (checked against GitHub\'s checksum), so the window code is updated too. This needs this version\'s installer once; after that, Update now does everything.', 'The Welcome tour is rewritten for the current app: the Library and its book, phones and tablets, the stack window, how effects and triggers resolve, the end of a game and updates.'] },
   { v: '0.99.68', title: 'Loyalty abilities by the rules, and more cards read', notes: ['RULES (CR 602.2b): a planeswalker\'s loyalty ability now asks for its targets when you activate it, before the loyalty is paid and before it goes on the stack (it used to ask when it resolved).', 'RULES (CR 115.6): "up to one target" really can be none. Karn, the Great Creator\'s +1 with no artifact chosen does nothing; the parts of an ability that do not need the target still happen.', 'Effects that must all happen are no longer offered as buttons: Ugin\'s +2 "You gain 3 life and draw a card" just happens. This only applies when every part is understood, nothing is optional or chosen, and no part opens its own window.', 'NEW: "It doesn\'t untap during its controller\'s next untap step" (Frost Breath, Icefall Regent and the like) keeps the creature tapped for exactly one untap step.', 'NEW: "If that creature would die this turn, exile it instead" (Puncturing Blow and others).', 'NEW: "Create a … token. It gains haste until end of turn": the token has haste.', 'NEW: impulse draw. "Exile the top card(s) of your library. You may play it this turn" and "until the end of your next turn" exile the cards and keep them playable from the exile pile for exactly that long ("cast" lets you cast, not play a land).', 'Card reading: a "look at the top N" sort is credited for each sentence it carries out (Commune with Evil, Discerning Taste…). 144 more Modern-legal cards are now read in full.', 'Phones held upright: the table ends where the fanned hand begins, so no battlefield card sits under your hand.'] },
@@ -8100,10 +8138,39 @@ function deckBoxEl0(deckName, isCur, onPick, onArt, onEdit, onCustom, onSide, on
   stage.addEventListener('click', () => onPull ? onPull(tile, { deckName, deck, cols, im, dk, isCur, onPick, onArt, onEdit, onCustom, onSide }) : onPick());
   stage.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stage.click(); } });
   // v0.99.44 no tilt on the shelf: hovering only lifts the book
-  const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
+  const tile = h('div', { class: 'dbx-tile bk-tile' + (isCur ? ' on' : ''), 'data-deck': deckName, style: `width:${bk.style.getPropertyValue('--T')}` }, stage, isCur ? h('div', { class: 'bk-ribbon', title: 'In use' }) : null);
   return tile;
 }
 // Take a book off the shelf: it flies from its place to the middle of the window (FLIP animation), with its details beside it.
+// v0.99.71 the deck taken off the shelf stays on the desk while you edit its list, art or sideboard: only "Put it back", another deck, or using it puts it away.
+let DESK_DECK = null, DESK_QUIET = false;
+function restoreDeskDeck(root) {
+  if (!DESK_DECK || !root) return; if (!loadDecks()[DESK_DECK]) { DESK_DECK = null; return; }
+  const live = [...root.querySelectorAll('.dbx-pull')].find(x => x._deck === DESK_DECK && x._tile && x._tile.isConnected); if (live) return;
+  root.querySelectorAll('.dbx-pull').forEach(x => x.remove());
+  const tile = [...root.querySelectorAll('.bk-tile')].find(t => t.dataset.deck === DESK_DECK); const st = tile && tile.querySelector('.bk-stage'); if (!st) return;
+  DESK_QUIET = true; try { st.click(); } finally { DESK_QUIET = false; }
+}
+// v0.99.71 the deck written into the open book: a ledger of what is in it (types with leaders, colours by name, curve drawn in ink, average mana value,
+// land share), and on the facing page the key cards, the librarian's notes and the actions as rubricated lines.
+function tomeDeckPages(d, sm, acts) {
+  const main = d.deck.main, total = sum(main), side = sum(d.deck.side || []);
+  let mvSum = 0, mvN = 0; for (const { qty, name } of main) { const i = cardInfo(name); if (i && !/\bLand\b/.test(i.t || '')) { mvSum += (i.cmc || 0) * qty; mvN += qty; } }
+  const lands = sm.types.Land || 0, maxC = Math.max(1, ...sm.curve), CN = { W: 'White', U: 'Blue', B: 'Black', R: 'Red', G: 'Green' };
+  const PL = { Creature: 'Creatures', Instant: 'Instants', Sorcery: 'Sorceries', Artifact: 'Artifacts', Enchantment: 'Enchantments', Planeswalker: 'Planeswalkers', Land: 'Lands' };
+  const left = h('div', { class: 'ti-page tome-ink left' },
+    h('h3', { text: d.deckName }),
+    h('div', { class: 'ti-sub', text: `${total} cards${side ? ` · sideboard ${side}` : ''}${d.dk.sb ? ' · sideboarded' : ''}${d.isCur ? ' · in use' : ''}` }),
+    h('div', { class: 'ti-cols' }, d.cols.length ? d.cols.map(c => h('span', { class: 'ti-col' }, h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }), CN[c] || c)) : h('span', { text: 'Colourless' })),
+    h('div', { class: 'ti-ledger' }, Object.entries(sm.types).filter(e => e[1]).map(([k, n]) => h('div', { class: 'ti-row' }, h('span', { text: PL[k] || k }), h('i'), h('b', { text: String(n) })))),
+    h('div', { class: 'fhead', text: 'Mana curve' }),
+    h('div', { class: 'dbx-curve ti-curve', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i}${i === 6 ? '+' : ''}`).join(', ') }, sm.curve.map((n, i) => h('div', { class: 'dbx-cbar' }, h('b', { text: n ? String(n) : '' }), h('i', { style: `height:${n ? Math.max(6, Math.round(100 * n / maxC)) : 0}%` }), h('span', { text: i === 6 ? '6+' : String(i) })))),
+    h('div', { class: 'ti-foot', text: `${mvN ? `Average mana value ${(mvSum / mvN).toFixed(2)}` : 'No spells'} · ${lands} land${lands === 1 ? '' : 's'} (${total ? Math.round(100 * lands / total) : 0}%)` }));
+  const right = h('div', { class: 'ti-page tome-ink right' },
+    sm.top.length ? h('div', { class: 'ti-key' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { class: 'ti-row' }, h('span', { text: x.name }), h('i'), h('b', { text: '× ' + x.qty })))) : null,
+    typeof libraryNotesEl === 'function' ? libraryNotesEl(d.deckName) : null, acts);
+  return [left, right];
+}
 function pullDeckBox(m, tile, d) {
   if (tile.classList.contains('out')) return;
   // v0.99.49 clicking another book swaps them: the one on the desk floats back to its slot while the new one comes down.
@@ -8114,6 +8181,7 @@ function pullDeckBox(m, tile, d) {
   const turn = h('div', { class: 'dbx-turn', title: 'Move the mouse over the box to turn it' }, big, shadow); tiltWith(turn, big);
   const sm = deckSummary(d.deck), maxC = Math.max(1, ...sm.curve);
   const btn = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => { putBack(true); fn(); } });
+  const keep = (text, fn, cls, title) => h('button', { class: cls || '', text, title: title || '', onclick: () => fn() });   // the book stays on the desk
   const info = h('div', { class: 'dbx-info' },
     h('h3', { text: d.deckName }), h('div', { class: 'muted small', text: `${sum(d.deck.main)} cards${d.deck.side.length ? ` · sideboard ${sum(d.deck.side)}` : ''}${d.dk.sb ? ' · sideboarded list in use' : ''}${d.isCur ? ' · the deck in use' : ''}` }),
     h('div', { class: 'dbx-pips' }, d.cols.length ? d.cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}`, title: c })) : h('span', { class: 'muted small', text: 'Colourless' })),
@@ -8123,8 +8191,8 @@ function pullDeckBox(m, tile, d) {
     sm.top.length ? h('div', { class: 'dbx-top' }, h('div', { class: 'fhead', text: 'Key cards' }), sm.top.map(x => h('div', { text: `${x.qty} × ${x.name}` }))) : null,
     h('div', { class: 'dbx-acts' },
       btn(d.beginLabel || (d.isCur ? 'Keep using this deck' : 'Use this deck'), d.onPick, 'primary'),
-      btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
-      btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
+      keep('Edit list', d.onEdit), d.onSide ? keep('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
+      keep('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), keep('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
       btn('Buy this deck…', () => openBuyDeck(Object.assign({}, d.deck, { name: d.deckName })), '', 'Open TCGplayer with this list (and your chosen printings) ready to add to the cart'),
       h('button', { text: 'Put it back', onclick: () => putBack() }),
       h('button', { class: 'danger', text: 'Delete deck\u2026', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
@@ -8132,12 +8200,16 @@ function pullDeckBox(m, tile, d) {
   const ov = h('div', { class: 'dbx-pull', role: 'dialog', 'aria-label': `${d.deckName}, taken off the shelf` }, h('div', { class: 'dbx-pull-in' }, turn, sc3 ? null : info));
   ov.addEventListener('mousedown', e => { if (e.target === ov) putBack(); });
   m.el.append(ov); tile.classList.add('out');
-  if (sc3) {   // two pages: the deck on the left, key cards and the buttons on the right
-    const R = [...info.children].filter(x => x.classList.contains('dbx-top') || x.classList.contains('dbx-acts')), Lp = [...info.children].filter(x => !R.includes(x));
-    info.replaceChildren(h('div', { class: 'ti-page' }, ...Lp), h('div', { class: 'ti-page' }, ...R));
+  let inked = null;
+  if (sc3) {   // v0.99.71 two pages written straight onto the book's own pages (they bend into the spine with them): the deck on the left, key cards, notes and what to do on the right
+    const pl = sc3.tome.querySelector('.hall-page.left'), pr = sc3.tome.querySelector('.hall-page.right'), acts = info.querySelector('.dbx-acts');
+    if (pl && pr && acts) { inked = tomeDeckPages(d, sm, acts); pl.append(inked[0]); pr.append(inked[1]); info.replaceChildren(); }
+    else { const R = [...info.children].filter(x => x.classList.contains('dbx-top') || x.classList.contains('dbx-acts')), Lp = [...info.children].filter(x => !R.includes(x));
+      info.replaceChildren(h('div', { class: 'ti-page' }, ...Lp), h('div', { class: 'ti-page' }, ...R)); }
     info.classList.add('tome-info'); sc3.tome.append(info); sc3.tome.classList.add('deck-open'); }
   const spread = sc3 && sc3.spread && sc3.layer ? sc3.spread(d.deck, d.deckName) : null; if (spread) sc3.layer.append(spread);
-  const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
+  ov._deck = d.deckName; ov._tile = tile; DESK_DECK = d.deckName;
+  const motion = !DESK_QUIET && animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
   // v0.99.49 one continuous float: the book slides forward out of its slot, then travels along a gentle arc to the desk,
   // turning to show its cover on the way, and settles onto its shadow. Putting it back plays the same path in reverse.
   const posIn = (el, root) => { let x = 0, y = 0; for (let e = el; e && e !== root; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return [x, y]; };
@@ -8186,13 +8258,13 @@ function pullDeckBox(m, tile, d) {
   if (motion) { fly(false); wa(info, [{ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: 420, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }); wa(ov, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: getComputedStyle(ov).backgroundColor }], { duration: 300 }); }
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); putBack(); } };
   document.addEventListener('keydown', esc, true);
-  setTimeout(() => { const f = info.querySelector('button.primary'); if (f) f.focus(); }, 30);
+  setTimeout(() => { const f = (inked && inked[1].querySelector('button.primary')) || info.querySelector('button.primary'); if (f) f.focus(); }, 30);
   let gone = false;
   m.el._dbxPut = () => putBack(); m.el._dbxPutOv = ov;
   function putBack(now) {
-    if (gone) return; gone = true; document.removeEventListener('keydown', esc, true);
+    if (gone) return; gone = true; document.removeEventListener('keydown', esc, true); if (DESK_DECK === d.deckName) DESK_DECK = null;
     ov.style.pointerEvents = 'none'; ov.classList.add('leaving'); if (m.el._dbxPut && m.el._dbxPutOv === ov) { m.el._dbxPut = null; m.el._dbxPutOv = null; }
-    if (sc3) { info.remove(); if (spread) spread.remove(); sc3.tome.querySelectorAll('.tome-card, .tome-leaf').forEach(x => x.remove()); sc3.tome.classList.remove('card-open'); sc3.tome._card = null; if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
+    if (sc3) { info.remove(); if (inked) inked.forEach(x => x.remove()); if (spread) spread.remove(); sc3.tome.querySelectorAll('.tome-card, .tome-leaf').forEach(x => x.remove()); sc3.tome.classList.remove('card-open'); sc3.tome._card = null; if (!sc3.tome.querySelector('.tome-info')) sc3.tome.classList.remove('deck-open'); }
     const done = () => { ov.remove(); tile.classList.remove('out'); const st = tile.querySelector('.dbx-stage'); if (st && !now) st.focus(); };
     if (now || !motion || !tile.isConnected) { done(); return; }
     info.style.transition = 'opacity .15s'; info.style.opacity = '0'; const a = fly(true); a.onfinish = done; wa(ov, [{}, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 520, fill: 'forwards' });
@@ -8989,6 +9061,14 @@ function gameStates() {
   add('experience', 'Experience', (gs.exp || 0) > 0, gs.exp || '', 'Experience counters: some cards count them. Click to add one, right-click to remove one.', { counter: 'exp' });
   return L;
 }
+// v0.99.71 one rule on every screen: all icons when they fit on one line; when they would wrap, only the active ones plus a ⋯ button that shows the rest.
+function fitStateIcons() {
+  const box = $('#gstates'); if (!box || box.hidden) return;
+  box.classList.remove('gs-trim'); if (document.body.classList.contains('gs-all')) return;
+  const icons = [...box.querySelectorAll('.sti')]; if (!icons.length) return;
+  const top = icons[0].offsetTop; if (icons.some(e => e.offsetTop > top + 4)) box.classList.add('gs-trim');
+}
+window.addEventListener('resize', () => { try { fitStateIcons(); } catch (e) {} });
 function drawStateIcons() {
   const box = $('#gstates'); if (!box) return;
   const list0 = !!state && state.phase === 'play' ? gameStates().filter(x => x.functional || teach('stateIcons')) : [];
@@ -9002,6 +9082,7 @@ function drawStateIcons() {
     if (s.count !== '' && s.count !== undefined) e.append(h('i', { text: String(s.count) }));
     e._s = s; return e;
   }), h('button', { class: 'sti-more', text: document.body.classList.contains('gs-all') ? '×' : '⋯', title: 'Show every game-state icon (to add energy, poison…)', 'aria-label': 'Show all game-state icons', onclick: ev => { ev.stopPropagation(); document.body.classList.toggle('gs-all'); drawStateIcons(); } }));   // v0.99.69 upright phones show only the active ones
+  fitStateIcons();
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('#gstates .sti'); if (!b || !state || !b._s) return;
@@ -10065,6 +10146,7 @@ function compileCardOne(c) {
       push(text, 'static', 'ok', note); continue;
     }
     const sp = STATIC_PATTERNS.find(([re]) => re.test(stripped) || re.test(norml));
+    if (sp && /power and toughness are each equal to|power is equal to|toughness is equal to/i.test(norml) && !cdaUnderstood(card.name)) { push(text, 'static', 'part', 'Characteristic-defining ability the app cannot calculate (rule 604.3): set its power and toughness by hand with counters or the P/T override.'); continue; }   // v0.99.71 never shown as handled when ptCalc would say "unknown"
     if (sp && sp[1]) { push(text, 'static', sp[2] || 'ok', sp[1]); continue; }
     // spell effect
     if (isSpell) {
@@ -11315,8 +11397,14 @@ function openDiceCoin() {
 }
 // ---- game over: "Next round"
 let matchRecord = { w: 0, l: 0 };
+function gameIsOver() { return !!document.getElementById('gameEndBox'); }
+function clearPromptsForGameEnd() {   // v0.99.71 a trigger or choice that was open (Psychic Frog's draw after the lethal hit) must not sit over the result
+  document.querySelectorAll('#modalRoot .backdrop').forEach(b => { if (!b.querySelector('#gameEndBox')) b.remove(); });
+  document.querySelectorAll('#stackStage .res-panel').forEach(x => x.remove());
+}
 function showGameEnd(which, title, sub) {
   if (!state || $("#gameEndBox") || window.__noGameEnd) return;
+  clearPromptsForGameEnd();
   const won = which !== 'you'; won ? matchRecord.w++ : matchRecord.l++;
   const name = currentDeckName();
   const m = modal(won ? 'You won the game' : 'You lost the game', { width: 520, sticky: true });
@@ -11327,7 +11415,7 @@ function showGameEnd(which, title, sub) {
       h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
       h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { openHall(); } catch (e) {} } })));
-  m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); } }));
+  m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); setTimeout(() => { flushTriggers(); render(); }, 0); } }));
 }
 // ---------------------------------------------------------------- v0.96.22 keyword batch 6 (rules text): Squad, Offspring, Impending
 // CR 702.157a Squad [cost]: "As an additional cost to cast this spell, you may pay [cost] any number of times." and "When this creature enters, if its squad cost was paid, create a token that's a copy of it for each time its squad cost was paid."
@@ -12302,6 +12390,7 @@ function evalCond(text, g) {
   { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
   { const ik = IND_COND_KEY(t); if (ik) { const g = gameStates().find(x => x.key === ik); return g ? !!g.on : null; } }   // the top-bar game-state checks are the one source of truth (Metalcraft, Threshold, Delirium, Revolt, Morbid ...)
+  if (/^(?:~|it|this (?:permanent|creature|card)) is a creature$/.test(t)) { if (!g || g.id < 0) return true; try { return permTypeInfo(g).types.has('creature'); } catch (e) { return null; } }   // v0.99.71 Triton Wavebreaker: "As long as this permanent is a creature, it has prowess" (off while bestowed)
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
   if (/^it(?:'s| is) not your turn$|^it(?:'s| is) an opponent's turn$/.test(t)) return false;
   if ((m = t.match(/^(?:there are )?(\w+) or more (.+?) (?:are )?in your graveyard$/)) && !/^there are/.test(t)) { const k = CS_NUM(m[1]), n = csCountZone(state.graveyard, m[2]); return isNaN(k) || n === null ? null : n >= k; }   // "seven or more cards are in your graveyard" (threshold)
@@ -12379,6 +12468,10 @@ function noteGapsOnEnter(c) {
 
 // Is this condition / count wording one the evaluator understands? (checked against an empty board, so only the wording matters)
 const CS_STUB = () => ({ graveyard: [], hand: [], battlefield: [], life: 20, turn: 0, combat: null, manaPool: {}, spellsCast: { turn: 0, n: 0 } });
+function cdaUnderstood(name) {   // v0.99.71 does cdaValues() read this card's P/T wording? (checked against an empty board, so only the wording matters)
+  const old = state; state = Object.assign(CS_STUB(), { exile: [], library: [] });
+  try { return !!cdaValues({ name }); } catch (e) { return false; } finally { state = old; }
+}
 function csUnderstood(cond, thing) {
   const old = state; state = CS_STUB();
   try { const g = { id: -1, tapped: false, counters: { plus: 0, minus: 0 }, name: 'x' }; return cond !== null ? evalCond(cond, g) !== null : csCount(thing, g) !== null; }
@@ -13428,7 +13521,7 @@ function classLevelOptions(tx, obj) {
 function noteUncounterableMana(spell, manaIds) {
   if (!spell || spell.ability) return; delete spell.noCounterMana;
   for (const id of (manaIds || [])) { const f = findCard(id); if (!f || f.zone !== 'battlefield') continue; let ab = []; try { ab = landManaAbilities(f.card) || []; } catch (e) { ab = []; }
-    for (const a of ab) if (a.noCounter && spendOnlyOk(a.only, spell)) { spell.noCounterMana = f.card.name; log(`${spell.name}: paid with mana from ${f.card.name}, so it can't be countered`); return; } }
+    for (const a of ab) if (a.noCounter && spendOnlyOk(a.only, spell) && (!a.ncOn || spendOnlyOk(a.ncOn, spell))) { spell.noCounterMana = f.card.name; log(`${spell.name}: paid with mana from ${f.card.name}, so it can't be countered`); return; } }
 }
 function spellTypeWords(sc) { const t = (sc.token ? '' : ((cardInfo(sc.name) || {}).t || '')).split(' // ')[0]; const [a, b] = t.split('—'); return { types: new Set(String(a || '').toLowerCase().split(/\s+/).filter(Boolean)), subs: new Set(String(b || '').toLowerCase().split(/\s+/).filter(Boolean)), changeling: /\bchangeling\b/i.test((cardInfo(sc.name) || {}).tx || '') }; }
 function cantBeCounteredWhy(sc) {
@@ -14042,6 +14135,7 @@ function drawHall() {
       inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null,
       h('button', { class: 'hall-gear iconbtn', title: 'Settings', 'aria-label': 'Settings', onclick: () => openSettings(), html: null }, (() => { const x = h('span'); x.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'; return x; })())));
   applyHallLook(); hallFit(); requestAnimationFrame(hallFit);
+  restoreDeskDeck(world);   // v0.99.71 a deck you were editing stays on the desk after the redraw
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull')) { e.preventDefault(); closeHall(true); } });
 // ---------------------------------------------------------------- v0.99.54 phones and tablets (the web app)

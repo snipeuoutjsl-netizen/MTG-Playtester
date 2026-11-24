@@ -58,6 +58,14 @@ function gameStates() {
   add('experience', 'Experience', (gs.exp || 0) > 0, gs.exp || '', 'Experience counters: some cards count them. Click to add one, right-click to remove one.', { counter: 'exp' });
   return L;
 }
+// v0.99.71 one rule on every screen: all icons when they fit on one line; when they would wrap, only the active ones plus a ⋯ button that shows the rest.
+function fitStateIcons() {
+  const box = $('#gstates'); if (!box || box.hidden) return;
+  box.classList.remove('gs-trim'); if (document.body.classList.contains('gs-all')) return;
+  const icons = [...box.querySelectorAll('.sti')]; if (!icons.length) return;
+  const top = icons[0].offsetTop; if (icons.some(e => e.offsetTop > top + 4)) box.classList.add('gs-trim');
+}
+window.addEventListener('resize', () => { try { fitStateIcons(); } catch (e) {} });
 function drawStateIcons() {
   const box = $('#gstates'); if (!box) return;
   const list0 = !!state && state.phase === 'play' ? gameStates().filter(x => x.functional || teach('stateIcons')) : [];
@@ -71,6 +79,7 @@ function drawStateIcons() {
     if (s.count !== '' && s.count !== undefined) e.append(h('i', { text: String(s.count) }));
     e._s = s; return e;
   }), h('button', { class: 'sti-more', text: document.body.classList.contains('gs-all') ? '×' : '⋯', title: 'Show every game-state icon (to add energy, poison…)', 'aria-label': 'Show all game-state icons', onclick: ev => { ev.stopPropagation(); document.body.classList.toggle('gs-all'); drawStateIcons(); } }));   // v0.99.69 upright phones show only the active ones
+  fitStateIcons();
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('#gstates .sti'); if (!b || !state || !b._s) return;
