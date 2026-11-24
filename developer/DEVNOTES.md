@@ -1,4 +1,6 @@
 
+**v0.99.59** Library desk back to fanned `.ds-stack`s (v0.99.53 grouping; each card offset 32px down, 7px right and rotated ±2.2° via `--rot`; scaled by `--dsk`); hover = outline only, no z-index or transform change. `tomeCard` rewritten: the page turns (leaf) for every change; the next picture is decoded before the turn starts; the swap happens half way through the turn.
+
 **v0.99.58** Safe areas: `env(safe-area-inset-*)` padding on #topbar, #table and the hall view (the web app uses viewport-fit=cover and a black-translucent status bar, so content starts under the iOS status bar). Upright: #topbar and `#gamebar .hud` wrap; #imgStatus/#dbStatus/#btnVersion hidden; `spreadHand` fans the hand from one pivot (`.pfan`: all cards stacked by negative margins, rotated ±tmax around 50% 230%, tmax from the available width, at most 7° a card). #btnSideDrawer is no longer an .iconbtn (fixed width cut its label). Library: `.hall-corner` holds Back to the table and a gear (`.hall-gear`, openSettings).
 
 **v0.99.57** Desk flicker: `.ds-card:hover` no longer translates (the 4px lift took the card out from under the pointer at its bottom edge: hover on/off loop); `tomeCard` decodes the next picture (`new Image()` + `decode()`) before replacing the page, and skips the opacity fade between cards.
