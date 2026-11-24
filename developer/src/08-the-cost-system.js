@@ -21,18 +21,29 @@ function parseCostFilter(phrase) {
   { const pw = s.match(/\bwith power (\d+) or greater\b/); if (pw) { f.minPower = +pw[1]; s = s.replace(pw[0], ' ').trim(); } }   // v0.96.2 casualty
   if (/\b(?:another|other)\b/.test(s)) { f.other = true; s = s.replace(/\b(?:another|other)\b/g, ' '); }
   if (/\buntapped\b/.test(s)) { f.untapped = true; s = s.replace(/\buntapped\b/g, ' '); }
+  // v0.99.53 words inside one alternative all apply (CR 205.2/205.4: "artifact creature" is both, "nontoken creature" excludes tokens);
+  // "or" separates alternatives, and an alternative with only adjectives takes the type of the last one ("a red or green creature")
+  const SUPERS = ['basic', 'legendary', 'snow', 'world'];
   for (const part of s.split(/\s+or\s+|,\s*/)) {
-    const a = { types: [], colors: [], subs: [], nonland: false };
+    const a = { types: [], colors: [], subs: [], nonland: false, notTypes: [], token: null, colorless: false, multicolored: false, tapped: false };
     for (const w0 of part.trim().split(/\s+/)) {
-      if (!w0 || w0 === 'a' || w0 === 'an') continue;
-      const w = singularWord(w0);
+      if (!w0 || w0 === 'a' || w0 === 'an' || w0 === 'one') continue;
+      const w = singularWord(w0); let m;
       if (w === 'nonland') a.nonland = true;
+      else if (w === 'nontoken') a.token = false;
+      else if (w === 'token') a.token = true;
+      else if (w === 'colorless') a.colorless = true;
+      else if (w === 'multicolored') a.multicolored = true;
+      else if (w === 'tapped') a.tapped = true;
+      else if ((m = w.match(/^non-?(creature|artifact|enchantment|planeswalker|battle|legendary|basic|snow)$/))) a.notTypes.push(m[1]);
       else if (COLOR_LETTER[w]) a.colors.push(COLOR_LETTER[w]);
-      else if (TYPE_WORDS.includes(w) || w === 'instant' || w === 'sorcery' || w === 'legendary') a.types.push(w);
+      else if (TYPE_WORDS.includes(w) || w === 'instant' || w === 'sorcery' || SUPERS.includes(w)) a.types.push(w);
       else a.subs.push(w);
     }
     f.alts.push(a);
   }
+  { const last = [...f.alts].reverse().find(a => a.types.length || a.subs.length);
+    if (last) for (const a of f.alts) if (a !== last && !a.types.length && !a.subs.length) { a.types = last.types.slice(); a.subs = last.subs.slice(); } }
   if (!f.alts.length) f.alts.push({ types: [], colors: [], subs: [], nonland: false });
   return f;
 }
@@ -41,8 +52,10 @@ function cardMatchesFilter(c, f, srcId) {
   if (f.untapped && c.tapped) return false;
   if (f.minPower && ptCalc(c).p < f.minPower) return false;
   const p = permTypeInfo(c), cols = c.token ? [] : (onBattlefield(c) ? effColors(c) : printedColors(c));
-  return f.alts.some(a => (!a.types.length || a.types.some(t => p.types.has(t))) && (!a.colors.length || a.colors.some(x => cols.includes(x)))
-    && (!a.subs.length || a.subs.some(sb => p.subs.has(sb))) && (!a.nonland || !p.types.has('land')));
+  return f.alts.some(a => (!a.types.length || a.types.every(t => p.types.has(t))) && (!a.colors.length || a.colors.some(x => cols.includes(x)))
+    && (!a.subs.length || a.subs.some(sb => p.subs.has(sb))) && (!a.nonland || !p.types.has('land'))
+    && !(a.notTypes || []).some(t => p.types.has(t)) && (a.token == null || !!c.token === a.token)
+    && (!a.colorless || !cols.length) && (!a.multicolored || cols.length > 1) && (!a.tapped || !!c.tapped));
 }
 // Parse a cost string ("{2}, {T}, Sacrifice a creature") into components.
 function parseCostComps(text, short) {

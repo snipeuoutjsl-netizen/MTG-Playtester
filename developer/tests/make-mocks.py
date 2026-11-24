@@ -69,6 +69,7 @@ C('Mock Mentioner','{1}{R}','Creature — Human Monk','Creatures you control wit
 C('Rustic Clachan Mock Bear','{1}{G}','Creature — Bear','Soulbond','2/2')
 C('Mock Titan','{5}{G}','Creature — Giant','Trample, haste','6/6')
 C('Mock Flyer','{2}{U}','Creature — Bird','Flying\nWhenever this creature attacks, draw a card.','2/2')
+C('Mock Scholar','{1}{U}','Creature — Human Wizard','Whenever you draw a card, you gain 1 life.','1/1')
 C('Mock Two Drop','{1}{G}','Creature — Bear','','2/2')
 C('Mock One Drop','{1}','Artifact','')
 C('Mock Elf','{G}','Creature — Elf Druid','','1/1')

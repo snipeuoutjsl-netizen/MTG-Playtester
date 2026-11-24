@@ -1263,6 +1263,32 @@
 },
 {
 "object": "card",
+"name": "Mock Scholar",
+"layout": "normal",
+"mana_cost": "{1}{U}",
+"cmc": 2,
+"type_line": "Creature — Human Wizard",
+"oracle_text": "Whenever you draw a card, you gain 1 life.",
+"colors": [
+"U"
+],
+"legalities": {
+"commander": "legal",
+"modern": "legal",
+"legacy": "legal",
+"vintage": "legal"
+},
+"set": "mck",
+"rarity": "common",
+"mock": true,
+"color_identity": [
+"U"
+],
+"power": "1",
+"toughness": "1"
+},
+{
+"object": "card",
 "name": "Mock Two Drop",
 "layout": "normal",
 "mana_cost": "{1}{G}",

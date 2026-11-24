@@ -126,7 +126,7 @@ function drawCards(n, silent) {
     state.hand.push(state.library.shift());
     if (!silent) noteMiracleDraw(state.hand[state.hand.length - 1]);
     drawn++; if (!silent) setTimeout(() => sfx('draw'), (drawn - 1) * 110);
-    if (!silent && drawn <= 3) fireTrigger('draw');
+    if (!silent) fireTrigger('draw');   // v0.99.53 every card drawn is its own draw (CR 121.2): no cap on "whenever you draw a card"
   }
   if (skipped && !silent) log(`Skipped ${skipped} draw${skipped === 1 ? '' : 's'} (the Skip draws switch is on)`);
   return drawn;
