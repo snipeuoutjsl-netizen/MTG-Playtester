@@ -5784,7 +5784,17 @@ function layoutHand() {
 // Overlap the hand cards when they do not fit side by side.
 function spreadHand(row, cards) {
   for (const c of cards) c.style.marginLeft = '';
+  row.classList.remove('pfan');
   if (cards.length < 2) return;
+  // v0.99.58 upright phones: the hand is held like real cards, fanned from one point below the screen, so the top of every card shows
+  if (document.documentElement.classList.contains('portrait-ui') && !document.body.classList.contains('mullhand')) {
+    const n = cards.length, cw0 = cards[0].offsetWidth, ch0 = cards[0].offsetHeight; if (!cw0 || !ch0) return;
+    const R = 2.3 * ch0, W = Math.max(200, $('#handWrap').clientWidth - 20);
+    const tmax = Math.min(Math.asin(Math.max(0, Math.min(1, (W - cw0) / (2 * R)))) * 180 / Math.PI, 7 * (n - 1));
+    row.classList.add('fan', 'pfan');
+    cards.forEach((c, i) => { if (i) c.style.marginLeft = (-cw0) + 'px'; const t = n > 1 ? (i / (n - 1)) * 2 - 1 : 0; c.style.setProperty('--fan-rot', (t * tmax).toFixed(2) + 'deg'); c.style.setProperty('--fan-y', '0px'); });
+    return;
+  }
   const avail = $('#handWrap').clientWidth - 70, cw = cards[0].offsetWidth;
   if (!cw) return;
   const need = cards.length * cw + (cards.length - 1) * 8;
@@ -6703,8 +6713,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.57';
+const APP_VERSION = '0.99.58';
 const CHANGELOG = [
+  { v: '0.99.58', title: 'iPhone fixes and a gear in the Library', notes: ['iPhone and iPad: the app now keeps clear of the status bar (clock, battery), the notch and the home bar when it runs from the home screen. Before, the top bar sat under the clock.', 'Phone held upright: the top bar wraps onto a second row instead of running off the side, and the life totals wrap too, so your life is no longer cut off.', 'Phone held upright: your hand is fanned like real cards held in your hand, spread from one point below the screen, so the top of every card shows.', 'The Library has a gear (Settings) in its top right corner, on the computer and on phones.'] },
   { v: '0.99.57', title: 'No more flicker on the desk', notes: ['Library: hovering the cards laid out on the desk no longer flickers. A hovered card used to lift up a little; near its bottom edge, the lift moved it out from under the pointer and back, over and over. It now just gets a gold outline.', 'The open book only changes to a new card once its picture is ready, so the page never flashes empty between cards.'] },
   { v: '0.99.56', title: 'One stack window', notes: ['The stack has one window now, a tidy panel docked at the top right of the table (next to your library). It no longer sits in the middle of the table, no longer darkens the screen, and on phones the extra floating "The Stack" window is gone.', 'Each object on the stack is one row: a slice of its art, its name, what it is (your spell, an opponent\'s spell, a triggered or activated ability) and its targets or chosen modes. The top one is marked NEXT. Your buttons (Pass priority, Copy, Countered, Resolve top) sit together at the bottom.', 'Fold the window to a single line with the arrow (or by clicking its title bar). The folded bar keeps the main button, so you can resolve without unfolding it.', 'The same window shows a spell or ability being resolved (Finish) and cards to choose from your hand.', 'The Stack box in the right column now just says what is on the stack and keeps the tools for adding your opponent\'s spells. The topbar stack button unfolds the window.'] },
   { v: '0.99.55', title: 'Upright on phones', notes: ['Phones (and small tablets) held upright now get their own layout instead of a "turn sideways" screen. The table is one column: deck, graveyard and exile along the top, then creatures, other permanents and lands, with your hand at the bottom. The top bar scrolls sideways.', 'Upright, the stack and the game log open from the "Stack & log" button in the top bar, and tapping a card shows its preview over the table for a moment (tap the preview to close it).', 'The Library upright: three shelves above the open book, which is drawn large across the desk so its pages can be read, and the deck\'s piles below it. A book taken down goes into the open book.', 'Turning the phone sideways switches back to the full table and the wide Library.'] },
@@ -13803,7 +13814,9 @@ function drawHall() {
   const stage = h('div', { class: 'hall-stage' }, world, h('div', { class: 'hall-hint', text: all.length ? 'Click a book to take it down to the desk.' : '' }));
   hallScene.layer = stage;
   el.replaceChildren(h('div', { class: 'hall-view' }, stage),
-    inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null);
+    h('div', { class: 'hall-corner' },
+      inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null,
+      h('button', { class: 'hall-gear iconbtn', title: 'Settings', 'aria-label': 'Settings', onclick: () => openSettings(), html: null }, (() => { const x = h('span'); x.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'; return x; })())));
   applyHallLook(); hallFit(); requestAnimationFrame(hallFit);
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull')) { e.preventDefault(); closeHall(true); } });
@@ -13880,7 +13893,7 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
 function portraitUiSetup() {
   if (typeof document === 'undefined' || document.getElementById('btnSideDrawer')) return;
   const bar = document.getElementById('topbar'); if (!bar) return;
-  const b = h('button', { id: 'btnSideDrawer', class: 'iconbtn', title: 'Stack and game log', 'aria-label': 'Stack and game log', 'aria-expanded': 'false', text: 'Stack & log',
+  const b = h('button', { id: 'btnSideDrawer', class: 'sidedrawer', title: 'Stack and game log', 'aria-label': 'Stack and game log', 'aria-expanded': 'false', text: 'Stack & log',
     onclick: () => { const on = document.body.classList.toggle('side-open'); b.setAttribute('aria-expanded', String(on)); } });
   bar.append(b);
   const pv = document.getElementById('preview'); if (!pv) return;

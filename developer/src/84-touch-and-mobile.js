@@ -71,7 +71,7 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
 function portraitUiSetup() {
   if (typeof document === 'undefined' || document.getElementById('btnSideDrawer')) return;
   const bar = document.getElementById('topbar'); if (!bar) return;
-  const b = h('button', { id: 'btnSideDrawer', class: 'iconbtn', title: 'Stack and game log', 'aria-label': 'Stack and game log', 'aria-expanded': 'false', text: 'Stack & log',
+  const b = h('button', { id: 'btnSideDrawer', class: 'sidedrawer', title: 'Stack and game log', 'aria-label': 'Stack and game log', 'aria-expanded': 'false', text: 'Stack & log',
     onclick: () => { const on = document.body.classList.toggle('side-open'); b.setAttribute('aria-expanded', String(on)); } });
   bar.append(b);
   const pv = document.getElementById('preview'); if (!pv) return;

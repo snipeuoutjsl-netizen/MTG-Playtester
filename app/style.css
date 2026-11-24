@@ -2409,3 +2409,28 @@ html.portrait-ui #stackStage .sk-foot.ss-btns { flex-wrap: wrap; }
 /* v0.99.57 hovering a card on the desk only outlines it: lifting it moved it out from under the pointer at its bottom edge, which made it flicker */
 #hall .ds-pile .ds-card:hover, #hall .ds-pile .ds-card:focus-visible { transform: none !important; }
 #hall .ds-pile .ds-card { transition: box-shadow .14s ease; }
+/* ===== v0.99.58 iPhone and iPad: keep clear of the status bar, notch and home bar (the web app runs full screen) ===== */
+#topbar { padding-top: max(8px, env(safe-area-inset-top)); padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
+#table { padding-bottom: max(8px, env(safe-area-inset-bottom)); padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+#hall .hall-view { top: env(safe-area-inset-top); bottom: env(safe-area-inset-bottom); left: env(safe-area-inset-left); right: env(safe-area-inset-right); }
+/* upright: the top bar wraps onto two rows instead of running off the side; the status chips give way */
+html.portrait-ui #topbar { flex-wrap: wrap; overflow: visible; row-gap: 6px; justify-content: flex-start; }
+html.portrait-ui #topbar #imgStatus, html.portrait-ui #topbar #dbStatus, html.portrait-ui #topbar .sep { display: none !important; }
+html.portrait-ui #btnDecks.libret b { font-size: 12px; }
+/* the hand fanned from one point below the screen */
+html.portrait-ui #row-hand.pfan { justify-content: center; }
+html.portrait-ui #row-hand.pfan .card { transform-origin: 50% 260%; }
+html.portrait-ui #handWrap { height: calc(var(--ch) + 70px); }
+/* the Library's gear (settings), top right, beside "Back to the table" */
+#hall .hall-corner { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: calc(14px + env(safe-area-inset-right)); z-index: 6; display: flex; gap: 8px; align-items: center; }
+#hall .hall-corner .hall-close { position: static; }
+#hall .hall-gear { width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; color: #f0d48c;
+  background: rgba(20,14,9,.72); border: 1px solid rgba(227,185,92,.45); box-shadow: 0 4px 12px rgba(0,0,0,.45); }
+#hall .hall-gear:hover { background: rgba(40,28,16,.85); border-color: #e3b95c; }
+#hall .hall-gear svg { transition: transform .4s ease; } #hall .hall-gear:hover svg { transform: rotate(60deg); }
+html.portrait-ui #row-hand.pfan .card { transform-origin: 50% 230%; }
+html.portrait-ui #btnSideDrawer { height: 34px; width: auto; min-width: 0; padding: 0 12px; border-radius: 9px; font-size: 13px; }
+/* upright: the score bar wraps too (your life was cut off on the right) */
+html.portrait-ui #gamebar .hud { flex-wrap: wrap; row-gap: 6px; }
+html.portrait-ui #gamebar .hudbox.opp, html.portrait-ui #gamebar .hudbox.life { flex: 1 1 auto; justify-content: space-between; }
+html.portrait-ui #topbar #btnVersion { display: none !important; }

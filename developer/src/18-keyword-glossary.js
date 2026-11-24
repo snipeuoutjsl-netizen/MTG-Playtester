@@ -354,7 +354,17 @@ function layoutHand() {
 // Overlap the hand cards when they do not fit side by side.
 function spreadHand(row, cards) {
   for (const c of cards) c.style.marginLeft = '';
+  row.classList.remove('pfan');
   if (cards.length < 2) return;
+  // v0.99.58 upright phones: the hand is held like real cards, fanned from one point below the screen, so the top of every card shows
+  if (document.documentElement.classList.contains('portrait-ui') && !document.body.classList.contains('mullhand')) {
+    const n = cards.length, cw0 = cards[0].offsetWidth, ch0 = cards[0].offsetHeight; if (!cw0 || !ch0) return;
+    const R = 2.3 * ch0, W = Math.max(200, $('#handWrap').clientWidth - 20);
+    const tmax = Math.min(Math.asin(Math.max(0, Math.min(1, (W - cw0) / (2 * R)))) * 180 / Math.PI, 7 * (n - 1));
+    row.classList.add('fan', 'pfan');
+    cards.forEach((c, i) => { if (i) c.style.marginLeft = (-cw0) + 'px'; const t = n > 1 ? (i / (n - 1)) * 2 - 1 : 0; c.style.setProperty('--fan-rot', (t * tmax).toFixed(2) + 'deg'); c.style.setProperty('--fan-y', '0px'); });
+    return;
+  }
   const avail = $('#handWrap').clientWidth - 70, cw = cards[0].offsetWidth;
   if (!cw) return;
   const need = cards.length * cw + (cards.length - 1) * 8;
