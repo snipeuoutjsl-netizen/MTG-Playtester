@@ -171,6 +171,7 @@ function playerClauseOptions(tx, obj) {
   const descOf = third => acts.map(a => a.k === 'draw' ? `${third ? 'draws' : 'draw'} ${a.n}` : a.k === 'lose' ? `${third ? 'loses' : 'lose'} ${a.n} life` : a.k === 'gain' ? `${third ? 'gains' : 'gain'} ${a.n} life` : a.k === 'mill' ? `${third ? 'mills' : 'mill'} ${a.n}` : `${third ? 'discards' : 'discard'} ${a.n}${a.rnd ? ' at random' : ''}`).join(' and '), desc = descOf(true);
   const t = (obj && obj.targets || [])[0], who = t && t.kind === 'player' ? t.id : null; const full = sents.length === 1;
   if (who) return [{ full, label: `${who === 'you' ? 'You ' + descOf(false) : 'Your opponent ' + desc}`, fn: run(who) }, ...massRest(sents, 1, obj)];
+  if (/^opponent$/i.test(m[1])) return [{ full, label: `Your opponent ${desc}`, fn: run('opp') }, ...massRest(sents, 1, obj)];   // v0.99.62 "target opponent" can never be you (CR 115.4)
   return [{ full, label: `You ${descOf(false)}`, fn: run('you') }, { full, label: `Your opponent ${desc}`, fn: run('opp') }, ...massRest(sents, 1, obj)];
 }
 // ---- the opponent's hand is not tracked in a goldfish game: say so instead of silently skipping ("Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.")

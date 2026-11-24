@@ -207,6 +207,7 @@ function runToughnessSBA() {
     for (let guard = 0; guard < 20; guard++) {
       const dead = state.battlefield.find(c => permZone(c) === 'creatures' && (c.token || cardInfo(c.name)) && (() => { const r = ptCalc(c); return !r.unknown && (r.t <= 0 || ((c.dmg || 0) >= r.t && !hasKw(c, 'indestructible'))); })());
       if (!dead) break;
+      if ((dead.dmg || 0) > 0 && ptCalc(dead).t > 0 && tryRegenerate(dead, 'lethal damage')) continue;   // v0.99.62 lethal damage destroys, so a regeneration shield replaces it (toughness 0 does not)
       { const lethal = (dead.dmg || 0) > 0 && ptCalc(dead).t > 0;
         log(lethal ? `${dead.name} has lethal damage marked on it (${dead.dmg}): destroyed (state-based action)` : `${dead.name} has toughness 0 or less: put into the graveyard (state-based action)`);
         toast(`${dead.name} dies`, lethal ? 'A creature with damage marked equal to or greater than its toughness is destroyed.' : 'A creature with toughness 0 or less is put into its owner’s graveyard.'); }

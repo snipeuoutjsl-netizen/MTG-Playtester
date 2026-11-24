@@ -244,7 +244,7 @@ function compileCardOne(c) {
   // v0.77 honesty pass: a line only counts as understood when the engine handles EVERY sentence of its effect, not just the first one it recognises.
   for (const l of lines) {
     if (l.status !== 'ok' || l.def || !['spell', 'triggered', 'activated', 'modal'].includes(l.kind)) continue;
-    let part = String(l.text).replace(nameRe, '~'), mm;
+    let part = String(l.text).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().replace(nameRe, '~'), mm;   // v0.99.62 reminder text first: "Equip {2} ({2}: Attach ...)" was split at the colon inside it
     if (l.kind === 'triggered' && (mm = part.match(/^(?:When|Whenever|At)\b[^,]*,\s*([\s\S]*)$/i))) part = mm[1];
     else if (l.kind === 'activated' && (mm = part.match(/^[^:]+:\s*([\s\S]*)$/))) part = mm[1];
     const parts = l.kind === 'modal' ? ((parseModal(l.text) || { modes: [] }).modes.map(mo => String(mo.text).replace(nameRe, '~'))) : [part];
@@ -285,7 +285,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^Exile ~\.?$/i, /^If you search your library this way, shuffle\.?$/i, /^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 // A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
 // Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
 const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
@@ -294,6 +294,7 @@ function verbGaps(sentence, labels) {
   return VERB_CHECKS.filter(([v, l]) => v.test(s) && !l.test(labels)).map(([v]) => v.source);
 }
 function uncoveredClauses(effectText) {
+  if (!state) { state = freshState(); try { return uncoveredClauses(effectText); } finally { state = null; } }   // v0.99.62 read with an empty board, like recognizedEffects (some readers need a game state)
   if (hasRawQuote(effectText)) effectText = maskQuotes(effectText);   // quoted ability text belongs to the token/granted object, not to this card's own clauses
   effectText = applyCondInstead(effectText, true);   // a conditional "instead" sentence whose condition the app understands is covered
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();

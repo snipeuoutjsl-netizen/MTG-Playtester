@@ -14,7 +14,7 @@ function parseTargetSpecs(text) {
     const rest = t.slice(m.index + m[0].length), sm = rest.match(STOP);
     const phrase = rest.slice(0, sm.index).trim(), after = rest.slice(sm.index);
     const sp = { min: 1, max: 1, types: [], mods: [], ctrl: 'any', pctrl: 'any', player: false, qual: '', label: '' };
-    { const a = t.lastIndexOf('. ', m.index), b = t.indexOf('.', m.index); sp.clause = t.slice(a < 0 ? 0 : a + 2, b < 0 ? t.length : b + 1).trim(); }   // v0.94.5 the sentence this target belongs to, so the window can say which mode it is for
+    { const q = t.replace(/["“][^"”]*["”]/g, x => x.replace(/\./g, ' ')), a = q.lastIndexOf('. ', m.index), b = q.indexOf('.', m.index); sp.clause = t.slice(a < 0 ? 0 : a + 2, b < 0 ? t.length : b + 1).trim(); }   // v0.94.5 the sentence this target belongs to, so the window can say which mode it is for
     let cm;
     if (/\bany number of\s*$/i.test(before)) { sp.min = 0; sp.max = 99; }
     else if ((cm = before.match(/\bup to (one|two|three|four|five|x|\d+)\s*$/i))) { sp.min = 0; sp.max = wnum(cm[1]) === 'X' ? 1 : wnum(cm[1]); }
@@ -183,9 +183,21 @@ function dealDamageTo(c, n, src) {
   else { c.dmg = (c.dmg || 0) + n; log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
   runToughnessSBA(); render(); flushTriggers();
 }
-function destroyPerm(c, src) {
+// v0.99.62 CR 701.19 regenerate: "the next time this permanent would be destroyed this turn, instead tap it, remove all damage from it,
+// and remove it from combat". A shield is a counter on the permanent that lasts until the end of the turn it was made in.
+function regenShields(c) { return c && c.regenTurn === (state && state.turn) ? (c.regen || 0) : 0; }
+function addRegenShield(c, src) { if (!c || !state) return; c.regen = regenShields(c) + 1; c.regenTurn = state.turn; log(`${src}: ${c.name} gets a regeneration shield (${c.regen} this turn)`); }
+function tryRegenerate(c, why) {
+  if (!c || !state || !regenShields(c)) return false;
+  c.regen--; c.tapped = true; c.dmg = 0;
+  if (state.combat) for (const k of ['attackers', 'blockers']) if (Array.isArray(state.combat[k])) state.combat[k] = state.combat[k].filter(a => (a && a.id !== undefined ? a.id : a) !== c.id);
+  log(`${c.name} regenerates instead of being destroyed${why ? ' (' + why + ')' : ''}: tapped, damage removed, removed from combat (CR 701.19)`);
+  toast('Regenerated', `${c.name} was tapped and removed from combat instead of being destroyed.`); return true;
+}
+function destroyPerm(c, src, noRegen) {
   if (!state) return;
   if (hasKw(c, 'indestructible')) { log(`${src}: ${c.name} is indestructible, so it is not destroyed`); toast('Not destroyed', `${c.name} has indestructible.`); return; }
+  if (!noRegen && tryRegenerate(c, src)) { render(); return; }
   snap(); log(`${src}: destroyed ${c.name}`); leaveBattlefield(c, 'graveyard'); render(); flushTriggers();
 }
 // The effects of a resolving spell/ability, bound to the targets that were chosen for it.
@@ -303,7 +315,7 @@ function finishAbilityResolving() {
 function finishResolving() {   // the spell whose effect was just applied (or skipped) now leaves the stack
   const c = state && state.resolving; if (!c) return;
   if (state.discarding || handPick) { state.resolvingWait = true; render(); return; }   // wait until the chosen cards have been discarded
-  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
+  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || exileSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
 }
 function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();

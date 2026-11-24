@@ -24,9 +24,12 @@ function officialToken(name, pt, col, tx) {
 }
 const SKIP_LAYOUTS = new Set(['token', 'double_faced_token', 'emblem', 'art_series', 'vanguard', 'scheme', 'planar', 'augment', 'host']);
 
+// v0.99.62 MTGJSON (the backup card source, used when Scryfall cannot be reached, e.g. on some phones) writes loyalty costs as "[+2]: ..." where Scryfall writes "+2: ...".
+const fixLoyaltyText = tx => typeof tx === 'string' && tx.includes('[') ? tx.replace(/^\[([+−–‒-]?(?:\d+|X))\]:/gm, '$1:') : tx;
+function fixCardRecord(c) { if (c && c.tx) c.tx = fixLoyaltyText(c.tx); return c; }
 function compact(o) {
   const faces = o.card_faces && o.card_faces.length ? o.card_faces : null;
-  const text = o.oracle_text != null ? o.oracle_text : (faces ? faces.map(f => f.oracle_text || '').join('\n//\n') : '');
+  const text = fixLoyaltyText(o.oracle_text != null ? o.oracle_text : (faces ? faces.map(f => f.oracle_text || '').join('\n//\n') : ''));
   const mana = o.mana_cost != null && o.mana_cost !== '' ? o.mana_cost : (faces ? faces.map(f => f.mana_cost || '').filter(Boolean).join(' // ') : '');
   const type = o.type_line || (faces ? faces.map(f => f.type_line || '').join(' // ') : '');
   const front = type.split(' // ')[0];
@@ -104,6 +107,7 @@ function buildIndex(list) {
 }
 
 function installCards(list) {
+  for (const c of list) fixCardRecord(c);   // copies saved by an older version from MTGJSON
   CARDS = buildIndex(list);
   cardCount = list.length;
   updateDbStatus();
@@ -172,7 +176,7 @@ async function importCardData(file) {
 }
 
 const META = new Map();   // card data picked up from Scryfall lookups (used when no bulk file is loaded)
-try { const m = JSON.parse(localStorage.getItem('mtgpt.meta') || '{}'); for (const k in m) META.set(k, normFaces(m[k])); } catch (e) { /* ignore */ }
+try { const m = JSON.parse(localStorage.getItem('mtgpt.meta') || '{}'); for (const k in m) META.set(k, fixCardRecord(normFaces(m[k]))); } catch (e) { /* ignore */ }
 function saveMeta() { try { localStorage.setItem('mtgpt.meta', JSON.stringify(Object.fromEntries(META))); } catch (e) { /* ignore */ } }
 function setMeta(card, asked) {
   const c = normFaces(compact(card));
@@ -360,8 +364,8 @@ function parseLookDistribute(tx) {
     { const im = /^if (.+?), instead (put .+|exile .+)$/i.exec(sent.replace(/\.$/, '')); if (im) { const a2 = parseLookDistribute(`Look at the top ${m0[1]} cards of your library. ${im[2]}.`); if (a2 && a2.slots.length) { alt = { cond: im[1], slots: a2.slots }; continue; } ok = false; continue; } }
     if (/^you may play (?:it|the exiled card|that card|those cards|them) this turn\.?$/i.test(sent)) { play = true; continue; }
     // "You may reveal a colorless card from among them and put it into your hand." (Ancient Stirrings): reading it as "put up to one colorless card into your hand" keeps the filter and the cap
-    const rv = /^(?:you may )?reveal (an?|one|up to (?:one|two|three|\d+)) ([a-z ]+? cards?)(?: with mana value (?:x|\d+) or (?:less|greater))? from among (?:them|those cards) and put (?:it|them|that card|those cards) into your hand\.?$/i.exec(sent);
-    if (rv) sent = `Put up to ${/^up to /i.test(rv[1]) ? rv[1].slice(6) : 'one'} ${rv[2]}${(/ with mana value (?:x|\d+) or (?:less|greater)/i.exec(sent) || [''])[0]} into your hand.`;
+    const rv = /^(?:you may )?reveal (an?|one|up to (?:one|two|three|\d+)) ([a-z ,]+? cards?)(?: with mana value (?:x|\d+) or (?:less|greater))? from among (?:them|those cards) and put (?:it|them|that card|those cards) into your hand\.?$/i.exec(sent);
+    if (rv) sent = `Put up to ${/^up to /i.test(rv[1]) ? rv[1].slice(6) : 'one'} ${rv[2].replace(/,\s*(?:or\s+)?/g, ' or ')}${(/ with mana value (?:x|\d+) or (?:less|greater)/i.exec(sent) || [''])[0]} into your hand.`;
     if (!/^(?:put|exile|then|you may put)\b/i.test(sent)) { ok = false; continue; }
     for (const cl of sent.replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+(?=(?:the rest|put|exile|one|two|a)\b)/i)) {
       const c = cl.trim().toLowerCase(); if (!c) continue;
@@ -376,9 +380,15 @@ function parseLookDistribute(tx) {
       if (dest === 'battlefield' || dest === 'hand') {
         const um = /\bup to (a|one|two|three|four|five|\d+)\b/.exec(c); if (um) max = numOf(um[1]);
         const fm = /\b(?:put|puts) (?:up to (?:a|one|two|three|four|five|\d+) |any number of |an? |one |two |three |\d+ )?([a-z ]+?) cards?\b(?: with mana value (x|\d+) or (less|greater))?/.exec(c);
-        if (fm) { const words = fm[1].trim().split(/\s+/).filter(w => w !== 'or' && w !== 'and'), mvn = fm[2] ? (fm[2] === 'x' ? numOf(m0[1]) : +fm[2]) : null, op = fm[3];
+        if (fm) fm[1] = fm[1].replace(/,/g, ' ');
+        if (fm) { const words = fm[1].trim().split(/\s+/).filter(w => w && w !== 'or' && w !== 'and'), mvn = fm[2] ? (fm[2] === 'x' ? numOf(m0[1]) : +fm[2]) : null, op = fm[3];
           const okWord = w => /^(?:creature|land|artifact|enchantment|planeswalker|permanent|nonland|noncreature|instant|sorcery|colorless)$/.test(w);
-          if (words.every(okWord)) { filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || ''; if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
+          // v0.99.62 subtypes too ("an Elf, Warrior, or Tyvar card"): a word that is not a card type is matched against the subtypes (changelings count)
+          if (!words.every(okWord) && words.every(w => okWord(w) || /^[a-z][a-z'-]*$/.test(w))) { const subs = words.filter(w => !okWord(w)), types = words.filter(okWord);
+            filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || '', sub = (tl.split('\u2014')[1] || '').toLowerCase(); if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
+              return types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl)) || subs.some(w => new RegExp('\\b' + w + 's?\\b').test(sub)) || (/\bchangeling\b/i.test(info.tx || '') && /\bCreature\b/.test(tl)); };
+            fdesc = words.join(' or ') + ' card'; }
+          else if (words.every(okWord)) { filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || ''; if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
             return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : w === 'colorless' ? !/\{[^}]*[WUBRG]/.test(info.mc || '') : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
           else { ok = false; } }
       }

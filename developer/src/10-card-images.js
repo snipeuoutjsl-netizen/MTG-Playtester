@@ -52,7 +52,7 @@ function setImgEntry(key, rec) {
   const e = { front: null, back: null, remote: false };
   if (rec.front) e.front = URL.createObjectURL(rec.front); else if (rec.frontUrl) { e.front = rec.frontUrl; e.remote = true; }
   if (rec.back) e.back = URL.createObjectURL(rec.back); else if (rec.backUrl) { e.back = rec.backUrl; e.remote = true; }
-  if (rec.meta && !META.has(key)) META.set(key, rec.meta);
+  if (rec.meta && !META.has(key)) META.set(key, fixCardRecord(rec.meta));
   if (e.front) IMG.set(key, e);
   if (!cardCount && rec.meta) updateDbStatus();
 }
