@@ -5462,7 +5462,7 @@ function onCardDbl(c, zone) {
   if (!state || state.phase !== 'play' || state.discarding || holdForTriggers()) return;
   // v0.99.62 one double tap = one action. Phones can deliver the double tap twice (the browser's own and the touch layer's), which opened a spell's choices twice.
   { const now = Date.now(); if (lastDblAct.id === c.id && now - lastDblAct.t < 600) return; lastDblAct = { id: c.id, t: now }; }
-  if (document.querySelector('#modalRoot .modal') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
+  if (document.querySelector('#modalRoot .modal, #stackStage .modal.res-panel') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
   if (zone === 'battlefield') {
     if (isPlaneswalker(c)) openLoyalty(c);
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);
@@ -6371,13 +6371,17 @@ function modal(title, opts) {
     body, foot);
   if (opts.noClose) m.dataset.noclose = '1';
   const back = h('div', { class: 'backdrop' + (opts.dock ? ' dock' : '') + (opts.resolve ? ' resolve' : '') }, m);
+  // v0.99.66 a resolving effect's choices live inside the stack window (drawStackStage moves this panel there), so the card being resolved,
+  // the stack behind it and the choices are one window; when the stack window is not shown it stays a floating window as before
+  if (opts.resolve) { m.classList.add('res-panel'); m._home = back; setTimeout(() => { try { drawStackStage(); } catch (e) { /* no table */ } }, 0); }
   back.addEventListener('mousedown', e => { if (e.target === back && !opts.sticky && !opts.dock) close(); });
   root.append(back);
   let closed = false;
   function close() {
     if (closed) return;
     closed = true;
-    back.remove();
+    back.remove(); if (m.isConnected) m.remove();
+    if (opts.resolve) setTimeout(() => { try { drawStackStage(); } catch (e) { /* no table */ } }, 0);
     if (state && state.halfChosen) setTimeout(checkHalfAbandon, 80);
     if (opts.onClose) opts.onClose();
   }
@@ -6390,7 +6394,7 @@ document.addEventListener('dragover', ev => { if (ev.dataTransfer && [...ev.data
 document.addEventListener('drop', async ev => {
   const fs = ev.dataTransfer && ev.dataTransfer.files; if (!fs || !fs.length) return;
   ev.preventDefault();
-  if (document.querySelector('#modalRoot .modal')) { toast('Finish this window first', 'Close the open window, then drop the file again.'); return; }
+  if (document.querySelector('#modalRoot .modal, #stackStage .modal.res-panel')) { toast('Finish this window first', 'Close the open window, then drop the file again.'); return; }
   const f = [...fs].find(x => /\.(txt|dec|dek|text)$/i.test(x.name) || /^text\//.test(x.type));
   if (!f) { toast('Not a decklist', 'Drop a .txt decklist file.'); return; }
   openDeckEditor({ blank: true, text: (await f.text()).replace(/\r\n?/g, '\n'), name: f.name.replace(/\.[^.]+$/, '').replace(/_+/g, ' ').trim() });
@@ -6770,8 +6774,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.65';
+const APP_VERSION = '0.99.66';
 const CHANGELOG = [
+  { v: '0.99.66', title: 'Choices inside the stack window', notes: ['When a spell or ability resolves, its choices (Apply buttons, Done) now appear inside the stack window, under the card that is resolving, instead of in a separate narrow window. On phones the stack window spans the screen, so the choices are full width and easy to tap; on the computer the stack window widens while it holds them.', 'One Done button finishes the effect (the separate Finish button is gone while the choices are shown).', 'Escape still closes the window it should.'] },
   { v: '0.99.65', title: 'A deeper book, and pages printed on both sides', notes: ['The menu book has real depth: the pages rise from a sunken gutter, the page block is several uneven layers that step out at the sides and bottom, and it sits on a thick cover board.', 'The turning page is printed on both sides: turning to a card, its back carries the card picture, so the left page no longer goes blank while the page lands; turning back, the picture lifts away with the page.', 'RULES: "Return target creature card from your graveyard to the battlefield. It gains haste until end of turn." no longer offers to give the spell itself haste: "it" is the card just returned (the return already gives that card haste).'] },
   { v: '0.99.64', title: 'As Foretold', notes: ['RULES (CR 118.9): a permanent that says "you may pay {0} rather than pay the mana cost for a spell you cast with mana value X or less" (As Foretold) now gives each spell it allows a "Pay {0} instead" way to cast. X is read from its time counters, and "once each turn" is kept.', 'A card with no mana cost has mana value 0 (CR 202.3a), so Living End, Ancestral Vision and the like can be cast through As Foretold even with no time counters; they could not be cast at all before.', 'Spells over the limit show why the As Foretold way is not available (its mana value, or already used this turn). Cards that already cost {0} get no extra button.'] },
   { v: '0.99.63', title: 'The deck laid out like Deck stats, and an old book', notes: ['Library desk: the deck is laid out the way the Deck stats window shows it: grouped by card type (Creatures, Instants & Sorceries, Lands …), in mana-value order, one stack per card with its copies stacked straight down. Stacks never overlap, so the flicker is gone.', 'Hovering a card on the desk only turns the book to that card: nothing on the desk moves, grows or glows.', 'The cards are sized so the whole deck is always on screen, whatever the window shape (the desk is closer to you than the wall, so its real on-screen size is measured).', 'The menu book is bigger, lies back on its stand at a slight angle, and looks old: torn page edges, stains, a thick uneven page block and a worn leather cover. Pages turn up out of the book in 3D. Its print is a size larger and nothing is cut off.', 'The Archive line in the book counts the card data you really have: the full file, or the cards looked up for your decks (it used to say empty when only your decks\' cards were saved).'] },
@@ -9083,7 +9088,9 @@ function drawStackStage() {
   const resPick = !!state && state.phase === 'play' && state.discarding > 0 && (layoutOn('pickCentre') || (!state.stack.length && !!handPick && !!handPick.res));   // v0.94.2 every hand choice, not only ones from a resolving ability
   const resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
   const on = !!state && state.phase === 'play' && (state.stack.length > 0 || resPick || resSpell || resAb);
-  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { el.replaceChildren(); return; }
+  const panel = [...document.querySelectorAll('.modal.res-panel')].pop() || null;
+  const home = () => { if (panel && panel._home && panel.parentNode !== panel._home && panel._home.isConnected) panel._home.append(panel); };
+  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { home(); el.replaceChildren(); el.classList.remove('has-panel'); return; }
   el.classList.add('sk'); el.classList.toggle('min', stackMin && !resPick);
   const pickSrc = resPick ? pickSource() : null;
   const items = resPick ? [handPick && handPick.res ? (state.resolving || Object.assign({}, handPick.res, { id: 'res', ability: true })) : pickSrc] : resSpell ? [state.resolving] : resAb ? [state.resolvingAb, ...[...state.stack].reverse()] : [...state.stack].reverse();
@@ -9139,10 +9146,12 @@ function drawStackStage() {
     h('span', { class: 'sk-sp' }),
     stackMin && main ? (() => { const b = main.cloneNode(true); b.onclick = main.onclick; b.disabled = main.disabled; b.classList.add('sk-mini'); return b; })() : null,
     h('button', { class: 'sk-fold', 'aria-label': stackMin ? 'Show the stack' : 'Fold the stack', title: stackMin ? 'Show the stack' : 'Fold the stack down to one line', text: stackMin ? '▾' : '▴', onclick: () => { stackMin = !stackMin; drawStackStage(); } }));
-  if (stackMin && !resPick) { el.replaceChildren(head); return; }
+  el.classList.toggle('has-panel', !!panel);
+  if (stackMin && !resPick && !panel) { el.replaceChildren(head); return; }
+  if (panel) { el.classList.remove('min'); if (resAb) { note = null; buttons = []; } }   // its own Done button finishes it   // the panel itself says what is resolving and holds its choices
   el.replaceChildren(head,
     list.length ? h('div', { class: 'sk-list' }, list.map(row)) : null,
-    note, linesEl(),
+    note, panel, linesEl(),
     h('div', { class: 'sk-foot ss-btns' }, ...buttons.filter(Boolean)), hint);
 }
 // kept for older callers: the docked panel needs no scaling
@@ -10343,7 +10352,7 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('keydown', e => {
     if (e.target.closest && e.target.closest('input, textarea, select')) return;
-    if ($('#modalRoot').children.length) { if (e.key === 'Escape' && !$('#modalRoot').lastElementChild.querySelector('.modal[data-noclose]')) $('#modalRoot').lastElementChild.querySelector('header button').click(); return; }
+    if ($('#modalRoot').children.length) { const top = [...document.querySelectorAll('#modalRoot .modal')].pop() || document.querySelector('#stackStage .modal.res-panel'); if (e.key === 'Escape' && top && !top.matches('[data-noclose]')) { const x = top.querySelector('header button'); if (x) x.click(); } return; }   // v0.99.66 the resolve panel may sit in the stack window
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
     else if (e.ctrlKey || e.metaKey || e.altKey) return;
