@@ -245,11 +245,39 @@ function castRoutes(c, extra) {
   for (const a of alts) for (const ch of chs) routes.push(mk(a.label, a.mana ? taxed(a.mana, ec) : taxed('', ec), a, a.cond, ch));
   // v0.99.45 CR 118.9 + 601.2f: a permanent that lets you cast spells from your hand "without paying their mana costs" (Omniscience) is another way to cast them.
   { const fp = c.fromGy || c.fromExile ? null : freeCastPermission(c); if (fp) for (const ch of chs) routes.push(mk(`Without paying its mana cost (${fp})`, '', { kind: 'free', label: `Without paying its mana cost (${fp})`, mana: '', comps: [] }, '', ch)); }
+  // v0.99.64 CR 118.9: a permanent that offers another cost for spells you cast (As Foretold: "Once each turn, you may pay {0} rather than pay the mana cost
+  // for a spell you cast with mana value X or less …"). A card with no mana cost has mana value 0, so this is a way to cast Living End or Ancestral Vision (CR 118.6, 202.3a).
+  if (!c.fromGy) for (const g of grantedAltCosts(c)) for (const ch of chs) { const r = mk(g.label, g.mana ? taxed(g.mana, ec) : taxed('', ec), { kind: 'granted', label: g.label, mana: g.mana, comps: [], onPay: g.onPay }, '', ch); if (g.why) { r.ok = false; r.why = 'condition'; r.detail = g.why; } routes.push(r); }
   // CR 118.6: a card with no mana cost (Ancestral Vision, Lotus Bloom, Living End) can't be cast by paying its mana cost; only suspend or another effect casts it.
   if (noManaCost(c)) for (const r of routes) if (!r.alt) { r.ok = false; r.why = 'nocost'; r.detail = 'it has no mana cost, so it cannot be cast normally (CR 118.6)' + (suspendFor(c) ? '; suspend it instead' : ''); }
   const lim = routeLimits(c, routes); return lim.length ? lim : routes;
 }
 function noManaCost(c) { const i = c && !c.token ? cardInfo(c.name) : null; return !!i && !i.land && !String(i.mc || '').split(' // ')[0].trim() && !/\bLand\b/.test(frontType(c) || ''); }
+// Alternative costs offered by your permanents for the spells you cast, read from their text:
+// "[Once each turn, ]you may pay {COST} rather than pay the mana cost for [a|the first] [<type>] spell[s] you cast [from your hand] [each turn] [with mana value N or less | with mana value X or less, where X is the number of <kind> counters on <this permanent>]."
+function grantedAltCosts(c) {
+  const out = []; if (!state || !c || isLandName(c.name)) return out;
+  const own = cardInfo(c.name) || {}, mv = +own.cmc || 0, ty = frontType(c) || '';
+  if (!noManaCost(c) && symCmc(String(own.mc || '').split(' // ')[0]) === 0) return out;   // a {0} spell gains nothing from another {0} cost
+  for (const p of state.battlefield) { if (p.opp) continue; const tx = (cardText(p) || '').replace(/\([^)]*\)/g, '');
+    for (const raw of tx.split('\n')) { const line = raw.trim().replace(/’/g, "'"); const m = line.match(/^(once each turn, )?you may pay ((?:\{[^}]+\})+) rather than pay the mana cost for (?:a |an |the first )?(.+?)\.?$/i); if (!m) continue;
+      let rest = m[3]; const once = !!m[1] || /\bthe first\b/i.test(line) || /\beach turn\b/i.test(rest);
+      const fm = rest.match(/^(.*?)\s*spells? you cast\b/i); if (!fm) continue;
+      const filt = fm[1].trim().toLowerCase(); rest = rest.slice(fm[0].length);
+      if (/\bfrom your hand\b/i.test(rest) && (c.fromExile || c.fromGy)) continue;
+      if (filt && !(filterMatches(filt, c) || new RegExp('\\b' + filt.replace(/s$/, ''), 'i').test(ty))) continue;
+      let lim = Infinity, limTxt = '';
+      const lm = rest.match(/with mana value (\d+|x) or less(?:, where x is the number of ([+\-\w\/]+) counters on (?:this \w+|~|it|[A-Z][^.,]*))?/i);
+      if (lm) { if (/^x$/i.test(lm[1])) { const kind = (lm[2] || '').toLowerCase(), key = kind === '+1/+1' ? 'plus' : kind === '-1/-1' ? 'minus' : kind; lim = (p.counters && +p.counters[key]) || 0; limTxt = `: mana value ${lim} or less, from its ${lim} ${kind} counter${lim === 1 ? '' : 's'}`; } else { lim = +lm[1]; limTxt = `: mana value ${lim} or less`; } }
+      else if (/\bwith\b|\bif\b/i.test(rest.replace(/\b(?:from your hand|each turn|this turn)\b/gi, ''))) continue;   // a condition the app does not read: no button rather than a wrong one
+      let why = '';
+      if (mv > lim) why = `${p.name} allows mana value ${lim} or less; ${c.name} has mana value ${mv}`;
+      else if (once && p.altCostTurn === state.turn) why = `${p.name} was already used this turn`;
+      const pid = p.id;
+      out.push({ label: `Pay ${m[2]} instead \u2014 ${p.name}${limTxt}`, mana: m[2] === '{0}' ? '' : m[2], why, onPay: () => { const f = findCard(pid); if (f && once) f.card.altCostTurn = state.turn; log(`${c.name}: cast by paying ${m[2]} rather than its mana cost (${p.name}${once ? ', once each turn' : ''})`); } });
+    } }
+  return out;
+}
 function freeCastPermission(c) {
   if (!state) return null; const ty = frontType(c) || '';
   for (const p of state.battlefield) { if (p.opp) continue; const tx = cardText(p) || ''; let m;
@@ -449,7 +477,7 @@ function runCast(c, reopen, modes, route, kicks) {
     let manaE = mana; if (route.alt && route.alt.reduceBySac) { const sp = picks.find(p => p.comp.emerge); const sc = sp && findCard(sp.ids[0]); const mv = sc && !sc.card.token ? (cardInfo(sc.card.name) || {}).cmc || 0 : 0; manaE = reduceGenericBy(mana, mv); log(`${c.name}: emerge, ${sc ? sc.card.name : 'the sacrificed creature'} has mana value ${mv}, so the cost is reduced by ${mv}`); }
     runReducers(c, manaE, reducerKinds(c), (mana2, rpicks) => {
       const ci = { picks: picks.concat(rpicks), life: comps.filter(x => x.k === 'life').reduce((a, x) => a + x.n, 0), alt: route.alt ? route.alt.kind : null, label: route.label, kicked, casualty: kicks.some(k => k.casualty), replicate: kicks.filter(k => k.replicate && !k.squad).length, squad: kicks.filter(k => k.squad).length, offspring: kicks.some(k => k.offspring), evoked: !!(route.alt && route.alt.kind === 'evoke'), splice: kicks.filter(k => k.splice).map(k => k.splice) };
-      const finish = ids => { commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
+      const finish = ids => { if (route.alt && route.alt.onPay) route.alt.onPay(); commitSpellToStack(id, ids, reopen, undefined, modes, ci); if (manual.length) toast('Other costs', `Pay the rest of the cost yourself: ${manual.join(', ')}.`); };
       const full = mergeGeneric(mana2);
       if (noManaSpend(c) && (symCmc(full) > 0 || /\{[WUBRGCSP]/i.test(full))) { toast("You can't spend mana on this spell", `${c.name} must be paid for entirely by tapping creatures (convoke) and exiling cards from your graveyard (delve). ${full} is still unpaid, so it is not cast.`); return; }
       if ((!route.alt && !effectiveCost(c).base) || (symCmc(full) === 0 && !/\{[WUBRGCXSP]/i.test(full))) { finish([]); return; }

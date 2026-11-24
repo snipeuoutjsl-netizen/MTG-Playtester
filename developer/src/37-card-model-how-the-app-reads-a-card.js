@@ -18,6 +18,7 @@ const KW_ENFORCED = { has(n) {
   return kwEnfMemo.has(n);
 } };
 const STATIC_PATTERNS = [
+  [/^(?:once each turn, )?you may pay (?:\{[^}]+\})+ rather than pay the mana cost for (?:a |an |the first )?(?:[\w\- ]*?)spells? you cast(?: from your hand)?(?: each turn)?(?: with mana value (?:\d+|x) or less(?:, where x is the number of [+\-\w\/]+ counters on (?:this \w+|~))?)?\.?$/i, 'Alternative cost for your spells (rule 118.9): each spell it allows gets a "Pay … instead" way to cast, limited by mana value (counted from the counters) and to once a turn where it says so. Cards with no mana cost have mana value 0, so they qualify.'],
   [/^(?:~|this creature) enters prepared\.?$/i, 'Prepared (CR 722.3c): it enters prepared, so a copy of its prepare spell waits in exile; cast it from the creature\'s menu or the exile zone. Casting it unprepares the creature.'],
   [/^you can'?t spend mana to cast this spell\.?$/i, "Can't spend mana (CR 601.2h): the whole cost has to be paid by convoke, delve and the like; the app refuses mana for it."],
   [/^you may cast (?:this card|~) from your graveyard\.?$/i, 'Cast from the graveyard (CR 601.3): the graveyard shows a Cast button for it, with the normal timing and cost.'],
