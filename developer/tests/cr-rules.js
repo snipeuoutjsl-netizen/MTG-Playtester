@@ -1539,7 +1539,7 @@ const { setup } = require('./common.js');
       tile('SwapA').querySelector('.bk-stage').click(); await W(1100); const a = document.querySelector('#hall .dbx-info h3').textContent;
       tile('SwapB').querySelector('.bk-stage').click(); await W(1100);
       const shown = [...document.querySelectorAll('#hall .dbx-pull')].map(() => document.querySelector('#hall .tome-info h3').textContent), outs = [...document.querySelectorAll('#hall .bk-tile.out')].map(t => t.querySelector('.bk-title').textContent);
-      const spreads = document.querySelectorAll('#hall .hall-spread').length, cols = document.querySelectorAll('#hall .hall-spread .ds-col').length;
+      const spreads = document.querySelectorAll('#hall .hall-spread').length, cols = document.querySelectorAll('#hall .hall-spread .ds-stack').length;
       tile('SwapB').querySelector('.bk-stage').click(); await W(300); const again = document.querySelectorAll('#hall .dbx-pull').length;
       __d.closeHall(false); return { a, shown, outs, again, spreads, cols }; });
     return { ok: r.a === 'SwapA' && r.shown.join() === 'SwapB' && r.outs.join() === 'SwapB' && r.again === 1 && r.spreads === 1 && r.cols === 2, why: JSON.stringify(r) }; });
@@ -1561,6 +1561,19 @@ const { setup } = require('./common.js');
     const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); __d.openHall(); await W(200); __d.closeHall(true); await W(900); document.getElementById('btnDecks').click(); await W(300);
       const op = getComputedStyle(document.getElementById('hall')).opacity, on = document.body.classList.contains('hall-on'), lab = document.getElementById('btnDecks').textContent.trim(); __d.closeHall(false); return { op, on, lab }; });
     return { ok: r.op === '1' && r.on && /Return to the Library/.test(r.lab), why: JSON.stringify(r) }; });
+  await T('205.2b + 121.2', 'Type words side by side all apply and every draw triggers: a cost "Sacrifice an artifact creature" accepts only artifact creatures (not Sol Ring, not Grizzly Bears); "nontoken creature", "noncreature artifact", "colorless creature", "basic land" and "token" filter correctly and "a permanent" accepts any permanent; a "whenever an artifact creature enters" filter ignores plain artifacts and creatures; drawing five cards with "Whenever you draw a card" on the battlefield triggers five times; "a white or green creature" matches a green creature', async () => { await reset(); await toMain();
+    const r = await ev(() => { const d = __d, s = d.state; s.battlefield = []; s.pendingTriggers = [];
+      const mk = n => { const c = Object.assign(d.newCard(n), { id: s.nextId++ }); c.sick = false; s.battlefield.push(c); return c; };
+      ['Grizzly Bears', 'Memnite', 'Sol Ring', 'Forest'].forEach(mk); const tok = { id: s.nextId++, name: 'Treasure', token: true, tk: { type: 'Artifact — Treasure', types: ['Artifact'] } }; s.battlefield.push(tok);
+      const pick = ph => { const f = d.parseCostFilter(ph); return s.battlefield.filter(c => d.cardMatchesFilter(c, f, -1)).map(c => c.name).sort().join(','); };
+      const costs = { ac: pick('an artifact creature'), nt: pick('a nontoken creature'), nca: pick('a noncreature artifact'), cl: pick('a colorless creature'), bl: pick('a basic land'), tk: pick('a token'), pm: pick('a permanent') };
+      const trig = ['Grizzly Bears', 'Memnite', 'Sol Ring', 'Treasure'].map(n => d.filterMatches('an artifact creature', s.battlefield.find(c => c.name === n))).join(',');
+      const col = d.filterMatches('a white or green creature', s.battlefield.find(c => c.name === 'Grizzly Bears'));
+      s.battlefield = []; mk('Mock Scholar'); s.pendingTriggers = []; while (s.library.length < 10) s.library.push(Object.assign(d.newCard('Forest'), { id: s.nextId++ }));
+      d.drawCards(5); const draws = (s.pendingTriggers || []).filter(t => /gain 1 life/i.test(t.effect || '')).length + document.querySelectorAll('#modalRoot .modal').length * 0;
+      s.pendingTriggers = []; document.getElementById('modalRoot').innerHTML = ''; return { costs, trig, draws, col }; });
+    const c = r.costs;
+    return { ok: c.ac === 'Memnite' && c.nt === 'Grizzly Bears,Memnite' && c.nca === 'Sol Ring,Treasure' && c.cl === 'Memnite' && c.bl === 'Forest' && c.tk === 'Treasure' && c.pm.split(',').length === 5 && r.trig === 'false,true,false,false' && r.draws === 5 && r.col === true, why: JSON.stringify(r) }; });
   await T('903', 'Commander mode: a Commander section is read; 40 life, command zone, 99-card library; free first mulligan; the commander tax is {2} per previous cast from the command zone; the commander may go back to the command zone from the graveyard; 21 commander damage is tracked', async () => {
     const r = await ev(async () => {
       const pd = __d.parseDeck('Commander\n1 Mock Commander\n\nDeck\n99 Forest'), flagged = pd.main.filter(x => x.cmd).map(x => x.name).join();

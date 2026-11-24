@@ -126,10 +126,13 @@ function filterMatches(filter, card) {
   for (const w of ['creature', 'artifact', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery']) if (new RegExp('\\bnon-?' + w + '\\b').test(f) && new RegExp('\\b' + w + '\\b', 'i').test(t)) return false;   // CR 205.4b: "nonland", "nonartifact" ... exclude that type
   if (/\bnonlegendary\b/.test(f) && /\bLegendary\b/i.test(t)) return false;
   const words = [['instant or sorcery', /\b(Instant|Sorcery)\b/], ['instant', /\bInstant\b/], ['sorcery', /\bSorcery\b/], ['artifact', /\bArtifact\b/], ['enchantment', /\bEnchantment\b/], ['planeswalker', /\bPlaneswalker\b/], ['land', /\bLand\b/], ['creature', /\bCreature\b/]];
-  { const cw = f.match(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/); if (cw && !colorWordOk(cw[1], cardColorSet(card))) return false; }
-  const mentioned = words.filter(([w]) => new RegExp('(?<!non)\\b' + w + '\\b').test(f));
-  if (!mentioned.length) return true;
-  return mentioned.some(([, re]) => re.test(t));
+  { const cws = [...f.matchAll(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/g)].map(m => m[1]), cs = cardColorSet(card);   // v0.99.53 "a white or green creature": any of the colours (before, only the first was checked)
+    if (cws.length && !(/\bor\b/.test(f) ? cws.some(w => colorWordOk(w, cs)) : cws.every(w => colorWordOk(w, cs)))) return false; }
+  // v0.99.53 "or" separates alternatives; type words side by side all apply ("an artifact creature" is both, CR 205.2b)
+  const partTypes = f.split(/\s+or\s+|,\s*/).map(part => words.filter(([w]) => w !== 'instant or sorcery' && new RegExp('(?<!non-?)\\b' + w + '\\b').test(part)));
+  const withTypes = partTypes.filter(m => m.length);
+  if (!withTypes.length) return true;
+  return withTypes.some(m => m.every(([, re]) => re.test(t)));
 }
 function fireTrigger(ev, ctx = {}) {
   if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }

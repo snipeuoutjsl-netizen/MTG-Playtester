@@ -50,25 +50,25 @@ function beginWith(name) {
 function deckSpreadEl(deck, deckName, onCard) {
   const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
   const build = () => {
-    const by = new Map();
-    for (const x of deck.main) {
-      const rec = resolve(x.name), land = rec ? !!rec.land : BASIC_LANDS.has(norm(x.name)), k = land ? 99 : Math.min(7, Math.floor((rec && +rec.cmc) || 0));
-      const nm = rec ? rec.name : x.name, col = by.get(k) || new Map(); col.set(nm, { name: nm, rec, qty: (col.get(nm) ? col.get(nm).qty : 0) + (x.qty || x.n || 1) }); by.set(k, col);
-    }
-    const STRIP = 24;
-    const cols = [...by.keys()].sort((a, b) => a - b).map(k => {
-      const list = [...by.get(k).values()].sort((a, b) => a.name.localeCompare(b.name)), n = list.reduce((a, c) => a + c.qty, 0);
-      const stack = h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + 153}px` }, list.map((c, i) => {
-        const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
-          im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
-          h('em', { class: 'ds-qty', text: '×' + c.qty }));
-        const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
-        if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 120); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
-        return card; }));
-      return h('div', { class: 'ds-col' }, h('div', { class: 'ds-h', text: `${k === 99 ? 'Lands' : k === 7 ? '7+' : k}  ·  ${n}` }), stack);
-    });
+    // v0.99.53 stacks of at most three different cards (in mana-value order, lands last; the basic lands share one stack), no labels
+    const tot = new Map();
+    for (const x of deck.main) { const rec = resolve(x.name), nm = rec ? rec.name : x.name, o = tot.get(nm) || { name: nm, rec, qty: 0 }; o.qty += (x.qty || x.n || 1); tot.set(nm, o); }
+    const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
+    const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
+    const spells = all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), lands = all.filter(c => isLand(c) && !isBasic(c)).sort(byName), basics = all.filter(isBasic).sort(byName);
+    const stacks = [], chunk3 = list => { for (let i = 0; i < list.length; i += 3) stacks.push(list.slice(i, i + 3)); };
+    const mvs = [...new Set(spells.map(mv))]; for (const v of mvs) chunk3(spells.filter(c => mv(c) === v));
+    chunk3(lands); if (basics.length) stacks.push(basics);
+    const STRIP = 30, CH = 206;
+    const cols = stacks.map(list => h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + CH}px` }, list.map((c, i) => {
+      const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
+        im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
+        h('em', { class: 'ds-qty', text: '×' + c.qty }));
+      const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
+      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 120); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
+      return card; })));
     el.replaceChildren(...cols);
-    requestAnimationFrame(() => { const W = 1520, H = 262, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
+    requestAnimationFrame(() => { const W = 1520, H = 268, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
   };
   if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 350); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
   build();
@@ -107,6 +107,26 @@ function tomeCard(tome, c, deckName) {
   const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
   setTimeout(fill, 210 / aspd()); a.onfinish = () => leaf.remove();
 }
+// v0.99.53 Library look: the wall and the desk top, kept in 'mtgpt.hallLook'
+const HALL_WALLS = [['plaster', 'Warm plaster', ''], ['sage', 'Sage plaster', 'hue-rotate(58deg) saturate(.75) brightness(.95)'], ['midnight', 'Midnight', 'hue-rotate(190deg) saturate(.85) brightness(.78)'], ['oxblood', 'Oxblood', 'hue-rotate(-22deg) saturate(1.7) brightness(.8)'], ['ash', 'Ash grey', 'saturate(.15) brightness(1.05)'], ['boards', 'Wood boards', '']];
+const HALL_DESKS = [['walnut', 'Walnut', ''], ['oak', 'Oak', 'brightness(1.28) saturate(.85) sepia(.12)'], ['mahogany', 'Mahogany', 'hue-rotate(-14deg) saturate(1.45) brightness(.8)'], ['ebony', 'Ebony', 'brightness(.42) saturate(.7)'], ['baize', 'Green baize', '']];
+function hallLook() { const v = lsGet('mtgpt.hallLook', null) || {}; return { wall: HALL_WALLS.some(w => w[0] === v.wall) ? v.wall : 'plaster', desk: HALL_DESKS.some(w => w[0] === v.desk) ? v.desk : 'walnut' }; }
+function applyHallLook() { const el = document.getElementById('hall'); if (!el) return; const L = hallLook();
+  [...el.classList].filter(c => /^(wall|desk)-/.test(c)).forEach(c => el.classList.remove(c)); el.classList.add('wall-' + L.wall, 'desk-' + L.desk); }
+function openHallLook() {
+  const m = modal('Library look', { width: 560 });
+  const sw = (kind, [k, label, f]) => { const L = hallLook(), on = L[kind] === k;
+    const prev = kind === 'wall' ? (k === 'boards' ? 'repeating-linear-gradient(90deg, rgba(0,0,0,.5) 0 2px, transparent 2px 40px), var(--wood-panel) 0 0 / 200px 200px' : 'var(--wall-plaster) 0 0 / 128px 128px')
+      : (k === 'baize' ? '#1f5a3a' : 'var(--wood-desk) 0 0 / 260px 130px');
+    return h('button', { class: 'look-sw' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: () => { const v = hallLook(); v[kind] = k; lsSet('mtgpt.hallLook', v); applyHallLook(); draw(); } },
+      h('i', { style: `background:${prev};filter:${f || 'none'}` }), h('span', { text: label })); };
+  const draw = () => m.body.replaceChildren(
+    h('div', { class: 'fhead', text: 'Wall' }), h('div', { class: 'look-grid' }, HALL_WALLS.map(w => sw('wall', w))),
+    h('div', { class: 'fhead', text: 'Desk' }), h('div', { class: 'look-grid' }, HALL_DESKS.map(w => sw('desk', w))));
+  draw();
+}
+// v0.99.53 the logo: a temple front (the Library) on an open book; the same drawing as the top bar and the app icon
+const HALL_LOGO = '<svg class="lg" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lgGoldP" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1bd"/><stop offset=".45" stop-color="#e9c26a"/><stop offset="1" stop-color="#a8761f"/></linearGradient></defs><g fill="url(#lgGoldP)"><path d="M7 22.5 32 9l25 13.5z"/><path fill="var(--lg-bg, #1b130d)" d="M15.5 20.6 32 12.2l16.5 8.4z"/><rect x="8.5" y="23.8" width="47" height="3.6" rx=".6"/>\n<rect x="11.2" y="29" width="4" height="16.5" rx=".8"/><rect x="19.1" y="29" width="4" height="16.5" rx=".8"/><rect x="27" y="29" width="4" height="16.5" rx=".8"/><rect x="33" y="29" width="4" height="16.5" rx=".8"/><rect x="40.9" y="29" width="4" height="16.5" rx=".8"/><rect x="48.8" y="29" width="4" height="16.5" rx=".8"/>\n<rect x="9.5" y="27.6" width="45" height="1.6" rx=".5"/>\n<path d="M5 48.2c9.2-2.6 19-2.1 27 2.6v5.4c-8-4.4-17.8-4.9-27-2.4z"/><path d="M59 48.2c-9.2-2.6-19-2.1-27 2.6v5.4c8-4.4 17.8-4.9 27-2.4z"/></g></svg>';
 const HALL_W = 1600, HALL_H = 900, HALL_PER_PAGE = 40;
 let hallPage = 0;
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
@@ -124,21 +144,32 @@ function drawHall() {
   const inGame = !!(state && state.deckName);
   const modeSeg = FEATURES.commander ? h('div', { class: 'modeseg hall-mode', role: 'tablist', 'aria-label': 'Game mode' }, ...[['standard', 'Standard'], ['commander', 'Commander']].map(([k, lab]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), text: lab, onclick: () => { if (mode === k) return; setGameMode(k); hallPage = 0; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); drawHall(); } }))) : null;
   const playChk = document.getElementById('chkPlay'); const onPlay = playChk ? playChk.checked : true;
-  const left = h('div', { class: 'hall-page left' }, h('div', { class: 'hall-h', text: 'Play' }),
-    inGame ? btn(`Continue: ${state.deckName} (turn ${state.turn || 1})`, () => closeHall(true), 'primary', 'Back to the game in progress') : null,
-    btn(cur ? `New game with ${cur}` : 'New game', () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, inGame ? '' : 'primary', 'Start a new game with the selected deck'),
-    modeSeg,
-    h('label', { class: 'hall-chk' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), ' I go first (on the play)'),
-    btn('Import a new deck…', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true })),
-    btn('Scan decks & save report', () => saveDeckScanReport(), '', 'Reads every card in every deck and saves a report'));
-  const right = h('div', { class: 'hall-page right' }, h('div', { class: 'hall-h', text: 'The Library' }),
-    btn('Settings', () => openSettings()),
-    btn('Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }),
-    btn('Rules & help', () => openWelcome()),
-    btn('How the app reads cards', () => { try { $('#btnReading').click(); } catch (e) {} }),
-    btn(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }),
-    h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
-    h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
+  // v0.99.53 the menu book, regrouped: the left page is for playing (your game, the deck in hand, how to start), the right page for
+  // the library itself (decks, options, help), each under a small heading.
+  const sec = (title, ...kids) => h('div', { class: 'hall-sec' }, h('div', { class: 'hall-h', text: title }), ...kids);
+  const left = h('div', { class: 'hall-page left' },
+    inGame ? sec('Your game', btn(`Continue: ${state.deckName}`, () => closeHall(true), 'primary', 'Back to the game in progress (Esc)'), h('div', { class: 'hall-sub', text: `Turn ${state.turn || 1} · the game waits for you` })) : null,
+    sec('New game',
+      h('div', { class: 'hall-deck' }, h('span', { class: 'hall-sub', text: 'Deck in hand' }), h('b', { text: cur || 'none yet' }), h('span', { class: 'hall-sub', text: all.length ? 'Take a book from the shelves to choose another.' : 'Import a deck to fill the shelves.' })),
+      modeSeg,
+      h('label', { class: 'hall-chk' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), ' I go first (on the play)'),
+      btn(inGame ? 'Start a new game' : `New game with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, inGame ? '' : 'primary', 'Shuffle up and deal with the deck in hand')));
+  const link = (text, fn, title) => h('button', { class: 'hall-btn hall-link', text, title: title || '', onclick: fn });
+  const right = h('div', { class: 'hall-page right' },
+    sec('Decks', h('div', { class: 'hall-links' },
+      link('Import a deck…', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'),
+      link('Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'))),
+    sec('Options', h('div', { class: 'hall-links' },
+      link('Settings', () => openSettings()),
+      link('Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }),
+      link('Library look…', () => openHallLook(), 'Choose the wall and the desk'))),
+    sec('Help', h('div', { class: 'hall-links' },
+      link('Rules & help', () => openWelcome()),
+      link('How cards are read', () => { try { $('#btnReading').click(); } catch (e) {} }),
+      link(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }))),
+    h('div', { class: 'hall-foot' },
+      h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
+      h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts')));
   const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
   const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: (deck, name) => deckSpreadEl(deck, name, c => tomeCard(tome, c, name)), layer: null };
   const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: hallScene });
@@ -147,7 +178,7 @@ function drawHall() {
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
     h('button', { text: '›', title: 'More shelves', disabled: hallPage >= pages - 1, onclick: () => { hallPage++; drawHall(); } })) : null;
   world.append(
-    h('div', { class: 'hall-plaque' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }), pager),
+    h('div', { class: 'hall-plaque' }, h('div', { class: 'hall-plaque-row' }, (() => { const x = h('span', { class: 'hall-logo' }); x.innerHTML = HALL_LOGO; return x; })(), h('div', { class: 'hall-plaque-t' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }))), pager),
     shelf,
     h('div', { class: 'hall-desktop', 'aria-hidden': 'true' }), h('div', { class: 'hall-deskfront', 'aria-hidden': 'true' }),
     h('div', { class: 'hall-stand', 'aria-hidden': 'true' }), h('div', { class: 'hall-tome-shadow', 'aria-hidden': 'true' }),
@@ -156,6 +187,6 @@ function drawHall() {
   hallScene.layer = stage;
   el.replaceChildren(h('div', { class: 'hall-view' }, stage),
     inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null);
-  hallFit(); requestAnimationFrame(hallFit);
+  applyHallLook(); hallFit(); requestAnimationFrame(hallFit);
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull')) { e.preventDefault(); closeHall(true); } });

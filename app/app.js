@@ -1248,10 +1248,13 @@ function filterMatches(filter, card) {
   for (const w of ['creature', 'artifact', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery']) if (new RegExp('\\bnon-?' + w + '\\b').test(f) && new RegExp('\\b' + w + '\\b', 'i').test(t)) return false;   // CR 205.4b: "nonland", "nonartifact" ... exclude that type
   if (/\bnonlegendary\b/.test(f) && /\bLegendary\b/i.test(t)) return false;
   const words = [['instant or sorcery', /\b(Instant|Sorcery)\b/], ['instant', /\bInstant\b/], ['sorcery', /\bSorcery\b/], ['artifact', /\bArtifact\b/], ['enchantment', /\bEnchantment\b/], ['planeswalker', /\bPlaneswalker\b/], ['land', /\bLand\b/], ['creature', /\bCreature\b/]];
-  { const cw = f.match(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/); if (cw && !colorWordOk(cw[1], cardColorSet(card))) return false; }
-  const mentioned = words.filter(([w]) => new RegExp('(?<!non)\\b' + w + '\\b').test(f));
-  if (!mentioned.length) return true;
-  return mentioned.some(([, re]) => re.test(t));
+  { const cws = [...f.matchAll(/\b(colorless|multicolored|colored|white|blue|black|red|green)\b/g)].map(m => m[1]), cs = cardColorSet(card);   // v0.99.53 "a white or green creature": any of the colours (before, only the first was checked)
+    if (cws.length && !(/\bor\b/.test(f) ? cws.some(w => colorWordOk(w, cs)) : cws.every(w => colorWordOk(w, cs)))) return false; }
+  // v0.99.53 "or" separates alternatives; type words side by side all apply ("an artifact creature" is both, CR 205.2b)
+  const partTypes = f.split(/\s+or\s+|,\s*/).map(part => words.filter(([w]) => w !== 'instant or sorcery' && new RegExp('(?<!non-?)\\b' + w + '\\b').test(part)));
+  const withTypes = partTypes.filter(m => m.length);
+  if (!withTypes.length) return true;
+  return withTypes.some(m => m.every(([, re]) => re.test(t)));
 }
 function fireTrigger(ev, ctx = {}) {
   if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
@@ -2358,18 +2361,29 @@ function parseCostFilter(phrase) {
   { const pw = s.match(/\bwith power (\d+) or greater\b/); if (pw) { f.minPower = +pw[1]; s = s.replace(pw[0], ' ').trim(); } }   // v0.96.2 casualty
   if (/\b(?:another|other)\b/.test(s)) { f.other = true; s = s.replace(/\b(?:another|other)\b/g, ' '); }
   if (/\buntapped\b/.test(s)) { f.untapped = true; s = s.replace(/\buntapped\b/g, ' '); }
+  // v0.99.53 words inside one alternative all apply (CR 205.2/205.4: "artifact creature" is both, "nontoken creature" excludes tokens);
+  // "or" separates alternatives, and an alternative with only adjectives takes the type of the last one ("a red or green creature")
+  const SUPERS = ['basic', 'legendary', 'snow', 'world'];
   for (const part of s.split(/\s+or\s+|,\s*/)) {
-    const a = { types: [], colors: [], subs: [], nonland: false };
+    const a = { types: [], colors: [], subs: [], nonland: false, notTypes: [], token: null, colorless: false, multicolored: false, tapped: false };
     for (const w0 of part.trim().split(/\s+/)) {
-      if (!w0 || w0 === 'a' || w0 === 'an') continue;
-      const w = singularWord(w0);
+      if (!w0 || w0 === 'a' || w0 === 'an' || w0 === 'one') continue;
+      const w = singularWord(w0); let m;
       if (w === 'nonland') a.nonland = true;
+      else if (w === 'nontoken') a.token = false;
+      else if (w === 'token') a.token = true;
+      else if (w === 'colorless') a.colorless = true;
+      else if (w === 'multicolored') a.multicolored = true;
+      else if (w === 'tapped') a.tapped = true;
+      else if ((m = w.match(/^non-?(creature|artifact|enchantment|planeswalker|battle|legendary|basic|snow)$/))) a.notTypes.push(m[1]);
       else if (COLOR_LETTER[w]) a.colors.push(COLOR_LETTER[w]);
-      else if (TYPE_WORDS.includes(w) || w === 'instant' || w === 'sorcery' || w === 'legendary') a.types.push(w);
+      else if (TYPE_WORDS.includes(w) || w === 'instant' || w === 'sorcery' || SUPERS.includes(w)) a.types.push(w);
       else a.subs.push(w);
     }
     f.alts.push(a);
   }
+  { const last = [...f.alts].reverse().find(a => a.types.length || a.subs.length);
+    if (last) for (const a of f.alts) if (a !== last && !a.types.length && !a.subs.length) { a.types = last.types.slice(); a.subs = last.subs.slice(); } }
   if (!f.alts.length) f.alts.push({ types: [], colors: [], subs: [], nonland: false });
   return f;
 }
@@ -2378,8 +2392,10 @@ function cardMatchesFilter(c, f, srcId) {
   if (f.untapped && c.tapped) return false;
   if (f.minPower && ptCalc(c).p < f.minPower) return false;
   const p = permTypeInfo(c), cols = c.token ? [] : (onBattlefield(c) ? effColors(c) : printedColors(c));
-  return f.alts.some(a => (!a.types.length || a.types.some(t => p.types.has(t))) && (!a.colors.length || a.colors.some(x => cols.includes(x)))
-    && (!a.subs.length || a.subs.some(sb => p.subs.has(sb))) && (!a.nonland || !p.types.has('land')));
+  return f.alts.some(a => (!a.types.length || a.types.every(t => p.types.has(t))) && (!a.colors.length || a.colors.some(x => cols.includes(x)))
+    && (!a.subs.length || a.subs.some(sb => p.subs.has(sb))) && (!a.nonland || !p.types.has('land'))
+    && !(a.notTypes || []).some(t => p.types.has(t)) && (a.token == null || !!c.token === a.token)
+    && (!a.colorless || !cols.length) && (!a.multicolored || cols.length > 1) && (!a.tapped || !!c.tapped));
 }
 // Parse a cost string ("{2}, {T}, Sacrifice a creature") into components.
 function parseCostComps(text, short) {
@@ -3980,7 +3996,7 @@ function drawCards(n, silent) {
     state.hand.push(state.library.shift());
     if (!silent) noteMiracleDraw(state.hand[state.hand.length - 1]);
     drawn++; if (!silent) setTimeout(() => sfx('draw'), (drawn - 1) * 110);
-    if (!silent && drawn <= 3) fireTrigger('draw');
+    if (!silent) fireTrigger('draw');   // v0.99.53 every card drawn is its own draw (CR 121.2): no cap on "whenever you draw a card"
   }
   if (skipped && !silent) log(`Skipped ${skipped} draw${skipped === 1 ? '' : 's'} (the Skip draws switch is on)`);
   return drawn;
@@ -6687,8 +6703,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.52';
+const APP_VERSION = '0.99.53';
 const CHANGELOG = [
+  { v: '0.99.53', title: 'A new logo, and the Library arranged', notes: ['New logo: a temple front (the Library) standing on an open book, in gold. It is used in the top bar, on the Library\'s name plate and as the app icon.', 'The deck on the desk: stacks hold at most three different cards (the basic lands share one stack), the mana-value labels are gone, and the cards are bigger. Hovering a card outlines it in gold instead of lifting it over its neighbours, and the open book turns to its page.', 'The menu book is regrouped. The left page is for playing: your game, the deck in hand, Standard or Commander, who goes first, and Start. The right page is for the Library: Decks, Options and Help.', '"Buy this deck…" is now among a deck\'s buttons in the Library.', 'Library look… (in the menu book): choose the wall (warm plaster, sage, midnight, oxblood, ash grey, wood boards) and the desk (walnut, oak, mahogany, ebony, green baize).', 'Rules: type words side by side now all apply (CR 205.2b). A cost like "Sacrifice an artifact creature" accepts only artifact creatures, and a trigger for "an artifact creature" ignores plain artifacts and plain creatures. Before, either type was enough.', 'Rules: costs that say nontoken, token, noncreature (or any non-type), colorless, multicolored, basic, legendary or tapped now work. Before, they matched nothing (could not be paid) or ignored the word. "A red or green creature" now means a red creature or a green creature.', 'Rules: every card drawn triggers "Whenever you draw a card" (CR 121.2). Before, only the first three cards of one draw did.', 'Rules: "a white or green creature" in a trigger now matches a creature of either colour. Before, only the first colour was checked.'] },
   { v: '0.99.52', title: 'Turn to the card', notes: ['Hovering a card laid out on the desk now turns the open book to that card\'s page: its picture on the left, and on the right its name, cost, type, rules text, power and toughness, and how many the deck has. Move off the cards and the book turns back to the deck. The cards on the desk only lift a little now instead of zooming.', 'Fixed: going back to the Library from a game could show an empty screen. The Library\'s fade-out stayed on it, so it opened invisible the next time. This was also behind the "crash" when changing decks mid-game.', 'The deck button in the top bar is now "Return to the Library". Your game is kept, and "Back to the table" (or Esc) returns to it.'] },
   { v: '0.99.51', title: 'The deck on the desk', notes: ['When you take a book down, its main deck is laid out on the desk below: one column per mana value (0 to 7+, lands last), each card once with its count, fanned so every name shows. Hover a card (or tab to it) to lift it to full size.', 'The deck details on the open book are now set as two proper pages: the deck on the left; key cards and the buttons on the right.', 'Books are solid now: a page block shows at the top, the bottom and the fore-edge, so a book taken down from a high shelf no longer looks hollow from underneath.', 'The title plate is lettered in Cinzel Decorative with a gold finish.', 'Clicking a book on the shelves always takes that book: the side of the book next to it, seen at an angle, could catch the click before.', 'Starting a game from the Library while one is in progress first clears any windows the old game left open. If the game cannot start, you get a message on the table instead of a blank screen.', 'The desk top is now a picture already drawn in the room\'s perspective. It looks the same but is much lighter on the graphics card than the huge 3D surface it replaces.'] },
   { v: '0.99.50', title: 'One room, one view', notes: ['The Library is now drawn as a real room seen from one spot: you sit at a desk facing a wall. Everything shares the same eye line, so the high shelves show their undersides, the lower ones sit near eye level, and the desk top runs towards you. Nothing is drawn from two different angles any more.', 'Four floating shelves of ten books hang on the wall, two on each side of a wooden name plate. With more than 40 decks, arrows on the plate turn to the next shelves.', 'The menu book leans on a stand in the middle of the desk. When you take a book down, it stands on the desk beside it and its details (colours, curve, key cards, notes and the buttons) fill the open book\'s pages.', 'The flight from shelf to desk is worked out in the room itself: the book slides forward out of its slot, arcs over and comes down onto the desk, growing as it comes closer. The neighbouring books show the gap it leaves.', 'The whole scene scales to fit the window.'] },
@@ -7973,6 +7990,7 @@ function pullDeckBox(m, tile, d) {
       btn(d.beginLabel || (d.isCur ? 'Keep using this deck' : 'Use this deck'), d.onPick, 'primary'),
       btn('Edit list', d.onEdit), d.onSide ? btn('Sideboard' + (d.deck.side.length ? ` (${sum(d.deck.side)})` : ''), d.onSide, d.dk.sb ? 'sbon' : '', 'Swap cards between your main deck and sideboard. The original list can always be restored.') : null,
       btn('Box art…', d.onArt, '', 'Choose which card’s art is on this box'), btn('Card art & printings…', d.onCustom, '', 'Pick printings or use your own pictures for the cards in this deck'),
+      btn('Buy this deck…', () => openBuyDeck(Object.assign({}, d.deck, { name: d.deckName })), '', 'Open TCGplayer with this list (and your chosen printings) ready to add to the cart'),
       h('button', { text: 'Put it back', onclick: () => putBack() }),
       h('button', { class: 'danger', text: 'Delete deck\u2026', title: 'Remove this deck from your library', onclick: () => confirmDeleteDeck(d.deckName, () => { putBack(true); if (d.redraw) d.redraw(); }) })));
   const sc3 = d.scene || null;   // v0.99.50 the Library: one 3D room; the book stands on the desk and its details fill the pages of the open book
@@ -13613,25 +13631,25 @@ function beginWith(name) {
 function deckSpreadEl(deck, deckName, onCard) {
   const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
   const build = () => {
-    const by = new Map();
-    for (const x of deck.main) {
-      const rec = resolve(x.name), land = rec ? !!rec.land : BASIC_LANDS.has(norm(x.name)), k = land ? 99 : Math.min(7, Math.floor((rec && +rec.cmc) || 0));
-      const nm = rec ? rec.name : x.name, col = by.get(k) || new Map(); col.set(nm, { name: nm, rec, qty: (col.get(nm) ? col.get(nm).qty : 0) + (x.qty || x.n || 1) }); by.set(k, col);
-    }
-    const STRIP = 24;
-    const cols = [...by.keys()].sort((a, b) => a - b).map(k => {
-      const list = [...by.get(k).values()].sort((a, b) => a.name.localeCompare(b.name)), n = list.reduce((a, c) => a + c.qty, 0);
-      const stack = h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + 153}px` }, list.map((c, i) => {
-        const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
-          im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
-          h('em', { class: 'ds-qty', text: '×' + c.qty }));
-        const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
-        if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 120); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
-        return card; }));
-      return h('div', { class: 'ds-col' }, h('div', { class: 'ds-h', text: `${k === 99 ? 'Lands' : k === 7 ? '7+' : k}  ·  ${n}` }), stack);
-    });
+    // v0.99.53 stacks of at most three different cards (in mana-value order, lands last; the basic lands share one stack), no labels
+    const tot = new Map();
+    for (const x of deck.main) { const rec = resolve(x.name), nm = rec ? rec.name : x.name, o = tot.get(nm) || { name: nm, rec, qty: 0 }; o.qty += (x.qty || x.n || 1); tot.set(nm, o); }
+    const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
+    const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
+    const spells = all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), lands = all.filter(c => isLand(c) && !isBasic(c)).sort(byName), basics = all.filter(isBasic).sort(byName);
+    const stacks = [], chunk3 = list => { for (let i = 0; i < list.length; i += 3) stacks.push(list.slice(i, i + 3)); };
+    const mvs = [...new Set(spells.map(mv))]; for (const v of mvs) chunk3(spells.filter(c => mv(c) === v));
+    chunk3(lands); if (basics.length) stacks.push(basics);
+    const STRIP = 30, CH = 206;
+    const cols = stacks.map(list => h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + CH}px` }, list.map((c, i) => {
+      const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
+        im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
+        h('em', { class: 'ds-qty', text: '×' + c.qty }));
+      const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
+      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 120); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
+      return card; })));
     el.replaceChildren(...cols);
-    requestAnimationFrame(() => { const W = 1520, H = 262, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
+    requestAnimationFrame(() => { const W = 1520, H = 268, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
   };
   if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 350); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
   build();
@@ -13670,6 +13688,26 @@ function tomeCard(tome, c, deckName) {
   const a = wa(leaf, back ? [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(180deg)' }] : [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-180deg)' }], { duration: 420, easing: 'cubic-bezier(.45,.05,.35,1)' });
   setTimeout(fill, 210 / aspd()); a.onfinish = () => leaf.remove();
 }
+// v0.99.53 Library look: the wall and the desk top, kept in 'mtgpt.hallLook'
+const HALL_WALLS = [['plaster', 'Warm plaster', ''], ['sage', 'Sage plaster', 'hue-rotate(58deg) saturate(.75) brightness(.95)'], ['midnight', 'Midnight', 'hue-rotate(190deg) saturate(.85) brightness(.78)'], ['oxblood', 'Oxblood', 'hue-rotate(-22deg) saturate(1.7) brightness(.8)'], ['ash', 'Ash grey', 'saturate(.15) brightness(1.05)'], ['boards', 'Wood boards', '']];
+const HALL_DESKS = [['walnut', 'Walnut', ''], ['oak', 'Oak', 'brightness(1.28) saturate(.85) sepia(.12)'], ['mahogany', 'Mahogany', 'hue-rotate(-14deg) saturate(1.45) brightness(.8)'], ['ebony', 'Ebony', 'brightness(.42) saturate(.7)'], ['baize', 'Green baize', '']];
+function hallLook() { const v = lsGet('mtgpt.hallLook', null) || {}; return { wall: HALL_WALLS.some(w => w[0] === v.wall) ? v.wall : 'plaster', desk: HALL_DESKS.some(w => w[0] === v.desk) ? v.desk : 'walnut' }; }
+function applyHallLook() { const el = document.getElementById('hall'); if (!el) return; const L = hallLook();
+  [...el.classList].filter(c => /^(wall|desk)-/.test(c)).forEach(c => el.classList.remove(c)); el.classList.add('wall-' + L.wall, 'desk-' + L.desk); }
+function openHallLook() {
+  const m = modal('Library look', { width: 560 });
+  const sw = (kind, [k, label, f]) => { const L = hallLook(), on = L[kind] === k;
+    const prev = kind === 'wall' ? (k === 'boards' ? 'repeating-linear-gradient(90deg, rgba(0,0,0,.5) 0 2px, transparent 2px 40px), var(--wood-panel) 0 0 / 200px 200px' : 'var(--wall-plaster) 0 0 / 128px 128px')
+      : (k === 'baize' ? '#1f5a3a' : 'var(--wood-desk) 0 0 / 260px 130px');
+    return h('button', { class: 'look-sw' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: () => { const v = hallLook(); v[kind] = k; lsSet('mtgpt.hallLook', v); applyHallLook(); draw(); } },
+      h('i', { style: `background:${prev};filter:${f || 'none'}` }), h('span', { text: label })); };
+  const draw = () => m.body.replaceChildren(
+    h('div', { class: 'fhead', text: 'Wall' }), h('div', { class: 'look-grid' }, HALL_WALLS.map(w => sw('wall', w))),
+    h('div', { class: 'fhead', text: 'Desk' }), h('div', { class: 'look-grid' }, HALL_DESKS.map(w => sw('desk', w))));
+  draw();
+}
+// v0.99.53 the logo: a temple front (the Library) on an open book; the same drawing as the top bar and the app icon
+const HALL_LOGO = '<svg class="lg" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lgGoldP" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1bd"/><stop offset=".45" stop-color="#e9c26a"/><stop offset="1" stop-color="#a8761f"/></linearGradient></defs><g fill="url(#lgGoldP)"><path d="M7 22.5 32 9l25 13.5z"/><path fill="var(--lg-bg, #1b130d)" d="M15.5 20.6 32 12.2l16.5 8.4z"/><rect x="8.5" y="23.8" width="47" height="3.6" rx=".6"/>\n<rect x="11.2" y="29" width="4" height="16.5" rx=".8"/><rect x="19.1" y="29" width="4" height="16.5" rx=".8"/><rect x="27" y="29" width="4" height="16.5" rx=".8"/><rect x="33" y="29" width="4" height="16.5" rx=".8"/><rect x="40.9" y="29" width="4" height="16.5" rx=".8"/><rect x="48.8" y="29" width="4" height="16.5" rx=".8"/>\n<rect x="9.5" y="27.6" width="45" height="1.6" rx=".5"/>\n<path d="M5 48.2c9.2-2.6 19-2.1 27 2.6v5.4c-8-4.4-17.8-4.9-27-2.4z"/><path d="M59 48.2c-9.2-2.6-19-2.1-27 2.6v5.4c8-4.4 17.8-4.9 27-2.4z"/></g></svg>';
 const HALL_W = 1600, HALL_H = 900, HALL_PER_PAGE = 40;
 let hallPage = 0;
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
@@ -13687,21 +13725,32 @@ function drawHall() {
   const inGame = !!(state && state.deckName);
   const modeSeg = FEATURES.commander ? h('div', { class: 'modeseg hall-mode', role: 'tablist', 'aria-label': 'Game mode' }, ...[['standard', 'Standard'], ['commander', 'Commander']].map(([k, lab]) => h('button', { class: 'modetab' + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), text: lab, onclick: () => { if (mode === k) return; setGameMode(k); hallPage = 0; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); drawHall(); } }))) : null;
   const playChk = document.getElementById('chkPlay'); const onPlay = playChk ? playChk.checked : true;
-  const left = h('div', { class: 'hall-page left' }, h('div', { class: 'hall-h', text: 'Play' }),
-    inGame ? btn(`Continue: ${state.deckName} (turn ${state.turn || 1})`, () => closeHall(true), 'primary', 'Back to the game in progress') : null,
-    btn(cur ? `New game with ${cur}` : 'New game', () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, inGame ? '' : 'primary', 'Start a new game with the selected deck'),
-    modeSeg,
-    h('label', { class: 'hall-chk' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), ' I go first (on the play)'),
-    btn('Import a new deck…', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true })),
-    btn('Scan decks & save report', () => saveDeckScanReport(), '', 'Reads every card in every deck and saves a report'));
-  const right = h('div', { class: 'hall-page right' }, h('div', { class: 'hall-h', text: 'The Library' }),
-    btn('Settings', () => openSettings()),
-    btn('Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }),
-    btn('Rules & help', () => openWelcome()),
-    btn('How the app reads cards', () => { try { $('#btnReading').click(); } catch (e) {} }),
-    btn(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }),
-    h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
-    h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts'));
+  // v0.99.53 the menu book, regrouped: the left page is for playing (your game, the deck in hand, how to start), the right page for
+  // the library itself (decks, options, help), each under a small heading.
+  const sec = (title, ...kids) => h('div', { class: 'hall-sec' }, h('div', { class: 'hall-h', text: title }), ...kids);
+  const left = h('div', { class: 'hall-page left' },
+    inGame ? sec('Your game', btn(`Continue: ${state.deckName}`, () => closeHall(true), 'primary', 'Back to the game in progress (Esc)'), h('div', { class: 'hall-sub', text: `Turn ${state.turn || 1} · the game waits for you` })) : null,
+    sec('New game',
+      h('div', { class: 'hall-deck' }, h('span', { class: 'hall-sub', text: 'Deck in hand' }), h('b', { text: cur || 'none yet' }), h('span', { class: 'hall-sub', text: all.length ? 'Take a book from the shelves to choose another.' : 'Import a deck to fill the shelves.' })),
+      modeSeg,
+      h('label', { class: 'hall-chk' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), ' I go first (on the play)'),
+      btn(inGame ? 'Start a new game' : `New game with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, inGame ? '' : 'primary', 'Shuffle up and deal with the deck in hand')));
+  const link = (text, fn, title) => h('button', { class: 'hall-btn hall-link', text, title: title || '', onclick: fn });
+  const right = h('div', { class: 'hall-page right' },
+    sec('Decks', h('div', { class: 'hall-links' },
+      link('Import a deck…', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'),
+      link('Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'))),
+    sec('Options', h('div', { class: 'hall-links' },
+      link('Settings', () => openSettings()),
+      link('Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }),
+      link('Library look…', () => openHallLook(), 'Choose the wall and the desk'))),
+    sec('Help', h('div', { class: 'hall-links' },
+      link('Rules & help', () => openWelcome()),
+      link('How cards are read', () => { try { $('#btnReading').click(); } catch (e) {} }),
+      link(`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }))),
+    h('div', { class: 'hall-foot' },
+      h('div', { class: 'hall-archive', text: `The Archive: ${CARDS.size ? CARDS.size.toLocaleString() + ' cards catalogued' : 'no card data yet'}` }),
+      h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts')));
   const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
   const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: (deck, name) => deckSpreadEl(deck, name, c => tomeCard(tome, c, name)), layer: null };
   const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: hallScene });
@@ -13710,7 +13759,7 @@ function drawHall() {
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
     h('button', { text: '›', title: 'More shelves', disabled: hallPage >= pages - 1, onclick: () => { hallPage++; drawHall(); } })) : null;
   world.append(
-    h('div', { class: 'hall-plaque' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }), pager),
+    h('div', { class: 'hall-plaque' }, h('div', { class: 'hall-plaque-row' }, (() => { const x = h('span', { class: 'hall-logo' }); x.innerHTML = HALL_LOGO; return x; })(), h('div', { class: 'hall-plaque-t' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }))), pager),
     shelf,
     h('div', { class: 'hall-desktop', 'aria-hidden': 'true' }), h('div', { class: 'hall-deskfront', 'aria-hidden': 'true' }),
     h('div', { class: 'hall-stand', 'aria-hidden': 'true' }), h('div', { class: 'hall-tome-shadow', 'aria-hidden': 'true' }),
@@ -13719,7 +13768,7 @@ function drawHall() {
   hallScene.layer = stage;
   el.replaceChildren(h('div', { class: 'hall-view' }, stage),
     inGame ? h('button', { class: 'hall-close', text: 'Back to the table', title: 'Return to the game in progress (Esc)', onclick: () => closeHall(true) }) : null);
-  hallFit(); requestAnimationFrame(hallFit);
+  applyHallLook(); hallFit(); requestAnimationFrame(hallFit);
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull')) { e.preventDefault(); closeHall(true); } });
 init();
