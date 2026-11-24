@@ -46,16 +46,18 @@ Image.fromarray(np.clip(np.array((58, 42, 32.))[None, None] * (0.82 + 0.36 * t[.
 # Embed as data URIs in app/style.css (in-app updates only ship index.html, app.js, style.css and package.json).
 # v0.99.51 the desk top pre-rendered in perspective with the Library's camera (perspective 1800, eye at x 800, 90 units above the
 # desk top, which meets the wall 560 units down the stage). Drawing it as a flat picture keeps a huge 3D plane off the GPU.
-def desk_persp(src='desk.jpg', out='desk_persp.jpg', P=1800., eye=(800., 470.), y0=560, y1=1040, W=1600, depth=1650., left=-500., width=2600.):
+def desk_persp(src='desk.jpg', out='desk_persp.jpg', P=1800., eye=(800., 470.), y0=560, y1=1040, W=1600, depth=1650., left=-500., width=2600., x0=0., res=1.):
     tex = np.asarray(Image.open(src).convert('RGB'), float); th, tw = tex.shape[:2]
-    Y, X = np.mgrid[y0:y1, 0:W].astype(float) + .5
+    Y, X = np.mgrid[0:int((y1 - y0) * res), 0:int(W * res)].astype(float) + .5
+    Y = y0 + Y / res; X = x0 + X / res
     m = np.maximum((Y - eye[1]) / (y0 - eye[1]), 1.0)          # magnification at that row (1 at the wall)
     z = P * (1 - 1 / m)                                         # depth of the desk point seen there
     u = eye[0] + (X - eye[0]) / m                               # its x on the desk
-    tx = np.clip((u - left) / width * (tw - 1), 0, tw - 1).astype(int); ty = np.clip(z / depth * (th - 1), 0, th - 1).astype(int)
+    tx = (np.mod((u - left) / width, 1.0) * (tw - 1)).astype(int)   # the board repeats sideways (wide windows)
+    ty = np.clip(z / depth * (th - 1), 0, th - 1).astype(int)
     img = tex[ty, tx]
     shade = np.clip(0.45 + 0.55 * np.minimum(1, z / 420.), 0, 1)[..., None]   # darker against the wall
     img = img * shade
     Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(.6)).save(out, quality=80)
-desk_persp()
-desk_persp(out='desk_persp_portrait.jpg', eye=(450., 760.), y0=1290, y1=1700, W=900)   # v0.99.55 the portrait room
+desk_persp(x0=-800., W=3200, res=.6)   # v0.99.61 wide enough for very wide windows (the stage is 1600 wide)
+desk_persp(out='desk_persp_portrait.jpg', eye=(450., 760.), y0=1290, y1=1960, W=1800, x0=-450., res=.7)   # v0.99.55 the portrait room
