@@ -303,6 +303,7 @@ function finishResolving() {   // the spell whose effect was just applied (or sk
   state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || exileSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
 }
 function resolveTopOfStack() {
+  if (gameIsOver()) return;   // v0.99.71 the game is over: nothing more is put on the stack or resolved until you choose Keep playing
   if(!state||!state.stack.length) return; snap();
   noteFlightFrom(state.stack[state.stack.length-1].id,`#stackStage .ss-card.top`);
   const c=state.stack.pop(); state.priority={active:false,passed:false};

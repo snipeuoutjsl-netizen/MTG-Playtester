@@ -23,11 +23,6 @@ with gzip.open(src, 'rt', encoding='utf-8') as f:
         n = c['name']
         if (n in names or n.split(' // ')[0] in names) and n not in seen and c.get('layout') not in ('token','art_series'):
             cards.append(c); seen.add(n)
-missing = sorted(x for x in names if x.startswith(('Mock ',)) and x not in seen and not any(s.startswith(x+' // ') for s in seen))
-import os
-mp = os.path.join(os.path.dirname(os.path.abspath(common)), 'mock-cards.json')   # invented test cards (their text is ours, so it is committed)
-if os.path.exists(mp):
-    mocks = json.load(open(mp)); have = {c['name'] for c in cards}; cards += [m for m in mocks if m['name'] not in have]; seen |= {m['name'] for m in mocks}
-    missing = [x for x in missing if x not in seen]
+missing = sorted(x for x in names if x not in seen and not any(s.startswith(x+' // ') for s in seen))   # every test card is a real card: none is invented
 json.dump(cards, open(out, 'w'))
-print(len(cards), 'real cards written;', len(missing), 'not found (mock cards):', ', '.join(missing))
+print(len(cards), 'real cards written;', len(missing), 'not found:', ', '.join(missing))

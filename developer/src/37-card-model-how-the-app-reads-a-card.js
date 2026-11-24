@@ -215,6 +215,7 @@ function compileCardOne(c) {
       push(text, 'static', 'ok', note); continue;
     }
     const sp = STATIC_PATTERNS.find(([re]) => re.test(stripped) || re.test(norml));
+    if (sp && /power and toughness are each equal to|power is equal to|toughness is equal to/i.test(norml) && !cdaUnderstood(card.name)) { push(text, 'static', 'part', 'Characteristic-defining ability the app cannot calculate (rule 604.3): set its power and toughness by hand with counters or the P/T override.'); continue; }   // v0.99.71 never shown as handled when ptCalc would say "unknown"
     if (sp && sp[1]) { push(text, 'static', sp[2] || 'ok', sp[1]); continue; }
     // spell effect
     if (isSpell) {

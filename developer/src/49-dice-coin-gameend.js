@@ -78,8 +78,14 @@ function openDiceCoin() {
 }
 // ---- game over: "Next round"
 let matchRecord = { w: 0, l: 0 };
+function gameIsOver() { return !!document.getElementById('gameEndBox'); }
+function clearPromptsForGameEnd() {   // v0.99.71 a trigger or choice that was open (Psychic Frog's draw after the lethal hit) must not sit over the result
+  document.querySelectorAll('#modalRoot .backdrop').forEach(b => { if (!b.querySelector('#gameEndBox')) b.remove(); });
+  document.querySelectorAll('#stackStage .res-panel').forEach(x => x.remove());
+}
 function showGameEnd(which, title, sub) {
   if (!state || $("#gameEndBox") || window.__noGameEnd) return;
+  clearPromptsForGameEnd();
   const won = which !== 'you'; won ? matchRecord.w++ : matchRecord.l++;
   const name = currentDeckName();
   const m = modal(won ? 'You won the game' : 'You lost the game', { width: 520, sticky: true });
@@ -90,5 +96,5 @@ function showGameEnd(which, title, sub) {
       h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
       h('button', { text: 'Choose another deck', onclick: () => { m.close(); try { openHall(); } catch (e) {} } })));
-  m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); } }));
+  m.foot.append(h('button', { text: 'Keep playing', title: 'Close this and carry on (use Undo if the result was a misclick)', onclick: () => { m.close(); setTimeout(() => { flushTriggers(); render(); }, 0); } }));
 }
