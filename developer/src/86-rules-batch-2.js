@@ -120,5 +120,6 @@ function batch2Options(txs, obj) {
   { const hasT2 = /\btarget\b/i.test(t); const gs2 = !hasT2 && sents.map(x => [x, /^(?:it|~) gains? ([a-z ]+?(?:,? and [a-z ]+?)?) until end of turn\.?$/i.exec(x)]).find(p => p[1]);
     if (gs2) { const kws = gs2[1][1].toLowerCase().split(/\s*(?:,\s*(?:and\s+)?|\band\b)\s*/).map(x => x.trim()).filter(Boolean);
       if (kws.length && kws.every(k => GRANTABLE.includes(k))) out.push({ covers: [gs2[0]], label: `${src} gains ${kws.join(' and ')} until end of turn`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } for (const k of kws) addKwFx(f.card.id, k, { srcName: src }); render(); } }); } }
+  batch3Options(t, sents, obj, src, out, drop);   // v0.99.80 src/87
   return { out, drop };
 }

@@ -822,6 +822,7 @@ function ptCalc(c) {
     if (e.kind !== 'cond' || e.g.id !== c.id || !(e.p || e.t) || !condHolds2(e)) continue;
     out.p += e.p; out.t += e.t; out.modified = true; out.why.push(`${e.p >= 0 ? '+' : ''}${e.p}/${e.t >= 0 ? '+' : ''}${e.t} from ${e.cond === 'ctrl' ? 'controlling a ' + e.need : 'delirium (' + deliriumCount() + ' card types in your graveyard)'}`);
   }
+  if (state && fxOn(c, 'switch').length % 2) { const p = out.p; out.p = out.t; out.t = p; out.modified = true; out.why.push('power and toughness switched until end of turn (CR 613.4d, applied last)'); }   // v0.99.80
   return out;
 }
 function powerOf(c) { const r = ptCalc(c); return { n: Math.max(0, r.p), star: r.unknown }; }
