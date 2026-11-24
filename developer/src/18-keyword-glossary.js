@@ -190,6 +190,7 @@ function showPreviewText(c) {
 function permZone(c) {
   if ((c.becomes && c.becomes.types.includes('creature')) || selfBecomes(c)) return 'creatures';
   if (c.token) return c.tk && c.tk.pt ? 'creatures' : 'noncreature';
+  if (state && state.battlefield.includes(c) && stationPT(c)) return 'creatures';   // v0.99.75 CR 721.2: a Spacecraft at its station P/T threshold is an artifact creature (laid out, attacks and blocks as one)
   const info = cardInfo(c.name);
   if (isLandName(c.name)) return 'lands';
   if (!info) return 'creatures';

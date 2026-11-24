@@ -115,7 +115,7 @@ function compileCardOne(c) {
   };
   const faceTypes = String(info.t || '').split(' // '); let faceIx = 0;
   for (const raw of String(info.tx || '').replace(/,\n/g, ', ').replace(/\n(?=\s*[\u2022\u2023])/g, ' ').split('\n')) {
-    const text = raw.trim(); if (!text) continue;
+    const text0 = raw.trim(), stb = /^(\d+)\+\s*\|\s*(.+)$/.exec(text0), text = stb ? stb[2].trim() : text0; if (!text) continue;   // v0.99.75 a STATION N+ line is read for what it grants (CR 721.2: it has it once N charge counters are on it)
     if (text === '//') { faceIx++; isSpell = /\b(Instant|Sorcery)\b/.test(faceTypes[faceIx] || ''); continue; }
     const stripped = stripAW(text.replace(/\([^)]*\)/g, '').trim());   // CR 207.2c: the label is not read
     if (!stripped) { push(text, 'reminder', 'info', 'Reminder text: it only explains the rules.'); continue; }

@@ -590,9 +590,23 @@ function parseSubject(raw, g) {
   let s = String(raw).toLowerCase().replace(/[’]/g, "'").replace(/\.$/, '').trim();
   const nm = g.name.split(' // ')[0].toLowerCase();
   if (s === nm || s === '~' || s === 'this creature' || s === 'this permanent' || s === 'this token') return { self: true, test: c => c.id === g.id };
+  // v0.99.75 qualifiers after the noun: "with a +1/+1 counter on it", "with flying", "without flying", "that are enchanted", "of the chosen type/color"
+  const quals = []; { let q, again = true;
+    while (again) { again = false;
+      if ((q = s.match(/^(.+?)\s+with (?:a|an|one or more)?\s*\+1\/\+1 counters? on (?:it|them)(\s+you control)?$/))) { s = q[1] + (q[2] || ''); quals.push(c => ((c.counters && c.counters.plus) || 0) > 0); again = true; }
+      else if ((q = s.match(/^(.+?)\s+with (?:a |one or more )?counters? on (?:it|them)(\s+you control)?$/))) { s = q[1] + (q[2] || ''); quals.push(c => Object.entries(c.counters || {}).some(([k, v]) => k !== 'minusApplied' && (v || 0) > 0)); again = true; }
+      else if ((q = s.match(/^(.+?)\s+(with|without) ([a-z ]+?)(\s+you control)?$/)) && GRANTABLE.includes(q[3])) { const kw = q[3], neg = q[2] === 'without'; s = q[1] + (q[4] || ''); quals.push(c => { const has = !!kwLine(cardText(c), kw) || !!(state && state.fx && state.fx.some(e => e.kind === 'kw' && e.targetId === c.id && e.kw === kw)); return neg ? !has : has; }); again = true; }   // printed or gained keywords only (a grant that depends on itself would loop)
+      else if ((q = s.match(/^(.+?) you control that are enchanted$/))) { s = q[1] + ' you control'; quals.push(c => !!(state && state.battlefield.some(a => a.att === c.id && /\bAura\b/.test(permTypeLine(a) || '')))); again = true; }
+      else if ((q = s.match(/^(.+?) you control of the chosen (type|color)$/)) || (q = s.match(/^(.+?) of the chosen (type|color)$/))) { const kind = q[2]; s = q[1] + (/you control/.test(q[0]) ? ' you control' : ''); quals.push(c => { const ch = String(g.chosen || g.chosenColor || '').toLowerCase(); if (!ch) return false; if (kind === 'color' || COLOR_LETTER[ch]) return effColors(c).includes(COLOR_LETTER[ch]); const p = permTypeInfo(c); return p.subs.has(singularWord(ch)) || (p.changeling && p.types.has('creature')); }); again = true; }
+    } }
+  if (quals.length) { const base = parseSubject(s, g); if (!base) return null; return { self: false, test: c => base.test(c) && quals.every(f => f(c)) }; }
   if (/opponent/.test(s) || /\b(that|with|target|enchanted|equipped|attached|named|who|whose|which|dealt|not)\b/.test(s)) return null;
+  { const yc = /\s+you control$/.test(s), body = s.replace(/\s+you control$/, ''), parts = body.split(/\s*,\s*(?:and\s+|or\s+)?|\s+(?:and|or|and\/or)\s+/).filter(Boolean);   // v0.99.75 a list of types: "Artifacts, creatures, enchantments, and lands you control" (Elspeth's emblem)
+    if (parts.length > 1 && parts.every(x => SUBJECT_TYPES.includes(singularWord(x.replace(/^(?:each|all|other)\s+/, ''))) && !/\s/.test(x.replace(/^(?:each|all|other)\s+/, '')))) {
+      const subs = parts.map(x => parseSubject(x + (yc ? ' you control' : ''), g)); if (subs.every(Boolean)) return { self: false, test: c => subs.some(q => q.test(c)) };
+    } }
   const mine = /\byou control\b/.test(s), general = /^(each|all|every)\b/.test(s) || /^other\b/.test(s);
-  if (!mine && !general && !/^(creatures|lands|artifacts|enchantments|permanents|planeswalkers)\b/.test(s)) return null;
+  if (!mine && !general && !/^(?:non(?:white|blue|black|red|green|artifact|land|token|legendary)\s+)?(creatures|lands|artifacts|enchantments|permanents|planeswalkers)\b/.test(s)) return null;
   s = s.replace(/^(each|all|every)\s+/, '').replace(/\s+you control$/, '').replace(/^(?:a|an)\s+/, '');
   let other = false; if (/^other\s+/.test(s)) { other = true; s = s.replace(/^other\s+/, ''); }
   const conds = []; let noun = null, sub = null;
@@ -613,7 +627,7 @@ function parseSubject(raw, g) {
     const sg = singularWord(w);
     if (sg === 'token') { conds.push(c => !!c.token); continue; }   // "Creature tokens you control"
     if (SUBJECT_TYPES.includes(sg)) { if (noun) conds.push(c => permTypeInfo(c).types.has(noun)); noun = sg; continue; }
-    if (sub) return null;
+    if (sub) { const s1 = sub; conds.push(c => { const p = permTypeInfo(c); return p.subs.has(s1) || (p.changeling && p.types.has('creature')); }); }   // v0.99.75 two subtypes: "Eldrazi Spawn creatures"
     sub = sg;
   }
   if (noun) conds.push(c => permTypeInfo(c).types.has(noun));
@@ -692,10 +706,11 @@ function parseStaticCard(g) {
 }
 function statics() {
   if (!state) return [];
-  const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '') + (c.token && c.tk ? ':' + (c.tk.tx || '').length : '')).join('|');
+  const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '') + (c.token && c.tk ? ':' + (c.tk.tx || '').length : '')).join('|') + '#' + (state.emblems || []).map(e => e.id).join(',');
   if (_stx.sig === sig) return _stx.list;
   const list = [];
   for (const g of state.battlefield) list.push(...parseStaticCard(g));
+  for (const g of state.emblems || []) list.push(...parseStaticCard(g));   // v0.99.75 CR 114.4: an emblem's static abilities work from the command zone (Kaito's "Ninjas you control get +1/+1")
   _stx = { sig, list };
   return list;
 }
@@ -732,7 +747,8 @@ function condHolds2(e) {
   return deliriumCount() >= (e.n || 4);
 }
 function kwGrant(c, kw) {
-  if (!state || !c || permZone(c) !== 'creatures' || !onBattlefield(c)) return null;
+  if (!state || !c || !onBattlefield(c)) return null;
+  if (permZone(c) !== 'creatures' && !['indestructible', 'hexproof', 'shroud'].includes(kw)) return null;   // v0.99.75 these keywords matter on any permanent (Elspeth's emblem makes lands indestructible)
   for (const e of statics()) if (e.kind === 'cs' && e.g.id === c.id && e.kws.includes(kw) && csActive(e)) return e.line;
   for (const e of statics()) if (e.kind === 'cond' && e.g.id === c.id && e.kws.includes(kw) && condHolds2(e)) return 'its delirium ability';
   for (const e of statics()) {
@@ -750,7 +766,7 @@ function hasKw(c, kw) {
   if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
-const GRANTABLE = ['islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
+const GRANTABLE = ['shroud', 'islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
 // Keywords a creature has only because of other permanents' static abilities (shown in the preview).
 function grantedKeywords(c) {
   const out = [];
@@ -2012,7 +2028,7 @@ function openAbilityEffect(obj, done) {
       const what = untracked ? obj.targets.map(t => t.name.replace(/ \(not tracked here\)$/, '')).join(', ') : '';
       const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
       for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
-      if (!keep.length) { const msg = untracked ? `it affects ${what}. The app does not track your opponent's permanents, so apply it on the real table.` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); toast(`${obj.sourceName || 'Ability'} resolves`, msg); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (!keep.length) { const said = sents.join(' ').replace(/^(?:it|this \w+)\b/i, obj.sourceName || 'It').replace(/\btarget ([^.,;]+?) (?:an opponent controls|you don't control|your opponent controls)\b/gi, "the $1 you chose on your opponent's side").replace(/\btarget ([a-z ]+?)(?=[.,;]| and\b)/gi, 'the $1 you chose'); const msg = untracked ? `${said} Your opponent's permanents are not on this table, so apply it to the real card (mark the damage or remove it there).` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); toast(`${obj.sourceName || 'Ability'} resolves`, msg); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
       if (keep.length < sents.length) { if (untracked) log(`${obj.sourceName || obj.name}: the part about ${what} is applied on the real table (the opponent's permanents are not tracked)`); const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
     }
   }
@@ -3636,6 +3652,7 @@ function resolveTopOfStack() {
     const nm0=c.name, adv0=c.half && (halfParent(c)||{}).kind==='adventure', cf0=c.castFrom, op0=!!c.kicked;
     // v0.90.11 rule 608.2n: an instant or sorcery stays on the stack until its effect is done, then goes to the graveyard. The effect window opens first.
     { const md0=c.modes?spellModal(c):null; let baseTx=md0?modalText(md0,c.modes):cardText(c); if(c.overloaded){ baseTx=overloadText(baseTx); delete c.overloaded; log(`${c.name}: overloaded, so every "target" is "each"`); } delete c.modes; delete c.modeTexts; delete c.splicedTx;
+      baseTx=String(baseTx||'').split('\n').filter(l=>!/^(?:As an additional cost to cast this spell\b|This spell costs\b[^.]*\b(?:less|more) to cast\b)/i.test(l.trim())).join('\n');   // v0.99.75 CR 601.2f/601.2b: costs were paid as it was cast; they are not effects of the resolving spell (Lightning Axe asked about "discard a card or pay {5}")
       let stx=applyKickedInstead(baseTx,op0).replace(/\bX\b/g,c.xValue!==undefined?String(c.xValue):'X').replace(/\b1 cards\b/g,'1 card');
       if(c.target) stx=applyGraveReturn(c,stx);
       if(stx && (c.xValue!==undefined || effectOptions(stx,{sourceName:c.name,sourceId:null,targets:c.targets}).length)) eff={ability:true,id:0,name:c.name,sourceName:c.name,sourceId:null,text:stx,targets:c.targets,_tgtAsked:true,castFrom:cf0,optPaid:op0}; delete c.targets; }
@@ -5832,6 +5849,7 @@ function showPreviewText(c) {
 function permZone(c) {
   if ((c.becomes && c.becomes.types.includes('creature')) || selfBecomes(c)) return 'creatures';
   if (c.token) return c.tk && c.tk.pt ? 'creatures' : 'noncreature';
+  if (state && state.battlefield.includes(c) && stationPT(c)) return 'creatures';   // v0.99.75 CR 721.2: a Spacecraft at its station P/T threshold is an artifact creature (laid out, attacks and blocks as one)
   const info = cardInfo(c.name);
   if (isLandName(c.name)) return 'lands';
   if (!info) return 'creatures';
@@ -6933,8 +6951,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.74';
+const APP_VERSION = '0.99.75';
 const CHANGELOG = [
+  { v: '0.99.75', title: 'Emblems and anthems, Station, Lightning Axe', notes: ['Emblems now work: their static abilities apply from the command zone (CR 114.4). Kaito\u2019s \u201cNinjas you control get +1/+1\u201d emblem pumps your Ninjas, and two of them stack; Sorin\u2019s +1/+0 and Elspeth\u2019s indestructible emblems apply too (Elspeth\u2019s now covers lands as well as creatures). Before, emblems only worked for triggered abilities.', 'The emblem panel is labelled Command zone, shows each emblem\u2019s own words, groups identical emblems with a \u00d7 count, and no longer covers your library.', 'Anthems read far more wordings (565 of the 729 anthem-style lines in Modern, up from 456): \u201cwith a +1/+1 counter on it\u201d (Abzan Falconer), \u201cother creatures you control with flying\u201d (Thunderclap Wyvern), \u201cwithout flying\u201d, \u201cthat are enchanted\u201d, \u201cof the chosen type / colour\u201d (Icon of Ancestry, Caged Sun), lists of types (\u201cArtifacts, creatures, enchantments, and lands\u201d), two subtypes (\u201cEldrazi Spawn creatures\u201d), \u201cNonwhite creatures\u201d (Crovax) and shroud.', 'Station: a Spacecraft with enough charge counters is now an artifact creature everywhere: it moves to the creature row, can attack and block, and deals combat damage (before, it had the creature P/T and keywords but could not attack). Its \u201cN+ | \u2026\u201d lines are read instead of being reported as gaps.', 'Skysovereign: its enters/attacks trigger can target only a creature or planeswalker an opponent controls. Because the opponent\u2019s permanents are not on this table, it now says exactly what to do (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) instead of a vague note. It never touches your creatures or the opponent\u2019s life.', 'Lightning Axe and other spells with \u201cAs an additional cost to cast this spell \u2026\u201d no longer ask about that cost when they resolve: it was paid as the spell was cast.', '282 rules tests pass, all with real cards.'] },
   { v: '0.99.74', title: 'Book tidy-up', notes: ['The little page numbers in the bottom corners of the Library book are gone (the curved page edge had pushed them off the page).', 'A page\u2019s writing now keeps a slightly larger margin above the bent bottom edge, so a long \u201cBegin with \u2026\u201d line is never cut off.'] },
   { v: '0.99.73', title: 'Restricted mana, Signets, a bookmark in the spine', notes: ['Mishra\u2019s Workshop and every other \u201cSpend this mana only to \u2026\u201d source: the restriction now stays with the mana while it floats (CR 106.6). Tapped by hand, the Workshop\u2019s {C}{C}{C} can pay only for artifact spells, never for a nonartifact spell or an activated ability. Mana left over from a payment keeps floating with its restriction instead of being thrown away.', 'Mana abilities with a mana cost work: tapping a Signet (\u201c{1}, {T}: Add {W}{B}\u201d) or Prophetic Prism takes the {1} from another source first.', 'Mana abilities given by another card: Cryptolith Rite\u2019s creatures tap for any colour (not while summoning sick). Arcane Signet and Command Tower make only your commander\u2019s colours, and nothing without a commander (CR 903.4f).', 'The Library book: the chapter you are in is a ribbon bookmark lying in the spine and hanging out below the book with a tassel; the other chapter is still a tab at the top. The writing now bends with the page, sagging into the gutter like print in a real book, and it always fits its page (it is scaled down a little when it would run past the bottom). The gentler page curve no longer cuts off the bottom lines.', 'Hovering a card on the desk turns the book to that card again (the bent pages had broken the page turn).', 'The piles on the desk are back to the straight stacks.', '277 rules tests pass, all with real cards.'] },
   { v: '0.99.72', title: 'Resolve all, a book with a real spine, the deck spread out', notes: ['Resolve all: when the top of the stack holds several triggers from one card (Glaring Fleshraker after a big Kozilek\u2019s Command), the stack window offers \u201cResolve all N\u201d. They resolve one at a time in stack order, together with any new trigger of that same card that lands on top (the Spawn\u2019s damage triggers). It stops at anything from another card, so you can still respond to that, and a choice window pauses it until you answer.', 'The Library book now bends into its spine like a real book: the page tops and bottoms dip towards the gutter, the stacked page edges curve down into a dark hollow at the spine, and the flat page strip is gone.', 'The deck on the desk is laid out the way a player spreads one out: each pile fanned a little and turned a few degrees, piles overlapping their neighbours, and the cards are larger. Resting the pointer on a pile still only turns the book to that card.', 'Key cards read \u201c4 \u00d7 Lightning Bolt\u201d so the number stays beside the name.', 'More abilities: \u201cUntap it / Untap those creatures\u201d and \u201cIt gains [keyword] until end of turn\u201d act on the creature the spell targeted (Savage Surge, Riverguard\u2019s Reflexes, Expanded Anatomy); \u201cYou may pay {E}{E}. If you do, \u2026\u201d is paid with energy, not mana (Thriving Rats); \u201cYou may pay {W}. If you do, it gains flying\u201d is paid and applied for you (Order of the Golden Cricket) instead of asking whether you did it by hand.', '275 rules tests pass, all with real cards.'] },
@@ -10131,7 +10150,7 @@ function compileCardOne(c) {
   };
   const faceTypes = String(info.t || '').split(' // '); let faceIx = 0;
   for (const raw of String(info.tx || '').replace(/,\n/g, ', ').replace(/\n(?=\s*[\u2022\u2023])/g, ' ').split('\n')) {
-    const text = raw.trim(); if (!text) continue;
+    const text0 = raw.trim(), stb = /^(\d+)\+\s*\|\s*(.+)$/.exec(text0), text = stb ? stb[2].trim() : text0; if (!text) continue;   // v0.99.75 a STATION N+ line is read for what it grants (CR 721.2: it has it once N charge counters are on it)
     if (text === '//') { faceIx++; isSpell = /\b(Instant|Sorcery)\b/.test(faceTypes[faceIx] || ''); continue; }
     const stripped = stripAW(text.replace(/\([^)]*\)/g, '').trim());   // CR 207.2c: the label is not read
     if (!stripped) { push(text, 'reminder', 'info', 'Reminder text: it only explains the rules.'); continue; }
@@ -11279,7 +11298,10 @@ function renderEmblems() {
   const list = (state && state.emblems) || [];
   if (!list.length) { if (bar) bar.remove(); return; }
   if (!bar) { bar = h('div', { id: 'emblemBar' }); mat.append(bar); }
-  bar.replaceChildren(...list.map(e => h('div', { class: 'emblem', title: e.tk.tx }, h('b', { text: 'Emblem' }), h('span', { text: ` · ${e.tk.from || ''}` }), h('div', { class: 'etx', text: e.tk.tx }))));
+  // v0.99.75 identical emblems (Kaito's +1 used twice) are one entry with a count; the emblem's own words are always shown
+  const groups = new Map(); for (const e of list) { const k = (e.tk.from || '') + '|' + e.tk.tx; const g0 = groups.get(k); if (g0) g0.n++; else groups.set(k, { e, n: 1 }); }
+  bar.replaceChildren(h('div', { class: 'emb-head', text: 'Command zone' }), ...[...groups.values()].map(({ e, n }) => h('div', { class: 'emblem', title: `Emblem from ${e.tk.from || 'an effect'}${n > 1 ? ` (×${n}: each one applies)` : ''}\n${e.tk.tx}\nEmblems stay for the rest of the game and cannot be removed (rule 114).` },
+    h('div', { class: 'emb-top' }, h('b', { text: 'Emblem' }), h('span', { class: 'emb-src', text: e.tk.from || '' }), n > 1 ? h('em', { class: 'emb-n', text: '×' + n }) : null), h('div', { class: 'etx', text: e.tk.tx }))));
 }
 // the permanent types named by a phrase such as "artifact or creature" / "artifact you control"
 function typeWordsOf(phrase) { return String(phrase || '').toLowerCase().replace(/\byou control\b/g, '').split(/\s*(?:,|\bor\b|\band\/or\b)\s*/).map(w => singularWord(w.trim())).filter(Boolean); }
