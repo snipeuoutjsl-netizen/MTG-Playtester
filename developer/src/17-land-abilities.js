@@ -329,8 +329,12 @@ function openAbilityPicker(c) {
   for (const ab of L) { const r = abilityReady(c, ab); m.body.append(h('div', { class: 'row' + (r ? ' dim' : '') }, h('span', { class: 'nm', text: `${ab.cost}: ${ab.effect}` }), h('button', { class: r ? '' : 'primary', text: 'Activate', title: r ? 'Cannot now: ' + (why[r] || r) : '', onclick: () => { m.close(); activateAbility(c.id, false, ab.ix); } }))); }
   m.foot.append(h('button', { text: c.tapped ? 'Untap it instead' : 'Tap it instead', onclick: () => { m.close(); toggleTap(c.id); } }), h('button', { text: 'Close', onclick: () => m.close() }));
 }
+let lastDblAct = { id: null, t: 0 };
 function onCardDbl(c, zone) {
   if (!state || state.phase !== 'play' || state.discarding || holdForTriggers()) return;
+  // v0.99.62 one double tap = one action. Phones can deliver the double tap twice (the browser's own and the touch layer's), which opened a spell's choices twice.
+  { const now = Date.now(); if (lastDblAct.id === c.id && now - lastDblAct.t < 600) return; lastDblAct = { id: c.id, t: now }; }
+  if (document.querySelector('#modalRoot .modal') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
   if (zone === 'battlefield') {
     if (isPlaneswalker(c)) openLoyalty(c);
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);

@@ -61,6 +61,9 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
   };
   document.addEventListener('pointerup', e => end(e, false), true);
   document.addEventListener('pointercancel', e => end(e, true), true);
+  // v0.99.62 phone browsers send their own dblclick for a double tap as well as the one made above: one double tap = one action (it used to cast a spell twice)
+  let lastDbl = 0;
+  document.addEventListener('dblclick', e => { const now = Date.now(); if (now - lastDbl < 450) { e.preventDefault(); e.stopImmediatePropagation(); return; } lastDbl = now; }, true);
   // the click that a browser sends after a drag or a press-and-hold is not a click
   document.addEventListener('click', e => { if (swallowClick && Date.now() - swallowClick < 600) { e.preventDefault(); e.stopPropagation(); swallowClick = 0; } }, true);
   // iOS has no right-click menu of its own to block, but its long-press callout and text selection would fight the press-and-hold

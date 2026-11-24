@@ -107,9 +107,12 @@ function officialToken(name, pt, col, tx) {
 }
 const SKIP_LAYOUTS = new Set(['token', 'double_faced_token', 'emblem', 'art_series', 'vanguard', 'scheme', 'planar', 'augment', 'host']);
 
+// v0.99.62 MTGJSON (the backup card source, used when Scryfall cannot be reached, e.g. on some phones) writes loyalty costs as "[+2]: ..." where Scryfall writes "+2: ...".
+const fixLoyaltyText = tx => typeof tx === 'string' && tx.includes('[') ? tx.replace(/^\[([+−–‒-]?(?:\d+|X))\]:/gm, '$1:') : tx;
+function fixCardRecord(c) { if (c && c.tx) c.tx = fixLoyaltyText(c.tx); return c; }
 function compact(o) {
   const faces = o.card_faces && o.card_faces.length ? o.card_faces : null;
-  const text = o.oracle_text != null ? o.oracle_text : (faces ? faces.map(f => f.oracle_text || '').join('\n//\n') : '');
+  const text = fixLoyaltyText(o.oracle_text != null ? o.oracle_text : (faces ? faces.map(f => f.oracle_text || '').join('\n//\n') : ''));
   const mana = o.mana_cost != null && o.mana_cost !== '' ? o.mana_cost : (faces ? faces.map(f => f.mana_cost || '').filter(Boolean).join(' // ') : '');
   const type = o.type_line || (faces ? faces.map(f => f.type_line || '').join(' // ') : '');
   const front = type.split(' // ')[0];
@@ -187,6 +190,7 @@ function buildIndex(list) {
 }
 
 function installCards(list) {
+  for (const c of list) fixCardRecord(c);   // copies saved by an older version from MTGJSON
   CARDS = buildIndex(list);
   cardCount = list.length;
   updateDbStatus();
@@ -255,7 +259,7 @@ async function importCardData(file) {
 }
 
 const META = new Map();   // card data picked up from Scryfall lookups (used when no bulk file is loaded)
-try { const m = JSON.parse(localStorage.getItem('mtgpt.meta') || '{}'); for (const k in m) META.set(k, normFaces(m[k])); } catch (e) { /* ignore */ }
+try { const m = JSON.parse(localStorage.getItem('mtgpt.meta') || '{}'); for (const k in m) META.set(k, fixCardRecord(normFaces(m[k]))); } catch (e) { /* ignore */ }
 function saveMeta() { try { localStorage.setItem('mtgpt.meta', JSON.stringify(Object.fromEntries(META))); } catch (e) { /* ignore */ } }
 function setMeta(card, asked) {
   const c = normFaces(compact(card));
@@ -443,8 +447,8 @@ function parseLookDistribute(tx) {
     { const im = /^if (.+?), instead (put .+|exile .+)$/i.exec(sent.replace(/\.$/, '')); if (im) { const a2 = parseLookDistribute(`Look at the top ${m0[1]} cards of your library. ${im[2]}.`); if (a2 && a2.slots.length) { alt = { cond: im[1], slots: a2.slots }; continue; } ok = false; continue; } }
     if (/^you may play (?:it|the exiled card|that card|those cards|them) this turn\.?$/i.test(sent)) { play = true; continue; }
     // "You may reveal a colorless card from among them and put it into your hand." (Ancient Stirrings): reading it as "put up to one colorless card into your hand" keeps the filter and the cap
-    const rv = /^(?:you may )?reveal (an?|one|up to (?:one|two|three|\d+)) ([a-z ]+? cards?)(?: with mana value (?:x|\d+) or (?:less|greater))? from among (?:them|those cards) and put (?:it|them|that card|those cards) into your hand\.?$/i.exec(sent);
-    if (rv) sent = `Put up to ${/^up to /i.test(rv[1]) ? rv[1].slice(6) : 'one'} ${rv[2]}${(/ with mana value (?:x|\d+) or (?:less|greater)/i.exec(sent) || [''])[0]} into your hand.`;
+    const rv = /^(?:you may )?reveal (an?|one|up to (?:one|two|three|\d+)) ([a-z ,]+? cards?)(?: with mana value (?:x|\d+) or (?:less|greater))? from among (?:them|those cards) and put (?:it|them|that card|those cards) into your hand\.?$/i.exec(sent);
+    if (rv) sent = `Put up to ${/^up to /i.test(rv[1]) ? rv[1].slice(6) : 'one'} ${rv[2].replace(/,\s*(?:or\s+)?/g, ' or ')}${(/ with mana value (?:x|\d+) or (?:less|greater)/i.exec(sent) || [''])[0]} into your hand.`;
     if (!/^(?:put|exile|then|you may put)\b/i.test(sent)) { ok = false; continue; }
     for (const cl of sent.replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+(?=(?:the rest|put|exile|one|two|a)\b)/i)) {
       const c = cl.trim().toLowerCase(); if (!c) continue;
@@ -459,9 +463,15 @@ function parseLookDistribute(tx) {
       if (dest === 'battlefield' || dest === 'hand') {
         const um = /\bup to (a|one|two|three|four|five|\d+)\b/.exec(c); if (um) max = numOf(um[1]);
         const fm = /\b(?:put|puts) (?:up to (?:a|one|two|three|four|five|\d+) |any number of |an? |one |two |three |\d+ )?([a-z ]+?) cards?\b(?: with mana value (x|\d+) or (less|greater))?/.exec(c);
-        if (fm) { const words = fm[1].trim().split(/\s+/).filter(w => w !== 'or' && w !== 'and'), mvn = fm[2] ? (fm[2] === 'x' ? numOf(m0[1]) : +fm[2]) : null, op = fm[3];
+        if (fm) fm[1] = fm[1].replace(/,/g, ' ');
+        if (fm) { const words = fm[1].trim().split(/\s+/).filter(w => w && w !== 'or' && w !== 'and'), mvn = fm[2] ? (fm[2] === 'x' ? numOf(m0[1]) : +fm[2]) : null, op = fm[3];
           const okWord = w => /^(?:creature|land|artifact|enchantment|planeswalker|permanent|nonland|noncreature|instant|sorcery|colorless)$/.test(w);
-          if (words.every(okWord)) { filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || ''; if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
+          // v0.99.62 subtypes too ("an Elf, Warrior, or Tyvar card"): a word that is not a card type is matched against the subtypes (changelings count)
+          if (!words.every(okWord) && words.every(w => okWord(w) || /^[a-z][a-z'-]*$/.test(w))) { const subs = words.filter(w => !okWord(w)), types = words.filter(okWord);
+            filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || '', sub = (tl.split('\u2014')[1] || '').toLowerCase(); if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
+              return types.some(w => new RegExp('\\b' + w + '\\b', 'i').test(tl)) || subs.some(w => new RegExp('\\b' + w + 's?\\b').test(sub)) || (/\bchangeling\b/i.test(info.tx || '') && /\bCreature\b/.test(tl)); };
+            fdesc = words.join(' or ') + ' card'; }
+          else if (words.every(okWord)) { filt = card => { const info = cardInfo(card.name) || {}, tl = info.t || ''; if (mvn !== null && (op === 'less' ? (info.cmc || 0) > mvn : (info.cmc || 0) < mvn)) return false;
             return words.some(w => w === 'permanent' ? !/\b(?:Instant|Sorcery)\b/.test(tl) : w === 'nonland' ? !/\bLand\b/.test(tl) : w === 'noncreature' ? !/\bCreature\b/.test(tl) : w === 'colorless' ? !/\{[^}]*[WUBRG]/.test(info.mc || '') : new RegExp('\\b' + w + '\\b', 'i').test(tl)); }; fdesc = words.join(' or ') + ' ' + (mvn !== null ? `with mana value ${mvn} or ${op}` : ''); }
           else { ok = false; } }
       }
@@ -1082,6 +1092,7 @@ function runToughnessSBA() {
     for (let guard = 0; guard < 20; guard++) {
       const dead = state.battlefield.find(c => permZone(c) === 'creatures' && (c.token || cardInfo(c.name)) && (() => { const r = ptCalc(c); return !r.unknown && (r.t <= 0 || ((c.dmg || 0) >= r.t && !hasKw(c, 'indestructible'))); })());
       if (!dead) break;
+      if ((dead.dmg || 0) > 0 && ptCalc(dead).t > 0 && tryRegenerate(dead, 'lethal damage')) continue;   // v0.99.62 lethal damage destroys, so a regeneration shield replaces it (toughness 0 does not)
       { const lethal = (dead.dmg || 0) > 0 && ptCalc(dead).t > 0;
         log(lethal ? `${dead.name} has lethal damage marked on it (${dead.dmg}): destroyed (state-based action)` : `${dead.name} has toughness 0 or less: put into the graveyard (state-based action)`);
         toast(`${dead.name} dies`, lethal ? 'A creature with damage marked equal to or greater than its toughness is destroyed.' : 'A creature with toughness 0 or less is put into its owner’s graveyard.'); }
@@ -2186,7 +2197,7 @@ function pwAbilities(c) {
   if (!info || !info.tx) return [];
   const out = [];
   for (const line of info.tx.split('\n')) {
-    const m = line.trim().match(/^([+−–‒-]?)\s?(\d+|X):\s*(.+)$/);
+    const m = line.trim().match(/^\[?([+−–‒-]?)\s?(\d+|X)\]?:\s*(.+)$/);
     if (!m) continue;
     const neg = /[−–‒-]/.test(m[1]), isX = m[2] === 'X', n = isX ? 0 : parseInt(m[2], 10);
     if (!m[1] && n !== 0) continue;
@@ -3219,7 +3230,7 @@ function parseTargetSpecs(text) {
     const rest = t.slice(m.index + m[0].length), sm = rest.match(STOP);
     const phrase = rest.slice(0, sm.index).trim(), after = rest.slice(sm.index);
     const sp = { min: 1, max: 1, types: [], mods: [], ctrl: 'any', pctrl: 'any', player: false, qual: '', label: '' };
-    { const a = t.lastIndexOf('. ', m.index), b = t.indexOf('.', m.index); sp.clause = t.slice(a < 0 ? 0 : a + 2, b < 0 ? t.length : b + 1).trim(); }   // v0.94.5 the sentence this target belongs to, so the window can say which mode it is for
+    { const q = t.replace(/["“][^"”]*["”]/g, x => x.replace(/\./g, ' ')), a = q.lastIndexOf('. ', m.index), b = q.indexOf('.', m.index); sp.clause = t.slice(a < 0 ? 0 : a + 2, b < 0 ? t.length : b + 1).trim(); }   // v0.94.5 the sentence this target belongs to, so the window can say which mode it is for
     let cm;
     if (/\bany number of\s*$/i.test(before)) { sp.min = 0; sp.max = 99; }
     else if ((cm = before.match(/\bup to (one|two|three|four|five|x|\d+)\s*$/i))) { sp.min = 0; sp.max = wnum(cm[1]) === 'X' ? 1 : wnum(cm[1]); }
@@ -3388,9 +3399,21 @@ function dealDamageTo(c, n, src) {
   else { c.dmg = (c.dmg || 0) + n; log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
   runToughnessSBA(); render(); flushTriggers();
 }
-function destroyPerm(c, src) {
+// v0.99.62 CR 701.19 regenerate: "the next time this permanent would be destroyed this turn, instead tap it, remove all damage from it,
+// and remove it from combat". A shield is a counter on the permanent that lasts until the end of the turn it was made in.
+function regenShields(c) { return c && c.regenTurn === (state && state.turn) ? (c.regen || 0) : 0; }
+function addRegenShield(c, src) { if (!c || !state) return; c.regen = regenShields(c) + 1; c.regenTurn = state.turn; log(`${src}: ${c.name} gets a regeneration shield (${c.regen} this turn)`); }
+function tryRegenerate(c, why) {
+  if (!c || !state || !regenShields(c)) return false;
+  c.regen--; c.tapped = true; c.dmg = 0;
+  if (state.combat) for (const k of ['attackers', 'blockers']) if (Array.isArray(state.combat[k])) state.combat[k] = state.combat[k].filter(a => (a && a.id !== undefined ? a.id : a) !== c.id);
+  log(`${c.name} regenerates instead of being destroyed${why ? ' (' + why + ')' : ''}: tapped, damage removed, removed from combat (CR 701.19)`);
+  toast('Regenerated', `${c.name} was tapped and removed from combat instead of being destroyed.`); return true;
+}
+function destroyPerm(c, src, noRegen) {
   if (!state) return;
   if (hasKw(c, 'indestructible')) { log(`${src}: ${c.name} is indestructible, so it is not destroyed`); toast('Not destroyed', `${c.name} has indestructible.`); return; }
+  if (!noRegen && tryRegenerate(c, src)) { render(); return; }
   snap(); log(`${src}: destroyed ${c.name}`); leaveBattlefield(c, 'graveyard'); render(); flushTriggers();
 }
 // The effects of a resolving spell/ability, bound to the targets that were chosen for it.
@@ -3508,7 +3531,7 @@ function finishAbilityResolving() {
 function finishResolving() {   // the spell whose effect was just applied (or skipped) now leaves the stack
   const c = state && state.resolving; if (!c) return;
   if (state.discarding || handPick) { state.resolvingWait = true; render(); return; }   // wait until the chosen cards have been discarded
-  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
+  state.resolving = null; state.resolvingWait = false; state.resLines = []; if (c.copy) { log(`Resolved a copy of ${c.name}; the copy ceases to exist`); render(); return; } const where = reboundOnResolve(c) || shuffleSelfOnResolve(c) || exileSelfOnResolve(c) || gyPush(c, 'stack'); restoreHalf(c); log(`Resolved ${c.name} \u2192 ${where}`); render();
 }
 function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();
@@ -3619,7 +3642,7 @@ function setImgEntry(key, rec) {
   const e = { front: null, back: null, remote: false };
   if (rec.front) e.front = URL.createObjectURL(rec.front); else if (rec.frontUrl) { e.front = rec.frontUrl; e.remote = true; }
   if (rec.back) e.back = URL.createObjectURL(rec.back); else if (rec.backUrl) { e.back = rec.backUrl; e.remote = true; }
-  if (rec.meta && !META.has(key)) META.set(key, rec.meta);
+  if (rec.meta && !META.has(key)) META.set(key, fixCardRecord(rec.meta));
   if (e.front) IMG.set(key, e);
   if (!cardCount && rec.meta) updateDbStatus();
 }
@@ -5404,8 +5427,12 @@ function openAbilityPicker(c) {
   for (const ab of L) { const r = abilityReady(c, ab); m.body.append(h('div', { class: 'row' + (r ? ' dim' : '') }, h('span', { class: 'nm', text: `${ab.cost}: ${ab.effect}` }), h('button', { class: r ? '' : 'primary', text: 'Activate', title: r ? 'Cannot now: ' + (why[r] || r) : '', onclick: () => { m.close(); activateAbility(c.id, false, ab.ix); } }))); }
   m.foot.append(h('button', { text: c.tapped ? 'Untap it instead' : 'Tap it instead', onclick: () => { m.close(); toggleTap(c.id); } }), h('button', { text: 'Close', onclick: () => m.close() }));
 }
+let lastDblAct = { id: null, t: 0 };
 function onCardDbl(c, zone) {
   if (!state || state.phase !== 'play' || state.discarding || holdForTriggers()) return;
+  // v0.99.62 one double tap = one action. Phones can deliver the double tap twice (the browser's own and the touch layer's), which opened a spell's choices twice.
+  { const now = Date.now(); if (lastDblAct.id === c.id && now - lastDblAct.t < 600) return; lastDblAct = { id: c.id, t: now }; }
+  if (document.querySelector('#modalRoot .modal') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
   if (zone === 'battlefield') {
     if (isPlaneswalker(c)) openLoyalty(c);
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);
@@ -6713,8 +6740,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.61';
+const APP_VERSION = '0.99.62';
 const CHANGELOG = [
+  { v: '0.99.62', title: 'Windows start-up fix, phone fixes, rules batch', notes: ['Windows: after an in-app update the app could fail to open. The restart now hands over cleanly, a window saved off-screen or minimised is brought back on screen, and clicking the app again always shows its window. (This part needs the new installer once; later updates keep it.)', 'Phones and tablets: planeswalker loyalty abilities work again when the card data came from the backup source (MTGJSON writes costs as [+2]:, which the app now reads).', 'Phones: a double tap on a spell opened its choices twice (Kozilek\'s Command and other modal spells), so finishing one left a second copy behind. One double tap is now one action.', 'The target window names the right mode for each target even when the mode quotes an ability ("Sacrifice this token: Add {C}.").', 'Rules: regeneration shields (Regenerate ~ / target creature); "You may pay {X}. If you do, …"; "~ deals N damage to each creature / player / opponent"; spells that exile themselves as they finish; "target opponent loses N life" no longer also offers you; Ancient Stirrings-style reveal filters with subtypes and lists; Equip lines read correctly.'] },
   { v: '0.99.61', title: 'A real book, and swipe to move on', notes: ['The Library\'s menu book now reads like a book. The left page opens a chapter (Chapter I, The Standard Game; Chapter II, The Commander Game) with the deck in hand, who goes first and "Begin with …" in red ink. The right page is a table of contents with dotted leaders and page numbers. The pages have paper grain, page numbers and a page block, and the links are set as print, not buttons.', 'Standard and Commander are two silk ribbons on top of the book: pick the other ribbon and the page turns to that chapter.', 'The deck pages and the card pages use the same print.', 'Wide screens: the desk now runs the full width of the window. Phones held upright: the open book fits the screen, and the shelves no longer run under the name plate.', 'Phones held upright: swipe the table from right to left to go to the next step (the same as the Next button). The turn bar now wraps, so its Next buttons stay on screen.', 'Fixed: on a phone held upright the opening-hand prompt was covered by the hand.'] },
   { v: '0.99.60', title: 'Updates from the Library, steadier page turns', notes: ['Updates: when a new version is found at start-up, the Library shows an "Update available" button in its top right corner, and the menu book has a "Check for updates" (or "Update to …") entry under Options. Before, the update was only reachable from the game table\'s menu, which the Library covers.', 'Starting a game from the Library no longer closes the Update window.', 'Library: resting the pointer on the edge between two fanned cards no longer flips the book back and forth. A card has to be pointed at for a moment before the page turns, and only one page turns at a time.'] },
   { v: '0.99.59', title: 'Fanned stacks and page turns are back', notes: ['Library: the deck on the desk is laid out in fanned stacks again (up to three different cards a stack, in mana-value order, lands last, the basic lands together), each card set a little lower, to the right and turned, so every name shows. Hovering a card only outlines it in gold, so nothing moves and nothing flickers.', 'The open book turns its page again for every card you point at, and turns back to the deck when you move away. The next card\'s picture is loaded before the page turns, so the page never shows an empty frame.'] },
@@ -9970,7 +9998,7 @@ function compileCardOne(c) {
   // v0.77 honesty pass: a line only counts as understood when the engine handles EVERY sentence of its effect, not just the first one it recognises.
   for (const l of lines) {
     if (l.status !== 'ok' || l.def || !['spell', 'triggered', 'activated', 'modal'].includes(l.kind)) continue;
-    let part = String(l.text).replace(nameRe, '~'), mm;
+    let part = String(l.text).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().replace(nameRe, '~'), mm;   // v0.99.62 reminder text first: "Equip {2} ({2}: Attach ...)" was split at the colon inside it
     if (l.kind === 'triggered' && (mm = part.match(/^(?:When|Whenever|At)\b[^,]*,\s*([\s\S]*)$/i))) part = mm[1];
     else if (l.kind === 'activated' && (mm = part.match(/^[^:]+:\s*([\s\S]*)$/))) part = mm[1];
     const parts = l.kind === 'modal' ? ((parseModal(l.text) || { modes: [] }).modes.map(mo => String(mo.text).replace(nameRe, '~'))) : [part];
@@ -10011,7 +10039,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^Exile ~\.?$/i, /^If you search your library this way, shuffle\.?$/i, /^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 // A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
 // Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
 const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
@@ -10020,6 +10048,7 @@ function verbGaps(sentence, labels) {
   return VERB_CHECKS.filter(([v, l]) => v.test(s) && !l.test(labels)).map(([v]) => v.source);
 }
 function uncoveredClauses(effectText) {
+  if (!state) { state = freshState(); try { return uncoveredClauses(effectText); } finally { state = null; } }   // v0.99.62 read with an empty board, like recognizedEffects (some readers need a game state)
   if (hasRawQuote(effectText)) effectText = maskQuotes(effectText);   // quoted ability text belongs to the token/granted object, not to this card's own clauses
   effectText = applyCondInstead(effectText, true);   // a conditional "instead" sentence whose condition the app understands is covered
   const t = String(effectText || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
@@ -12596,6 +12625,7 @@ function playerClauseOptions(tx, obj) {
   const descOf = third => acts.map(a => a.k === 'draw' ? `${third ? 'draws' : 'draw'} ${a.n}` : a.k === 'lose' ? `${third ? 'loses' : 'lose'} ${a.n} life` : a.k === 'gain' ? `${third ? 'gains' : 'gain'} ${a.n} life` : a.k === 'mill' ? `${third ? 'mills' : 'mill'} ${a.n}` : `${third ? 'discards' : 'discard'} ${a.n}${a.rnd ? ' at random' : ''}`).join(' and '), desc = descOf(true);
   const t = (obj && obj.targets || [])[0], who = t && t.kind === 'player' ? t.id : null; const full = sents.length === 1;
   if (who) return [{ full, label: `${who === 'you' ? 'You ' + descOf(false) : 'Your opponent ' + desc}`, fn: run(who) }, ...massRest(sents, 1, obj)];
+  if (/^opponent$/i.test(m[1])) return [{ full, label: `Your opponent ${desc}`, fn: run('opp') }, ...massRest(sents, 1, obj)];   // v0.99.62 "target opponent" can never be you (CR 115.4)
   return [{ full, label: `You ${descOf(false)}`, fn: run('you') }, { full, label: `Your opponent ${desc}`, fn: run('opp') }, ...massRest(sents, 1, obj)];
 }
 // ---- the opponent's hand is not tracked in a goldfish game: say so instead of silently skipping ("Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.")
@@ -13454,6 +13484,8 @@ function permChoiceOptions(tx, obj) {   // one sentence is read here; the senten
   const sents = MASS_SENTS(tx); if (!sents.length) return null;
   const sc = scapeshiftOptions(sents, obj); if (sc) return sc;
   const po = payOrElseOptions(sents, obj); if (po) return po;
+  const mp = mayPayOptions(sents, obj); if (mp) return mp;
+  { const md = massDamageOptions(sents[0], obj); if (md && sents.length === 1) return md; }
   const gz = graveyardSelfOptions(sents.join(' '), obj); if (gz) return gz;
   if (sents.length > 1 && /^If you (?:do|don't)\b/i.test(sents[1])) return null;   // "Sacrifice X. If you do, ..." is read by the if-you-do reader (CR 608.2c)
   const one = permChoiceOne(sents[0], obj); if (!one) return null;
@@ -13482,6 +13514,16 @@ function payOrElseOptions(sents, obj) {
 }
 function permChoiceOne(tx, obj) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); let m;
+  // v0.99.62 CR 701.19 "Regenerate this creature / target creature / enchanted creature."
+  if ((m = t.match(/^regenerate (~|this creature|this permanent|it|target creature|enchanted creature|equipped creature|each creature you control)\.?$/i))) {
+    const who = m[1].toLowerCase(), src = (obj && obj.sourceName) || 'Ability';
+    const pick = () => { const me = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card : null;
+      if (who === 'target creature') { const t0 = (obj && obj.targets || []).find(x => x.kind === 'perm' && !x.gone); return t0 ? [(findCard(t0.id) || {}).card].filter(Boolean) : []; }
+      if (who === 'enchanted creature' || who === 'equipped creature') { const host = me && me.att ? (findCard(me.att) || {}).card : null; return host ? [host] : []; }
+      if (who === 'each creature you control') return state.battlefield.filter(c => permZone(c) === 'creatures');
+      return me ? [me] : []; };
+    return [{ full: true, label: `Regenerate ${who === '~' || who === 'it' || /^this /.test(who) ? src : who}: the next time it would be destroyed this turn, it is tapped and removed from combat instead`, fn: () => { const cs = pick(); if (!cs.length) { toast('Regenerate', 'Nothing to regenerate.'); return; } snap(); for (const c of cs) addRegenShield(c, src); render(); } }];
+  }
   if (obj && obj.sourceName && selfShuffleRe(obj.sourceName).test(t) && /^shuffle /i.test(t)) return [{ full: true, label: `${obj.sourceName} is shuffled into your library as it finishes resolving (CR 608.2n)`, fn: () => {} }];
   // CR 707.2 + 613.2: "This land becomes a copy of target nontoken artifact you control with mana value X." (The Mycosynth Gardens)
   // "This land becomes a copy of target permanent card in your graveyard until end of turn." (Shifting Woodland). It keeps its tapped state and counters.
@@ -13568,6 +13610,18 @@ function graveyardSelfOptions(t, obj) {
     return [{ full: false, label: 'That creature deals damage equal to its power to the opponent', fn: () => { const f = findCard(who); if (!f) { toast('Gone', 'That creature is no longer on the battlefield; use its last known power by hand.'); return; } const p = (ptCalc(f.card) || {}).p || 0; snap(); changeOppLife(-p); log(`${src}: ${f.card.name} dealt ${p} damage to the opponent`); render(); } }];
   }
   return null;
+}
+
+// v0.99.62 "You may pay {X}. If you do, <effect>." for any one effect the app understands (CR 608.2c, 117.3)
+function mayPayOptions(sents, obj) {
+  if (sents.length !== 2) return null;
+  const a = /^you may pay ((?:\{[^}]+\})+)\.?$/i.exec(sents[0]), b = /^If you do, (.+)$/i.exec(sents[1]); if (!a || !b) return null;
+  const cost = a[1], rest = b[1].charAt(0).toUpperCase() + b[1].slice(1), src = (obj && obj.sourceName) || 'Ability';
+  const inner = effectOptionsBase(rest, obj || {}).filter(o => typeof o.fn === 'function' && !o.special && !o.hidden);
+  if (inner.length !== 1) return null;
+  const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
+  return [{ full: whole, label: `Pay ${cost}: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, () => { io.fn(); render(); }); } },
+    { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }];
 }
 // ---- v0.99.47 Preparation cards (CR 722, Secrets of Strixhaven / Reality Fracture). Scryfall layout "prepare": face 0 is the creature, face 1 its prepare spell.
 // 722.3a "Prepared" is a designation (a marker, like monstrous). A permanent without a prepare spell can't become prepared, and one that is prepared can't become prepared again.
@@ -13912,6 +13966,9 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
   };
   document.addEventListener('pointerup', e => end(e, false), true);
   document.addEventListener('pointercancel', e => end(e, true), true);
+  // v0.99.62 phone browsers send their own dblclick for a double tap as well as the one made above: one double tap = one action (it used to cast a spell twice)
+  let lastDbl = 0;
+  document.addEventListener('dblclick', e => { const now = Date.now(); if (now - lastDbl < 450) { e.preventDefault(); e.stopImmediatePropagation(); return; } lastDbl = now; }, true);
   // the click that a browser sends after a drag or a press-and-hold is not a click
   document.addEventListener('click', e => { if (swallowClick && Date.now() - swallowClick < 600) { e.preventDefault(); e.stopPropagation(); swallowClick = 0; } }, true);
   // iOS has no right-click menu of its own to block, but its long-press callout and text selection would fight the press-and-hold
@@ -13957,6 +14014,47 @@ function swipeCue(label) {
   const mat = document.getElementById('mat'); if (!mat) return;
   const el = h('div', { class: 'swipe-cue', 'aria-hidden': 'true' }, h('span', { text: '‹‹' }), h('b', { text: label || 'Next' }));
   mat.append(el); setTimeout(() => el.remove(), 700);
+}
+// ---------------------------------------------------------------- v0.99.62 rules batch 1 (from the coverage scan of every Modern card)
+// Mass damage (CR 120): "~ deals N damage to each creature [and each player]" with the usual qualifiers. Your opponent's creatures are not
+// on this table, so damage to them is only logged; your creatures are marked and the state-based actions do the rest.
+function massDamageOptions(tx, obj) {
+  const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/’/g, "'").replace(/\s+/g, ' ').trim();
+  const nm = String((obj && obj.sourceName) || '').split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp('^(?:~|it|this spell|this creature|this enchantment|this artifact|[A-Z][\\w\',-]*(?: [A-Z\\d][\\w\',-]*| of| the| to| and| in| from| a)*' + (nm ? '|' + nm : '') + ') deals (\\d+|x) damage to each (.+?)\\.?$', 'i').exec(t); if (!m) return null;
+  const n = /^x$/i.test(m[1]) ? +((obj && obj.xValue) || 0) : +m[1], who = m[2].toLowerCase(), src = (obj && obj.sourceName) || 'It';
+  const parts = who.split(/,\s*|\s+and\s+(?:each\s+)?/).map(x => x.replace(/^each\s+/, '').trim()).filter(Boolean);
+  const KNOWN = /^(?:(?:other |non-?[a-z]+ |tapped |untapped |attacking |blocking )*creatures?(?: you control| you don't control| your opponents control)?(?: with(?:out)? (?:flying|reach))?|players?|opponents?|planeswalkers?(?: you control| your opponents control)?|creature and planeswalker[a-z ']*|other players?)$/;
+  if (!parts.length || !parts.every(p => KNOWN.test(p))) return null;
+  const run = () => {
+    const me = obj && obj.sourceId;
+    for (const p of parts) {
+      if (/creature/.test(p)) {
+        if (/you don't control|your opponents control/.test(p)) { log(`${src}: ${n} damage to each creature your opponents control (apply it at the table)`); continue; }
+        let cs = state.battlefield.filter(c => permZone(c) === 'creatures');
+        if (/\bother\b/.test(p)) cs = cs.filter(c => c.id !== me);
+        if (/without flying/.test(p)) cs = cs.filter(c => !hasKw(c, 'flying')); else if (/with flying/.test(p)) cs = cs.filter(c => hasKw(c, 'flying'));
+        if (/without reach/.test(p)) cs = cs.filter(c => !hasKw(c, 'reach')); else if (/with reach/.test(p)) cs = cs.filter(c => hasKw(c, 'reach'));
+        if (/\btapped\b/.test(p) && !/untapped/.test(p)) cs = cs.filter(c => c.tapped); if (/untapped/.test(p)) cs = cs.filter(c => !c.tapped);
+        for (const nm of (p.match(/non-?([a-z]+)/g) || [])) { const w = nm.replace(/^non-?/, ''); cs = cs.filter(c => { const pi = permTypeInfo(c); return !pi.types.has(w) && !pi.subs.has(w); }); }
+        for (const c of cs) { c.dmg = (c.dmg || 0) + n; log(`${src}: ${n} damage to ${c.name} (${c.dmg} marked this turn)`); }
+        if (!/you control/.test(p)) log(`${src}: ${n} damage to each creature your opponents control too (apply it at the table)`);
+        if (/planeswalker/.test(p)) log(`${src}: and ${n} damage to each planeswalker`);
+      } else if (/^planeswalker/.test(p)) { for (const c of state.battlefield.filter(c => isPlaneswalker(c))) if (!/opponents/.test(p)) { c.loyalty = Math.max(0, (c.loyalty || 0) - n); checkLoyalty(c); } }
+      else if (/^(?:other )?players?$/.test(p)) { changeLife(-n, true); changeOppLife(-n); log(`${src}: ${n} damage to each player`); }
+      else if (/^opponents?$/.test(p)) { changeOppLife(-n); log(`${src}: ${n} damage to each opponent`); }
+    }
+    runToughnessSBA(); render(); flushTriggers();
+  };
+  return [{ full: true, label: `${src} deals ${n} damage to each ${who}`, fn: () => { if (!state) return; snap(); run(); } }];
+}
+// CR 608.2n: "Exile ~." as the last instruction of an instant or sorcery: it goes to exile instead of the graveyard as it finishes resolving
+function exileSelfOnResolve(c) {
+  if (!c || c.copy || c.token) return null;
+  const t = String(cardText(c) || '').replace(/\([^)]*\)/g, ' ');
+  const nm = String(c.name || '').split(' // ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!new RegExp('(?:^|[.\\n]\\s*)Exile (?:' + nm + '|this spell|this card)\\.\\s*$', 'i').test(t.trim())) return null;
+  state.exile.push(c); return 'exile (it exiles itself, CR 608.2n)';
 }
 init();
 

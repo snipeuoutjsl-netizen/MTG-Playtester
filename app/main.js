@@ -16,7 +16,8 @@ const boundsFile = () => path.join(app.getPath('userData'), 'window.json');
 function loadBounds() { try { return JSON.parse(fs.readFileSync(boundsFile(), 'utf8')); } catch (e) { return {}; } }
 function saveBounds(win) {
   try {
-    const b = win.getBounds();
+    if (win.isMinimized()) return;   // v0.99.62 Windows reports a minimised window at about -32000,-32000: saving that opened the next window off-screen
+    const b = win.getNormalBounds ? win.getNormalBounds() : win.getBounds();
     fs.writeFileSync(boundsFile(), JSON.stringify({ ...b, max: win.isMaximized() }));
   } catch (e) { /* ignore */ }
 }
@@ -168,10 +169,22 @@ ipcMain.handle('upd:ghinstall', async (ev) => {
   } catch (e) { return { ok: false, error: /fetch failed|ENOTFOUND|ECONN|ERR_/i.test(e.message) ? 'Could not reach GitHub (are you online?).' : e.message }; }
 });
 ipcMain.handle('upd:reset', () => { fs.rmSync(overrideDir(), { recursive: true, force: true }); return { ok: true }; });
-ipcMain.handle('upd:restart', () => { app.relaunch(); app.exit(0); });
+// v0.99.62 hand over cleanly: release the one-window lock before the new copy starts, so it does not find the old one still holding it and quit
+ipcMain.handle('upd:restart', () => { try { for (const w of BrowserWindow.getAllWindows()) saveBounds(w); } catch (e) { /* ignore */ } try { app.releaseSingleInstanceLock(); } catch (e) { /* ignore */ } app.relaunch(); app.exit(0); });
 
+// v0.99.62 a saved position is used only when most of the window lands on a screen that exists now (monitors change, minimised windows report -32000)
+function onScreen(b) {
+  try {
+    const { screen } = require('electron');
+    if (!Number.isFinite(b.x) || !Number.isFinite(b.y) || !b.width || !b.height) return false;
+    return screen.getAllDisplays().some(d => { const a = d.workArea; const w = Math.min(b.x + b.width, a.x + a.width) - Math.max(b.x, a.x), h = Math.min(b.y + b.height, a.y + a.height) - Math.max(b.y, a.y); return w >= 200 && h >= 120; });
+  } catch (e) { return false; }
+}
 function createWindow() {
   const saved = loadBounds();
+  if (!onScreen(saved)) { delete saved.x; delete saved.y; }
+  if (saved.width && saved.width < 1000) saved.width = 1000;
+  if (saved.height && saved.height < 640) saved.height = 640;
   const win = new BrowserWindow({
     width: saved.width || 1500, height: saved.height || 900, x: saved.x, y: saved.y,
     minWidth: 1000, minHeight: 640,
@@ -186,6 +199,11 @@ function createWindow() {
   win.webContents.on('did-fail-load', (e, code, desc, url, isMain) => {
     if (isMain && dir !== __dirname) { fs.rmSync(overrideDir(), { recursive: true, force: true }); win.loadFile(path.join(__dirname, 'index.html')); }
   });
+  // v0.99.62 the window always appears: centred and in front, even if the page is slow or a saved position was bad
+  win.once('ready-to-show', () => { if (!win.isVisible()) win.show(); });
+  setTimeout(() => { try { if (!win.isDestroyed() && !win.isVisible()) { win.show(); if (!onScreen(win.getBounds())) win.center(); } } catch (e) { /* gone */ } }, 4000);
+  // a renderer that crashes while running an updated copy falls back to the built-in version
+  win.webContents.on('render-process-gone', (e, d) => { if (d && d.reason !== 'clean-exit' && dir !== __dirname) { try { fs.rmSync(overrideDir(), { recursive: true, force: true }); } catch (err) { /* ignore */ } try { win.loadFile(path.join(__dirname, 'index.html')); } catch (err) { /* ignore */ } } });
   // links to other sites (Scryfall etc.) open in the normal browser, never inside the app
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file://')) { e.preventDefault(); shell.openExternal(url); } });
@@ -195,7 +213,9 @@ function createWindow() {
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 else {
-  app.on('second-instance', () => { const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
+  // v0.99.62 a second click shows the running window, or opens one if this copy has none (before, a copy with no window swallowed every click)
+  app.on('second-instance', () => { const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); if (!w.isVisible()) w.show(); if (!onScreen(w.getBounds())) w.center(); w.focus(); } else if (app.isReady()) createWindow(); });
+  app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'View', submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' }, { role: 'toggleDevTools' }] },

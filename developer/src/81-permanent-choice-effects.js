@@ -12,6 +12,8 @@ function permChoiceOptions(tx, obj) {   // one sentence is read here; the senten
   const sents = MASS_SENTS(tx); if (!sents.length) return null;
   const sc = scapeshiftOptions(sents, obj); if (sc) return sc;
   const po = payOrElseOptions(sents, obj); if (po) return po;
+  const mp = mayPayOptions(sents, obj); if (mp) return mp;
+  { const md = massDamageOptions(sents[0], obj); if (md && sents.length === 1) return md; }
   const gz = graveyardSelfOptions(sents.join(' '), obj); if (gz) return gz;
   if (sents.length > 1 && /^If you (?:do|don't)\b/i.test(sents[1])) return null;   // "Sacrifice X. If you do, ..." is read by the if-you-do reader (CR 608.2c)
   const one = permChoiceOne(sents[0], obj); if (!one) return null;
@@ -40,6 +42,16 @@ function payOrElseOptions(sents, obj) {
 }
 function permChoiceOne(tx, obj) {
   const t = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); let m;
+  // v0.99.62 CR 701.19 "Regenerate this creature / target creature / enchanted creature."
+  if ((m = t.match(/^regenerate (~|this creature|this permanent|it|target creature|enchanted creature|equipped creature|each creature you control)\.?$/i))) {
+    const who = m[1].toLowerCase(), src = (obj && obj.sourceName) || 'Ability';
+    const pick = () => { const me = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card : null;
+      if (who === 'target creature') { const t0 = (obj && obj.targets || []).find(x => x.kind === 'perm' && !x.gone); return t0 ? [(findCard(t0.id) || {}).card].filter(Boolean) : []; }
+      if (who === 'enchanted creature' || who === 'equipped creature') { const host = me && me.att ? (findCard(me.att) || {}).card : null; return host ? [host] : []; }
+      if (who === 'each creature you control') return state.battlefield.filter(c => permZone(c) === 'creatures');
+      return me ? [me] : []; };
+    return [{ full: true, label: `Regenerate ${who === '~' || who === 'it' || /^this /.test(who) ? src : who}: the next time it would be destroyed this turn, it is tapped and removed from combat instead`, fn: () => { const cs = pick(); if (!cs.length) { toast('Regenerate', 'Nothing to regenerate.'); return; } snap(); for (const c of cs) addRegenShield(c, src); render(); } }];
+  }
   if (obj && obj.sourceName && selfShuffleRe(obj.sourceName).test(t) && /^shuffle /i.test(t)) return [{ full: true, label: `${obj.sourceName} is shuffled into your library as it finishes resolving (CR 608.2n)`, fn: () => {} }];
   // CR 707.2 + 613.2: "This land becomes a copy of target nontoken artifact you control with mana value X." (The Mycosynth Gardens)
   // "This land becomes a copy of target permanent card in your graveyard until end of turn." (Shifting Woodland). It keeps its tapped state and counters.
@@ -126,4 +138,16 @@ function graveyardSelfOptions(t, obj) {
     return [{ full: false, label: 'That creature deals damage equal to its power to the opponent', fn: () => { const f = findCard(who); if (!f) { toast('Gone', 'That creature is no longer on the battlefield; use its last known power by hand.'); return; } const p = (ptCalc(f.card) || {}).p || 0; snap(); changeOppLife(-p); log(`${src}: ${f.card.name} dealt ${p} damage to the opponent`); render(); } }];
   }
   return null;
+}
+
+// v0.99.62 "You may pay {X}. If you do, <effect>." for any one effect the app understands (CR 608.2c, 117.3)
+function mayPayOptions(sents, obj) {
+  if (sents.length !== 2) return null;
+  const a = /^you may pay ((?:\{[^}]+\})+)\.?$/i.exec(sents[0]), b = /^If you do, (.+)$/i.exec(sents[1]); if (!a || !b) return null;
+  const cost = a[1], rest = b[1].charAt(0).toUpperCase() + b[1].slice(1), src = (obj && obj.sourceName) || 'Ability';
+  const inner = effectOptionsBase(rest, obj || {}).filter(o => typeof o.fn === 'function' && !o.special && !o.hidden);
+  if (inner.length !== 1) return null;
+  const io = inner[0]; let whole = false; try { whole = !uncoveredClauses(rest).length; } catch (e) { /* reading only */ }
+  return [{ full: whole, label: `Pay ${cost}: ${String(io.label || rest).replace(/^./, ch => ch.toLowerCase())}`, fn: () => { const card = obj && obj.sourceId ? (findCard(obj.sourceId) || {}).card || { name: src } : { name: src }; payManaThen(card, cost, `${src}: pay ${cost}`, () => { io.fn(); render(); }); } },
+    { full: whole, label: `Don't pay ${cost}`, fn: () => log(`${src}: did not pay ${cost}`) }];
 }

@@ -5,7 +5,7 @@ function pwAbilities(c) {
   if (!info || !info.tx) return [];
   const out = [];
   for (const line of info.tx.split('\n')) {
-    const m = line.trim().match(/^([+−–‒-]?)\s?(\d+|X):\s*(.+)$/);
+    const m = line.trim().match(/^\[?([+−–‒-]?)\s?(\d+|X)\]?:\s*(.+)$/);
     if (!m) continue;
     const neg = /[−–‒-]/.test(m[1]), isX = m[2] === 'X', n = isX ? 0 : parseInt(m[2], 10);
     if (!m[1] && n !== 0) continue;
