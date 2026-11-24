@@ -5005,14 +5005,15 @@ function buildStack(m, panel){
     if(panel&&box){ box.classList.toggle('live',state.stack.length>0); if(cnt) cnt.textContent=state.stack.length?String(state.stack.length):''; }
     m.body.replaceChildren(...[
       state.stack.length?null:h('div',{class:'muted small',text:'Empty. Add what your opponent casts so you can respond to it.'}),
-      state.stack.length?h('div',{class:'stk'},[...state.stack].reverse().map((c,i)=>h('div',{class:'stk-item'+(i?'':' top')+(c.opp?' opp':c.ability?' abil':'')},
+      (panel&&state.stack.length)?h('div',{class:'stk-sum'},h('b',{text:`${state.stack.length} on the stack`}),h('span',{class:'muted small',text:' · top: '+String(top.ability?(top.sourceName||top.name):top.name).replace(/ — ability$/,'')+'. Resolve it in the stack window on the table.'})):null,
+      (!panel&&state.stack.length)?h('div',{class:'stk'},[...state.stack].reverse().map((c,i)=>h('div',{class:'stk-item'+(i?'':' top')+(c.opp?' opp':c.ability?' abil':'')},
         h('div',{class:'stk-name'},(i?'':h('span',{class:'stk-top',text:'TOP'})),`${c.opp?"Opponent's ":''}${c.name.replace(/ — ability$/,'')}${c.xValue!==undefined?` (X = ${c.xValue})`:''}`),
         h('div',{class:'stk-sub',text:(c.opp?'Cast by your opponent':c.ability?(c.trigger?'Triggered ability':'Activated ability'):'Spell')+(c.modeTexts?' — '+c.modeTexts.map(t=>{t=c.xValue!==undefined?t.replace(/\bX\b/g,String(c.xValue)):t;return t.length>40?t.slice(0,37)+'…':t}).join('; '):'')+(targetsText(c)?' → '+targetsText(c):'')})))) : null,
       state.stack.length?h('div',{class:'stk-hint'},h('i',{class:'stk-dot'}),'Green outlines: cast or activate in response.'):null,
       h('details',Object.assign({class:'stk-opp'},state.stack.length?{}:{open:true}),h('summary',{text:'Opponent casts something'}),h('div',{class:'setrow'},oppName,oppType,h('button',{text:'Add',onclick:addOpp}))),
       h('div',{class:'pbtns',style:'margin-top:8px'},h('button',{text:'View top 10 of library',onclick:()=>openLibraryManipulation()}))
     ].filter(Boolean));
-    m.foot.replaceChildren(...(state.stack.length?[
+    m.foot.replaceChildren(...((state.stack.length&&!panel)?[
       h('button',{text:'Pass priority',onclick:()=>{m.close();passPriority();}}),
       (()=>{const cw=cantBeCounteredWhy(top);return h('button',{class:'danger',text:cw?"Can't be countered":'Countered',disabled:!!cw,title:cw?`${top.name} can't be countered: ${cw}`:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}});})(),
       h('button',{class:'primary',text:'Resolve top',title:`Resolve ${top.opp?"opponent's ":''}${top.name}`,onclick:()=>{resolveTopOfStack();draw();}})
@@ -5025,17 +5026,16 @@ function ensureStackPanel(){
   stackPanelDraw=buildStack({body:$('#stackBody'),foot:$('#stackFoot'),close(){}},true);
 }
 function openStack() {
+  // v0.99.56 one stack window only: the panel on the table. "Open the stack" unfolds it; with nothing on the stack it opens the
+  // opponent tools (the right column, or the drawer when the phone is upright). The old floating "The Stack" window is gone.
   if(!state||state.phase==='idle')return;
-  if(stackPanelVisible()){
-    if(stackDock){ try{ stackDock.close(); }catch(e){} stackDock=null; }
-    ensureStackPanel(); stackPanelDraw();
-    const box=$('#stackBox'); box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
-    if(box.scrollIntoView) box.scrollIntoView({block:'nearest',behavior:'smooth'});
-    return;
-  }
   if(stackDock){ try{ stackDock.close(); }catch(e){} stackDock=null; }
-  const m=modal('The Stack',{width:340,sticky:true,dock:true,onClose:()=>{ if(stackDock===m) stackDock=null; }});
-  stackDock=m; buildStack(m,false)();
+  ensureStackPanel(); stackPanelDraw();
+  if (typeof stackMin !== 'undefined' && stackMin) { stackMin = false; drawStackStage(); }
+  const st=$('#stackStage');
+  if (st && !st.hidden) { st.classList.remove('flash'); void st.offsetWidth; st.classList.add('flash'); return; }
+  if (document.documentElement.classList.contains('portrait-ui')) { document.body.classList.add('side-open'); return; }
+  const box=$('#stackBox'); if (box) { box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash'); if(box.scrollIntoView) box.scrollIntoView({block:'nearest',behavior:'smooth'}); }
 }
 function openLibraryManipulation(want) {
   if(!state)return;
@@ -6703,8 +6703,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.55';
+const APP_VERSION = '0.99.56';
 const CHANGELOG = [
+  { v: '0.99.56', title: 'One stack window', notes: ['The stack has one window now, a tidy panel docked at the top right of the table (next to your library). It no longer sits in the middle of the table, no longer darkens the screen, and on phones the extra floating "The Stack" window is gone.', 'Each object on the stack is one row: a slice of its art, its name, what it is (your spell, an opponent\'s spell, a triggered or activated ability) and its targets or chosen modes. The top one is marked NEXT. Your buttons (Pass priority, Copy, Countered, Resolve top) sit together at the bottom.', 'Fold the window to a single line with the arrow (or by clicking its title bar). The folded bar keeps the main button, so you can resolve without unfolding it.', 'The same window shows a spell or ability being resolved (Finish) and cards to choose from your hand.', 'The Stack box in the right column now just says what is on the stack and keeps the tools for adding your opponent\'s spells. The topbar stack button unfolds the window.'] },
   { v: '0.99.55', title: 'Upright on phones', notes: ['Phones (and small tablets) held upright now get their own layout instead of a "turn sideways" screen. The table is one column: deck, graveyard and exile along the top, then creatures, other permanents and lands, with your hand at the bottom. The top bar scrolls sideways.', 'Upright, the stack and the game log open from the "Stack & log" button in the top bar, and tapping a card shows its preview over the table for a moment (tap the preview to close it).', 'The Library upright: three shelves above the open book, which is drawn large across the desk so its pages can be read, and the deck\'s piles below it. A book taken down goes into the open book.', 'Turning the phone sideways switches back to the full table and the wide Library.'] },
   { v: '0.99.54', title: 'Phones and tablets', notes: ['The app now runs in the browser on phones and tablets (iPhone, iPad, Android) and can be installed to the home screen like an app. It keeps working offline once loaded. Address: snipeuoutjsl-netizen.github.io/MTG-Playtester', 'Touch: drag a card with your finger to play it or move it, press and hold for the card menu (the right-click menu), and double-tap for a double-click.', 'Small screens get the whole table fitted to the screen (pinch to zoom still works). Phones are asked to turn sideways, because the table needs the width.', 'The deck on the Library desk is now one pile per card, its copies stacked underneath, dealt out on a grid that never overlaps. Moving from card to card changes the open book\'s page without the turning leaf, which removes the flicker.'] },
   { v: '0.99.53', title: 'A new logo, and the Library arranged', notes: ['New logo: a temple front (the Library) standing on an open book, in gold. It is used in the top bar, on the Library\'s name plate and as the app icon.', 'The deck on the desk: stacks hold at most three different cards (the basic lands share one stack), the mana-value labels are gone, and the cards are bigger. Hovering a card outlines it in gold instead of lifting it over its neighbours, and the open book turns to its page.', 'The menu book is regrouped. The left page is for playing: your game, the deck in hand, Standard or Commander, who goes first, and Start. The right page is for the Library: Decks, Options and Help.', '"Buy this deck…" is now among a deck\'s buttons in the Library.', 'Library look… (in the menu book): choose the wall (warm plaster, sage, midnight, oxblood, ash grey, wood boards) and the desk (walnut, oak, mahogany, ebony, green baize).', 'Rules: type words side by side now all apply (CR 205.2b). A cost like "Sacrifice an artifact creature" accepts only artifact creatures, and a trigger for "an artifact creature" ignores plain artifacts and plain creatures. Before, either type was enough.', 'Rules: costs that say nontoken, token, noncreature (or any non-type), colorless, multicolored, basic, legendary or tapped now work. Before, they matched nothing (could not be paid) or ignored the word. "A red or green creature" now means a red creature or a green creature.', 'Rules: every card drawn triggers "Whenever you draw a card" (CR 121.2). Before, only the first three cards of one draw did.', 'Rules: "a white or green creature" in a trigger now matches a creature of either colour. Before, only the first colour was checked.'] },
@@ -8991,16 +8992,13 @@ function pickSource() {
   if (t && cardInfo(t)) return { id: 'res', name: t, ability: false, kindTxt: /cost/i.test(handPick.note || '') ? 'Cost of' : 'Effect of' };
   return { id: 'res', name: t || 'Choice', pseudo: true, ability: false, text: handPick.note || '' };
 }
-// v0.99.35 shrink the stack stage (scale) until it sits inside the table and above the hand: the hand used to cover its buttons
-function fitStackStage() {
-  const el = $('#stackStage'); if (!el || el.hidden) return;
-  el.style.setProperty('--ss', '1');
-  const mat = $('#mat'), mr = mat ? mat.getBoundingClientRect() : null; if (!mr) return;
-  const hand = [...document.querySelectorAll('#row-hand .card')].filter(c => !c.matches(':hover')).map(c => c.getBoundingClientRect()).filter(r => r.height);
-  const bottom = Math.min(mr.bottom - 8, hand.length ? Math.min(...hand.map(r => r.top)) - 10 : Infinity), top = mr.top + 8;
-  const r = el.getBoundingClientRect(), cy = (r.top + r.bottom) / 2, half = r.height / 2;
-  const s = Math.min(1, (cy - top) / half, (bottom - cy) / half);
-  if (s < 1) el.style.setProperty('--ss', String(Math.max(0.55, Math.floor(s * 100) / 100)));
+// v0.99.56 The stack window, redesigned: ONE panel docked in the top-right corner of the table (beside the library, graveyard and exile),
+// never in the middle and never dimming the screen. It lists everything on the stack, top first, as compact rows (art, name, what it is,
+// its targets); the top row is marked "next". Its buttons sit in one footer. It also carries the "resolving" states (finishing a spell,
+// applying an ability, choosing cards in your hand). The header's chevron folds it down to a one-line bar that keeps the main button.
+let stackMin = false;
+function stackKind(c) {
+  return c.kindTxt ? c.kindTxt : c.pseudo ? 'Rules check' : c.opp ? "Opponent's " + (c.ability ? 'ability' : 'spell') : c.ability ? (c.trigger ? 'Triggered ability' : c.pw ? 'Loyalty ability' : 'Activated ability') : c.copy ? 'Copy of your spell' : 'Your spell';
 }
 function drawStackStage() {
   const el = $('#stackStage'); if (!el) return;
@@ -9009,52 +9007,69 @@ function drawStackStage() {
   const resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
   const on = !!state && state.phase === 'play' && (state.stack.length > 0 || resPick || resSpell || resAb);
   el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { el.replaceChildren(); return; }
+  el.classList.add('sk'); el.classList.toggle('min', stackMin && !resPick);
   const pickSrc = resPick ? pickSource() : null;
-  const items = resPick ? [handPick && handPick.res ? (state.resolving || Object.assign({}, handPick.res, { id: 'res', ability: true })) : pickSrc] : resSpell ? [state.resolving] : resAb ? [state.resolvingAb, ...[...state.stack].reverse()] : [...state.stack].reverse(), shown = items.slice(0, 5);
-  const face = (c, i) => {
-    const base = c.ability ? (c.sourceName || String(c.name).replace(/ — ability$/, '')) : c.name, im = showImages ? imgFor(base) : null;   // abilities show the card they come from
-    const kind = c.kindTxt ? c.kindTxt + ' ' + base : c.pseudo ? 'Rule' : c.opp ? "Opponent's " + (c.ability ? 'ability' : 'spell') : c.ability ? (c.trigger ? 'Triggered ability' : 'Activated ability') : c.copy ? 'Copy of your spell' : 'Your spell';
+  const items = resPick ? [handPick && handPick.res ? (state.resolving || Object.assign({}, handPick.res, { id: 'res', ability: true })) : pickSrc] : resSpell ? [state.resolving] : resAb ? [state.resolvingAb, ...[...state.stack].reverse()] : [...state.stack].reverse();
+  const row = (c, i) => {
+    if (!c) return null;
+    const base = c.ability ? (c.sourceName || String(c.name).replace(/ — ability$/, '')) : c.name, im = showImages && !c.pseudo ? imgFor(base) : null;
     const abText = c.ability || c.pseudo ? String(c.text || '').replace(/\s+/g, ' ').trim() : '';
-    const body = im && !c.pseudo ? h('img', { src: im.front, alt: base, draggable: 'false' }) : h('div', { class: 'ss-text' }, h('b', { text: base }), h('span', { text: c.ability || c.pseudo ? abText.slice(0, 150) : (cardInfo(c.name) ? (cardInfo(c.name).t || '') : '') }));
-    return h('div', { class: 'ss-card' + (i ? '' : ' top') + (c.opp ? ' opp' : c.ability ? ' abil' : ''), style: `--i:${i}`, 'data-id': c.id, title: `${kind}: ${base}${abText ? ' — ' + abText : ''}` }, body, im && abText ? h('div', { class: 'ss-abil', text: abText.length > 120 ? abText.slice(0, 117) + '…' : abText }) : null, h('i', { class: 'ss-tag', text: (i ? '' : 'TOP · ') + kind }));
+    const tg = (() => { try { return targetsText(c) || ''; } catch (e) { return ''; } })();
+    const modes = c.modeTexts ? c.modeTexts.map(t => c.xValue !== undefined ? t.replace(/\bX\b/g, String(c.xValue)) : t).join('; ') : '';
+    const busy = (resSpell || resAb || resPick) && i === 0;
+    return h('div', { class: 'sk-row' + (i ? '' : ' top') + (c.opp ? ' opp' : c.ability ? ' abil' : '') + (busy ? ' busy' : ''), title: `${stackKind(c)}: ${base}${abText ? ' — ' + abText : ''}` },
+      h('div', { class: 'ss-card sk-thumb' + (i ? '' : ' top'), 'data-id': c.id }, im ? h('img', { src: im.front, alt: '', draggable: 'false' }) : h('span', { text: (base || '?').charAt(0) })),
+      h('div', { class: 'sk-txt' },
+        h('b', { text: base + (c.xValue !== undefined ? ` (X = ${c.xValue})` : '') }),
+        h('span', { class: 'sk-kind', text: stackKind(c) + (tg ? ' → ' + tg : '') }),
+        modes ? h('span', { class: 'sk-sub', text: modes }) : abText ? h('span', { class: 'sk-sub', text: abText.length > 110 ? abText.slice(0, 107) + '…' : abText }) : null),
+      h('span', { class: 'sk-badge', text: busy ? 'now' : i ? String(i + 1) : 'next' }));
   };
-  const resLinesEl = () => (state.resLines && state.resLines.length) ? h('div', { class: 'ss-lines' }, h('div', { class: 'ss-lh', text: 'What the app did' }), ...state.resLines.slice(-4).map(t => h('div', { text: t }))) : null;
-  const stepsEl = (cur) => h('div', { class: 'ss-steps' }, ...['On the stack', 'Resolving', 'Done'].map((t, i) => h('span', { class: 'ss-st' + (i === cur ? ' now' : i < cur ? ' past' : ''), text: `${i + 1} ${t}` })));
+  const linesEl = () => (state.resLines && state.resLines.length) ? h('div', { class: 'sk-lines' }, h('div', { class: 'sk-lh', text: 'What the app did' }), ...state.resLines.slice(-4).map(t => h('div', { text: t }))) : null;
+  let title, note = null, list = items, buttons = [], main = null, hint = null;
   if (resAb) {
-    const r = state.resolvingAb;
-    el.replaceChildren(stepsEl(1), h('div', { class: 'ss-row' }, shown.map(face)),
-      h('div', { class: 'ss-pick' }, h('b', { text: `${r.trigger ? 'Triggered ability' : r.pw ? 'Loyalty ability' : 'Activated ability'}: ${r.sourceName || r.name}` }), h('div', { class: 'muted small', text: 'Choose what it does in the window next to the card.' })),
-      resLinesEl(), h('div', { class: 'ss-btns' }, h('button', { class: 'primary', text: 'Finish', title: 'Done applying this ability', onclick: () => { state.resolvingAb = null; state.resLines = []; render(); } })));
-    return;
-  }
-  if (resPick) {
-    const n = state.discarding, verb = handPick ? handPick.verb : 'discard', cnt = bottomSel.size, r = pickSrc;
-    // v0.96.14 a rules check with no card behind it (the hand-size discard) is shown as a normal pop-up panel, not as an empty card
-    const ruleBox = r && r.pseudo ? h('div', { class: 'ss-rulebox' }, h('div', { class: 'ss-rh', text: !handPick ? 'Rules check: maximum hand size' : 'Rules check: ' + (handPick.title || r.name) }), h('div', { class: 'ss-rt', text: r.text || '' })) : null;
-    el.replaceChildren(ruleBox || h('div', { class: 'ss-row' }, shown.map(face)),
-      h('div', { class: 'ss-pick' }, h('b', { text: !handPick ? 'Cleanup: hand size' : pickSrc.kindTxt ? `${pickSrc.kindTxt}: ${pickSrc.name}` : `${r.trigger ? 'Triggered ability' : 'Resolving'}: ${handPick.title || r.sourceName || pickSrc.name}` }),
-        h('div', { text: `Select ${n} card${n === 1 ? '' : 's'} in your hand to ${verb} (${cnt}/${n})` }), handPick && handPick.note ? h('div', { class: 'muted small', text: handPick.note }) : null, state.stack.length ? h('div', { class: 'muted small', text: `${state.stack.length} object${state.stack.length === 1 ? '' : 's'} on the stack wait${state.stack.length === 1 ? 's' : ''} behind this.` }) : null),
-      resLinesEl(),
-      h('div', { class: 'ss-btns' }, handPick && handPick.cancel ? h('button', { text: 'Cancel', onclick: cancelHandPick }) : null,
-        h('button', { class: 'primary', text: verb.charAt(0).toUpperCase() + verb.slice(1) + (n > 1 ? ` ${cnt}/${n}` : ''), disabled: cnt !== n, onclick: confirmDiscard })));
-    return;
-  }
-  if (resSpell) {
-    el.classList.add('resolving');
-    el.replaceChildren(stepsEl(1), h('div', { class: 'ss-row' }, shown.map(face)), h('div', { class: 'ss-pick' }, h('b', { text: `Resolving: ${state.resolving.name}` }), h('div', { class: 'muted small', text: 'It stays here while its effect is applied, then goes to the graveyard.' })),
-      resLinesEl(),
-      h('div', { class: 'ss-btns' }, h('button', { class: 'primary', text: 'Finish: to graveyard', title: 'Done applying the effect', onclick: () => finishResolving() })));
-    return;
-  }
-  const orderEl = items.length > 1 ? h('ol', { class: 'ss-order', title: 'The top of the stack resolves first' }, ...items.slice(0, 8).map((c, i) => h('li', { class: i ? '' : 'first' }, h('span', { class: 'ss-on', text: i ? `then ${i + 1}` : 'resolves first' }), ' ', h('b', { text: c.ability ? `${c.sourceName || c.name}` : c.name }), h('span', { class: 'muted', text: ' \u00b7 ' + (c.opp ? (c.ability ? "opponent's ability" : "opponent's spell") : c.ability ? (c.trigger ? 'triggered ability' : c.pw ? 'loyalty ability' : 'activated ability') : c.copy ? 'copy' : 'spell') })))) : null;
-  const ssOn = splitSecondOn() ? h('div', { class: 'ss-split', text: 'Split second: no spells or abilities (except mana abilities) until it resolves' }) : null;
-  el.replaceChildren(stepsEl(0), h('div', { class: 'ss-row' }, shown.map(face)), orderEl, ssOn, items.length > shown.length ? h('div', { class: 'ss-more', text: `+${items.length - shown.length} more below` }) : null, h('div', { class: 'ss-btns' },
+    const r = state.resolvingAb; title = 'Resolving';
+    note = h('div', { class: 'sk-note' }, h('b', { text: `${r.trigger ? 'Triggered ability' : r.pw ? 'Loyalty ability' : 'Activated ability'}: ${r.sourceName || r.name}` }), h('span', { text: 'Make its choices in the window that opened, then press Finish.' }));
+    main = h('button', { class: 'primary', text: 'Finish', title: 'Done applying this ability', onclick: () => { state.resolvingAb = null; state.resLines = []; render(); } }); buttons = [main];
+  } else if (resPick) {
+    const n = state.discarding, verb = handPick ? handPick.verb : 'discard', cnt = bottomSel.size, r = pickSrc; title = !handPick ? 'Cleanup' : 'Choose cards';
+    if (r && r.pseudo) list = [];
+    note = h('div', { class: 'sk-note' }, h('b', { text: !handPick ? 'Cleanup: maximum hand size' : pickSrc.kindTxt ? `${pickSrc.kindTxt}: ${pickSrc.name}` : `${r.trigger ? 'Triggered ability' : 'Resolving'}: ${handPick.title || r.sourceName || pickSrc.name}` }),
+      r && r.pseudo && r.text ? h('span', { text: r.text }) : null,
+      h('span', { class: 'sk-pickn', text: `Tap ${n} card${n === 1 ? '' : 's'} in your hand to ${verb} (${cnt}/${n})` }), handPick && handPick.note ? h('span', { class: 'muted', text: handPick.note }) : null,
+      state.stack.length ? h('span', { class: 'muted', text: `${state.stack.length} object${state.stack.length === 1 ? '' : 's'} on the stack wait${state.stack.length === 1 ? 's' : ''} behind this.` }) : null);
+    main = h('button', { class: 'primary', text: verb.charAt(0).toUpperCase() + verb.slice(1) + (n > 1 ? ` ${cnt}/${n}` : ''), disabled: cnt !== n, onclick: confirmDiscard });
+    buttons = [handPick && handPick.cancel ? h('button', { text: 'Cancel', onclick: cancelHandPick }) : null, main];
+  } else if (resSpell) {
+    title = 'Resolving';
+    note = h('div', { class: 'sk-note' }, h('span', { text: 'Apply its effect; it goes to the graveyard when you finish.' }));
+    main = h('button', { class: 'primary', text: 'Finish: to graveyard', title: 'Done applying the effect', onclick: () => finishResolving() }); buttons = [main];
+  } else {
+    const top = items[0]; title = 'The stack';
+    const cw = cantBeCounteredWhy(top);
+    main = h('button', { class: 'primary', text: top.opp ? 'Resolve (opponent)' : 'Resolve top', title: 'Resolve ' + (top.ability ? (top.sourceName || top.name) : top.name), onclick: () => resolveTopOfStack() });
+    buttons = [
       h('button', { text: 'Pass priority', title: 'Do not respond: the top object will resolve', onclick: () => passPriority() }),
-      (!items[0].ability && !items[0].opp && !isPermanentCard(items[0])) ? h('button', { text: 'Copy', title: 'A copy of this spell goes on the stack (Twincast, Fork, Reverberate…). It is not cast, so it does not count for Storm.', onclick: () => { snap(); makeSpellCopies(items[0].id, 1, 'Copy effect'); render(); } }) : null,
-      (() => { const cw = cantBeCounteredWhy(items[0]); return h('button', { class: 'danger', text: cw ? "Can't be countered" : 'Countered', disabled: !!cw, title: cw ? items[0].name + " can't be countered: " + cw : 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }); })(),
-      h('button', { class: 'primary', text: items[0].opp ? 'Resolve (opponent)' : 'Resolve top', title: 'Resolve ' + (items[0].ability ? (items[0].sourceName || items[0].name) : items[0].name), onclick: () => resolveTopOfStack() })),
-    h('div', { class: 'ss-hint', text: 'Drag a card or permanent onto the stack to respond' }));
+      (!top.ability && !top.opp && !isPermanentCard(top)) ? h('button', { text: 'Copy', title: 'A copy of this spell goes on the stack (Twincast, Fork, Reverberate…). It is not cast, so it does not count for Storm.', onclick: () => { snap(); makeSpellCopies(top.id, 1, 'Copy effect'); render(); } }) : null,
+      h('button', { class: 'danger', text: cw ? "Can't be countered" : 'Countered', disabled: !!cw, title: cw ? top.name + " can't be countered: " + cw : 'The top object is removed without resolving', onclick: () => { counterTopOfStack(); } }),
+      main];
+    if (splitSecondOn()) note = h('div', { class: 'sk-note warn', text: 'Split second: no spells or abilities (except mana abilities) until it resolves.' });
+    hint = h('div', { class: 'sk-hint', text: 'Drag a card here to respond' });
+  }
+  const count = state.stack.length;
+  const head = h('div', { class: 'sk-head', onclick: e => { if (e.target.closest('button')) return; stackMin = !stackMin; drawStackStage(); } },
+    h('span', { class: 'sk-title', text: title }), count ? h('span', { class: 'sk-count', text: String(count) }) : null,
+    h('span', { class: 'sk-sp' }),
+    stackMin && main ? (() => { const b = main.cloneNode(true); b.onclick = main.onclick; b.disabled = main.disabled; b.classList.add('sk-mini'); return b; })() : null,
+    h('button', { class: 'sk-fold', 'aria-label': stackMin ? 'Show the stack' : 'Fold the stack', title: stackMin ? 'Show the stack' : 'Fold the stack down to one line', text: stackMin ? '▾' : '▴', onclick: () => { stackMin = !stackMin; drawStackStage(); } }));
+  if (stackMin && !resPick) { el.replaceChildren(head); return; }
+  el.replaceChildren(head,
+    list.length ? h('div', { class: 'sk-list' }, list.map(row)) : null,
+    note, linesEl(),
+    h('div', { class: 'sk-foot ss-btns' }, ...buttons.filter(Boolean)), hint);
 }
+// kept for older callers: the docked panel needs no scaling
+function fitStackStage() { const el = $('#stackStage'); if (el) el.style.removeProperty('--ss'); }
 let bsActionsNode = null;
 function bsActionsEl() { return bsActionsNode || (bsActionsNode = $('#bsActions')); }
 function drawBoardStrip() {
