@@ -6703,8 +6703,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.54';
+const APP_VERSION = '0.99.55';
 const CHANGELOG = [
+  { v: '0.99.55', title: 'Upright on phones', notes: ['Phones (and small tablets) held upright now get their own layout instead of a "turn sideways" screen. The table is one column: deck, graveyard and exile along the top, then creatures, other permanents and lands, with your hand at the bottom. The top bar scrolls sideways.', 'Upright, the stack and the game log open from the "Stack & log" button in the top bar, and tapping a card shows its preview over the table for a moment (tap the preview to close it).', 'The Library upright: three shelves above the open book, which is drawn large across the desk so its pages can be read, and the deck\'s piles below it. A book taken down goes into the open book.', 'Turning the phone sideways switches back to the full table and the wide Library.'] },
   { v: '0.99.54', title: 'Phones and tablets', notes: ['The app now runs in the browser on phones and tablets (iPhone, iPad, Android) and can be installed to the home screen like an app. It keeps working offline once loaded. Address: snipeuoutjsl-netizen.github.io/MTG-Playtester', 'Touch: drag a card with your finger to play it or move it, press and hold for the card menu (the right-click menu), and double-tap for a double-click.', 'Small screens get the whole table fitted to the screen (pinch to zoom still works). Phones are asked to turn sideways, because the table needs the width.', 'The deck on the Library desk is now one pile per card, its copies stacked underneath, dealt out on a grid that never overlaps. Moving from card to card changes the open book\'s page without the turning leaf, which removes the flicker.'] },
   { v: '0.99.53', title: 'A new logo, and the Library arranged', notes: ['New logo: a temple front (the Library) standing on an open book, in gold. It is used in the top bar, on the Library\'s name plate and as the app icon.', 'The deck on the desk: stacks hold at most three different cards (the basic lands share one stack), the mana-value labels are gone, and the cards are bigger. Hovering a card outlines it in gold instead of lifting it over its neighbours, and the open book turns to its page.', 'The menu book is regrouped. The left page is for playing: your game, the deck in hand, Standard or Commander, who goes first, and Start. The right page is for the Library: Decks, Options and Help.', '"Buy this deck…" is now among a deck\'s buttons in the Library.', 'Library look… (in the menu book): choose the wall (warm plaster, sage, midnight, oxblood, ash grey, wood boards) and the desk (walnut, oak, mahogany, ebony, green baize).', 'Rules: type words side by side now all apply (CR 205.2b). A cost like "Sacrifice an artifact creature" accepts only artifact creatures, and a trigger for "an artifact creature" ignores plain artifacts and plain creatures. Before, either type was enough.', 'Rules: costs that say nontoken, token, noncreature (or any non-type), colorless, multicolored, basic, legendary or tapped now work. Before, they matched nothing (could not be paid) or ignored the word. "A red or green creature" now means a red creature or a green creature.', 'Rules: every card drawn triggers "Whenever you draw a card" (CR 121.2). Before, only the first three cards of one draw did.', 'Rules: "a white or green creature" in a trigger now matches a creature of either colour. Before, only the first colour was checked.'] },
   { v: '0.99.52', title: 'Turn to the card', notes: ['Hovering a card laid out on the desk now turns the open book to that card\'s page: its picture on the left, and on the right its name, cost, type, rules text, power and toughness, and how many the deck has. Move off the cards and the book turns back to the deck. The cards on the desk only lift a little now instead of zooming.', 'Fixed: going back to the Library from a game could show an empty screen. The Library\'s fade-out stayed on it, so it opened invisible the next time. This was also behind the "crash" when changing decks mid-game.', 'The deck button in the top bar is now "Return to the Library". Your game is kept, and "Back to the table" (or Esc) returns to it.'] },
@@ -13639,7 +13640,7 @@ function deckSpreadEl(deck, deckName, onCard) {
     const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
     const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
     const piles = [...all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), ...all.filter(c => isLand(c) && !isBasic(c)).sort(byName), ...all.filter(isBasic).sort(byName)];
-    const W = 1520, H = 290, GAP = 14, N = Math.max(1, piles.length);
+    const W = hallPortrait() ? 860 : 1520, H = hallPortrait() ? 290 : 290, GAP = 14, N = Math.max(1, piles.length);
     let best = { r: 1, cw: 0, ch: 0 };
     for (let r = 1; r <= 4; r++) { const cols = Math.ceil(N / r), cw0 = (W - GAP * (cols - 1)) / cols - 6, ch = Math.min(cw0 * 1.395, (H - GAP * (r - 1)) / r - 6), cw = ch / 1.395; if (cw > best.cw) best = { r, cw, ch, cols }; }
     const cw = Math.min(150, Math.floor(best.cw)), ch = Math.round(cw * 1.395);
@@ -13716,16 +13717,23 @@ function openHallLook() {
 const HALL_LOGO = '<svg class="lg" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lgGoldP" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1bd"/><stop offset=".45" stop-color="#e9c26a"/><stop offset="1" stop-color="#a8761f"/></linearGradient></defs><g fill="url(#lgGoldP)"><path d="M7 22.5 32 9l25 13.5z"/><path fill="var(--lg-bg, #1b130d)" d="M15.5 20.6 32 12.2l16.5 8.4z"/><rect x="8.5" y="23.8" width="47" height="3.6" rx=".6"/>\n<rect x="11.2" y="29" width="4" height="16.5" rx=".8"/><rect x="19.1" y="29" width="4" height="16.5" rx=".8"/><rect x="27" y="29" width="4" height="16.5" rx=".8"/><rect x="33" y="29" width="4" height="16.5" rx=".8"/><rect x="40.9" y="29" width="4" height="16.5" rx=".8"/><rect x="48.8" y="29" width="4" height="16.5" rx=".8"/>\n<rect x="9.5" y="27.6" width="45" height="1.6" rx=".5"/>\n<path d="M5 48.2c9.2-2.6 19-2.1 27 2.6v5.4c-8-4.4-17.8-4.9-27-2.4z"/><path d="M59 48.2c-9.2-2.6-19-2.1-27 2.6v5.4c8-4.4 17.8-4.9 27-2.4z"/></g></svg>';
 const HALL_W = 1600, HALL_H = 900, HALL_PER_PAGE = 40;
 let hallPage = 0;
+// v0.99.55 a tall window (a phone held upright) gets the room arranged for portrait: a 900 x 1600 stage, three shelves above
+// the open book, which is drawn large across the desk, and the deck's piles below it
+function hallPortrait() { const el = document.getElementById('hall'); return !!(el && el.classList.contains('portrait')); }
+function hallWantsPortrait() { const el = document.getElementById('hall'); return !!el && el.clientHeight > el.clientWidth * 1.1; }
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
   const vp = document.querySelector('#hall .hall-view'), st = vp && vp.querySelector('.hall-stage'); if (!st) return;
-  const k = Math.min(vp.clientWidth / HALL_W, vp.clientHeight / HALL_H) || 1; st.style.setProperty('--hs', String(Math.max(0.3, Math.min(1.6, k))));
+  const W = hallPortrait() ? 900 : HALL_W, H = hallPortrait() ? 1600 : HALL_H;
+  const k = Math.min(vp.clientWidth / W, vp.clientHeight / H) || 1; st.style.setProperty('--hs', String(Math.max(0.2, Math.min(1.6, k))));
 }
-window.addEventListener('resize', () => { if (hallOpen()) hallFit(); });
+window.addEventListener('resize', () => { if (!hallOpen()) return; if (hallWantsPortrait() !== hallPortrait()) drawHall(); else hallFit(); });
 function drawHall() {
   const el = document.getElementById('hall'); if (!el) return;
   const decks = loadDecks(), mode = gameMode(), all = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
-  const pages = Math.max(1, Math.ceil(all.length / HALL_PER_PAGE)); hallPage = Math.min(hallPage, pages - 1);
-  const names = all.slice(hallPage * HALL_PER_PAGE, (hallPage + 1) * HALL_PER_PAGE);
+  const portrait = hallWantsPortrait(); el.classList.toggle('portrait', portrait);
+  const PER = portrait ? 30 : HALL_PER_PAGE;
+  const pages = Math.max(1, Math.ceil(all.length / PER)); hallPage = Math.min(hallPage, pages - 1);
+  const names = all.slice(hallPage * PER, (hallPage + 1) * PER);
   const world = h('div', { class: 'hall-world' }); hallHost = { el: world };
   const btn = (text, fn, cls, title) => h('button', { class: 'hall-btn ' + (cls || ''), text, title: title || '', onclick: fn });
   const inGame = !!(state && state.deckName);
@@ -13759,7 +13767,7 @@ function drawHall() {
       h('label', { class: 'hall-chk small' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), ' Open the Library when the app starts')));
   const tome = h('div', { class: 'hall-tome' }, left, h('div', { class: 'hall-spine' }), right);
   const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: (deck, name) => deckSpreadEl(deck, name, c => tomeCard(tome, c, name)), layer: null };
-  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: 4, scale: 0.8, scene: hallScene });
+  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: portrait ? 3 : 4, scale: 0.8, scene: hallScene });
   const pager = pages > 1 ? h('div', { class: 'hall-pager' },
     h('button', { text: '‹', title: 'Previous shelves', disabled: hallPage === 0, onclick: () => { hallPage--; drawHall(); } }),
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
@@ -13845,12 +13853,21 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
   // iOS has no right-click menu of its own to block, but its long-press callout and text selection would fight the press-and-hold
   document.addEventListener('contextmenu', e => { if (e.isTrusted && matchMedia('(pointer: coarse)').matches && !(e.target.closest && e.target.closest('input, textarea'))) e.preventDefault(); }, true);
 })();
-// phones held upright: the table needs the width, so ask for landscape
-function phoneOrientationCheck() {
-  const s = Math.min(screen.width, screen.height), portrait = matchMedia('(orientation: portrait)').matches;
-  document.documentElement.classList.toggle('phone-portrait', s < 600 && portrait && matchMedia('(pointer: coarse)').matches);
+// v0.99.55 upright phones and tablets: html.portrait-ui (set by the script in index.html) stacks the table in one column. The right-hand
+// column (stack, log) becomes a drawer opened from the top bar, and the card preview floats over the table for a moment when a card is tapped.
+function portraitUiSetup() {
+  if (typeof document === 'undefined' || document.getElementById('btnSideDrawer')) return;
+  const bar = document.getElementById('topbar'); if (!bar) return;
+  const b = h('button', { id: 'btnSideDrawer', class: 'iconbtn', title: 'Stack and game log', 'aria-label': 'Stack and game log', 'aria-expanded': 'false', text: 'Stack & log',
+    onclick: () => { const on = document.body.classList.toggle('side-open'); b.setAttribute('aria-expanded', String(on)); } });
+  bar.append(b);
+  const pv = document.getElementById('preview'); if (!pv) return;
+  let t = 0;
+  new MutationObserver(() => { if (!document.documentElement.classList.contains('portrait-ui')) return; document.body.classList.add('pv-on'); clearTimeout(t); t = setTimeout(() => document.body.classList.remove('pv-on'), 2600); })
+    .observe(pv, { childList: true, subtree: true });
+  pv.addEventListener('click', () => document.body.classList.remove('pv-on'));
 }
-if (typeof window !== 'undefined') { window.addEventListener('orientationchange', () => setTimeout(phoneOrientationCheck, 200)); window.addEventListener('resize', phoneOrientationCheck); setTimeout(phoneOrientationCheck, 0); }
+if (typeof window !== 'undefined') setTimeout(portraitUiSetup, 0);
 init();
 
 })();

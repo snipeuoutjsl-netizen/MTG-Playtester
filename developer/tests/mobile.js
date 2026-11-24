@@ -1,5 +1,5 @@
 // Phone/tablet checks (v0.99.54): run like cr-rules.js. A phone held sideways gets the widened viewport; touch drag plays a land;
-// press-and-hold opens the card menu; upright phones get the turn-sideways screen.
+// press-and-hold opens the card menu; an upright phone gets the one-column table and the portrait Library.
 const { setup } = require(__dirname+'/common.js');
 (async()=>{
 const {b,p}=await setup({ viewport:{width:844,height:390}, screen:{width:844,height:390}, deviceScaleFactor:3, isMobile:true, hasTouch:true, userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36' });
@@ -20,7 +20,12 @@ const dr = await p.evaluate(id=>({onBf:__d.state.battlefield.some(c=>c.id===id),
 const h2 = await p.evaluate(()=>{ const el=document.querySelector('#row-hand .card'); const r=el.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; });
 await touch('touchStart', [[h2.x,h2.y]]); await p.waitForTimeout(650); await touch('touchEnd', []); await p.waitForTimeout(200);
 ok('press and hold opens the card menu', await p.evaluate(()=>!!document.querySelector('#ctxMenu:not([hidden])')), 'menu closed');
-await p.setViewportSize({width:390,height:844}); await p.evaluate(()=>window.dispatchEvent(new Event('resize'))); await p.waitForTimeout(300);
-ok('upright phone asks to turn sideways', await p.evaluate(()=>document.documentElement.classList.contains('phone-portrait') && getComputedStyle(document.getElementById('rotateHint')).display !== 'none'), 'no hint');
+await p.setViewportSize({width:390,height:844}); await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true, screenWidth: 390, screenHeight: 844, screenOrientation: { type: 'portraitPrimary', angle: 0 } }); await p.evaluate(()=>{ window.__fitViewport && window.__fitViewport(); window.dispatchEvent(new Event('resize')); }); await p.waitForTimeout(300);
+await p.waitForTimeout(400);
+const up = await p.evaluate(()=>({ ui: document.documentElement.classList.contains('portrait-ui'), w: innerWidth, sw: document.documentElement.scrollWidth, col: getComputedStyle(document.getElementById('mat')).gridTemplateColumns.split(' ').length, drawer: getComputedStyle(document.getElementById('btnSideDrawer')).display }));
+ok('upright phone gets the one-column table, no sideways scrolling', up.ui && up.w === 520 && up.sw <= up.w && up.col === 1 && up.drawer !== 'none', JSON.stringify(up));
+await p.evaluate(()=>__d.openHall()); await p.waitForTimeout(600);
+const hp = await p.evaluate(()=>({ portrait: document.getElementById('hall').classList.contains('portrait'), shelves: [...document.querySelectorAll('#hall .bk-shelf')].filter(x=>getComputedStyle(x).display!=='none').length }));
+ok('upright Library: portrait room with three shelves', hp.portrait && hp.shelves === 3, JSON.stringify(hp)); await p.evaluate(()=>__d.closeHall(false));
 ok('no page errors', !errs.length, errs.join('; '));
 console.log(`${res.filter(Boolean).length}/${res.length} pass`); await b.close(); process.exit(res.every(Boolean) ? 0 : 1); })();

@@ -58,3 +58,4 @@ def desk_persp(src='desk.jpg', out='desk_persp.jpg', P=1800., eye=(800., 470.), 
     img = img * shade
     Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(.6)).save(out, quality=80)
 desk_persp()
+desk_persp(out='desk_persp_portrait.jpg', eye=(450., 760.), y0=1290, y1=1700, W=900)   # v0.99.55 the portrait room

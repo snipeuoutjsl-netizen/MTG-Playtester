@@ -66,9 +66,18 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
   // iOS has no right-click menu of its own to block, but its long-press callout and text selection would fight the press-and-hold
   document.addEventListener('contextmenu', e => { if (e.isTrusted && matchMedia('(pointer: coarse)').matches && !(e.target.closest && e.target.closest('input, textarea'))) e.preventDefault(); }, true);
 })();
-// phones held upright: the table needs the width, so ask for landscape
-function phoneOrientationCheck() {
-  const s = Math.min(screen.width, screen.height), portrait = matchMedia('(orientation: portrait)').matches;
-  document.documentElement.classList.toggle('phone-portrait', s < 600 && portrait && matchMedia('(pointer: coarse)').matches);
+// v0.99.55 upright phones and tablets: html.portrait-ui (set by the script in index.html) stacks the table in one column. The right-hand
+// column (stack, log) becomes a drawer opened from the top bar, and the card preview floats over the table for a moment when a card is tapped.
+function portraitUiSetup() {
+  if (typeof document === 'undefined' || document.getElementById('btnSideDrawer')) return;
+  const bar = document.getElementById('topbar'); if (!bar) return;
+  const b = h('button', { id: 'btnSideDrawer', class: 'iconbtn', title: 'Stack and game log', 'aria-label': 'Stack and game log', 'aria-expanded': 'false', text: 'Stack & log',
+    onclick: () => { const on = document.body.classList.toggle('side-open'); b.setAttribute('aria-expanded', String(on)); } });
+  bar.append(b);
+  const pv = document.getElementById('preview'); if (!pv) return;
+  let t = 0;
+  new MutationObserver(() => { if (!document.documentElement.classList.contains('portrait-ui')) return; document.body.classList.add('pv-on'); clearTimeout(t); t = setTimeout(() => document.body.classList.remove('pv-on'), 2600); })
+    .observe(pv, { childList: true, subtree: true });
+  pv.addEventListener('click', () => document.body.classList.remove('pv-on'));
 }
-if (typeof window !== 'undefined') { window.addEventListener('orientationchange', () => setTimeout(phoneOrientationCheck, 200)); window.addEventListener('resize', phoneOrientationCheck); setTimeout(phoneOrientationCheck, 0); }
+if (typeof window !== 'undefined') setTimeout(portraitUiSetup, 0);
