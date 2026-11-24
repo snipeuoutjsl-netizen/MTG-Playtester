@@ -120,16 +120,23 @@ function durationOptions(sentence, obj, targets) {
   const until = durKey(s), uw = UNTIL_WORDS[until], isDur = DUR_RE.test(s.replace(/\b(?:who|that|which) (?:lost|gained|has lost|has gained|was dealt|were dealt|attacked|died|entered|cast)\b[^.,;]*?\bthis turn\b/gi, ''));   // v0.99.76 "opponent who lost life this turn" describes what to count, it is not a duration
   let who = (targets && targets.length) ? targets : null, group = null, m;
   if (!who) {
-    if (/^(other )?creatures you control\b/i.test(s)) group = { other: /^other/i.test(s) };
-    else if (obj.sourceId && /^(?:~|this \w+|it)\b/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    // v0.99.79 any group the sentence names ("All creatures get -2/-2", "Attacking creatures get +1/+0", "Creatures you control get +1/+1"): read with the same subject rules as static abilities
+    const gm = /^(?:\u2022\s*)?(.+?) (?:each )?(?:gets?|gains?|have|has) /i.exec(s);
+    if (gm && !/^(?:~|this \w+|it|target|that|those|they|enchanted|equipped)\b/i.test(gm[1])) {
+      if (/\b(?:your opponents control|an opponent controls|you don'?t control)\b/i.test(gm[1])) group = { opp: true, label: gm[1] };
+      else { let sub = null; const g0 = { id: obj.sourceId != null ? obj.sourceId : -1, name: src }; try { sub = parseSubject(gm[1], g0) || (/^(?:other )?(?:attacking|blocking|untapped|tapped) creatures$/i.test(gm[1]) ? parseSubject(gm[1] + ' you control', g0) : null); } catch (e) { sub = null; } if (sub && !sub.self) group = { test: sub.test, label: gm[1], other: /^other\b/i.test(gm[1]) }; }   // in a goldfish game the attackers are yours
+    }
+    if (!group && obj.sourceId && /^(?:~|this \w+|it)\b/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    if (!group && !who && obj.sourceId != null && /^enchanted creature\b/i.test(s)) { const f = findCard(obj.sourceId), host = f && f.card.att != null ? findCard(f.card.att) : null; if (host) who = [{ id: host.card.id, name: host.card.name }]; }   // v0.99.79 an Aura's "Enchanted creature gets +1/+0 until end of turn" (Firebreathing)
   }
   const apply = (mk) => () => {
-    const ids = group ? state.battlefield.filter(c => permZone(c) === 'creatures' && !(group.other && c.id === obj.sourceId)).map(c => c.id) : who.map(t => t.id);
+    if (group && group.opp) { log(`${obj.sourceName || 'Effect'}: ${group.label} — only your opponent's creatures, apply it on the real table`); return; }
+    const ids = group ? state.battlefield.filter(c => permZone(c) === 'creatures' && (!group.test || group.test(c)) && !(group.other && c.id === obj.sourceId)).map(c => c.id) : who.map(t => t.id);
     snap();
     for (const id of ids) { const f = findCard(id); if (f && f.zone === 'battlefield') { addFx(Object.assign({ targetId: id, until, srcName: obj.sourceName || 'effect', srcId: obj.sourceId || null }, mk)); } }
-    log(`${obj.sourceName || 'Effect'}: ${group ? 'creatures you control' : who.map(t => t.name).join(', ')} — ${mk.kind === 'pt' ? sgnN(mk.p) + '/' + sgnN(mk.t) : mk.kw} ${uw}`); render();
+    log(`${obj.sourceName || 'Effect'}: ${group ? group.label || 'creatures you control' : who.map(t => t.name).join(', ')} — ${mk.kind === 'pt' ? sgnN(mk.p) + '/' + sgnN(mk.t) : mk.kw} ${uw}`); render();
   };
-  const nameOf = () => group ? 'Creatures you control' : who.map(t => t.name).join(', ');
+  const nameOf = () => group ? (group.label ? group.label.replace(/^\u2022\s*/, '').replace(/^./, ch => ch.toUpperCase()) + (group.opp ? ' (your opponent\'s side, apply it there)' : '') : 'Creatures you control') : who.map(t => t.name).join(', ');
   let handled = false;
   // v0.99.68 frost: "It doesn't untap during its controller's next untap step" / "Those creatures don't untap …" (CR 502.3)
   if (who && /\b(?:doesn'?t|don'?t) untap during (?:its|their) controllers?'?s? next untap steps?|\b(?:doesn'?t|don'?t) untap during your next untap step/i.test(s)) {
@@ -225,7 +232,7 @@ function runToughnessSBA() {
 function attackBlock(c) {   // why this creature cannot attack right now ('' = it can)
   if (c.tapped) return 'It is tapped.';
   if (isSick(c)) return 'Summoning sickness: it came under your control this turn (and has no haste).';
-  if (hasKw(c, 'defender')) return 'Defender: this creature cannot attack.';
+  if (hasKw(c, 'defender') && c.defenderOkTurn !== state.turn) return 'Defender: this creature cannot attack.';
   { const gb = globalAttackBlock(c); if (gb) return gb; }
   { const sb = selfCantUnless(c, 'attack'); if (sb) return sb; }
   { const cb = statics().find(e => e.kind === 'cant' && e.attack && e.subj.test(c)); if (cb) return `${cb.g.name}: this creature can't attack.`; }

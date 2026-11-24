@@ -90,6 +90,26 @@ function batch2Options(txs, obj) {
       for (const c of state.battlefield) { const k = c.counters || {}; let any = false; for (const key of Object.keys(k)) { if (key === 'minusApplied' || !(k[key] > 0)) continue; k[key]++; any = true; } if (any) n++; }
       if (state.gs && state.gs.energy > 0) state.gs.energy++;
       log(`${src}: proliferated (${n} permanent${n === 1 ? '' : 's'}${state.gs && state.gs.energy > 0 ? ', energy' : ''})`); fireTrigger && render(); } }); }
+  // v0.99.79 CR 119.7 "Players can't gain life this turn." (Skullcrack, Atarka's Command): a real effect until end of turn, checked whenever life would be gained
+  { const ls = sents.find(x => /^(players|your opponents|each opponent|you) can'?t gain life this turn\.?$/i.test(x));
+    if (ls) { drop.push(/^Remember \(until end of turn\): .*can'?t gain life this turn/i); const w = /^players/i.test(ls) ? 'all' : /^you\b/i.test(ls) ? 'you' : 'opp';
+      out.push({ covers: [ls], full: true, label: w === 'all' ? "Players can't gain life this turn" : w === 'you' ? "You can't gain life this turn" : "Your opponent can't gain life this turn", fn: () => { snap(); addFx({ kind: 'nolifegain', who: w, until: 'eot', text: ls.replace(/\.$/, ''), srcName: src }); log(`${src}: ${ls.replace(/\.$/, '')}`); render(); } }); } }
+  // v0.99.79 CR 615.12 "Damage can't be prevented this turn.": recorded until end of turn; the goldfish table has no prevention shields of its own, so nothing else is needed
+  { const ds = sents.find(x => /^damage can'?t be prevented this turn\.?$/i.test(x));
+    if (ds) drop.push(/^Remember \(until end of turn\): Damage can'?t be prevented/i);
+    if (ds) out.push({ covers: [ds], full: true, label: "Damage can't be prevented this turn", fn: () => { addFx({ kind: 'noprevent', until: 'eot', text: ds.replace(/\.$/, ''), srcName: src }); log(`${src}: damage can't be prevented this turn`); } }); }
+  // v0.99.79 Fog: "Prevent all combat damage that would be dealt this turn." — your attackers deal no combat damage this turn
+  { const fs = sents.find(x => /^prevent all combat damage that would be dealt this turn\.?$/i.test(x));
+    if (fs) { drop.push(/^Remember \(until end of turn\): Prevent all combat damage/i); out.push({ covers: [fs], full: true, label: 'Prevent all combat damage this turn', fn: () => { snap(); addFx({ kind: 'fog', until: 'eot', text: 'Prevent all combat damage this turn', srcName: src }); log(`${src}: all combat damage this turn is prevented`); render(); } }); } }
+  // v0.99.79 "Until end of turn, you don't lose this mana as steps and phases end." (Grand Warlord Radha, Colossal Plow)
+  { const ks = sents.find(x => /^until end of turn, you don'?t lose this mana as steps and phases end\.?$/i.test(x));
+    if (ks) { drop.push(/^Remember \(until end of turn\): Until end of turn, you don'?t lose this mana/i); out.push({ covers: [ks], full: true, label: "Your mana stays in your pool until end of turn", fn: () => { addFx({ kind: 'keepmana', until: 'eot', text: "You don't lose this mana as steps and phases end", srcName: src }); log(`${src}: floating mana stays until end of turn`); render(); } }); } }
+  // v0.99.79 "This creature can attack this turn as though it didn't have defender." (Krotiq Nestguard)
+  { const as2 = sents.find(x => /^(?:~|this creature|it) can attack this turn as though it didn'?t have defender\.?$/i.test(x));
+    if (as2) { drop.push(/^Remember \(until end of turn\): .*as though it didn'?t have defender/i); out.push({ covers: [as2], full: true, label: `${src} can attack this turn as though it didn't have defender`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (f) f.card.defenderOkTurn = state.turn; log(`${src}: can attack this turn despite defender`); render(); } }); } }
+  // v0.99.79 blocking happens on your opponent's side: "can't block", "can't be blocked", "blocks if able" change nothing the goldfish table tracks, so say so instead of asking you to remember it
+  { const bs = sents.find(x => /\b(?:can'?t block|can'?t be blocked|blocks? (?:this creature |~ )?this turn if able|must be blocked)\b[^.]*this turn\.?$/i.test(x) || /^creatures without flying can'?t block this turn\.?$/i.test(x));
+    if (bs) { drop.push(/^Remember \(until end of turn\): .*(?:block|blocked)/i); out.push({ covers: [bs], full: true, label: `${bs.replace(/\.$/, '')} (blocking is up to your opponent: nothing to track here)`, fn: () => { addFx({ kind: 'note', until: 'eot', text: bs.replace(/\.$/, ''), srcName: src }); log(`${src}: ${bs.replace(/\.$/, '')}`); } }); } }
   // v0.99.77 "Tap it." / "Untap ~." with nothing targeted: the source itself (Wicked Wolf)
   { const ts = !/\btarget\b/i.test(t) && sents.find(x => /^(tap|untap) (?:it|~|this (?:creature|artifact|permanent))\.?$/i.test(x));
     if (ts) { const up = /^untap/i.test(ts); out.push({ covers: [ts], label: `${up ? 'Untap' : 'Tap'} ${src}`, fn: () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; if (!f || f.zone !== 'battlefield') { toast('Not on the battlefield', `${src} is no longer on the battlefield.`); return; } snap(); f.card.tapped = !up; if (up) delete f.card.mt; log(`${src}: ${up ? 'untapped' : 'tapped'}`); render(); } }); } }

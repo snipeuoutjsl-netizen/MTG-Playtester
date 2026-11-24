@@ -108,7 +108,8 @@ function applyLandCost(c, k) {
   if (k.life) { state.life -= k.life; log(`${c.name}: paid ${k.life} life for the mana → ${state.life}`); }
   if (k.dmg) { state.life -= k.dmg; log(`${c.name}: dealt ${k.dmg} damage to you → ${state.life}`); }
   if (k.noUntap) { c.noUntapNext = state.turn; log(`${c.name}: it doesn't untap during your next untap step`); }
-  if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }
+  if (k.oppGain && typeof oppGainBlocked === 'function' && oppGainBlocked()) log(`${c.name}: your opponent can't gain life this turn`);
+  else if (k.oppGain) { state.oppLife = (state.oppLife ?? 20) + k.oppGain; log(`${c.name}: each opponent gains ${k.oppGain} life → ${state.oppLife}`); }
 }
 // "enters with N <kind> counters on it" (Dark Depths: ten ice counters)
 function etbCounters(c) {
