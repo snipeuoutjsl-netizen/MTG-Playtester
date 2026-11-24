@@ -4835,6 +4835,8 @@ function tokenDefsFromText(text, srcName) {
   if (/\bafterlife (\d+)/i.test(t)) mk({ name: 'Spirit', pt: '1/1', col: ['W', 'B'], types: ['Creature'], subs: ['spirit'], tx: 'Flying', count: +t.match(/\bafterlife (\d+)/i)[1], type: 'Token Creature — Spirit' });
   // v0.99.68 "Create a 4/4 Zombie token. It gains haste until end of turn." / "They gain haste": the tokens just created get haste
   { const hm = /\btokens?\b[^.]*\.\s*(?:it|they|those tokens|the tokens?) gains? haste( until end of turn)?\b/i.exec(t); if (hm && out.length) out[out.length - 1].haste = hm[1] ? 'eot' : 'perm'; }
+  // v0.99.70 "Create a 0/1 Eldrazi Spawn token. It has \"Sacrifice this creature: Add {C}.\"": the quoted ability is the token's own
+  { const am = /\btokens?\b[^.]*\.\s*(?:it has|they have|each of them has) "([^"]+)"/i.exec(t); if (am && out.length) { const d = out[out.length - 1], ab = am[1].trim(); if (!String(d.tx || '').includes(ab.slice(0, 20))) d.tx = (d.tx ? d.tx + '\n' : '') + ab; } }
   return out;
 }
 let tokenCache = { key: '', defs: [] };
@@ -6813,8 +6815,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.69';
+const APP_VERSION = '0.99.70';
 const CHANGELOG = [
+  { v: '0.99.70', title: 'Settings regrouped, a matching Library, more cards read', notes: ['Settings regrouped into fewer, clearer tabs: Look & feel; Table (board layout, playmat and frame together); Library (wall, desk and whether the app opens there, which used to be a separate window); Motion & sound (animations and sound together); Accessibility; Tutor mode; Card data & updates (card data, pictures, Update app and the update check in one place); Legal notice. Search still finds any setting.', 'Library: the Back to the table and gear buttons are now walnut-and-brass plaques like the sign, the Standard and Commander ribbons are no longer hidden behind the page, phones say "Tap a book" instead of "Click", and upright the book rises when a deck is on the desk so the deck\'s cards are never under it.', 'NEW rules: token copies ("Create a token that\'s a copy of target creature / ~ / it", with "except it has haste"); a token created with a quoted ability (Eldrazi Spawn\'s "Sacrifice this creature: Add {C}.") has it; "You draw a card and lose 1 life" is one effect; "Target creature\'s controller loses N life" takes it from that creature\'s controller. 98 more Modern-legal cards are read in full (11,530).'] },
   { v: '0.99.69', title: 'Triggers always trigger, a roomier phone table, self-installing Windows updates', notes: ['RULES FIX: turning off "Triggered ability prompts" (a Tutor mode hint) switched off triggered abilities altogether, so cards like Skysovereign did nothing when they entered or attacked. Triggers are rules, not hints: they always trigger now; with the hint off they go on the stack by themselves in the order they happened (you still choose their targets).', 'Likewise, a Leyline or a card you reveal from your opening hand still gets its pre-game chance when the Pre-game screen is turned off.', 'Resolving window: each effect can be applied once, applying one locks any button that would repeat part of it, and the window finishes by itself when every effect is done, so nothing extra can be done that the card does not say. An ability aimed at an opponent\'s permanent (which the app does not track) is noted in the log for you to apply on the table instead of offering buttons.', 'NEW rules: "Put a +1/+1 counter on each [other] [Dragon] creature you control"; "Each opponent loses N life. You gain life equal to the life lost this way"; damage to "that creature\'s controller"; "You gain life equal to the number of …" / the greatest power among your creatures. 103 more Modern-legal cards are read in full.', 'Phones held upright: zones share the height by how many cards they hold, cards grow into the room they have, and lands or artifacts pile only when they would not fit side by side (on every device). Only active game-state icons show (⋯ shows the rest), and the ▾ Hand tab tucks your hand down to a strip.', 'Windows: the installed app now updates itself with the full Setup installer (checked against GitHub\'s checksum), so the window code is updated too. This needs this version\'s installer once; after that, Update now does everything.', 'The Welcome tour is rewritten for the current app: the Library and its book, phones and tablets, the stack window, how effects and triggers resolve, the end of a game and updates.'] },
   { v: '0.99.68', title: 'Loyalty abilities by the rules, and more cards read', notes: ['RULES (CR 602.2b): a planeswalker\'s loyalty ability now asks for its targets when you activate it, before the loyalty is paid and before it goes on the stack (it used to ask when it resolved).', 'RULES (CR 115.6): "up to one target" really can be none. Karn, the Great Creator\'s +1 with no artifact chosen does nothing; the parts of an ability that do not need the target still happen.', 'Effects that must all happen are no longer offered as buttons: Ugin\'s +2 "You gain 3 life and draw a card" just happens. This only applies when every part is understood, nothing is optional or chosen, and no part opens its own window.', 'NEW: "It doesn\'t untap during its controller\'s next untap step" (Frost Breath, Icefall Regent and the like) keeps the creature tapped for exactly one untap step.', 'NEW: "If that creature would die this turn, exile it instead" (Puncturing Blow and others).', 'NEW: "Create a … token. It gains haste until end of turn": the token has haste.', 'NEW: impulse draw. "Exile the top card(s) of your library. You may play it this turn" and "until the end of your next turn" exile the cards and keep them playable from the exile pile for exactly that long ("cast" lets you cast, not play a land).', 'Card reading: a "look at the top N" sort is credited for each sentence it carries out (Commune with Evil, Discerning Taste…). 144 more Modern-legal cards are now read in full.', 'Phones held upright: the table ends where the fanned hand begins, so no battlefield card sits under your hand.'] },
   { v: '0.99.67', title: 'Phone fixes and a clean-up', notes: ['Kozilek\'s Command and other modal spells with X: the modes you chose were lost when the X window paid automatically (Pay window turned off) or X made the spell free, so the resolving window offered every mode (with "Exile You" for the creature and graveyard modes). The chosen modes now always stay with the spell. ', 'Phones: the Victory / Defeat screen (Next round, Sideboard, Choose another deck) now comes up when a player reaches 0 life even with animations off, as they often are on phones. It used to be started by the life animation, so with no animation there was no screen.', 'Phones: the top bar no longer slides under the iPhone status bar. The upright layout is shrunk to fit the screen and the space kept for the status bar and home bar was shrunk with it; it is now scaled back to the real size.', 'Clean-up: 16 pieces of code nothing used any more (an old hand-sort menu, an old ability window and others) and 134 style rules for screens that no longer exist (the old desk stacks and piles, old phase bar, old stack list…) were removed. The app is a little smaller and nothing you see changes.'] },
@@ -9414,8 +9417,11 @@ async function loadSleeve() {
   applySleeve();   // v0.94.3 also applies the chosen sleeve preset at start-up (it used to be applied only when a custom upload existed, so presets looked reset)
 }
 let settingsTab = 'gfx';
-const SET_TABS = [['gfx', 'Look & feel'], ['a11y', 'Accessibility'], ['board', 'Board layout'], ['mat', 'Playmat & frame'], ['anim', 'Animations'], ['snd', 'Sound'], ['tutor', 'Tutor mode'], ['legal', 'Legal notice']];
-const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged: lanes, zone rail, piles and board effects'], mat: ['🖼', 'Playmat picture, colour and motion, and the frame around the board'], anim: ['✨', 'Motion and visual effects (they only decorate)'], snd: ['🔊', 'Sound effects and background music'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+// v0.99.70 merged: Board layout + Playmat & frame = Table; Animations + Sound = Motion & sound; the Library look window and the card-data / update
+// windows have their own tabs. ('mat' and 'snd' panes are still built, then folded into their merged tab.)
+const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['lib', 'Library'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
+const SET_TAB_ALIAS = { mat: 'board', snd: 'anim' };
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged (lanes, zone rail, piles, board effects), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['Library of Alexandria (MTG Playtester) is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -9567,7 +9573,7 @@ function openSettings() {
     sel.addEventListener('change',()=>{const st=UI_SETS.find(x=>x.id===sel.value); note.textContent=st?st.note:'';});
     const note=h('span',{class:'muted small',text:(UI_SETS.find(x=>x.id===sel.value)||{}).note||''});
     return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
-  const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.layout=h('div');
+  const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.mat=h('div',{class:'settab'}); P.snd=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox); P.a11y.append(buildA11yTab());
   { const box = h('div'), draw = () => {
       const mk = (v, label, desc) => { const r = h('input', { type: 'radio', name: 'laymode' }); r.checked = (settings.layoutMode || 'updated') === v; r.addEventListener('change', () => { settings.layoutMode = v; saveSettings(); applyLayout(); render(); draw(); });
@@ -9581,7 +9587,7 @@ function openSettings() {
         h('div', { class: 'setgrid' }, LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
           cb.addEventListener('change', () => { settings.lay = { ...(settings.lay || {}), [k]: cb.checked }; saveSettings(); applyLayout(); render(); });
           return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })),
-        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat picture and the frame have their own tab.' }));
+        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat and the frame are further down this tab.' }));
     }; draw(); P.layout.append(box); }
   const foilBox=h('div');
   const drawFoil=()=>{ const sel=h('select'); for(const [v,l] of [['off','Off'],['some','Some cards (about 1 in 5)'],['all','Every card']]) sel.append(h('option',{value:v,text:l})); sel.value=settings.foil||'off';
@@ -9636,6 +9642,16 @@ function openSettings() {
     h('div', { class: 'fhead', text: 'Board frame' }),
     frameBox,
     h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Playmat images are stored in this browser only, so they work offline.' }));
+  // v0.99.70 fold the merged panes in, and fill the two new tabs
+  P.board.append(h('div', { class: 'fhead', text: 'Playmat & frame' }), ...[...P.mat.childNodes].filter(n => !(n.classList && n.classList.contains('fhead') && n.textContent === 'Playmat'))); delete P.mat;
+  P.anim.append(h('div', { class: 'fhead', text: 'Sound' }), ...P.snd.childNodes); delete P.snd;
+  P.lib.append(buildHallLook(), h('div', { class: 'fhead', text: 'Start-up' }),
+    (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = lsGet(HALL_KEY, true) !== false; cb.addEventListener('change', () => lsSet(HALL_KEY, cb.checked)); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Open the Library when the app starts' }), h('span', { class: 'muted small', text: ' \u2014 otherwise the app opens straight at the table' }))); })());
+  { const go = (t, d, f) => h('div', { class: 'setrow' }, h('label', { text: t }), h('button', { text: 'Open\u2026', onclick: () => { m.close(); f(); } }), h('span', { class: 'muted small', text: d }));
+    const upd = (k, t) => { const cb = h('input', { type: 'checkbox' }); cb.checked = settings[k] !== false; cb.addEventListener('change', () => { settings[k] = cb.checked; saveSettings(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: t }))); };
+    P.data.append(h('div', { class: 'fhead', text: 'Card data' }), go('Card data', `Names, costs and rules text (${cardCount ? cardCount.toLocaleString() + ' cards loaded' : 'not loaded yet'})`, openCardData), go('Card pictures', 'Download pictures, or play with text cards', openImages),
+      h('div', { class: 'fhead', text: 'Updates' }), window.desktop ? go('Update app', 'Check GitHub for a new version and install it', () => openUpdate()) : h('div', { class: 'setrow' }, h('span', { class: 'muted small', text: 'The web app updates itself the next time it is opened.' })),
+      ...(window.desktop ? [upd('autoUpdateCheck', 'Check for updates when the app starts'), upd('updatePrompt', 'Open the update window when an update is found (otherwise a small notice)')] : [])); }
   // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
   const tabbar = h('div', { class: 'setnav' }), stage = h('div', { class: 'setmain' });
   const search = h('input', { type: 'search', class: 'setsearch', placeholder: 'Search settings' });
@@ -9671,7 +9687,7 @@ function openSettings() {
   tabbar.append(search);
   for (const [k, label] of SET_TABS) tabbar.append(h('button', { class: 'settabbtn', 'data-k': k, onclick: () => showTab(k) }, h('span', { class: 'ti', text: TAB_INFO[k][0] }), h('span', { text: label })));
   const shell = h('div', { class: 'setshell' }, tabbar, stage);
-  body.append(shell); showTab(P[settingsTab] ? settingsTab : 'gfx');
+  body.append(shell); { const t0 = SET_TAB_ALIAS[settingsTab] || settingsTab; showTab(P[t0] ? t0 : 'gfx'); }
   m.foot.append(
     h('button', { text: 'Welcome tour', title: 'Run the first-launch walkthrough again', onclick: () => { m.close(); openWelcome(); } }),
     h('button', { text: 'Reset to defaults', onclick: () => { Object.assign(settings, SET_DEFAULT); delete settings.a11y; saveSettings(); applyA11y(); m.close(); openSettings(); } }),
@@ -10120,7 +10136,7 @@ function compileCard(c) {
 // The effects the app can actually apply for a piece of rules text (mirrors the patterns in openAbilityEffect).
 // The sentences of an effect the engine does NOT carry out. A multi-sentence effect is only as handled as its least-handled sentence (v0.77).
 const DEP_SENT = /^(?:If|Then|Otherwise|Instead|Unless|That|Those|It|Its|They|Their|Each of|For each|And)\b/i;
-const DEP_HANDLED = [/^(?:it|they|those tokens|the tokens?) gains? haste(?: until end of turn)?\.?$/i, /^(?:it|that creature|that permanent|those creatures|they) (?:doesn'?t|don'?t) untap during (?:its|their) controllers?'?s? next untap steps?\.?$/i, /^if (?:that creature|it|that permanent) would die this turn, exile it instead\.?$/i, /^Exile ~\.?$/i, /^If you search your library this way, shuffle\.?$/i, /^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
+const DEP_HANDLED = [/^(?:it has|they have|each of them has) "[^"]+"\.?$/i, /^(?:it|they|those tokens|the tokens?) gains? haste(?: until end of turn)?\.?$/i, /^(?:it|that creature|that permanent|those creatures|they) (?:doesn'?t|don'?t) untap during (?:its|their) controllers?'?s? next untap steps?\.?$/i, /^if (?:that creature|it|that permanent) would die this turn, exile it instead\.?$/i, /^Exile ~\.?$/i, /^If you search your library this way, shuffle\.?$/i, /^Shuffle (?:~|this card|[A-Z][^.]*?) into its owner's library\.?$/i, /^If that spell is countered this way, (?:put it into its owner's hand|put it on top of its owner's library|exile it)\b/i, /^Its controller gains life equal to its (?:power|toughness|mana value)\.?$/i, /^Its controller may search their library for (?:a|an) .+ card.*$/i, /^If (?:this spell|it|that spell) was kicked, /i, /^(?:They|It) can'?t be regenerated\.?$/i, /^You lose life equal to (?:its|that card's) mana value\b/i, /^That creature gains haste\b/i, /^Exile it at the beginning of the next end step/i, /^Then discard (?:a|an|one|two|three|four|\d+) cards?\b/i, /^(?:Then|If you do,) (?:draw|discard) (?:a|an|one|two|three|four|that many|\d+) cards?\b/i, /^If you do, create\b/i, /^Then (?:sacrifice|shuffle)\b/i, /^Then amass [A-Z][a-z]+ (?:\d+|an?|one|two|three)\b/];
 // A sentence can be understood only in part ("Look at the top three cards, then put them back in any order. You may shuffle." -> only the shuffle was read).
 // Every action word in it must show up in what the reader produced; any that does not is a part of the card the app would otherwise skip without telling you.
 const VERB_CHECKS = [[/\blook at\b/i, /look|reveal|top|scry|surveil|sort|order/i], [/\bshuffle/i, /shuffl/i], [/\bscry\b/i, /scry/i], [/\bsurveil\b/i, /surveil/i], [/\bmills?\b/i, /mill/i], [/\bdraws?\b/i, /draw/i], [/\bdiscards?\b/i, /discard/i], [/\bexiles?\b/i, /exile/i], [/\bdestroys?\b/i, /destroy/i], [/\bsacrifices?\b/i, /sacrific/i], [/\bcreates?\b/i, /creat|token|populate|amass|treasure|clue|food/i], [/\bsearch(?:es)? (?:your|their|target)/i, /search|find|fetch/i], [/\bin any order\b|\bon (?:top|the bottom) of\b/i, /order|top|bottom|library|put/i], [/\bgains? \d+ life\b/i, /gain|life/i], [/\bloses? \d+ life\b/i, /lose|life/i], [/\bdeals? \d+ damage\b/i, /damage/i], [/\buntaps?\b/i, /untap/i], [/\btap\b(?! (?:it|them))/i, /tap/i]];
@@ -13909,10 +13925,21 @@ function openHallLook() {
       : (k === 'baize' ? '#1f5a3a' : 'var(--wood-desk) 0 0 / 260px 130px');
     return h('button', { class: 'look-sw' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: () => { const v = hallLook(); v[kind] = k; lsSet('mtgpt.hallLook', v); applyHallLook(); draw(); } },
       h('i', { style: `background:${prev};filter:${f || 'none'}` }), h('span', { text: label })); };
-  const draw = () => m.body.replaceChildren(
+  const draw = () => m.body.replaceChildren(buildHallLook());
+  draw();
+}
+// v0.99.70 the Library look choices, also shown in Settings → Library
+function buildHallLook() {
+  const box = h('div', { class: 'hall-look' });
+  const sw = (kind, [k, label, f]) => { const L = hallLook(), on = L[kind] === k;
+    const prev = kind === 'wall' ? (k === 'boards' ? 'repeating-linear-gradient(90deg, rgba(0,0,0,.5) 0 2px, transparent 2px 40px), var(--wood-panel) 0 0 / 200px 200px' : 'var(--wall-plaster) 0 0 / 128px 128px')
+      : (k === 'baize' ? '#1f5a3a' : 'var(--wood-desk) 0 0 / 260px 130px');
+    return h('button', { class: 'look-sw' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: () => { const v = hallLook(); v[kind] = k; lsSet('mtgpt.hallLook', v); applyHallLook(); draw(); } },
+      h('i', { style: `background:${prev};filter:${f || 'none'}` }), h('span', { text: label })); };
+  const draw = () => box.replaceChildren(
     h('div', { class: 'fhead', text: 'Wall' }), h('div', { class: 'look-grid' }, HALL_WALLS.map(w => sw('wall', w))),
     h('div', { class: 'fhead', text: 'Desk' }), h('div', { class: 'look-grid' }, HALL_DESKS.map(w => sw('desk', w))));
-  draw();
+  draw(); return box;
 }
 // v0.99.53 the logo: a temple front (the Library) on an open book; the same drawing as the top bar and the app icon
 const HALL_LOGO = '<svg class="lg" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lgGoldP" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1bd"/><stop offset=".45" stop-color="#e9c26a"/><stop offset="1" stop-color="#a8761f"/></linearGradient></defs><g fill="url(#lgGoldP)"><path d="M7 22.5 32 9l25 13.5z"/><path fill="var(--lg-bg, #1b130d)" d="M15.5 20.6 32 12.2l16.5 8.4z"/><rect x="8.5" y="23.8" width="47" height="3.6" rx=".6"/>\n<rect x="11.2" y="29" width="4" height="16.5" rx=".8"/><rect x="19.1" y="29" width="4" height="16.5" rx=".8"/><rect x="27" y="29" width="4" height="16.5" rx=".8"/><rect x="33" y="29" width="4" height="16.5" rx=".8"/><rect x="40.9" y="29" width="4" height="16.5" rx=".8"/><rect x="48.8" y="29" width="4" height="16.5" rx=".8"/>\n<rect x="9.5" y="27.6" width="45" height="1.6" rx=".5"/>\n<path d="M5 48.2c9.2-2.6 19-2.1 27 2.6v5.4c-8-4.4-17.8-4.9-27-2.4z"/><path d="M59 48.2c-9.2-2.6-19-2.1-27 2.6v5.4c8-4.4 17.8-4.9 27-2.4z"/></g></svg>';
@@ -14007,7 +14034,7 @@ function drawHall() {
     h('div', { class: 'hall-desktop', 'aria-hidden': 'true' }), h('div', { class: 'hall-deskfront', 'aria-hidden': 'true' }),
     h('div', { class: 'hall-stand', 'aria-hidden': 'true' }), h('div', { class: 'hall-tome-shadow', 'aria-hidden': 'true' }),
     tome);
-  const stage = h('div', { class: 'hall-stage' }, world, h('div', { class: 'hall-hint', text: all.length ? 'Click a book to take it down to the desk.' : '' }));
+  const stage = h('div', { class: 'hall-stage' }, world, h('div', { class: 'hall-hint', text: all.length ? ((window.matchMedia && matchMedia('(pointer: coarse)').matches) ? 'Tap a book to take it down to the desk.' : 'Click a book to take it down to the desk.') : '' }));
   hallScene.layer = stage;
   el.replaceChildren(h('div', { class: 'hall-view' }, stage),
     h('div', { class: 'hall-corner' },
@@ -14228,6 +14255,29 @@ function batch2Options(txs, obj) {
     else if (m[2]) { what = m[2]; amt = () => Math.max(0, ...state.battlefield.filter(c => !c.opp && permTypeInfo(c).types.has('creature')).map(c => ptCalc(c).p)); }
     else if (m[3] && obj.sourceId) { what = `${src}'s ${m[3]}`; amt = () => { const f = findCard(obj.sourceId); return f ? Math.max(0, ptCalc(f.card)[m[3] === 'power' ? 'p' : 't']) : 0; }; }
     if (amt) out.push({ full: sents.length === 1, covers: [m[0]], label: `Gain life equal to ${what} (now ${amt()})`, fn: () => { const v = amt(); changeLife(v, true); log(`${src}: you gained ${v} life (${what})`); render(); } });
+  }
+  // ---- v0.99.70 batch 3
+  // 5. "Create a token that's a copy of target creature / ~ / it / that creature / enchanted or equipped creature [, except it has haste]" (CR 707.2: the copiable values)
+  if ((m = /\bcreate (a|an|one|two|three|x|\d+) tokens? that(?:'s| are) (?:a )?cop(?:y|ies) of (target [^.,]+?|~|it|that creature|that permanent|enchanted creature|equipped creature|the exiled card)(?:, except (?:it has|they have) haste)?\.?(?=\s|$)/i.exec(t))) {
+    const n = /^x$/i.test(m[1]) ? (obj.xValue || 0) : b2n(m[1]), what = m[2], haste = /except (?:it has|they have) haste/i.test(m[0]);
+    const tgt = (obj.targets || []).find(x => x.kind === 'perm');
+    const srcId = /^target |^it$|^that /i.test(what) && tgt ? tgt.id : /^(?:enchanted|equipped) creature$/i.test(what) ? (() => { const f = findCard(obj.sourceId); return f && f.card.att; })() : /^~$/.test(what) ? obj.sourceId : null;
+    out.push({ covers: [m[0]], full: sents.length === 1, label: `Create ${n === 1 ? 'a token' : n + ' tokens'} that ${n === 1 ? "is a copy" : 'are copies'} of ${srcId ? ((findCard(srcId) || {}).card || {}).name || what : what}${haste ? ', with haste' : ''}`, fn: () => {
+      const f = srcId && findCard(srcId); if (!f) { toast('Copy what?', 'Choose the permanent to copy first (its target), or make the copy by hand with Create a token.'); return; }
+      const c = f.card, def = c.token && c.tk ? Object.assign({}, c.tk) : (() => { const info = cardInfo(c.name); return info ? copyOfCardDef(Object.assign({ n: c.name }, info)) : null; })();
+      if (!def) { log(`${src}: could not read ${c.name}'s card data, make the copy by hand`); return; }
+      if (haste) def.haste = 'perm'; makeTokensFromDef(def, n, src); log(`${src}: created ${n} token cop${n === 1 ? 'y' : 'ies'} of ${c.name}`); render(); } });
+  }
+  // 6. "You draw a card and lose 1 life." / "You draw N cards and you lose N life." (one instruction, both parts happen)
+  if ((m = /^you draw (a|an|one|two|three|\d+) cards? and (?:you )?lose (\d+) life\.?$/i.exec(sents.find(x => /^you draw .* and (?:you )?lose \d+ life/i.test(x)) || ''))) {
+    const n = b2n(m[1]), l = +m[2];
+    out.push({ covers: [m[0]], full: sents.length === 1, label: `Draw ${n} card${n === 1 ? '' : 's'} and lose ${l} life`, fn: () => { drawCards(n); changeLife(-l, true); log(`${src}: you drew ${n} and lost ${l} life`); render(); } });
+    drop.push(new RegExp('^draw ' + n + ' cards?$', 'i'));
+  }
+  // 7. "Target creature's controller / Its controller / That creature's controller loses N life." (the controller of the chosen permanent)
+  if ((m = /(?:^|\.\s+)((?:target|that) (?:creature|permanent|artifact|land|enchantment)'s|its) controller loses (\d+) life\.?/i.exec(t))) {
+    const n = +m[2], tgt = (obj.targets || []).find(x => x.kind === 'perm' || x.kind === 'opp'), f = tgt && tgt.kind === 'perm' && findCard(tgt.id), mine = !!(f && !f.card.opp);
+    out.push({ covers: [m[0].replace(/^\.\s+/, '')], full: sents.length === 1, label: `${tgt ? (mine ? 'You lose' : 'Opponent loses') : 'Its controller loses'} ${n} life (the controller of ${tgt ? tgt.name : 'that permanent'})`, fn: () => { if (mine) changeLife(-n, true); else changeOppLife(-n); log(`${src}: ${mine ? 'you' : 'the opponent'} lost ${n} life`); render(); } });
   }
   return { out, drop };
 }

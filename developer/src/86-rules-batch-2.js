@@ -42,5 +42,28 @@ function batch2Options(txs, obj) {
     else if (m[3] && obj.sourceId) { what = `${src}'s ${m[3]}`; amt = () => { const f = findCard(obj.sourceId); return f ? Math.max(0, ptCalc(f.card)[m[3] === 'power' ? 'p' : 't']) : 0; }; }
     if (amt) out.push({ full: sents.length === 1, covers: [m[0]], label: `Gain life equal to ${what} (now ${amt()})`, fn: () => { const v = amt(); changeLife(v, true); log(`${src}: you gained ${v} life (${what})`); render(); } });
   }
+  // ---- v0.99.70 batch 3
+  // 5. "Create a token that's a copy of target creature / ~ / it / that creature / enchanted or equipped creature [, except it has haste]" (CR 707.2: the copiable values)
+  if ((m = /\bcreate (a|an|one|two|three|x|\d+) tokens? that(?:'s| are) (?:a )?cop(?:y|ies) of (target [^.,]+?|~|it|that creature|that permanent|enchanted creature|equipped creature|the exiled card)(?:, except (?:it has|they have) haste)?\.?(?=\s|$)/i.exec(t))) {
+    const n = /^x$/i.test(m[1]) ? (obj.xValue || 0) : b2n(m[1]), what = m[2], haste = /except (?:it has|they have) haste/i.test(m[0]);
+    const tgt = (obj.targets || []).find(x => x.kind === 'perm');
+    const srcId = /^target |^it$|^that /i.test(what) && tgt ? tgt.id : /^(?:enchanted|equipped) creature$/i.test(what) ? (() => { const f = findCard(obj.sourceId); return f && f.card.att; })() : /^~$/.test(what) ? obj.sourceId : null;
+    out.push({ covers: [m[0]], full: sents.length === 1, label: `Create ${n === 1 ? 'a token' : n + ' tokens'} that ${n === 1 ? "is a copy" : 'are copies'} of ${srcId ? ((findCard(srcId) || {}).card || {}).name || what : what}${haste ? ', with haste' : ''}`, fn: () => {
+      const f = srcId && findCard(srcId); if (!f) { toast('Copy what?', 'Choose the permanent to copy first (its target), or make the copy by hand with Create a token.'); return; }
+      const c = f.card, def = c.token && c.tk ? Object.assign({}, c.tk) : (() => { const info = cardInfo(c.name); return info ? copyOfCardDef(Object.assign({ n: c.name }, info)) : null; })();
+      if (!def) { log(`${src}: could not read ${c.name}'s card data, make the copy by hand`); return; }
+      if (haste) def.haste = 'perm'; makeTokensFromDef(def, n, src); log(`${src}: created ${n} token cop${n === 1 ? 'y' : 'ies'} of ${c.name}`); render(); } });
+  }
+  // 6. "You draw a card and lose 1 life." / "You draw N cards and you lose N life." (one instruction, both parts happen)
+  if ((m = /^you draw (a|an|one|two|three|\d+) cards? and (?:you )?lose (\d+) life\.?$/i.exec(sents.find(x => /^you draw .* and (?:you )?lose \d+ life/i.test(x)) || ''))) {
+    const n = b2n(m[1]), l = +m[2];
+    out.push({ covers: [m[0]], full: sents.length === 1, label: `Draw ${n} card${n === 1 ? '' : 's'} and lose ${l} life`, fn: () => { drawCards(n); changeLife(-l, true); log(`${src}: you drew ${n} and lost ${l} life`); render(); } });
+    drop.push(new RegExp('^draw ' + n + ' cards?$', 'i'));
+  }
+  // 7. "Target creature's controller / Its controller / That creature's controller loses N life." (the controller of the chosen permanent)
+  if ((m = /(?:^|\.\s+)((?:target|that) (?:creature|permanent|artifact|land|enchantment)'s|its) controller loses (\d+) life\.?/i.exec(t))) {
+    const n = +m[2], tgt = (obj.targets || []).find(x => x.kind === 'perm' || x.kind === 'opp'), f = tgt && tgt.kind === 'perm' && findCard(tgt.id), mine = !!(f && !f.card.opp);
+    out.push({ covers: [m[0].replace(/^\.\s+/, '')], full: sents.length === 1, label: `${tgt ? (mine ? 'You lose' : 'Opponent loses') : 'Its controller loses'} ${n} life (the controller of ${tgt ? tgt.name : 'that permanent'})`, fn: () => { if (mine) changeLife(-n, true); else changeOppLife(-n); log(`${src}: ${mine ? 'you' : 'the opponent'} lost ${n} life`); render(); } });
+  }
   return { out, drop };
 }

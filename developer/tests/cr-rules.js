@@ -942,7 +942,8 @@ const { setup } = require('./common.js');
   await T('111.1', 'token sync (all tokens offline)', async()=>{
     const r = await ev(async()=>{ const d=window.__d; const before=d.tokenTotal();
       const realFetch=window.fetch; let calls=0;
-      window.fetch=async(u)=>{ calls++; const p=calls; return {ok:true,status:200,json:async()=>({total_cards:2,has_more:p===1,next_page:'https://api.scryfall.com/x2',data:[p===1?{name:'Zzmock Beast',layout:'token',type_line:'Token Creature — Beast',power:'3',toughness:'3',colors:['G'],oracle_text:''}:{name:'Zzmock Emblem',layout:'emblem',type_line:'Emblem',oracle_text:'Creatures you control get +1/+1.'}]})}; };
+      window.fetch=async(u)=>{ if (!/cards\/search|\/x2|is%3Atoken|t%3Atoken|layout/i.test(String(u))) return realFetch(u);   // only the token download's own requests (a picture fetch may run meanwhile)
+        calls++; const p=calls; return {ok:true,status:200,json:async()=>({total_cards:2,has_more:p===1,next_page:'https://api.scryfall.com/x2',data:[p===1?{name:'Zzmock Beast',layout:'token',type_line:'Token Creature — Beast',power:'3',toughness:'3',colors:['G'],oracle_text:''}:{name:'Zzmock Emblem',layout:'emblem',type_line:'Emblem',oracle_text:'Creatures you control get +1/+1.'}]})}; };
       let list; try{ list=await d.downloadAllTokens(); } finally{ window.fetch=realFetch; }
       d.mergeTokens(list); return {calls, n:list.length, delta:d.tokenTotal()-before, tok:!!d.officialToken('Zzmock Beast','3/3',['G'],'')}; });
     return { ok: r.calls===2 && r.n===2 && r.delta===2 && r.tok, why: JSON.stringify(r) };
@@ -1386,14 +1387,14 @@ const { setup } = require('./common.js');
       return { total, back, after, capped, need, phase: s.phase }; });
     await ev(() => { const s = __d.state; if (s.phase === 'mull') { window.confirm = () => true; __d.startGame(); __d.keepHand(); } });
     return { ok: r.back && r.after.mulls === 7 && r.after.hand === 7 && r.after.total === r.total && r.capped.mulls === 7 && r.need, why: JSON.stringify(r) }; });
-  await T('UI settings', 'Settings: every option is still present after the regrouping (no duplicate switch), search finds a single switch inside a group and hides the rest, and the playmat has its own tab', async () => { await reset();
+  await T('UI settings', 'Settings: every option is still present after the regrouping (no duplicate switch), search finds a single switch inside a group and hides the rest; the playmat sits in the Table tab, sound with motion, and the Library and Card data & updates have tabs', async () => { await reset();
     const r = await ev(async () => { document.getElementById('modalRoot').innerHTML = ''; __d.openSettings(); await new Promise(r => setTimeout(r, 200)); const W = ms => new Promise(r => setTimeout(r, ms));
-      const tabs = [...document.querySelectorAll('.settabbtn')].map(b => b.dataset.k); document.querySelector('.settabbtn[data-k=tutor]').click(); await W(100);
+      const tabs = [...document.querySelectorAll('.settabbtn')].map(b => b.dataset.k); document.querySelector('.settabbtn[data-k=board]').click(); await W(100); const matInTable = /Playmat/.test(document.querySelector('.setmain').textContent); document.querySelector('.settabbtn[data-k=anim]').click(); await W(100); const sndInMotion = /Sound/.test(document.querySelector('.setmain').textContent); document.querySelector('.settabbtn[data-k=tutor]').click(); await W(100);
       const labels = [...document.querySelectorAll('.setmain .teachopt b')].map(b => b.textContent); const dup = labels.length - new Set(labels).size;
       const q = document.querySelector('.setsearch'); q.value = 'dredge'; q.dispatchEvent(new Event('input')); await W(100);
       const vis = [...document.querySelectorAll('.setmain .teachopt, .setmain .setrow')].filter(e => e.offsetParent).map(e => e.querySelector('b, label') ? (e.querySelector('b, label').textContent) : '');
-      document.getElementById('modalRoot').innerHTML = ''; return { tabs, n: labels.length, dup, vis }; });
-    return { ok: r.tabs.includes('mat') && r.tabs.includes('a11y') && r.n >= 20 && r.dup === 0 && r.vis.length === 1 && /Dredge/.test(r.vis[0]), why: JSON.stringify(r) }; });
+      document.getElementById('modalRoot').innerHTML = ''; return { tabs, n: labels.length, dup, vis, matInTable, sndInMotion }; });
+    return { ok: r.matInTable && r.sndInMotion && r.tabs.includes('lib') && r.tabs.includes('data') && !r.tabs.includes('mat') && r.tabs.includes('a11y') && r.n >= 20 && r.dup === 0 && r.vis.length === 1 && /Dredge/.test(r.vis[0]), why: JSON.stringify(r) }; });
   await T('UI decks', 'deck bookcase (books, ten to a shelf): a click takes a deck off the shelf into a details view (Use this deck, Edit, Sideboard, art), Escape puts it back, and Use this deck picks it', async () => { await reset();
     const r = await ev(async () => { document.getElementById('modalRoot').innerHTML = ''; __d.openDeckPicker(); const W = ms => new Promise(r => setTimeout(r, ms)); await W(200);
       const st = document.querySelector('.bk-shelf .bk-stage'); st.click(); await W(900); const pull = document.querySelector('.dbx-pull'); const btns = pull ? [...pull.querySelectorAll('button')].map(b => b.textContent) : [];
@@ -1547,6 +1548,16 @@ const { setup } = require('./common.js');
       __d.fireTrigger('attack', { cards: [sky] }); await W(300); const atk = !!document.querySelector('.modal') || s.stack.some(x => x.trigger) || s.pendingTriggers.length > 0;
       document.getElementById('modalRoot').innerHTML = ''; S.teaching.triggerPrompts = was; return { etb, atk };})()`));
     return { ok: r.etb && r.atk, why: JSON.stringify(r) }; });
+  await T('707.2 + 111.10 + 121.1 + 119.3', "rules batch 3: 'Create a token that's a copy of target creature you control' makes a token copy of the target (with its name and power/toughness); a token created with 'It has \"Sacrifice this creature: Add {C}.\"' carries that ability; 'You draw a card and lose 1 life' does both as one effect; 'Target creature's controller loses 2 life' takes it from that creature's controller", async () => { await reset(); await toMain();
+    const r = await ev(new Function('return (async()=>{' + amuSetup + `
+      s.battlefield = []; const d = mk('Mock Decayer'); s.battlefield.push(d); const out = {};
+      __d.effectOptions("Create a token that's a copy of target creature you control.", { sourceName: 'Src', targets: [{ kind: 'perm', id: d.id, name: d.name }] }).find(o => /copy/.test(o.label)).fn();
+      const tok = s.battlefield.find(x => x.token); out.copy = tok ? [tok.name, __d.ptCalc(tok).p + '/' + __d.ptCalc(tok).t, __d.ptCalc(d).p + '/' + __d.ptCalc(d).t] : null;
+      const td = __d.tokenDefsFromText('Create a 0/1 colorless Eldrazi Spawn creature token. It has "Sacrifice this creature: Add {C}."', 'Src')[0]; out.ability = /Sacrifice this creature: Add \\{C\\}/.test(td && td.tx || '');
+      const h0 = s.hand.length, l0 = s.life; const o3 = __d.effectOptions('You draw a card and lose 1 life.', { sourceName: 'Src' }); out.n3 = o3.length; o3[0].fn(); out.drawlose = [s.hand.length - h0, s.life - l0];
+      const opp = mk('Mock Decayer'); opp.opp = true; s.battlefield.push(opp); const o0 = s.oppLife; __d.effectOptions("Target creature's controller loses 2 life.", { sourceName: 'Src', targets: [{ kind: 'perm', id: opp.id, name: opp.name }] }).find(o => /loses 2/.test(o.label)).fn(); out.ctrl = s.oppLife - o0;
+      return out;})()`));
+    return { ok: r.copy && r.copy[0] === 'Mock Decayer' && r.copy[1] === r.copy[2] && r.ability && r.n3 === 1 && r.drawlose[0] === 1 && r.drawlose[1] === -1 && r.ctrl === -2, why: JSON.stringify(r) }; });
   await T('601.3 + 601.2h + 702.51a', "Hogaak: 'You may cast this card from your graveyard' gives a graveyard cast; 'You can't spend mana' means the cost must be paid fully by convoke and delve (a black or green creature pays {B/G}); with too few creatures and cards it cannot be cast", async () => { await reset(); await toMain();
     const r = await ev(new Function('return (async()=>{' + amuSetup + `
       setup(['Narcomoeba','Golgari Thug','Ichorid'],[]); s.graveyard=['Stinkweed Imp','Creeping Chill','Cabal Therapy','Gitaxian Probe','Street Wraith'].map(mk); const hg=mk('Hogaak, Arisen Necropolis'); s.graveyard.push(hg);

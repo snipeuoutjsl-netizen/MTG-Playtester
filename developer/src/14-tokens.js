@@ -72,6 +72,8 @@ function tokenDefsFromText(text, srcName) {
   if (/\bafterlife (\d+)/i.test(t)) mk({ name: 'Spirit', pt: '1/1', col: ['W', 'B'], types: ['Creature'], subs: ['spirit'], tx: 'Flying', count: +t.match(/\bafterlife (\d+)/i)[1], type: 'Token Creature — Spirit' });
   // v0.99.68 "Create a 4/4 Zombie token. It gains haste until end of turn." / "They gain haste": the tokens just created get haste
   { const hm = /\btokens?\b[^.]*\.\s*(?:it|they|those tokens|the tokens?) gains? haste( until end of turn)?\b/i.exec(t); if (hm && out.length) out[out.length - 1].haste = hm[1] ? 'eot' : 'perm'; }
+  // v0.99.70 "Create a 0/1 Eldrazi Spawn token. It has \"Sacrifice this creature: Add {C}.\"": the quoted ability is the token's own
+  { const am = /\btokens?\b[^.]*\.\s*(?:it has|they have|each of them has) "([^"]+)"/i.exec(t); if (am && out.length) { const d = out[out.length - 1], ab = am[1].trim(); if (!String(d.tx || '').includes(ab.slice(0, 20))) d.tx = (d.tx ? d.tx + '\n' : '') + ab; } }
   return out;
 }
 let tokenCache = { key: '', defs: [] };
