@@ -754,6 +754,7 @@ function countExpr(expr) {
     const t = m[1].toLowerCase(), n = state.graveyard.filter(x => !x.token && new RegExp('\\b' + t + '\\b', 'i').test(frontType(x))).length;
     return { n, why: `${n} ${t} card${n === 1 ? '' : 's'} in your graveyard` };
   }
+  if (/^(?:each )?opponents? who (?:lost life|has lost life|was dealt damage|were dealt damage|has been dealt damage) this turn$/i.test(expr)) { const n = state.oppLifeLostTurn === state.turn ? 1 : 0; return { n, why: n ? 'your opponent lost life this turn' : 'your opponent has not lost life this turn' }; }   // v0.99.76 Kaito, Bane of Nightmares (one opponent in a goldfish game)
   if ((m = expr.match(/^twice (?:the number of )?(.+)$/i))) { const r = countExpr(m[1]); return r && { n: 2 * r.n, why: 'twice ' + r.why }; }   // Masumaro, First to Live
   if (/\b(?:your opponents|an opponent|each opponent) controls?$/i.test(expr)) return { n: 0, why: 'the goldfish opponent controls no permanents' };   // Gaea's Avenger: the app does not track an opposing board
   if (/^cards? in all graveyards$/i.test(expr)) return { n: state.graveyard.length, why: `${state.graveyard.length} cards in graveyards (only yours is tracked)` };   // Lord of Extinction

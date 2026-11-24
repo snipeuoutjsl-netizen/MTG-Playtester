@@ -837,6 +837,7 @@ function countExpr(expr) {
     const t = m[1].toLowerCase(), n = state.graveyard.filter(x => !x.token && new RegExp('\\b' + t + '\\b', 'i').test(frontType(x))).length;
     return { n, why: `${n} ${t} card${n === 1 ? '' : 's'} in your graveyard` };
   }
+  if (/^(?:each )?opponents? who (?:lost life|has lost life|was dealt damage|were dealt damage|has been dealt damage) this turn$/i.test(expr)) { const n = state.oppLifeLostTurn === state.turn ? 1 : 0; return { n, why: n ? 'your opponent lost life this turn' : 'your opponent has not lost life this turn' }; }   // v0.99.76 Kaito, Bane of Nightmares (one opponent in a goldfish game)
   if ((m = expr.match(/^twice (?:the number of )?(.+)$/i))) { const r = countExpr(m[1]); return r && { n: 2 * r.n, why: 'twice ' + r.why }; }   // Masumaro, First to Live
   if (/\b(?:your opponents|an opponent|each opponent) controls?$/i.test(expr)) return { n: 0, why: 'the goldfish opponent controls no permanents' };   // Gaea's Avenger: the app does not track an opposing board
   if (/^cards? in all graveyards$/i.test(expr)) return { n: state.graveyard.length, why: `${state.graveyard.length} cards in graveyards (only yours is tracked)` };   // Lord of Extinction
@@ -1027,7 +1028,7 @@ function kwsIn(text) { return String(text).toLowerCase().split(/,\s*(?:and\s+)?|
 function durationOptions(sentence, obj, targets) {
   const s = String(sentence).replace(/’/g, "'").trim(), src = obj.sourceName || 'this', out = [];
   if (!s) return out;
-  const until = durKey(s), uw = UNTIL_WORDS[until], isDur = DUR_RE.test(s);
+  const until = durKey(s), uw = UNTIL_WORDS[until], isDur = DUR_RE.test(s.replace(/\b(?:who|that|which) (?:lost|gained|has lost|has gained|was dealt|were dealt|attacked|died|entered|cast)\b[^.,;]*?\bthis turn\b/gi, ''));   // v0.99.76 "opponent who lost life this turn" describes what to count, it is not a duration
   let who = (targets && targets.length) ? targets : null, group = null, m;
   if (!who) {
     if (/^(other )?creatures you control\b/i.test(s)) group = { other: /^other/i.test(s) };
@@ -1506,15 +1507,15 @@ function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name,
 const legalSig = (specs, srcId) => specs.map(sp => legalTargets(sp, { srcId }).map(t => String(t.id)).sort().join(',')).join('|');   // the set of things an ability could target right now
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect)); if (!t) { next(); return; }
+  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
   state.ay[key] = { auto: false, sig: (() => { try { const sp = parseTargetSpecs(t._text || t.effect); return sp.length ? legalSig(sp, t.cardId) : null; } catch (e) { return null; } })(), id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
   m.el.classList.add('ay-offer');
   m.body.append(h('div', { class: 'psub', text: `${t.cardName}: ${t._text || t.effect}` }),
     h('div', { class: 'psub', text: `Always put this ability on the stack${tg ? ' targeting ' + tg.map(x => x.name).join(', ') : ''} and apply the same effect for the rest of this game, without asking each time? (You can undo this from \u2699 \u2192 Always yield. It resets when the game ends.)` }));
-  m.foot.append(h('button', { text: 'Ask every time', onclick: () => { m.close(); askAlwaysYield(list, next); } }),
-    h('button', { class: 'primary', text: 'Always yield', onclick: () => { state.ay[key].auto = true; state.ay[key].targets = tg; m.close(); log(`Always yield: ${t.cardName}'s ability will go on the stack automatically this game`); askAlwaysYield(list, next); } }));
+  m.foot.append(h('button', { class: 'primary', text: 'Ask every time', onclick: () => { m.close(); askAlwaysYield(list, next); } }),   // v0.99.76 asking stays the default (Enter): yielding hides every later trigger of this card
+    h('button', { text: 'Always yield', onclick: () => { state.ay[key].auto = true; state.ay[key].targets = tg; m.close(); log(`Always yield: ${t.cardName}'s ability will go on the stack automatically this game`); askAlwaysYield(list, next); } }));
 }
 function ayResolveAuto() {   // resolve always-yield abilities from the top of the stack while their effect is already known
   for (let i = 0; i < 12; i++) {
@@ -1583,7 +1584,7 @@ function openTriggerBatch(batch) {
     ].filter(Boolean));
   };
   for (const t of [...remaining]) {   // always-yield abilities go on the stack by themselves
-    const e = ayGet(t.cardName, t.effect, t.cardId); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect)) continue;
+    const e = ayGet(t.cardName, t.effect, t.cardId); if (!e || !e.auto || !ayEligibleText(t.effect) || !remaining.includes(t) || parseModal(t.effect) || (e.targets || []).some(p => p.kind === 'opp')) continue;
     const specs = t.special ? [] : parseTargetSpecs(t.effect);
     if (!specs.length) { t._auto = true; pushWith(t, t.effect, null); if (!remaining.length) return; }
     else if (e.sig && e.sig !== legalSig(specs, t.cardId)) { t._ayRefresh = e; log(`Always yield: ${t.cardName} has a different set of possible targets than when you set it, so you choose again`); }   // a new (or missing) possible target: ask again
@@ -1920,7 +1921,7 @@ function effectOptionsBase(tx, obj) {
   const drawBound = bound.length && /\btarget\b[^.]*\bdraws?\b/i.test(tx);   // v0.94.5 a targeted draw is already offered once, bound to its target: do not add the generic copy
   const ddp = !delayed && !drawBound ? parseDrawDiscard(tx) : null;
   if (ddp) opts.push({ label: ddLabel(ddp), fn: () => runDrawDiscard(ddp, src), full: false });
-  else if (!delayed && !drawBound && !/opponent/i.test(tx) && (fe = forEachAmount(tx, '(?:you draw|draws?)', obj))) { const fd = fe;   // v0.95.3 "draw a card for each <thing>" counts at the moment it resolves
+  else if (!delayed && !drawBound && !/opponent/i.test(tx.replace(/\bfor each opponents? who [^.]+/ig, '')) && (fe = forEachAmount(tx, '(?:you draw|draws?)', obj))) {   /* v0.99.76 "for each opponent who lost life this turn" is a count, not someone else drawing */ const fd = fe;   // v0.95.3 "draw a card for each <thing>" counts at the moment it resolves
     const now = fd.now(), lab = now === null ? `Draw cards (for each ${fd.what}: the app cannot count that, use the card menus)` : `Draw ${fd.per === 1 ? 'a card' : fd.per + ' cards'} for each ${fd.what} (counts when it happens; now ${now})`;
     opts.push({ label: lab, fn: () => { const n = fd.now(); if (n === null) { toast('Count it yourself', `The app cannot count "${fd.what}". Draw the right number of cards by hand.`); return; } snap(); const d = drawCards(n); log(`${src}: drew ${d} (for each ${fd.what} = ${n})`); render(); } });
   }
@@ -2028,7 +2029,12 @@ function openAbilityEffect(obj, done) {
       const what = untracked ? obj.targets.map(t => t.name.replace(/ \(not tracked here\)$/, '')).join(', ') : '';
       const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
       for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
-      if (!keep.length) { const said = sents.join(' ').replace(/^(?:it|this \w+)\b/i, obj.sourceName || 'It').replace(/\btarget ([^.,;]+?) (?:an opponent controls|you don't control|your opponent controls)\b/gi, "the $1 you chose on your opponent's side").replace(/\btarget ([a-z ]+?)(?=[.,;]| and\b)/gi, 'the $1 you chose'); const msg = untracked ? `${said} Your opponent's permanents are not on this table, so apply it to the real card (mark the damage or remove it there).` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); toast(`${obj.sourceName || 'Ability'} resolves`, msg); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (!keep.length) { const said = sents.join(' ').replace(/^(?:it|this \w+)\b/i, obj.sourceName || 'It').replace(/\btarget ([^.,;]+?) (?:an opponent controls|you don't control|your opponent controls)\b/gi, "the $1 you chose on your opponent's side").replace(/\btarget ([a-z ]+?)(?=[.,;]| and\b)/gi, 'the $1 you chose'); const msg = untracked ? `${said} Your opponent's permanents are not on this table, so apply it to the real card (mark the damage or remove it there).` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); log(`Resolved: ${obj.name}`);
+        if (untracked) {   // v0.99.76 something you must do on the real table is shown in the stack window until you press Done (a toast was easy to miss)
+          const m = modal(`Resolving: ${obj.sourceName || obj.name}`, { width: 520, sticky: true, noClose: true, resolve: true });
+          m.body.append(h('div', { class: 'psub', text: said }), h('div', { class: 'muted small', text: "Your opponent's permanents are not on this table: apply it to the real card (mark the damage, or remove the permanent if it dies)." }));
+          m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); render(); if (done) done(); } })); render(); return; }
+        toast(`${obj.sourceName || 'Ability'} resolves`, msg); render(); if (done) done(); return; }
       if (keep.length < sents.length) { if (untracked) log(`${obj.sourceName || obj.name}: the part about ${what} is applied on the real table (the opponent's permanents are not tracked)`); const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
     }
   }
@@ -2400,6 +2406,7 @@ function countForEach(phrase) {
   const bf = state.battlefield;
   const typeOf = c => (c.token ? permTypeLine(c) : (() => { const i = cardInfo(c.name); return i && i.t ? i.t.split(' // ')[0] : ''; })());   // v0.95.0 a token counts as what it is (an artifact creature token is an artifact)
   { const mm = t.match(/\b(white|blue|black|red|green|colorless) mana (?:in your (?:mana )?pool|you have)\b/); if (mm) return (state.manaPool || {})[{ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G', colorless: 'C' }[mm[1]]] || 0; if (/\bmana in your (?:mana )?pool\b/.test(t)) return manaTotal(); }   // Omnath, Locus of Mana
+  if (/^(?:each )?opponents? who (?:lost life|has lost life|was dealt damage|were dealt damage) this turn$/.test(t.trim())) return state.oppLifeLostTurn === state.turn ? 1 : 0;   // v0.99.76 Kaito, Bane of Nightmares (one opponent in a goldfish game)
   if (/basic land type/.test(t)) return domainCount();
   if (/instant and sorcery card/.test(t) || /instant or sorcery card/.test(t)) return state.graveyard.filter(c => /\b(Instant|Sorcery)\b/.test(typeOf(c))).length;
   if (/card in your graveyard/.test(t)) return state.graveyard.length;
@@ -5483,7 +5490,19 @@ function canPayMana0(c){
   if(routes.some(r=>r.ok)) return {ok:true,reason:''};
   return {ok:false,reason:routes[0].why,detail:routes[0].detail};
 }
-function handInteraction(c){
+// v0.99.76 an ability you can activate from your hand right now also makes the card glow (Ninjutsu after blockers, cycling, reinforce)
+function handAbilityReady(c){
+  if(!state || state.phase!=='play' || state.discarding || holdForTriggers() || !c || c.token) return '';
+  if(state.step===0 || state.step===CLEANUP || (typeof splitSecondOn==='function' && splitSecondOn())) return '';
+  try{
+    { const nj=ninjutsuFor(c); if(nj && !ninjutsuWhy(c) && manaFeasible(c,nj.cost)) return `Ninjutsu (${nj.cost}) can be activated now`; }
+    { const cy=cyclingFor(c); if(cy){ const mana=cy.comps.filter(k=>k.k==='mana').map(k=>k.mana).join(''), rest=cy.comps.filter(k=>k.k!=='mana'); if((!mana || manaFeasible(c,mana)) && !compsFeasible(rest.filter(k=>k.k!=='other'),c.id)) return `${cy.label} can be activated now`; } }
+    { const rf=reinforceFor(c); if(rf && state.battlefield.some(x=>permZone(x)==='creatures') && manaFeasible(c,rf.cost)) return `Reinforce ${rf.n} (${rf.cost}) can be activated now`; }
+  }catch(e){ return ''; }
+  return '';
+}
+function handInteraction(c){ const r=handInteractionSpell(c); return r!=='ready' && handAbilityReady(c) ? 'ready' : r; }
+function handInteractionSpell(c){
   const ho=halfOptions(c); if(!ho.length) return handInteraction0(c);
   const rank={ready:3,mana:2,timing:1,'':0}; let best=null;
   for(const o of ho){ const r=withHalf(c,o.fi,()=>handInteraction0(c)); if(best===null||(rank[r]||0)>(rank[best]||0)) best=r; }
@@ -5520,7 +5539,7 @@ function handWhy0(c){
   if(m && !m.ok) return m.reason==='condition' ? `You cannot use that way of casting it: ${m.detail}` : m.reason==='additional' ? `You cannot pay the additional cost: ${m.detail}` : m.reason==='color' ? 'You have enough mana in total, but not the right colours' : 'Not enough mana';
   return '';
 }
-function handTip(c){ const i=handInteraction(c); if(!i) return ''; return i==='ready' ? ' — playable now' : ' — ' + handWhy(c); }
+function handTip(c){ const i=handInteraction(c); if(!i) return ''; if(i==='ready' && handInteractionSpell(c)!=='ready'){ const ab=handAbilityReady(c); if(ab) return ' — '+ab; } return i==='ready' ? ' — playable now' : ' — ' + handWhy(c); }
 
 // Does this permanent have a non-mana activated ability (or loyalty / fetch ability) that can be activated right now?
 // Mana abilities of lands and rocks are not highlighted, otherwise every land would glow.
@@ -6951,8 +6970,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.75';
+const APP_VERSION = '0.99.76';
 const CHANGELOG = [
+  { v: '0.99.76', title: 'Triggers you can see, cards that glow for their abilities, Kaito\u2019s 0', notes: ['Skysovereign and other abilities aimed at an opponent\u2019s permanent: when one resolves, the stack window shows what to do on the real card (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) until you press Done, instead of a toast that was easy to miss. Always yield is no longer offered for these, so the trigger asks for its target every time it enters or attacks.', 'Always yield: \u201cAsk every time\u201d is now the default button (Enter), so pressing Enter no longer silences every later trigger of that card for the rest of the game.', 'A card in your hand glows green whenever an ability of it can be activated from there, not only when it can be cast: Ninjutsu after blockers are declared with an unblocked attacker and the mana available, cycling (Street Wraith in the middle of combat) and reinforce.', 'Kaito, Bane of Nightmares 0: \u201cSurveil 2. Then draw a card for each opponent who lost life this turn.\u201d now draws when the opponent lost life this turn (and nothing otherwise). Before, it was mistaken for an \u201cuntil end of turn\u201d reminder and drew nothing.', '284 rules tests pass, all with real cards.'] },
   { v: '0.99.75', title: 'Emblems and anthems, Station, Lightning Axe', notes: ['Emblems now work: their static abilities apply from the command zone (CR 114.4). Kaito\u2019s \u201cNinjas you control get +1/+1\u201d emblem pumps your Ninjas, and two of them stack; Sorin\u2019s +1/+0 and Elspeth\u2019s indestructible emblems apply too (Elspeth\u2019s now covers lands as well as creatures). Before, emblems only worked for triggered abilities.', 'The emblem panel is labelled Command zone, shows each emblem\u2019s own words, groups identical emblems with a \u00d7 count, and no longer covers your library.', 'Anthems read far more wordings (565 of the 729 anthem-style lines in Modern, up from 456): \u201cwith a +1/+1 counter on it\u201d (Abzan Falconer), \u201cother creatures you control with flying\u201d (Thunderclap Wyvern), \u201cwithout flying\u201d, \u201cthat are enchanted\u201d, \u201cof the chosen type / colour\u201d (Icon of Ancestry, Caged Sun), lists of types (\u201cArtifacts, creatures, enchantments, and lands\u201d), two subtypes (\u201cEldrazi Spawn creatures\u201d), \u201cNonwhite creatures\u201d (Crovax) and shroud.', 'Station: a Spacecraft with enough charge counters is now an artifact creature everywhere: it moves to the creature row, can attack and block, and deals combat damage (before, it had the creature P/T and keywords but could not attack). Its \u201cN+ | \u2026\u201d lines are read instead of being reported as gaps.', 'Skysovereign: its enters/attacks trigger can target only a creature or planeswalker an opponent controls. Because the opponent\u2019s permanents are not on this table, it now says exactly what to do (\u201cSkysovereign deals 3 damage to the creature or planeswalker you chose on your opponent\u2019s side\u201d) instead of a vague note. It never touches your creatures or the opponent\u2019s life.', 'Lightning Axe and other spells with \u201cAs an additional cost to cast this spell \u2026\u201d no longer ask about that cost when they resolve: it was paid as the spell was cast.', '282 rules tests pass, all with real cards.'] },
   { v: '0.99.74', title: 'Book tidy-up', notes: ['The little page numbers in the bottom corners of the Library book are gone (the curved page edge had pushed them off the page).', 'A page\u2019s writing now keeps a slightly larger margin above the bent bottom edge, so a long \u201cBegin with \u2026\u201d line is never cut off.'] },
   { v: '0.99.73', title: 'Restricted mana, Signets, a bookmark in the spine', notes: ['Mishra\u2019s Workshop and every other \u201cSpend this mana only to \u2026\u201d source: the restriction now stays with the mana while it floats (CR 106.6). Tapped by hand, the Workshop\u2019s {C}{C}{C} can pay only for artifact spells, never for a nonartifact spell or an activated ability. Mana left over from a payment keeps floating with its restriction instead of being thrown away.', 'Mana abilities with a mana cost work: tapping a Signet (\u201c{1}, {T}: Add {W}{B}\u201d) or Prophetic Prism takes the {1} from another source first.', 'Mana abilities given by another card: Cryptolith Rite\u2019s creatures tap for any colour (not while summoning sick). Arcane Signet and Command Tower make only your commander\u2019s colours, and nothing without a commander (CR 903.4f).', 'The Library book: the chapter you are in is a ribbon bookmark lying in the spine and hanging out below the book with a tassel; the other chapter is still a tab at the top. The writing now bends with the page, sagging into the gutter like print in a real book, and it always fits its page (it is scaled down a little when it would run past the bottom). The gentler page curve no longer cuts off the bottom lines.', 'Hovering a card on the desk turns the book to that card again (the bent pages had broken the page turn).', 'The piles on the desk are back to the straight stacks.', '277 rules tests pass, all with real cards.'] },

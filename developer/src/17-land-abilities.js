@@ -215,7 +215,19 @@ function canPayMana0(c){
   if(routes.some(r=>r.ok)) return {ok:true,reason:''};
   return {ok:false,reason:routes[0].why,detail:routes[0].detail};
 }
-function handInteraction(c){
+// v0.99.76 an ability you can activate from your hand right now also makes the card glow (Ninjutsu after blockers, cycling, reinforce)
+function handAbilityReady(c){
+  if(!state || state.phase!=='play' || state.discarding || holdForTriggers() || !c || c.token) return '';
+  if(state.step===0 || state.step===CLEANUP || (typeof splitSecondOn==='function' && splitSecondOn())) return '';
+  try{
+    { const nj=ninjutsuFor(c); if(nj && !ninjutsuWhy(c) && manaFeasible(c,nj.cost)) return `Ninjutsu (${nj.cost}) can be activated now`; }
+    { const cy=cyclingFor(c); if(cy){ const mana=cy.comps.filter(k=>k.k==='mana').map(k=>k.mana).join(''), rest=cy.comps.filter(k=>k.k!=='mana'); if((!mana || manaFeasible(c,mana)) && !compsFeasible(rest.filter(k=>k.k!=='other'),c.id)) return `${cy.label} can be activated now`; } }
+    { const rf=reinforceFor(c); if(rf && state.battlefield.some(x=>permZone(x)==='creatures') && manaFeasible(c,rf.cost)) return `Reinforce ${rf.n} (${rf.cost}) can be activated now`; }
+  }catch(e){ return ''; }
+  return '';
+}
+function handInteraction(c){ const r=handInteractionSpell(c); return r!=='ready' && handAbilityReady(c) ? 'ready' : r; }
+function handInteractionSpell(c){
   const ho=halfOptions(c); if(!ho.length) return handInteraction0(c);
   const rank={ready:3,mana:2,timing:1,'':0}; let best=null;
   for(const o of ho){ const r=withHalf(c,o.fi,()=>handInteraction0(c)); if(best===null||(rank[r]||0)>(rank[best]||0)) best=r; }
@@ -252,7 +264,7 @@ function handWhy0(c){
   if(m && !m.ok) return m.reason==='condition' ? `You cannot use that way of casting it: ${m.detail}` : m.reason==='additional' ? `You cannot pay the additional cost: ${m.detail}` : m.reason==='color' ? 'You have enough mana in total, but not the right colours' : 'Not enough mana';
   return '';
 }
-function handTip(c){ const i=handInteraction(c); if(!i) return ''; return i==='ready' ? ' — playable now' : ' — ' + handWhy(c); }
+function handTip(c){ const i=handInteraction(c); if(!i) return ''; if(i==='ready' && handInteractionSpell(c)!=='ready'){ const ab=handAbilityReady(c); if(ab) return ' — '+ab; } return i==='ready' ? ' — playable now' : ' — ' + handWhy(c); }
 
 // Does this permanent have a non-mana activated ability (or loyalty / fetch ability) that can be activated right now?
 // Mana abilities of lands and rocks are not highlighted, otherwise every land would glow.
