@@ -1303,6 +1303,7 @@ function filterMatches(filter, card) {
   return withTypes.some(m => m.every(([, re]) => re.test(t)));
 }
 function fireTrigger(ev, ctx = {}) {
+  memOnEvent(ev, ctx);   // v0.99.81 the turn's record (src/88)
   if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
   if (!state) return;   // v0.99.69 triggered abilities are rules, not a teaching aid: they always trigger (the prompt setting only skips the ordering window)
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
@@ -1310,7 +1311,8 @@ function fireTrigger(ev, ctx = {}) {
   // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
   const extraTimes = src => { let n = 0; if (!src || !state || !/\bCreature\b/.test(permTypeLine(src))) return 0; for (const g of state.battlefield) { if (g.id === src.id || !g.chosen) continue; if (!/If a triggered ability of another creature you control of the chosen type triggers, it triggers an additional time/i.test(cardText(g) || '')) continue; if (permTypeInfo(src).subs.has(String(g.chosen).toLowerCase()) || permTypeInfo(src).changeling) n++; } return n; };
   const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount, otherId: ctx.card && ctx.card.id !== src.id ? ctx.card.id : undefined }); };
-  const add = (src, t, why) => { const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
+  const add = (src, t, why) => { { const ii = interveningIf(t.effect, src); if (ii && ii.value === false) { log(`${src.name}: its ability does not trigger, because ${ii.cond} is not true (CR 603.4)`); return; } }   // v0.99.81 intervening "if"
+    const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -1803,6 +1805,11 @@ function effectOptions(tx, obj) {
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
   tx = applyCondInstead(tx);   // "... deals 4 damage instead if you control three or more artifacts"
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
+  { const g0 = obj && obj.sourceId != null ? (findCard(obj.sourceId) || {}).card : null, ii = interveningIf(tx, g0 || null);   // v0.99.81 CR 603.4 / 608.2c a leading "if <condition>," read from what happened (src/88)
+    if (ii && ii.value === true) tx = ii.rest;
+    else if (ii && ii.value === false) { const trig = !!(obj && (obj.trigger || obj.ability || obj.kind === 'ability')), restS = String(tx).split(/(?<=\.)\s+/).slice(1).join(' ').trim();
+      if (trig || !restS) return [{ full: true, covers: [String(tx)], label: `Does nothing: ${ii.cond} is not true now (CR 603.4)`, fn: () => log(`${(obj && obj.sourceName) || 'Ability'}: ${ii.cond} is not true, so it does nothing`) }];
+      tx = restS; } }
   let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
     if (b2.out.length) { res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))); for (const o of b2.out) { const same = res.find(r => r && r.label === o.label); if (same) { if (o.covers) same.covers = [...(same.covers || [])].concat(o.covers); } else res.push(o); } } }   // v0.99.77 an option offered twice keeps one copy, with what both say they carry out
@@ -2089,7 +2096,8 @@ function openAbilityEffect(obj, done) {
     const one = pre.length === 1 && !pre[0].special && typeof pre[0].fn === 'function' ? pre[0] : null;
     let clean = !!one && (one.full || !uncoveredClauses(tx).length);
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
-    if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
+    if (one && /\bpay\b/i.test(one.label || '')) clean = false;   // paying is your decision
+    // v0.99.81 an effect that opens its own window (surveil, scry, look at, search ...) is no longer held in the Resolving panel: the window it opens is where you decide, so it opens at once
     // v0.99.68 several effects that must all happen ("You gain 3 life and draw a card"): every sentence understood, nothing optional or chosen,
     // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
     if (!one && pre.length > 1 && pre.length <= 4) {
@@ -2627,6 +2635,7 @@ function effectiveCost(c) {
     const per = (m[1].match(/\{(\d+)\}/g) || []).reduce((a, x) => a + parseInt(x.slice(1), 10), 0), n = countForEach(m[2]);
     if (per && n !== null && per * n > 0) { cut += per * n; notes.push(`${n} × {${per}} less (${m[2].replace(/ you control$/, '').replace(/^basic land type among lands$/, 'basic land type')})`); }
   }
+  { const cc = condCostCut(c, tx); if (cc) { cut += cc.n; notes.push(cc.why); } }   // v0.99.81 "costs {N} less to cast if …"
   if (/^Undaunted\s*$/im.test(tx)) { cut += 1; notes.push('Undaunted: {1} less for each opponent (1 opponent)'); }
   const am = tx.match(/^Affinity for ([a-z ]+?)\s*$/im);
   if (am) { const w = singularWord(am[1].trim().split(/\s+/).pop()), n = state.battlefield.filter(x => { const p = permTypeInfo(x); return p.types.has(w) || p.subs.has(w); }).length; if (n) { cut += n; notes.push(`Affinity: ${n} × {1} less (${am[1].trim()})`); } }
@@ -2868,7 +2877,7 @@ function applyCostInfo(c, ci) {
   try {
     if (ci.life) { state.life -= ci.life; log(`${c.name}: paid ${ci.life} life as a cost`); }
     applyPicks(c, ci.picks || []);
-    if (ci.alt === 'warp') { c.warped = true; log(`${c.name}: cast for its warp cost (exiled at the next end step)`); }
+    if (ci.alt === 'warp') { c.warped = true; memBump('warped', 1); log(`${c.name}: cast for its warp cost (exiled at the next end step)`); }
     if (ci.alt === 'blitz') c.blitzed = true;
     if (ci.alt === 'dash') c.dashed = true;
     if (ci.casualty) c.casualtyPaid = true;
@@ -4707,6 +4716,7 @@ function parseRestrictionPart(p) {
   if (/^if you have no cards in hand$/i.test(p)) return { kind: 'hand', max: 0, label: 'if you have no cards in hand' };
   if ((m = p.match(/^if you have (\w+) or (more|fewer) cards in (?:your )?(hand|graveyard)$/i))) return { kind: 'count', n: numOf(m[1]), more: /more/i.test(m[2]), zone: m[3].toLowerCase() === 'hand' ? 'hand' : 'graveyard', label: p };
   if ((m = p.match(/^if there are (\w+) or more cards in your graveyard$/i))) return { kind: 'count', n: numOf(m[1]), more: true, zone: 'graveyard', label: p };
+  if ((m = p.match(/^if (.+)$/i))) return { kind: 'cond', cond: m[1], label: p };   // v0.99.81 any condition evalCond reads ("if a creature died this turn")
   return null;
 }
 function parseRestriction(cond) {
@@ -4719,6 +4729,7 @@ function checkRestrictionPart(rec, card) {
   switch (rec.kind) {
     case 'sorcery': return canPlaySorcerySpeedNow() ? { ok: true, why: '' } : { ok: false, why: 'This can only be activated at sorcery speed: your main phase with an empty stack.' };
     case 'myturn': return { ok: true, why: '' };
+    case 'cond': { let v = null; try { v = evalCond(rec.cond, card); } catch (e) { v = null; } return v === true ? { ok: true, why: '' } : v === false ? { ok: false, why: `Activate only ${rec.label}: not true right now.` } : { ok: null, why: `Restriction "Activate only ${rec.label}" could not be checked automatically. Make sure it is met.` }; }
     case 'any': { const rs = rec.parts.map(x => checkRestrictionPart(x, card)); if (rs.some(r => r.ok === true)) return { ok: true, why: '' }; if (rs.every(r => r.ok === false)) return { ok: false, why: 'Needs ' + rec.label + '.' }; return { ok: null, why: '' }; }
     case 'entered': return card && card.enteredTurn === state.turn ? { ok: true, why: '' } : { ok: false, why: 'It did not enter the battlefield this turn.' };
     case 'attacked': return card && state.combat && state.combat.declared && (state.combat.attackers || []).some(a => (a.id ?? a) === card.id) ? { ok: true, why: '' } : { ok: false, why: 'This creature has not attacked this turn.' };
@@ -4753,6 +4764,7 @@ function staticCheck(cond, card) {
     if (!p.rec) { unknown = unknown || { ok: null, why: `Restriction "Activate only ${p.raw}" could not be checked automatically. Make sure it is met.` }; continue; }
     const r = checkRestrictionPart(p.rec, card);
     if (r.ok === false) return r;
+    if (r.ok === null) unknown = unknown || r;
   }
   return unknown || { ok: true, why: '' };
 }
@@ -5440,6 +5452,7 @@ function etbCounters(c) {
     const fd = its.map(x => x.match(/^fading (\d+)$/i)).find(Boolean); if (fd) tx += `\n~ enters with ${fd[1]} fade counters on it.`; }   // CR 702.32a   // v0.96.1 modular (CR 702.43a)
   const m = tx.match(/\benters(?: the battlefield)? with (twice )?(an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+|X) ([a-z][a-z-]*|\+1\/\+1|[−-]1\/[−-]1) counters? on it/i);   // v0.99.32 also "twice X"
   if (!m) return;
+  if (!etbCounterCondOk(c, tx)) return;   // v0.99.81 Raid: "... counter on it if you attacked this turn"
   // v0.84 "...counter on it for each <type> card exiled with it" (Murktide Regent): one per matching card exiled while casting it (delve), not a flat one.
   const fe = tx.match(/\bcounters? on it for each ([^.]+?)(?:\.|$)/im);
   let n;
@@ -5984,19 +5997,24 @@ function fitBattlefieldCards() {
     const n = { creatures: 0, noncreature: 0, lands: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
     // v0.99.78 an empty zone shrinks to its label, so the zones with cards get the height (and their cards grow into it)
     const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2), row = k => n[k] ? `minmax(0, ${w(k)}fr)` : 'minmax(34px, 0.12fr)';
-    mat.style.setProperty('grid-template-rows', `92px ${row('creatures')} auto ${row('noncreature')} ${row('lands')}`, 'important');
+    const nb = n.noncreature + n.lands, bot = nb ? `minmax(0, ${Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(nb) * 0.42)).toFixed(2)}fr)` : 'minmax(34px, 0.12fr)';   // v0.99.81 lands and the other permanents share one row
+    mat.style.setProperty('grid-template-rows', `92px ${row('creatures')} auto ${bot}`, 'important');
   } else if (mat) mat.style.removeProperty('grid-template-rows'); } catch (e) { /* layout only */ }
   // v0.99.78 side by side (desktop, tablets, sideways phones): lands and artifacts/enchantments share the row by how many cards each holds,
   // so a big mana base gets the width and an empty zone shrinks to its label (and the other way round)
-  try { const mat = $('#mat'), zl = $('#zone-lands'), zn = $('#zone-noncreature'); if (mat && document.documentElement.classList.contains('portrait-ui')) mat.style.removeProperty('grid-template-columns');
-    if (mat && zl && zn && state && !document.documentElement.classList.contains('portrait-ui')) {
-    mat.style.removeProperty('grid-template-columns'); const cols = getComputedStyle(mat).gridTemplateColumns.split(' ').filter(Boolean);
-    if (cols.length === 3 && Math.abs(zl.offsetTop - zn.offsetTop) < 4) {
-      const n = { lands: 0, noncreature: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
-      const w = k => n[k] ? `minmax(0, ${(0.6 + Math.sqrt(n[k]) * 0.45).toFixed(2)}fr)` : 'minmax(150px, 0.3fr)';
-      const landsFirst = zl.offsetLeft < zn.offsetLeft;
-      mat.style.setProperty('grid-template-columns', `${landsFirst ? w('lands') : w('noncreature')} ${landsFirst ? w('noncreature') : w('lands')} ${cols[2]}`, 'important');
-    } } } catch (e) { /* layout only */ }
+  // v0.99.81 one zone: lands on the left, artifacts/enchantments/planeswalkers on the right, on every screen. The split follows how many cards
+  // each side holds. The weights are scaled to add up to 2: fr tracks that add up to less than 1 leave part of the row empty (CSS Grid 7.2.4),
+  // which is what left half of a wide window blank.
+  try { const mat = $('#mat'), zl = $('#zone-lands'), zn = $('#zone-noncreature');
+    if (mat && zl && zn && state) {
+      mat.style.removeProperty('grid-template-columns'); const cols = getComputedStyle(mat).gridTemplateColumns.split(' ').filter(Boolean), port = document.documentElement.classList.contains('portrait-ui');
+      if ((cols.length === 3 || (port && cols.length === 2)) && Math.abs(zl.offsetTop - zn.offsetTop) < 4) {
+        const n = { lands: 0, noncreature: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
+        const raw = k => n[k] ? 0.6 + Math.sqrt(n[k]) * 0.45 : 0.3, sum = raw('lands') + raw('noncreature'), mn = port ? 72 : 150;
+        const w = k => `minmax(${n[k] ? 0 : mn}px, ${(raw(k) / sum * 2).toFixed(3)}fr)`;
+        const landsFirst = zl.offsetLeft < zn.offsetLeft, pair = landsFirst ? `${w('lands')} ${w('noncreature')}` : `${w('noncreature')} ${w('lands')}`;
+        mat.style.setProperty('grid-template-columns', cols.length === 3 ? `${pair} ${cols[2]}` : pair, 'important');
+      } } } catch (e) { /* layout only */ }
   const specs = [
     { id: 'row-creatures', wrap: true },
     { id: 'row-noncreature', wrap: true },
@@ -7030,8 +7048,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.80';
+const APP_VERSION = '0.99.81';
 const CHANGELOG = [
+  { v: '0.99.81', title: 'One zone for lands and permanents, fewer Resolving windows, and a turn record for the rules', notes: ['TABLE: on wide windows the battlefield only filled part of the screen when the lower zones were empty. Fixed (their shares of the width could add up to less than the whole row).', 'TABLE: lands and artifacts / enchantments / planeswalkers are now one zone on every screen: lands on the left, the other permanents on the right, the split following how many cards each side holds. Upright phones too. A narrow right half reads "Other permanents" instead of a cut-off label.', 'RESOLVING: an effect that opens its own window (surveil, scry, look at the top cards, search) no longer waits in the Resolving panel for an Apply click. Kaito\u2019s 0 goes straight to the surveil window. Effects you might not want ("you may", paying a cost, a choice of modes) still ask.', 'RULES (CR 603.4): intervening "if". "When this creature enters, if you attacked this turn, …" (Raid), Revolt, Void, Coven, bloodthirst and the like only trigger when the condition is true, and the condition is checked again as the ability resolves.', 'RULES: the game now keeps one record of what happened this turn (attacks, life gained and lost, cards drawn, permanents that left, creatures that died, spells cast or warped). Every "this turn" condition reads from it: War-Name Aspirant enters with its counter only after you attacked, Undercity Scrounger and Caged Zombie can be activated only after a creature died (CR 602.5b), Bone Picker costs {3} less after a creature died and Focus the Mind {2} less after another spell (CR 601.2f).', 'LIBRARY: the lamplight is drawn more cheaply, so opening and closing the Library is smoother on slower machines.'] },
   { v: '0.99.80', title: 'A better-looking Library, and more rules', notes: ['LIBRARY: new, sharper textures, all drawn by our own generator (no outside images). The desk is six walnut boards with real growth rings, cathedral arches, pores and a soft lamp sheen in the varnish, drawn from a 4K source so the near boards stay crisp. The shelves, the name plate and the wall boards use the new wood; the plaster wall is finer. Books (the open menu book and every spine) are covered in pebble-grain leather.', 'LIBRARY: lamplight. The corners of the room fall into shadow and a warm pool of light sits over the open book; the shelf fronts catch the light on their top edge.', 'RULES (CR 615): prevention shields. "Prevent the next N damage that would be dealt to any target / you / this creature this turn" (Shieldmate\u2019s Blessing, Barrenton Medic), "Prevent all damage that would be dealt to him this turn" (Gideon) and "The next time a source of your choice would deal damage to you this turn, prevent that damage" (Haazda Shield Mate) now really stop the damage, from spells, sweepers and painlands alike. "Damage can\u2019t be prevented" (Skullcrack) still turns them off.', 'RULES (CR 613.4d): "Switch this creature\u2019s power and toughness until end of turn" (Aeromoeba, Merfolk Thaumaturgist) works, applied after every other change, as the rules say.', 'RULES: "Target creature gets -X/-X until end of turn" (Battle at the Bridge, Sickening Shoal) uses the X you paid; "+X/+X where X is its power" doubles it.', 'RULES (CR 614.1a): "If a creature dealt damage this way would die this turn, exile it instead" (Anger of the Gods, Yamabushi\u2019s Flame) and "If that creature or planeswalker would die this turn, exile it instead" (Fanged Flames) are put in place before the damage, so the creature really is exiled. Anger of the Gods now deals its damage too (the second sentence used to stop it being read).', 'RULES: "Choose one of them. You may play that card this turn." (Jaya, Fiery Negotiator, Party Thrasher) asks which exiled card it was and makes it playable from the exile pile.', 'RULES: "Gain control of target creature until end of turn" (Unwilling Recruit, Threaten effects) on your own creature changes nothing; on your opponent\u2019s it is noted for the real table. 182 fewer sentences are left as Remember notes; 104 more cards are read in full.'] },
   { v: '0.99.79', title: 'Skullcrack, and \u201cRemember\u201d effects carried out', notes: ['Skullcrack resolves in one go: 3 damage to its target, and \u201cPlayers can\u2019t gain life this turn\u201d is a real effect until end of turn (your life gain, lifelink and your opponent\u2019s life gain are stopped); \u201cDamage can\u2019t be prevented this turn\u201d is recorded too. The \u201cor\u201d in \u201ctarget player or planeswalker\u201d no longer stops a spell from resolving by itself.', 'Far fewer \u201cRemember (until end of turn)\u201d notes: a note is never shown next to an option that already does the same thing, and these are now carried out: group pumps and shrinks (\u201cAll creatures get -2/-2\u201d, \u201cAttacking creatures get +1/+0\u201d, any group the sentence names), an Aura\u2019s \u201cEnchanted creature gets \u2026\u201d, Fog (your combat damage is prevented that turn), mana that stays in your pool until end of turn (Grand Warlord Radha), \u201ccan attack this turn as though it didn\u2019t have defender\u201d. Blocking effects (\u201ccan\u2019t block\u201d, \u201ccan\u2019t be blocked\u201d, \u201cblocks if able\u201d) say plainly that blocking is up to your opponent. Across all cards, Remember notes went from 2,551 to about 1,700; most of the rest are for the opponent\u2019s permanents.', '289 rules tests pass, all with real cards.'] },
   { v: '0.99.78', title: 'Kozilek\u2019s Command on mobile, modal spells, cards that size to the table', notes: ['Kozilek\u2019s Command (and every X spell) with automatic land tapping: after you chose modes and X, pressing Cast did nothing when part of your mana could only be spent on that spell (Eldrazi Temple). X counted that mana but the payment that followed left it out. Payment now happens in the spell\u2019s own context, in the payment window too.', 'On phones a slow tap on a button (Cast, Pay and cast, Choose) is always a tap: press-and-hold only opens menus on cards and the table, never on buttons, fields or choices in a window.', 'Modal spells whose number of modes depends on a condition: Flame of Anor (\u201cIf you control a Wizard as you cast this spell, you may choose two instead\u201d) lets you pick one, or up to two while you control a Wizard; when the app cannot check the condition (Go Nuts!\u2019s teamwork, Inscription of Insight\u2019s kicker, See Double\u2019s opponent graveyard) it asks whether it is met. These spells were not read as modal at all before.', 'Cards size themselves to the table on every screen: lands and artifacts/enchantments share their row by how many cards each holds (a big mana base gets the width, an empty zone shrinks to its label); on an upright phone an empty zone shrinks to its label and the cards in the others grow into the room (up to 1.9\u00d7); on tablets and sideways phones cards may grow to 1.5\u00d7.', '287 rules tests pass, all with real cards.'] },
@@ -12581,6 +12600,7 @@ function evalCond(text, g) {
   if (!t) return null;
   { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
+  { const tc = turnCond(t, g); if (tc !== null) return tc; }   // v0.99.81 "this turn" conditions from the turn's record (src/88)
   { const ik = IND_COND_KEY(t); if (ik) { const g = gameStates().find(x => x.key === ik); return g ? !!g.on : null; } }   // the top-bar game-state checks are the one source of truth (Metalcraft, Threshold, Delirium, Revolt, Morbid ...)
   if (/^(?:~|it|this (?:permanent|creature|card)) is a creature$/.test(t)) { if (!g || g.id < 0) return true; try { return permTypeInfo(g).types.has('creature'); } catch (e) { return null; } }   // v0.99.71 Triton Wavebreaker: "As long as this permanent is a creature, it has prowess" (off while bestowed)
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
@@ -14770,6 +14790,79 @@ function batch3Options(t, sents, obj, src, out, drop) {
       if (mine.length) log(`${src}: you already control ${mine.map(x => x.name).join(', ')}; nothing changes`);
       else { addFx({ kind: 'note', until: 'eot', srcName: src, text: 'You control the stolen creature until end of turn (opponent\'s creature, play it out at the table)' }); log(`${src}: gain control of your opponent's creature until end of turn (apply it at the real table)`); } render(); } });
       drop.push(/^Remember \(until end of turn\): (?:Until end of turn, )?gain control of /i); } }
+}
+// ---- v0.99.81 What happened this turn, and the conditions that ask about it
+// One record per turn (state.mem, started by memNote in src/06) now also counts attacks, life gained and lost, cards drawn and spells warped.
+// Every "this turn" condition is answered from it by turnCond(), which evalCond() (src/63) asks first. Nothing else should keep its own
+// per-turn flag: add the event to memBump() at the one place it happens, and the condition here.
+//   memBump('attacked', n)    fireTrigger('attack')      memBump('gained', n)  fireTrigger('lifegain')
+//   memBump('lost', n)        fireTrigger('lifeloss')    memBump('drawn', 1)   fireTrigger('draw')
+//   memBump('warped', 1)      a spell cast for its warp cost
+// The same conditions drive: intervening "if" on triggered abilities (CR 603.4, checked when it triggers and again as it resolves),
+// "enters with … counters if …" (Raid), "Activate only if …" (CR 602.5b) and "This spell costs {N} less to cast if …" (CR 601.2f).
+function memCur() {
+  if (!state) return null;
+  let m = state.mem; if (!m || m.turn !== state.turn) m = state.mem = { turn: state.turn, entered: [], left: [], died: [] };
+  for (const k of ['attacked', 'gained', 'lost', 'drawn', 'warped']) if (typeof m[k] !== 'number') m[k] = 0;
+  return m;
+}
+function memBump(key, n) { const m = memCur(); if (m && n > 0) m[key] += n; }
+function memCount(key) { const m = memCur(); return m ? (m[key] || 0) : 0; }
+// fireTrigger() calls this first, so every event is counted once whichever card caused it
+function memOnEvent(ev, ctx) {
+  if (!state) return;
+  if (ev === 'attack') memBump('attacked', ((ctx && ctx.cards) || []).length);
+  else if (ev === 'lifegain') memBump('gained', +(ctx && ctx.amount) || 0);
+  else if (ev === 'lifeloss') memBump('lost', +(ctx && ctx.amount) || 0);
+  else if (ev === 'draw') memBump('drawn', 1);
+}
+const isNonlandMem = x => !/\bLand\b/.test(x.type || '');
+// A "this turn" condition in the card's words (lower case, no full stop) -> true / false, or null when it is not one of these.
+function turnCond(t, g) {
+  if (!state) return null;
+  let m;
+  if (/^you attacked (?:with (?:a|one or more) creatures? )?this turn$/.test(t)) return memCount('attacked') > 0;   // raid
+  if ((m = t.match(/^you attacked with (\w+) or more creatures this turn$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : memCount('attacked') >= k; }
+  if (/^you(?:'ve| have)? not attacked this turn$|^you didn'?t attack this turn$/.test(t)) return memCount('attacked') === 0;
+  if (/^a permanent (?:you controlled )?left the battlefield (?:under your control )?this turn$/.test(t)) return memThisTurn('left').length > 0;   // revolt
+  if (/^a nonland permanent (?:you controlled )?left the battlefield (?:under your control )?this turn$/.test(t)) return memThisTurn('left', isNonlandMem).length > 0;
+  if (/^a spell was warped this turn$/.test(t)) return memCount('warped') > 0;   // void: "… or a spell was warped this turn" is split on "or" by evalCond
+  if (/^a creature died (?:under your control )?this turn$|^a creature you controlled died this turn$/.test(t)) return memThisTurn('died', x => /\bCreature\b/.test(x.type)).length > 0;   // morbid
+  if (/^(?:a|another) creature entered the battlefield under your control this turn$|^(?:a|another) creature entered under your control this turn$/.test(t)) return memThisTurn('entered', x => /\bCreature\b/.test(x.type) && !(g && x.id === g.id && /^another/.test(t))).length > 0;
+  if (/^(?:an|each|any) opponents? (?:lost life|has lost life|was dealt damage|has been dealt damage) this turn$/.test(t)) return state.oppLifeLostTurn === state.turn;   // bloodthirst-style
+  if (/^you gained life this turn$|^you(?:'ve| have) gained life this turn$/.test(t)) return memCount('gained') > 0;
+  if ((m = t.match(/^you(?:'ve| have)? gained (\w+) or more life this turn$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : memCount('gained') >= k; }
+  if (/^you lost life this turn$|^you(?:'ve| have) lost life this turn$/.test(t)) return memCount('lost') > 0;
+  if ((m = t.match(/^you(?:'ve| have)? drawn (\w+) or more cards this turn$|^you drew (\w+) or more cards this turn$/))) { const k = CS_NUM(m[1] || m[2]); return isNaN(k) ? null : memCount('drawn') >= k; }
+  if (/^you(?:'ve| have)? cast another spell this turn$/.test(t)) return spellsCastNow() >= 1 + (g && g._castCounted === state.turn ? 1 : 0);
+  if (/^you(?:'ve| have)? cast (?:a|another) (?:noncreature|instant or sorcery|instant|sorcery|creature|artifact|enchantment) spell this turn$/.test(t)) return null;   // the kind of spell is not recorded yet
+  if (/^you(?:'ve| have)? played a land this turn$/.test(t)) return typeof landDropUsed === 'function' ? landDropUsed() > 0 : null;
+  // coven: three or more creatures with different powers
+  if (/^you control three or more creatures with different powers$/.test(t)) return new Set(state.battlefield.filter(c => permZone(c) === 'creatures').map(c => ptCalc(c).p)).size >= 3;
+  return null;
+}
+// CR 603.4 an intervening "if": "When/Whenever/At …, if <condition>, <effect>". The effect text of a trigger then starts "if <condition>, ".
+// Returns { cond, rest, value } or null. "If you do" / "If you don't" / "If it's …" that the app cannot read are left alone (value null).
+function interveningIf(effect, g) {
+  const m = /^if ([^,]+?), (.+)$/is.exec(String(effect || '').trim()); if (!m) return null;
+  if (/^you (?:do|don'?t|can'?t|can)$/i.test(m[1].trim())) return null;
+  let v = null; try { v = evalCond(m[1], g); } catch (e) { v = null; }
+  return { cond: m[1], rest: m[2].charAt(0).toUpperCase() + m[2].slice(1), value: v };
+}
+// "enters with a +1/+1 counter on it if you attacked this turn" (Raid, Cindering Cutthroat): false -> no counters; unreadable -> counters, with a note
+function etbCounterCondOk(c, tx) {
+  const m = /\benters(?: the battlefield)? with [^.]*? counters? on it if ([^.]+)\./i.exec(tx); if (!m) return true;
+  const v = evalCond(m[1], c);
+  if (v === false) { log(`${c.name}: enters without counters (${m[1]}: not this turn)`); return false; }
+  if (v === null) log(`${c.name}: enters with its counters; check yourself that ${m[1]}`);
+  return true;
+}
+// "This spell costs {2} less to cast if you've cast another spell this turn." (Bone Picker, Focus the Mind)
+function condCostCut(c, tx) {
+  const m = /\bcosts? ((?:\{\d+\})+) less to cast if ([^.]+)\./i.exec(tx); if (!m) return null;
+  const n = (m[1].match(/\{(\d+)\}/g) || []).reduce((a, x) => a + parseInt(x.slice(1), 10), 0);
+  let v = null; try { v = evalCond(m[2], c); } catch (e) { v = null; }
+  return v ? { n, why: `{${n}} less: ${m[2]}` } : null;
 }
 init();
 

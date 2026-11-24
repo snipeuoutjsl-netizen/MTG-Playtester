@@ -136,6 +136,7 @@ function filterMatches(filter, card) {
   return withTypes.some(m => m.every(([, re]) => re.test(t)));
 }
 function fireTrigger(ev, ctx = {}) {
+  memOnEvent(ev, ctx);   // v0.99.81 the turn's record (src/88)
   if (state && ev === 'step' && ctx.id === 'upkeep') { openingRevealTriggers(); runDelayed('upkeep'); suspendUpkeep(); reboundUpkeep(); }
   if (!state) return;   // v0.99.69 triggered abilities are rules, not a teaching aid: they always trigger (the prompt setting only skips the ordering window)
   if ((ev === 'etb' || ev === 'enters') && ctx.card && torporOrbOn(ctx.card)) { log(`Creatures entering don't cause abilities to trigger: ${ctx.card.name}'s enter-the-battlefield abilities are skipped`); return; }
@@ -143,7 +144,8 @@ function fireTrigger(ev, ctx = {}) {
   // CR 603.2d style "triggers an additional time" (Roaming Throne): another permanent you control says a triggered ability of a creature of the chosen type triggers an additional time
   const extraTimes = src => { let n = 0; if (!src || !state || !/\bCreature\b/.test(permTypeLine(src))) return 0; for (const g of state.battlefield) { if (g.id === src.id || !g.chosen) continue; if (!/If a triggered ability of another creature you control of the chosen type triggers, it triggers an additional time/i.test(cardText(g) || '')) continue; if (permTypeInfo(src).subs.has(String(g.chosen).toLowerCase()) || permTypeInfo(src).changeling) n++; } return n; };
   const add0 = (src, t, why) => { if (t.ev !== 'dies-self' && t.ev !== 'leaves-self' && t.ev !== 'host-dies' && !(t.ev === 'dies-other' && t.selfToo) && (t.zone === 'graveyard') !== inGy(src)) return; /* CR 603.10a: a "leaves the battlefield" ability looks back, so a card that just went to the graveyard still triggers */ state.pendingTriggers.push({ kind: 'ability', cardId: src.id, cardName: src.name, text: t.line, effect: t.effect, special: t.special, kw: t.kw, n: t.n, arg: t.arg, optional: t.optional, why, amt: ctx.amount, otherId: ctx.card && ctx.card.id !== src.id ? ctx.card.id : undefined }); };
-  const add = (src, t, why) => { const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
+  const add = (src, t, why) => { { const ii = interveningIf(t.effect, src); if (ii && ii.value === false) { log(`${src.name}: its ability does not trigger, because ${ii.cond} is not true (CR 603.4)`); return; } }   // v0.99.81 intervening "if"
+    const n0 = state.pendingTriggers.length; add0(src, t, why); if (state.pendingTriggers.length > n0) { const x = extraTimes(src); for (let k = 0; k < x; k++) { const q = Object.assign({}, state.pendingTriggers[state.pendingTriggers.length - 1]); q.why = (q.why || '') + ' It triggers an additional time (' + 'a permanent you control says so).'; state.pendingTriggers.push(q); } } };
   const bf = state.battlefield.concat(state.emblems || [], state.graveyard.filter(g => parseTriggers(g).some(t => t.zone === 'graveyard')));
   if (ev === 'step') {
     const label = STEPS.find(x => x.id === ctx.id)?.label || ctx.id;
@@ -636,6 +638,11 @@ function effectOptions(tx, obj) {
   tx = applyKickedInstead(tx, !!(obj && obj.optPaid));
   tx = applyCondInstead(tx);   // "... deals 4 damage instead if you control three or more artifacts"
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
+  { const g0 = obj && obj.sourceId != null ? (findCard(obj.sourceId) || {}).card : null, ii = interveningIf(tx, g0 || null);   // v0.99.81 CR 603.4 / 608.2c a leading "if <condition>," read from what happened (src/88)
+    if (ii && ii.value === true) tx = ii.rest;
+    else if (ii && ii.value === false) { const trig = !!(obj && (obj.trigger || obj.ability || obj.kind === 'ability')), restS = String(tx).split(/(?<=\.)\s+/).slice(1).join(' ').trim();
+      if (trig || !restS) return [{ full: true, covers: [String(tx)], label: `Does nothing: ${ii.cond} is not true now (CR 603.4)`, fn: () => log(`${(obj && obj.sourceName) || 'Ability'}: ${ii.cond} is not true, so it does nothing`) }];
+      tx = restS; } }
   let res = effectOptionsInner(tx, obj); const seen = new Set();   // v0.94.7 an identical suggestion is never listed twice
   { const nm = obj && obj.sourceName ? String(obj.sourceName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; const b2 = batch2Options(nm ? String(tx).replace(new RegExp(nm, 'gi'), '~') : tx, obj || {});   // v0.99.69 rules batch 2 (src/86)
     if (b2.out.length) { res = res.filter(o => !(o && o.label && b2.drop.some(r => r.test(o.label)))); for (const o of b2.out) { const same = res.find(r => r && r.label === o.label); if (same) { if (o.covers) same.covers = [...(same.covers || [])].concat(o.covers); } else res.push(o); } } }   // v0.99.77 an option offered twice keeps one copy, with what both say they carry out
@@ -922,7 +929,8 @@ function openAbilityEffect(obj, done) {
     const one = pre.length === 1 && !pre[0].special && typeof pre[0].fn === 'function' ? pre[0] : null;
     let clean = !!one && (one.full || !uncoveredClauses(tx).length);
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
-    if (one && /\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay)\b/i.test(one.label || '')) clean = false;   // these open their own window
+    if (one && /\bpay\b/i.test(one.label || '')) clean = false;   // paying is your decision
+    // v0.99.81 an effect that opens its own window (surveil, scry, look at, search ...) is no longer held in the Resolving panel: the window it opens is where you decide, so it opens at once
     // v0.99.68 several effects that must all happen ("You gain 3 life and draw a card"): every sentence understood, nothing optional or chosen,
     // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
     if (!one && pre.length > 1 && pre.length <= 4) {
