@@ -1539,7 +1539,7 @@ const { setup } = require('./common.js');
       tile('SwapA').querySelector('.bk-stage').click(); await W(1100); const a = document.querySelector('#hall .dbx-info h3').textContent;
       tile('SwapB').querySelector('.bk-stage').click(); await W(1100);
       const shown = [...document.querySelectorAll('#hall .dbx-pull')].map(() => document.querySelector('#hall .tome-info h3').textContent), outs = [...document.querySelectorAll('#hall .bk-tile.out')].map(t => t.querySelector('.bk-title').textContent);
-      const spreads = document.querySelectorAll('#hall .hall-spread').length, cols = document.querySelectorAll('#hall .hall-spread .ds-stack').length;
+      const spreads = document.querySelectorAll('#hall .hall-spread').length, cols = document.querySelectorAll('#hall .hall-spread .ds-pile').length;
       tile('SwapB').querySelector('.bk-stage').click(); await W(300); const again = document.querySelectorAll('#hall .dbx-pull').length;
       __d.closeHall(false); return { a, shown, outs, again, spreads, cols }; });
     return { ok: r.a === 'SwapA' && r.shown.join() === 'SwapB' && r.outs.join() === 'SwapB' && r.again === 1 && r.spreads === 1 && r.cols === 2, why: JSON.stringify(r) }; });

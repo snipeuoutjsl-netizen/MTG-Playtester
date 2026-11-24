@@ -2,8 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" id="vpMeta" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+/* v0.99.54 phones and tablets: the table is laid out for at least 1180 x 680. A smaller screen gets a wider viewport, so the browser
+   fits the whole layout to the screen (pinch to zoom still works). Desktop windows are not touched. */
+(function () {
+  if (/Electron/.test(navigator.userAgent)) return;
+  var MIN_W = 1180, MIN_H = 680;
+  function fit() {
+    var a = screen.width, b = screen.height, land = (window.matchMedia && matchMedia('(orientation: landscape)').matches);
+    var dw = land ? Math.max(a, b) : Math.min(a, b), dh = land ? Math.min(a, b) : Math.max(a, b);
+    var m = document.getElementById('vpMeta'); if (!m) return;
+    if (dw >= MIN_W && dh >= MIN_H) { m.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover'); return; }
+    var w = Math.max(MIN_W, Math.ceil(MIN_H * dw / dh));
+    m.setAttribute('content', 'width=' + w + ', viewport-fit=cover');
+  }
+  fit(); window.addEventListener('orientationchange', function () { setTimeout(fit, 150); }); window.addEventListener('resize', fit);
+})();
+</script>
 <title>Library of Alexandria</title>
+<meta name="theme-color" content="#1b130d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Library">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -158,6 +183,11 @@
 
 <div id="modalRoot"></div>
 <div id="ctxMenu" hidden></div>
+<div id="rotateHint" role="alert"><svg class="rot" viewBox="0 0 64 64" fill="none" stroke="#e3b95c" stroke-width="3" stroke-linejoin="round"><rect x="20" y="6" width="24" height="52" rx="5"/><circle cx="32" cy="51" r="2" fill="#e3b95c"/></svg><div>Turn your phone sideways</div><small>The table needs the width.</small></div>
 <script src="app.js"></script>
+<script>
+/* v0.99.54 the web app keeps working offline once loaded (sw.js); the desktop app (Electron, file://) does not use it */
+if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+</script>
 </body>
 </html>

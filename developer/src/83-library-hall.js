@@ -50,27 +50,31 @@ function beginWith(name) {
 function deckSpreadEl(deck, deckName, onCard) {
   const el = h('div', { class: 'hall-spread', 'aria-label': 'Main deck by mana value' });
   const build = () => {
-    // v0.99.53 stacks of at most three different cards (in mana-value order, lands last; the basic lands share one stack), no labels
+    // v0.99.54 one pile per card: its copies lie on top of each other (a pile of four Thoughtseize is four cards deep), and the piles
+    // are dealt out in mana-value order (lands last) on a grid sized to fill the desk without any two piles overlapping.
     const tot = new Map();
     for (const x of deck.main) { const rec = resolve(x.name), nm = rec ? rec.name : x.name, o = tot.get(nm) || { name: nm, rec, qty: 0 }; o.qty += (x.qty || x.n || 1); tot.set(nm, o); }
     const all = [...tot.values()], isLand = c => c.rec ? !!c.rec.land : BASIC_LANDS.has(norm(c.name)), isBasic = c => BASIC_LANDS.has(norm(c.name)) || /^Snow-Covered (Plains|Island|Swamp|Mountain|Forest)$/i.test(c.name);
     const mv = c => (c.rec && +c.rec.cmc) || 0, byName = (a, b) => a.name.localeCompare(b.name);
-    const spells = all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), lands = all.filter(c => isLand(c) && !isBasic(c)).sort(byName), basics = all.filter(isBasic).sort(byName);
-    const stacks = [], chunk3 = list => { for (let i = 0; i < list.length; i += 3) stacks.push(list.slice(i, i + 3)); };
-    const mvs = [...new Set(spells.map(mv))]; for (const v of mvs) chunk3(spells.filter(c => mv(c) === v));
-    chunk3(lands); if (basics.length) stacks.push(basics);
-    const STRIP = 30, CH = 206;
-    const cols = stacks.map(list => h('div', { class: 'ds-stack', style: `height:${STRIP * (list.length - 1) + CH}px` }, list.map((c, i) => {
-      const im = imgFor(c.name, deckName), card = h('div', { class: 'ds-card' + (im ? ' img' : ''), style: `top:${i * STRIP}px;z-index:${i + 1}`, title: `${c.qty} × ${c.name}`, tabindex: 0 },
+    const piles = [...all.filter(c => !isLand(c)).sort((a, b) => mv(a) - mv(b) || byName(a, b)), ...all.filter(c => isLand(c) && !isBasic(c)).sort(byName), ...all.filter(isBasic).sort(byName)];
+    const W = 1520, H = 290, GAP = 14, N = Math.max(1, piles.length);
+    let best = { r: 1, cw: 0, ch: 0 };
+    for (let r = 1; r <= 4; r++) { const cols = Math.ceil(N / r), cw0 = (W - GAP * (cols - 1)) / cols - 6, ch = Math.min(cw0 * 1.395, (H - GAP * (r - 1)) / r - 6), cw = ch / 1.395; if (cw > best.cw) best = { r, cw, ch, cols }; }
+    const cw = Math.min(150, Math.floor(best.cw)), ch = Math.round(cw * 1.395);
+    el.style.setProperty('--cw', cw + 'px'); el.style.setProperty('--ch', ch + 'px'); el.style.setProperty('--cols', String(Math.ceil(N / best.r)));
+    const cards = piles.map(c => {
+      const im = imgFor(c.name, deckName), layers = Math.min(4, c.qty) - 1;
+      const card = h('div', { class: 'ds-card' + (im ? ' img' : ''), title: `${c.qty} × ${c.name}`, tabindex: 0 },
         im ? h('img', { src: im.front, alt: c.name, draggable: 'false' }) : [h('b', { text: c.name }), h('span', { text: (c.rec && c.rec.mc) || '' }), h('i', { text: (c.rec && c.rec.t) || '' })],
         h('em', { class: 'ds-qty', text: '×' + c.qty }));
       const img = card.querySelector('img'); if (img) img.addEventListener('error', () => { img.remove(); card.classList.remove('img'); card.prepend(h('b', { text: c.name })); });
-      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 120); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
-      return card; })));
-    el.replaceChildren(...cols);
-    requestAnimationFrame(() => { const W = 1520, H = 268, w = el.scrollWidth || 1, hh = el.scrollHeight || 1; el.style.setProperty('--dsk', String(Math.min(1, W / w, H / hh))); });
+      const pile = h('div', { class: 'ds-pile', style: `--layers:${layers}` }, Array.from({ length: layers }, (_, i) => h('i', { class: 'ds-under', style: `--k:${layers - i}` })), card);
+      if (onCard) { const go = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(c), 220); }; card.addEventListener('mouseenter', go); card.addEventListener('focus', go); }
+      return pile; });
+    el.replaceChildren(...cards);
+    el.style.removeProperty('--dsk');
   };
-  if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 350); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
+  if (onCard) { const off = () => { clearTimeout(el._t); el._t = setTimeout(() => onCard(null), 600); }; el.addEventListener('mouseleave', off); el.addEventListener('focusout', e => { if (!el.contains(e.relatedTarget)) off(); }); }
   build();
   try { loadCachedImages(deck.main.map(x => x.name)).then(n => { if (n && el.isConnected) build(); }); } catch (e) {}
   return el;
@@ -101,6 +105,7 @@ function tomeCard(tome, c, deckName) {
   };
   const calm = reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false;
   if (calm) { fill(); return; }
+  if (c && cur) { fill(); const pg = tome.querySelector('.tome-card'); if (pg) wa(pg, [{ opacity: .55 }, { opacity: 1 }], { duration: 160 }); return; }   // card to card: same page, new picture (no flicker of turning leaves)
   // a leaf turns over the spine: forwards (right to left) to a card, backwards (left to right) back to the deck
   tome.querySelectorAll('.tome-leaf').forEach(x => x.remove());
   const back = !c, leaf = h('div', { class: 'tome-leaf ' + (back ? 'from-left' : 'from-right') }); tome.append(leaf);
