@@ -25,7 +25,7 @@ function globalAttackBlock(c) {
   }
   return '';
 }
-const torporOrbOn = c => !!c && /\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i);
+const torporOrbOn = c => !!c && ((/\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i)) || (/\b(?:Creature|Artifact)\b/.test(frontType(c) || '') && !!globalHas(/^Artifacts and creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i)));   // v0.99.94 Doorkeeper Thrull
 const cageBlocksEnter = (c, from) => (from === 'graveyard' || from === 'library') && !!c && /\bCreature\b/.test(frontType(c) || '') && globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i);
 const cageBlocksCast = () => !!globalHas(/^Players can't cast spells from graveyards or libraries\.?$/i);
 const omnathColorless = () => !!globalHas(/^If you would lose unspent mana, that mana becomes colorless instead\.?$/i);

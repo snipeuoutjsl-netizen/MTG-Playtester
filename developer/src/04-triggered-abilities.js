@@ -372,7 +372,7 @@ function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name,
 const legalSig = (specs, srcId) => specs.map(sp => legalTargets(sp, { srcId }).map(t => String(t.id)).sort().join(',')).join('|');   // the set of things an ability could target right now
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
+  const t = list.find(x => !x.delayed && !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
   state.ay[key] = { auto: false, sig: (() => { try { const sp = parseTargetSpecs(t._text || t.effect); return sp.length ? legalSig(sp, t.cardId) : null; } catch (e) { return null; } })(), id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
@@ -973,19 +973,20 @@ function resolveNoPanel(obj, tx, done) {
   const low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
   opts = opts.filter((o, i) => o.special || !opts.some((p, j) => j !== i && !p.special && low(p.label) !== low(o.label) && low(p.label).includes(low(o.label))));
   const run = async list => { for (const o of list) {
-      if (o.special === 'lookTop') { if (obj.target === 'opp') { toast(`${who}`, 'A goldfish opponent has no library: nothing to look at.'); continue; } const top = state.library[0]; if (top) { log(`${who}: looked at the top card of your library: ${top.name}`); toast(`${who}: top card`, `${top.name} (it stays on top)`); } continue; }
+      if (o.special === 'lookTop') { if (obj.target === 'opp') { toast(`${who}`, 'A goldfish opponent has no library: look at the real one.'); log(`${who}: look at the top card of your opponent's library at the real table`); continue; } await peekTopCard(who); continue; }
       if (o.special === 'payLifeDraw') { const n = await appAskNumber('Pay how much life?', `${who}: you draw that many cards.`, 0); const k = Math.max(0, Math.min(+n || 0, state.life)); if (k) { snap(); state.life -= k; const d = drawCards(k); log(`${who}: paid ${k} life, drew ${d}`); } continue; }
       if (typeof o.fn !== 'function') continue;
       if (typeof o.then === 'function') { await new Promise(r => { try { o.then(() => { render(); r(); }); } catch (e) { r(); } }); continue; }
       try { o.fn(); } catch (e) { console.error(e); } render(); } };
   const plain = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target');
-  const choice = opts.length > 1 && (/\bchoose one\b|\bchoose\b/i.test(plain) || opts.some(o => o.final) || (/\bor\b/i.test(plain) && !/\band\b|\bthen\b/i.test(plain)));
+  const choice = opts.length > 1 && (/\bchoose (?:one|two|up to)\b/i.test(plain) || opts.some(o => o.final) || opts.some(o => /^Decline\b/i.test(o.label || '')));   // v0.99.94 a plain "or" ("mana value 2 or less") is no choice
   (async () => {
     if (!opts.length) { finish(); return; }
     if (choice) { const i = await appChoose(who, tx, opts.map(o => o.label)); if (i !== null && opts[i] && !/^Decline\b/i.test(opts[i].label || '')) { log(`${who}: ${opts[i].label}`); await run([opts[i]]); } else log(`${who}: declined`); finish(); return; }
-    if (/\byou may\b/i.test(plain) && !opts.some(o => o.def)) { const all = opts.map(o => o.label).join('; ');
+    const mayPlain = plain.replace(/(?:^|\.\s+)(?:until (?:the )?end of (?:your next )?turn, )?you may (?:cast|play|look at)\b[^.]*\./gi, '. ').replace(/\byou may (?:cast|play) (?:it|that card|them|those cards)\b[^.]*\b(?:this turn|until\b[^.]*)\./gi, '');   // a permission to cast later is no question now
+    if (/\byou may\b/i.test(mayPlain) && !opts.some(o => o.def)) { const all = opts.map(o => o.label).join('; ');
       if (!(await appAsk(who, `${tx}`, all.length < 60 ? all : 'Do it'))) { log(`${who}: you chose not to`); gaps = []; finish(); return; } }
-    log(`${who}: applied automatically \u2014 ${opts.map(o => o.label).join('; ')}`); toast(`${who} resolves`, opts.map(o => o.label).join('; '));
+    { const labs = opts.map(o => o.label || o.summary).filter(Boolean).join('; '); if (labs) { log(`${who}: applied automatically \u2014 ${labs}`); toast(`${who} resolves`, labs); } }
     await run(opts); finish(); })();
 }
 function openCascade(obj, done) {
@@ -1023,4 +1024,17 @@ function gapCovered(clause, opts) {
   const norm = t => String(t || '').toLowerCase().replace(/[~.,;:()]/g, ' ').replace(/\b(a|an|one|two|three|four|five|six|seven)\b/g, w => N[w]).replace(/\bcards\b/g, 'card').replace(/\s+/g, ' ').trim();
   const c = norm(clause).replace(/^(?:then|you) /, '').split(' ').slice(0, 3).join(' ');
   return !!c && (opts || []).some(o => o && o.label && norm(o.label).includes(c));
+}
+
+// v0.99.94 "Look at the top card of your library" (Mishra's Bauble, Sensei's Divining Top's peers): the card is shown, picture and all,
+// in one small window; it stays on top. A toast was too easy to miss.
+function peekTopCard(src) {
+  return new Promise(res => { const top = state.library[0]; if (!top) { toast('Library empty', 'There is no card to look at.'); res(); return; }
+    log(`${src}: looked at the top card of your library: ${top.name}`);
+    const ti = cardInfo(top.name), ty = ((ti && ti.t) || '').split(' // ')[0];
+    const m = modal(`${src}: the top card of your library`, { width: 420 }); let pic = null; try { pic = spotCardEl(top); pic.classList.add('peek-card'); } catch (e) { pic = h('div', { class: 'peek-card', text: top.name }); }
+    m.body.append(h('div', { class: 'peek-wrap' }, pic, h('div', { class: 'peek-txt' }, h('b', { text: top.name }), h('div', { class: 'muted small', text: ty || 'card' }), h('div', { class: 'small', style: 'margin-top:8px', text: 'Only you see it. It stays on top of your library.' }))));
+    let d = false; const end = () => { if (d) return; d = true; m.close(); res(); };
+    m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: end }));
+    const obs = new MutationObserver(() => { if (!document.body.contains(m.el || m.body)) { obs.disconnect(); end(); } }); try { obs.observe(document.body, { childList: true, subtree: true }); } catch (e) { /* no observer */ } });
 }

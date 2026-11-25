@@ -72,6 +72,7 @@ function animApply() {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
     let p = newGame || (mullReset && el.closest('#row-hand')) ? null : prev.cards.get(id); const ff = mullReset ? null : flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2, t = getComputedStyle(el).transform;
+    if (p && p.stage && !el.closest('#stackStage')) { jobs.push(() => wa(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' })); continue; }   // v0.99.94 leaving the stack: no flight, no growing; it fades in where it lands
     if (p) {
       const dx = p.cx - cx, dy = p.cy - cy; if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5 && p.t === t) continue;
       const dist = Math.hypot(dx, dy), staged = castFlightOn() && (p.stage || !!el.closest('#stackStage'));   // v0.90.1 to/from the centre stage
@@ -98,6 +99,7 @@ function animApply() {
   }
   for (const id of gone) {
     const p = prev.cards.get(id), node = prev.nodes.get(id); if (!node) continue;
+    if (p.stage && !newGame) { flightCounter.delete(+id); continue; }   // v0.99.94 the stack pile dissolves its own top card
     const f = findCard(+id); let dest = null;
     if (newGame || (mullReset && p.hand)) dest = centerOf('#libstack'); else if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
     if (!dest && state.stack.some(s => s.id === +id)) dest = centerOf('#stackBox');

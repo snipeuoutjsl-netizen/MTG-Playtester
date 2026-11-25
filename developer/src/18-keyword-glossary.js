@@ -629,7 +629,7 @@ function dealCombatDamage(){
   const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn; try { if(total>0) recapNote('opp',-total); } catch(e) { /* recap only */ }   // v0.99.91 combat damage counts in the recap too
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
-  toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
+  if(!(fxHits.length && polishMotion() && state.oppLife>0)) toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
   if(state.oppLife<=0) log(`Goldfish kill on turn ${state.turn}`);
   if(lifeGain>0 && lifeGainBlocked()){ log(`Lifelink: no life gained (${lifeGainBlocked().g.name})`); lifeGain=0; }
   if(lifeGain>0){ state.life+=lifeGain; log(`Lifelink: gained ${lifeGain} life (${lifeParts.join(', ')}) → ${state.life}`); toast(`Lifelink: +${lifeGain} life`, `You are now at ${state.life}.`); fireTrigger('lifegain',{amount:lifeGain}); }

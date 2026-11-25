@@ -306,7 +306,7 @@ function finishResolving() {   // the spell whose effect was just applied (or sk
 function resolveTopOfStack() {
   if (gameIsOver()) return;   // v0.99.71 the game is over: nothing more is put on the stack or resolved until you choose Keep playing
   if(!state||!state.stack.length) return; snap();
-  noteFlightFrom(state.stack[state.stack.length-1].id,`#stackStage .ss-card.top`);
+  // v0.99.94 no flight off the stack: the card dissolves from the top of the pile (src/91) and simply appears where it goes
   const c=state.stack.pop(); state.priority={active:false,passed:false};
   if(c.opp && practiceResolve(c)) return;   // v0.99.91 the practice opponent's own Counterspell
   if(c.opp){ log(`Opponent's ${c.name} resolves — apply its effects at the table`); toast(`Opponent's ${c.name} resolves`,'Its effects are not tracked here. Adjust your board, life or cards by hand.'); render(); return; }

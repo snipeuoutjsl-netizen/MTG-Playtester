@@ -1,0 +1,304 @@
+# Meta deck sample for the 1.0 rules goal (MTGGoldfish format staples, fetched 2026-11-25; Commander staples from EDHREC lists)
+## Standard
+Ghost Vacuum
+Stock Up
+Spell Pierce
+Torch the Tower
+Negate
+Monstrous Rage
+Lithomantic Barrage
+Beza, the Bounding Spring
+Get Lost
+Temporary Lockdown
+Monastery Swiftspear
+Burst Lightning
+Abrade
+Stormchaser's Talent
+Into the Flood Maw
+Cori-Steel Cutter
+Opt
+Sleight of Hand
+Sunspine Lynx
+Ral, Crackling Wit
+Drake Hatcher
+Disdainful Stroke
+Overlord of the Mistmoors
+Marang River Regent
+Duress
+Authority of the Consuls
+Enduring Curiosity
+Witchstalker Frenzy
+Preacher of the Schism
+Kutzil's Flanker
+Day of Judgment
+Sheoldred, the Apocalypse
+Go for the Throat
+Slickshot Show-Off
+Screaming Nemesis
+Strategic Betrayal
+Requiting Hex
+Spell Snare
+Flashfreeze
+Erode
+Seam Rip
+Bitter Triumph
+Torpor Orb
+The Theorist, Jace Beleren
+Rest in Peace
+Shoot the Sheriff
+Day of Black Sun
+Annul
+Llanowar Elves
+Wan Shi Tong, Librarian
+Fire Magic
+Emeritus of Ideation
+Deadly Cover-Up
+Consult the Star Charts
+Surrak, Elusive Hunter
+Clarion Conqueror
+Soul-Guide Lantern
+Earthbender Ascension
+Icetill Explorer
+Mightform Harmonizer
+Mossborn Hydra
+Smaug the Magnificent
+Sapling Nursery
+No More Lies
+Gene Pollinator
+Voice of Victory
+Sazh's Chocobo
+Leatherhead, Swamp Stalker
+Seasoned Cryomancer
+Sheltered by Ghosts
+Practiced Offense
+Carnivorous Cultivator
+Winternight Stories
+M.O.D.O.K.
+The Wondrous Wasp
+Deceit
+Magebane Lizard
+Emberheart Challenger
+Heartfire Hero
+Manifold Mouse
+Hired Claw
+Vivi Ornitier
+Tishana's Tidebinder
+Quantum Riddler
+Spyglass Siren
+Badgermole Cub
+Floodpits Drowner
+Deep-Cavern Bat
+Fear of Missing Out
+Spider-Sense
+Boomerang Basics
+Multiversal Passage
+Starting Town
+Gloomlake Verge
+Watery Grave
+Cavern of Souls
+Soulstone Sanctuary
+## Pioneer
+Thoughtseize
+Fatal Push
+Mystical Dispute
+Abrupt Decay
+Unlicensed Hearse
+Change the Equation
+Professor Dellian Fel
+Culling Ritual
+Unholy Annex // Ritual Chamber
+Firebending Lesson
+Graveyard Trespasser
+Go Blank
+Iroh's Demonstration
+Extinction Event
+Fiery Impulse
+Invoke Despair
+Redcap Melee
+It'll Quench Ya!
+Elvish Mystic
+Origin of Metalbending
+Academic Dispute
+Pompous Battlemage
+Octopus Form
+Consider
+March of Otherworldly Light
+Reckless Rage
+Fable of the Mirror-Breaker
+Skyclave Apparition
+Improvisation Capstone
+Pyroclasm
+Soul-Scar Mage
+Pest Control
+Greasefang, Okiba Boss
+Iron-Shield Elf
+Formidable Speaker
+Doorkeeper Thrull
+Kumano Faces Kakkazan
+Damping Sphere
+Lightning Strike
+Rending Volley
+Grafdigger's Cage
+Shadowspear
+Blade of the Oni
+Urabrask's Forge
+Bloodtithe Harvester
+Questing Druid
+Brazen Borrower
+Containment Priest
+Enduring Innocence
+Thalia, Guardian of Thraben
+Aven Interrupter
+Kroxa, Titan of Death's Hunger
+Archon of Emeria
+Werefox Bodyguard
+Picklock Prankster
+Arclight Phoenix
+Ouroboroid
+Kaheera, the Orphanguard
+Brimaz, King of Oreskos
+Scorching Shot
+Flowstone Infusion
+Heroes' Hangout
+Anoint with Affliction
+Elspeth, Storm Slayer
+Sokenzan, Crucible of Defiance
+Otawara, Soaring City
+Eiganjo, Seat of the Empire
+Urborg, Tomb of Yawgmoth
+Steam Vents
+Spirebluff Canal
+Boseiju, Who Endures
+## Modern
+Consign to Memory
+Obsidian Charmaw
+Vexing Bauble
+Dismember
+Wrath of the Skies
+Trinisphere
+Prismatic Ending
+Tormod's Crypt
+Meltdown
+Malevolent Rumble
+Blood Moon
+Kozilek's Command
+Teferi, Time Raveler
+Solitude
+Preordain
+Devourer of Destiny
+Pithing Needle
+Sink into Stupor
+High Noon
+Haywire Mite
+Engineered Explosives
+Nature's Claim
+Force of Negation
+Thought-Knot Seer
+Sowing Mycospawn
+Unholy Heat
+Nihil Spellbomb
+Emrakul, the Promised End
+Ragavan, Nimble Pilferer
+Endurance
+Surgical Extraction
+Force of Vigor
+Sanctifier en-Vec
+Nethergoyf
+Street Wraith
+Inquisition of Kozilek
+Sire of Seven Deaths
+Ancient Stirrings
+Wear // Tear
+Springleaf Drum
+Dark Matter Manipulator
+Pick Your Poison
+Lightning Bolt
+Cursed Totem
+Orcish Bowmasters
+The One Ring
+Grief
+Subtlety
+Magus of the Moon
+Dauthi Voidwalker
+Scion of Draco
+Phlage, Titan of Fire's Fury
+Galvanic Discharge
+Celestial Purge
+Ashiok, Dream Render
+Ocelot Pride
+Guide of Souls
+Mishra's Bauble
+Thraben Charm
+Ajani, Nacatl Pariah
+Orim's Chant
+Chalice of the Void
+Misty Rainforest
+## Commander
+Sol Ring
+Arcane Signet
+Command Tower
+Swords to Plowshares
+Path to Exile
+Cultivate
+Kodama's Reach
+Rampant Growth
+Farseek
+Nature's Lore
+Three Visits
+Beast Within
+Chaos Warp
+Counterspell
+Lightning Greaves
+Swiftfoot Boots
+Rhystic Study
+Cyclonic Rift
+Smothering Tithe
+Mind Stone
+Fellwar Stone
+Evolving Wilds
+Reliquary Tower
+Exotic Orchard
+Heroic Intervention
+Eternal Witness
+Demonic Tutor
+Vampiric Tutor
+Toxic Deluge
+Blasphemous Act
+Generous Gift
+Anguished Unmaking
+Champion's Helm
+Talisman of Dominance
+Wayfarer's Bauble
+Commander's Sphere
+Skullclamp
+Esper Sentinel
+Mystic Remora
+Dark Ritual
+Black Market Connections
+Midgar, City of Mako
+Monument to Endurance
+Haywire Mite
+Not Dead After All
+Viscera Seer
+Zulaport Cutthroat
+Blood Artist
+Phyrexian Arena
+Sign in Blood
+Night's Whisper
+Feed the Swarm
+Arcane Denial
+Negate
+Ponder
+Brainstorm
+Harmonize
+Return of the Wildspeaker
+Rishkar's Expertise
+Austere Command
+Wrath of God
+Ashnod's Altar
+Phyrexian Altar
+Thought Vessel
+Everflowing Chalice
+Path of Ancestry
+Terramorphic Expanse
+Bojuka Bog

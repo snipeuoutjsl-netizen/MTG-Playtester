@@ -1,5 +1,14 @@
 
 
+## v0.99.94
+- src/98-rules-batch-5.js: batch5Options (called at the end of batch4Options) + statics (GLOBAL_STATIC_RES, OPP_STATIC_RES, b5NoGain in lifeGainBlocked, b5OneSpellHit in canCastNow, b5Riddler in drawCards, torporOrbOn for artifacts). TOKEN_REPL_RE also reads the newer 'tokens would be created under your control' wording.
+- b4RunSentence applies every option in order (no Apply window). resolveNoPanel: choice only for 'choose one/two/up to' or a Decline option; a later cast permission is not asked.
+- tests/meta-audit.js + tests/meta/sample-2026-11.txt (297 cards from MTGGoldfish staples and Commander staples): 192 fully read. Tests 'meta batch 5' and '5b'.
+- Desk objects (deskObjectsEl) removed.
+- resolveTopOfStack no longer calls noteFlightFrom; animApply fades in a card that came from #stackStage (no flight) and skips the stage card's ghost (the pile's skp-leave dissolves in place: skpLift is opacity + blur, no translate).
+- peekTopCard (src/04) for the lookTop special in resolveNoPanel. runDelayed marks its queued trigger delayed: true; askAlwaysYield skips delayed triggers. Test 'UI bauble'.
+- combatFx: arrows end at #oppNum, per-arrow gradients, attacker lunge (.cb-lunge), #oppBox .cb-hit flash, one running total #cbTotal; the combat damage toast is skipped while the animation runs (not on lethal).
+
 ## v0.99.93
 - src/98-web-update.js: webUpdCheck fetches version.json (no-store) 4 s after load, on visibilitychange and every 20 min; verNewer compares versions; webUpdBanner shows #webUpd with Update now (webUpdReload: sw update, clear caches, reload). Desktop (window.desktop) is skipped.
 - pages.yml writes site/version.json from app/package.json. sw.js: CACHE loa-shell-v2; requests use cache: 'no-cache' (navigations rebuilt from the URL), version.json is no-store.
