@@ -65,13 +65,16 @@ function ifYouDoOptions(tx, obj) {
       m.foot.append(h('button', { text: "I didn't", onclick: () => { m.close(); log(`${src0}: the first part was not done, so "if you do" does nothing (CR 608.2c)`); } }), h('button', { class: 'primary', text: 'I did it', onclick: () => { m.close(); b.fn(); } }));
     } }];
   }
-  if (aO.length !== 1 || bO.length !== 1) return null;
-  const a = aO[0], b = bO[0], src = (obj && obj.sourceName) || 'Ability';
-  const full = { full: true, label: `${a.label}. If you do: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
+  if (aO.length !== 1 || !bO.length) return null;
+  // v0.99.85 several effects after "if you do" (Creeping Chill: damage AND life) are one result of the choice, not separate buttons
+  const a = aO[0], b = bO.length === 1 ? bO[0] : { label: bO.map((o, k) => k ? String(o.label).replace(/^./, c => c.toLowerCase()) : o.label).join(' and '), fn: () => { for (const o of bO) o.fn(); } }, src = (obj && obj.sourceName) || 'Ability';
+  const full = { full: true, final: true, label: `${a.label}. If you do: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
     const before = stateSig(); a.fn();
     afterSettled(() => { if (stateSig() === before) { log(`${src}: you didn't do the first part, so "if you do" does nothing (CR 608.2c)`); toast(`${src}`, `The first part was not done, so the "if you do" part does not happen.`); return; } b.fn(); });
   } };
-  const out = [full]; if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
+  const out = [full];
+  if (/^you may\b/i.test(A) && !rest) out.push({ final: true, label: `Decline (${a.label.replace(/^./, c => c.toLowerCase())} is not done, so nothing else happens)`, fn: () => log(`${src}: declined`) });   // v0.99.85 the "you may" answered no: the window finishes
+  if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
 }
 
 // ---- "Create a ... token. You may attach this Equipment to that token." (CR 701.3, 301.5, 303.4): the second sentence acts on what the first one made.

@@ -2160,7 +2160,7 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   if (o.final) for (const r of applyBtns) if (r.o !== o) { r.b.disabled = true; r.b.title = 'You chose: ' + o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });   // v0.99.85 a final choice (do it / decline) finishes the window
       applyBtns.push({ o, b });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }
@@ -5244,7 +5244,7 @@ function openShockChoice(id, fetched) {
     h('button',{class:'primary',text:`Pay ${N} life — enter untapped`,onclick:()=>{snap();state.life-=N;c.tapped=false;log(`${c.name} entered untapped; paid ${N} life`);next();}})
   );
 }
-let stackDock=null, stackPanelDraw=null, stackUI=null;
+let stackPanelDraw=null, stackUI=null;
 // The stack lives in a permanent panel on the right (v0.70.0), so it never covers the table. On narrow windows (no right column) it falls back to a floating tray.
 let stackBoxShown = true;   // v0.96.16 measured once per frame in layoutPass(): reading offsetParent on every redraw forced a full re-measure
 const stackPanelVisible=()=>stackBoxShown;
@@ -5261,21 +5261,14 @@ function buildStack(m, panel){
     if(!state||state.phase==='idle'){ m.body.replaceChildren(h('div',{class:'muted small',text:'Start a game to use the stack.'})); m.foot.replaceChildren(); if(panel&&box){ box.classList.remove('live'); if(cnt) cnt.textContent=''; } return; }
     const top=state.stack[state.stack.length-1];
     if(panel&&box){ box.classList.toggle('live',state.stack.length>0); if(cnt) cnt.textContent=state.stack.length?String(state.stack.length):''; }
+    // v0.99.85 the stack itself is the pile of cards on the table (src/91); this panel keeps only your opponent's tools.
+    // The old floating stack window and its list, and the "N on the stack · top: …" summary, are gone.
     m.body.replaceChildren(...[
-      state.stack.length?null:h('div',{class:'muted small',text:'Empty. Add what your opponent casts so you can respond to it.'}),
-      (panel&&state.stack.length)?h('div',{class:'stk-sum'},h('b',{text:`${state.stack.length} on the stack`}),h('span',{class:'muted small',text:' · top: '+String(top.ability?(top.sourceName||top.name):top.name).replace(/ — ability$/,'')+'. Resolve it in the stack window on the table.'})):null,
-      (!panel&&state.stack.length)?h('div',{class:'stk'},[...state.stack].reverse().map((c,i)=>h('div',{class:'stk-item'+(i?'':' top')+(c.opp?' opp':c.ability?' abil':'')},
-        h('div',{class:'stk-name'},(i?'':h('span',{class:'stk-top',text:'TOP'})),`${c.opp?"Opponent's ":''}${c.name.replace(/ — ability$/,'')}${c.xValue!==undefined?` (X = ${c.xValue})`:''}`),
-        h('div',{class:'stk-sub',text:(c.opp?'Cast by your opponent':c.ability?(c.trigger?'Triggered ability':'Activated ability'):'Spell')+(c.modeTexts?' — '+c.modeTexts.map(t=>{t=c.xValue!==undefined?t.replace(/\bX\b/g,String(c.xValue)):t;return t.length>40?t.slice(0,37)+'…':t}).join('; '):'')+(targetsText(c)?' → '+targetsText(c):'')})))) : null,
-      state.stack.length?h('div',{class:'stk-hint'},h('i',{class:'stk-dot'}),'Green outlines: cast or activate in response.'):null,
+      state.stack.length?h('div',{class:'muted small',text:'The stack is on the table. Add what your opponent casts in response here.'}):h('div',{class:'muted small',text:'Empty. Add what your opponent casts so you can respond to it.'}),
       h('details',Object.assign({class:'stk-opp'},state.stack.length?{}:{open:true}),h('summary',{text:'Opponent casts something'}),h('div',{class:'setrow'},oppName,oppType,h('button',{text:'Add',onclick:addOpp}))),
       h('div',{class:'pbtns',style:'margin-top:8px'},h('button',{text:'View top 10 of library',onclick:()=>openLibraryManipulation()}))
     ].filter(Boolean));
-    m.foot.replaceChildren(...((state.stack.length&&!panel)?[
-      h('button',{text:'Pass priority',onclick:()=>{m.close();passPriority();}}),
-      (()=>{const cw=cantBeCounteredWhy(top);return h('button',{class:'danger',text:cw?"Can't be countered":'Countered',disabled:!!cw,title:cw?`${top.name} can't be countered: ${cw}`:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}});})(),
-      h('button',{class:'primary',text:'Resolve top',title:`Resolve ${top.opp?"opponent's ":''}${top.name}`,onclick:()=>{resolveTopOfStack();draw();}})
-    ]:(panel?[]:[h('button',{text:'Close',onclick:()=>m.close()})])));
+    m.foot.replaceChildren();
   };
   return draw;
 }
@@ -5287,7 +5280,6 @@ function openStack() {
   // v0.99.56 one stack window only: the panel on the table. "Open the stack" unfolds it; with nothing on the stack it opens the
   // opponent tools (the right column, or the drawer when the phone is upright). The old floating "The Stack" window is gone.
   if(!state||state.phase==='idle')return;
-  if(stackDock){ try{ stackDock.close(); }catch(e){} stackDock=null; }
   ensureStackPanel(); stackPanelDraw();
   if (typeof stackMin !== 'undefined' && stackMin) { stackMin = false; drawStackStage(); }
   const st=$('#stackStage');
@@ -6635,7 +6627,7 @@ function showCardMenu(c, zone, x, y) {
     items.push({ label: 'Top of library', fn: () => moveCard(c.id, 'library', 'top') });
     items.push({ label: 'Bottom of library', fn: () => moveCard(c.id, 'library', 'bottom') });
   }
-  if (!c.token && cardInfo(c.name)) { items.push('-'); items.push({ label: 'How the app reads this card…', fn: () => openCardReading(c.name) }); }
+  if (!c.token && cardInfo(c.name)) { items.push('-'); items.push({ label: 'How the app reads this card…', fn: () => openCardReading(c.name) }); items.push({ label: 'Add to card wishlist', fn: () => { const nm = wishAdd(c.name); if (nm) toast('On your wishlist', `${nm}. Choose its art in Card wishlist (Library contents).`); } }); }   // v0.99.85 wishlist
   showMenu(x, y, items);
 }
 
@@ -7053,8 +7045,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.84';
+const APP_VERSION = '0.99.85';
 const CHANGELOG = [
+  { v: '0.99.85', title: 'The stack as a pile of cards, a card wishlist, and one-click "you may"', notes: ['STACK: the stack is now a pile of real cards on the table, the newest on top and in front, each a little askew. An ability is its card with a paper slip across it carrying the ability\u2019s own words, so you see which part of the card is on the stack. The caption beside the pile reads the top object; point at any card in the pile to read that one. A new spell or ability drops onto the pile, and each one lifts off and fades as it resolves or is countered. Buttons, responding, Resolve all and every rule are unchanged.', 'STACK: old leftovers removed: the "N on the stack \u00b7 top: \u2026" summary in the side panel (the panel keeps your opponent\u2019s tools), the code for the old floating stack window, and the "stack N" chip on the phase strip (it also sat over Cleanup). The "green outlines can respond" hint moved to the pile.', 'RESOLVING: "You may do X. If you do, Y and Z" is one choice: do it, or decline. Creeping Chill no longer shows three separate buttons and a line to tick off; one click and it finishes by itself.', 'LIBRARY: the first chapter of the book is titled "Deck Selection" (it said "The Standard Game", which read like the Standard format).', 'NEW: Card wishlist (Library contents, or "Add to card wishlist" on any card\u2019s menu). Add cards by name, set how many, choose the exact printing (art) you want, then Buy on TCGplayer opens their Mass Entry with the list filled in, or Copy list for any other store.'] },
   { v: '0.99.84', title: 'Rules batch 4', notes: ['RULES (CR 105.1): "of your choice" asks as it resolves. Gods Willing asks for a color and the creature gets protection from it; "becomes the basic land type of your choice" and "the color or colors of your choice" ask too.', 'RULES: protection from a color (and from creatures, artifacts, everything), infect, wither, shadow, fear and intimidate can now be given until end of turn.', 'RULES: "unless <condition>" is read from the turn record. Chart a Course does not ask you to discard after you attacked.', 'RULES (CR 402.2): "You have no maximum hand size until your next turn" (Enter the Infinite) really lifts the limit at cleanup. (CR 702.8) "You may cast spells this turn as though they had flash" (Alchemist\u2019s Refuge, Emergence Zone) lets you cast them at instant speed.', 'RULES: "Vehicles you control become artifact creatures until end of turn" (Armed and Armored) and "it becomes an artifact creature until end of turn" work like crewing. "Equipped creature gets +2/+2 until end of turn" (Adventuring Gear) pumps the equipped creature. "~ gets +N/+N" read with the card\u2019s own name works everywhere.', 'RULES: "Those creatures gain vigilance until end of turn" after "Put a +1/+1 counter on each creature you control" (Ajani Goldmane) or "Creatures you control get …" applies to those creatures.', 'RULES: -X/-X and +X/+X with no X paid (Sickening Shoal) ask for X.', 'RULES: "Activate only if this land entered this turn" (Gathering Place and the other Desert lands) and "if two or more nonland permanents entered under your control this turn" are read.', 'RULES: lure and combat requirements ("blocks this turn if able", "attacks this turn if able", "can\u2019t attack or block this turn") are kept in Active effects on your creature, or noted for the real table when they are on your opponent\u2019s.', '157 fewer sentences are left as Remember notes; 171 more cards are read in full (12,052).'] },
   { v: '0.99.83', title: 'Creatures first on upright phones', notes: ['PHONE (upright): the battlefield puts creatures first. Their row gets about twice the height it had, the lands-and-permanents row a little less, and the deck / graveyard / exile row is lower, so creature cards are drawn much larger (about 40% wider with three creatures out).', 'PHONE (upright): the game-state icons share the first row with Turn and Mana, showing only the lit ones and \u22ef (tap it for all of them). The battlefield gets that row back.'] },
   { v: '0.99.82', title: 'Fewer leftover pop-ups, and fixes for upright phones', notes: ['RESOLVING: an ability aimed at your opponent\u2019s permanent (Ugin, Devourer of Destiny, Skysovereign) no longer opens a window you have to dismiss. It finishes by itself; the stack panel\u2019s "What the app did" and the log say what to do at the real table.', 'Cascade and Discover that find nothing no longer stop on an OK window: a short note says the cards went to the bottom.', 'The last of the browser\u2019s own alert / confirm / prompt boxes from the first versions are gone (deleting a deck, deleting saved images, resetting art, paying life down to 0, X tokens, card data messages). They are the app\u2019s own windows and notes now, which also work on phones that block browser boxes.', 'PHONE (upright): a deck taken off the shelf takes its "in use" ribbon with it, instead of leaving the ribbon floating on the shelf.', 'PHONE (upright): the Library sign starts below the Back to the table and settings buttons, so they no longer cover it.', 'PHONE (upright): when you put cards on the bottom after a mulligan, the hand is large and sits below the prompt; the prompt no longer spills over its own frame or covers the cards.', 'PHONE (upright): the empty box next to Mana in the top bar is gone when no game state is showing.'] },
@@ -9441,7 +9434,8 @@ let stackMin = false;
 function stackKind(c) {
   return c.kindTxt ? c.kindTxt : c.pseudo ? 'Rules check' : c.opp ? "Opponent's " + (c.ability ? 'ability' : 'spell') : c.ability ? (c.trigger ? 'Triggered ability' : c.pw ? 'Loyalty ability' : 'Activated ability') : c.copy ? 'Copy of your spell' : 'Your spell';
 }
-function drawStackStage() {
+function drawStackStage() { const old = skBeforeDraw(); drawStackStage0(); skAfterDraw(old); }   // v0.99.85 cards lift off the pile as they leave (src/91)
+function drawStackStage0() {
   const el = $('#stackStage'); if (!el) return;
   const resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied
   const resPick = !!state && state.phase === 'play' && state.discarding > 0 && (layoutOn('pickCentre') || (!state.stack.length && !!handPick && !!handPick.res));   // v0.94.2 every hand choice, not only ones from a resolving ability
@@ -9498,7 +9492,7 @@ function drawStackStage() {
       (() => { const n = sameSourceRun(); return n >= 2 ? h('button', { class: 'ss-all', text: `Resolve all ${n}`, title: `Resolve every ${top.sourceName} trigger on top of the stack, one after another. It stops at anything from another card, so you can still respond to that.`, onclick: () => resolveAllFromSource() }) : null; })(),
       main];
     if (splitSecondOn()) note = h('div', { class: 'sk-note warn', text: 'Split second: no spells or abilities (except mana abilities) until it resolves.' });
-    hint = h('div', { class: 'sk-hint', text: 'Drag a card here to respond' });
+    hint = h('div', { class: 'sk-hint' }, h('i', { class: 'stk-dot' }), 'Green outlines can be cast or activated in response: tap one, or drag it onto the pile.');   // v0.99.85 the sidebar's hint moved here
   }
   const count = state.stack.length;
   const head = h('div', { class: 'sk-head', onclick: e => { if (e.target.closest('button')) return; stackMin = !stackMin; drawStackStage(); } },
@@ -9510,7 +9504,7 @@ function drawStackStage() {
   if (stackMin && !resPick && !panel) { el.replaceChildren(head); return; }
   if (panel) { el.classList.remove('min'); if (resAb) { note = null; buttons = []; } }   // its own Done button finishes it   // the panel itself says what is resolving and holds its choices
   el.replaceChildren(head,
-    list.length ? h('div', { class: 'sk-list' }, list.map(row)) : null,
+    list.length ? (list.some(c => c && c.pseudo) ? h('div', { class: 'sk-list' }, list.map(row)) : skPile(list, !!(resSpell || resAb || resPick))) : null,   // v0.99.85 a pile of cards (src/91)
     note, panel, linesEl(),
     h('div', { class: 'sk-foot ss-btns' }, ...buttons.filter(Boolean)), hint);
 }
@@ -9535,7 +9529,7 @@ function drawBoardStrip() {
     })))));
   // v0.90.2 floating mana is shown once (top bar), not twice; the strip carries the Next phase / Next turn buttons instead.
   const info = h('div', { class: 'bs-info' },
-    state.stack.length ? h('span', { class: 'bs-stack', text: `stack ${state.stack.length}` }) : null);
+    null);   // v0.99.85 the "stack N" chip on the phase strip is gone: the pile on the table shows the stack (it also sat over Cleanup)
   const acts = bsActionsEl(); el.replaceChildren(track, info, acts);
   scheduleLayout();
 }
@@ -12195,13 +12189,16 @@ function ifYouDoOptions(tx, obj) {
       m.foot.append(h('button', { text: "I didn't", onclick: () => { m.close(); log(`${src0}: the first part was not done, so "if you do" does nothing (CR 608.2c)`); } }), h('button', { class: 'primary', text: 'I did it', onclick: () => { m.close(); b.fn(); } }));
     } }];
   }
-  if (aO.length !== 1 || bO.length !== 1) return null;
-  const a = aO[0], b = bO[0], src = (obj && obj.sourceName) || 'Ability';
-  const full = { full: true, label: `${a.label}. If you do: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
+  if (aO.length !== 1 || !bO.length) return null;
+  // v0.99.85 several effects after "if you do" (Creeping Chill: damage AND life) are one result of the choice, not separate buttons
+  const a = aO[0], b = bO.length === 1 ? bO[0] : { label: bO.map((o, k) => k ? String(o.label).replace(/^./, c => c.toLowerCase()) : o.label).join(' and '), fn: () => { for (const o of bO) o.fn(); } }, src = (obj && obj.sourceName) || 'Ability';
+  const full = { full: true, final: true, label: `${a.label}. If you do: ${String(b.label).replace(/^./, c => c.toLowerCase())}`, fn: () => {
     const before = stateSig(); a.fn();
     afterSettled(() => { if (stateSig() === before) { log(`${src}: you didn't do the first part, so "if you do" does nothing (CR 608.2c)`); toast(`${src}`, `The first part was not done, so the "if you do" part does not happen.`); return; } b.fn(); });
   } };
-  const out = [full]; if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
+  const out = [full];
+  if (/^you may\b/i.test(A) && !rest) out.push({ final: true, label: `Decline (${a.label.replace(/^./, c => c.toLowerCase())} is not done, so nothing else happens)`, fn: () => log(`${src}: declined`) });   // v0.99.85 the "you may" answered no: the window finishes
+  if (rest) for (const o of effectOptionsBase(rest, obj)) out.push(o); return out;
 }
 
 // ---- "Create a ... token. You may attach this Equipment to that token." (CR 701.3, 301.5, 303.4): the second sentence acts on what the first one made.
@@ -14339,7 +14336,7 @@ function drawHall() {
   const chk = (label, checked, onchange, cls) => h('label', { class: 'hall-chk ink-chk ' + (cls || '') }, h('input', { type: 'checkbox', checked, onchange }), h('i', { class: 'ink-box', 'aria-hidden': 'true' }), h('span', { text: label }));
   const left = h('div', { class: 'hall-page left' },
     h('div', { class: 'tm-chap', text: cmd ? 'Chapter II' : 'Chapter I' }),
-    h('div', { class: 'tm-title', text: cmd ? 'The Commander Game' : 'The Standard Game' }),
+    h('div', { class: 'tm-title', text: cmd ? 'Commander Deck Selection' : 'Deck Selection' }),   // v0.99.85 not "The Standard Game": Standard is also an MTG format
     h('div', { class: 'tm-orn', 'aria-hidden': 'true', text: '\u2767' }),
     inGame ? h('div', { class: 'tm-para tm-cont' }, ink(`Continue: ${state.deckName}`, () => closeHall(true), 'primary', 'Back to the game in progress (Esc)'), h('span', { class: 'tm-aside', text: ` — turn ${state.turn || 1}, the game waits for you.` })) : null,
     h('div', { class: 'tm-para' }, h('span', { class: 'bk-lead', text: 'The deck in hand is ' }), h('b', { class: 'tm-deck', text: cur || 'none yet' }), h('span', { class: 'bk-lead', text: '.' })),
@@ -14348,6 +14345,7 @@ function drawHall() {
     h('div', { class: 'tm-begin' }, ink(inGame ? 'Begin a new game' : `Begin with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, 'tm-go' + (inGame ? '' : ' primary'), 'Shuffle up and deal with the deck in hand')));
   const entries = [
     ['Import a deck', () => openDeckEditor(cmd ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'],
+    ['Card wishlist', () => openWishlist(), 'Cards you want, with the art you want, to buy in one go'],   // v0.99.85
     ['Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'],
     ['Settings', () => openSettings()],
     ['Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }],
@@ -14999,6 +14997,148 @@ function fxNoMaxHand() { return !!state && (state.fx || []).some(e => e.kind ===
 function fxFlashAll(c) {
   if (!state) return false; const i = c && cardInfo(c.name); if (!i || i.land) return false; const t = (i.t || '').split(' // ')[0];
   return (state.fx || []).some(e => e.kind === 'flashall' && (e.what === 'spells' || (e.what === 'creature spells' && /\bCreature\b/.test(t)) || (e.what === 'noncreature spells' && !/\bCreature\b/.test(t)) || (e.what === 'artifact spells' && /\bArtifact\b/.test(t)) || (e.what === 'sorcery spells' && /\bSorcery\b/.test(t)) || (e.what === 'instant and sorcery spells' && /\b(?:Instant|Sorcery)\b/.test(t))));
+}
+// ---- v0.99.85 The stack as a real pile of cards
+// Each spell or ability is a card laid on the pile, the newest on top and in front, a little askew like cards thrown on a table.
+// An ability is its source card with a slip of paper across it that carries the ability's own words, so you see which part of the card
+// is on the stack. The caption beside the pile reads out the card you point at (the top one otherwise). When an object leaves the stack
+// it lifts off the pile and fades; a new one drops onto it. The buttons, the resolving panel and every rule stay exactly as they were.
+let skPrevRects = new Map();   // id -> the card's last place on screen, so a card that just left the stack can be shown lifting away
+const skHash = id => { let x = 0; for (const ch of String(id)) x = (x * 31 + ch.charCodeAt(0)) | 0; return x; };
+function skMotion() { try { return !(reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false); } catch (e) { return true; } }
+function skIcon(c) { return c.pseudo ? '⚖' : c.opp ? '⚔' : c.ability ? (c.trigger ? '⚡' : c.pw ? '✦' : '⟳') : c.copy ? '⧉' : '✧'; }
+// what to read for an object: the card, what it is, its targets / modes and the ability's own words
+function skInfo(c) {
+  const base = c.ability ? (c.sourceName || String(c.name).replace(/ — ability$/, '')) : c.name;
+  const tg = (() => { try { return targetsText(c) || ''; } catch (e) { return ''; } })();
+  const modes = c.modeTexts ? c.modeTexts.map(t => c.xValue !== undefined ? t.replace(/\bX\b/g, String(c.xValue)) : t).join('; ') : '';
+  const words = c.ability || c.pseudo ? String(c.text || '').replace(/\s+/g, ' ').trim() : '';
+  return { base, tg, modes, words, kind: stackKind(c), x: c.xValue };
+}
+function skCaption(c, i, busy) {
+  const f = skInfo(c);
+  return h('div', { class: 'skp-cap' + (c.opp ? ' opp' : '') },
+    h('div', { class: 'skp-cap-tag', text: busy && i === 0 ? 'Resolving now' : i === 0 ? 'Resolves next' : `${i + 1}${i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'} from the top` }),
+    h('b', { class: 'skp-cap-name', text: f.base + (f.x !== undefined ? ` (X = ${f.x})` : '') }),
+    h('span', { class: 'skp-cap-kind', text: `${skIcon(c)} ${f.kind}` }),
+    f.words ? h('span', { class: 'skp-cap-words', text: f.words }) : null,
+    f.modes ? h('span', { class: 'skp-cap-words', text: f.modes }) : null,
+    f.tg ? h('span', { class: 'skp-cap-tg', text: '→ ' + f.tg }) : null);
+}
+// list: top of the stack first (as drawStackStage builds it); busy: the first object is being resolved right now
+function skPile(list, busy) {
+  const items = list.filter(Boolean), n = items.length;
+  const wrap = h('div', { class: 'skp' + (n > 1 ? ' many' : '') });
+  const cardW = 118, step = n <= 1 ? 0 : Math.max(9, Math.min(24, Math.round(150 / (n - 1))));
+  const pile = h('div', { class: 'skp-pile', style: `--skw:${cardW}px;height:${Math.round(cardW * 1.4) + step * (n - 1) + 8}px` });
+  const capBox = h('div', { class: 'skp-caps' });
+  const showCap = (c, i) => capBox.replaceChildren(skCaption(c, i, busy));
+  // bottom of the stack first in the DOM, so the top card is painted last (in front)
+  for (let k = n - 1; k >= 0; k--) {
+    const c = items[k], f = skInfo(c), im = showImages && !c.pseudo ? imgFor(f.base) : null, hsh = skHash(c.id), rot = k === 0 ? (hsh % 3) * 0.6 : ((hsh % 7) - 3) * 1.1, dx = ((hsh >> 3) % 9) - 4;
+    const isNew = !skPrevRects.has(String(c.id));
+    const el = h('div', { class: 'ss-card skp-card' + (k === 0 ? ' top' : '') + (busy && k === 0 ? ' busy' : '') + (c.ability ? ' abil' : '') + (c.opp ? ' opp' : '') + (isNew && skMotion() ? ' skp-enter' : ''),
+      'data-id': c.id, tabindex: '0', 'aria-label': `${k === 0 ? 'Top of the stack' : 'On the stack'}: ${f.base}, ${f.kind}${f.words ? ': ' + f.words : ''}`,
+      style: `top:${(n - 1 - k) * step}px;--rot:${rot}deg;--dx:${dx}px;z-index:${n - k}`,
+      onmouseenter: () => { showCap(c, k); try { showPreview(c.ability ? { name: f.base } : c); } catch (e) { /* preview only */ } },
+      onfocus: () => showCap(c, k), onmouseleave: () => showCap(items[0], 0) },
+      im ? h('img', { src: im.front, alt: '', draggable: 'false' }) : h('div', { class: 'skp-face' }, h('b', { text: f.base }), h('span', { text: f.kind })),
+      c.ability ? h('div', { class: 'skp-slip' }, h('i', { text: skIcon(c) }), h('span', { text: (f.words || f.kind).slice(0, 150) })) : null,
+      c.copy ? h('div', { class: 'skp-stamp', text: 'COPY' }) : null,
+      h('span', { class: 'skp-n', text: k === 0 ? (busy ? 'now' : 'next') : String(k + 1) }));
+    pile.append(el);
+  }
+  showCap(items[0], 0);
+  wrap.append(pile, capBox);
+  return wrap;
+}
+// called just before the stack window is redrawn: remember where each card sits, and keep a copy of any that are about to go
+function skBeforeDraw() {
+  const st = $('#stackStage'); if (!st) return null;
+  const old = new Map(); for (const el of st.querySelectorAll('.skp-card[data-id]')) old.set(el.dataset.id, { el, r: el.getBoundingClientRect() });
+  return old;
+}
+// … and just after: a card no longer on the stack lifts off the pile and fades out where it was
+function skAfterDraw(old) {
+  const st = $('#stackStage'); if (!st || !old) return;
+  const now = new Set([...st.querySelectorAll('.skp-card[data-id]')].map(e => e.dataset.id));
+  skPrevRects = new Map([...now].map(id => [id, true]));
+  if (!skMotion()) return;
+  for (const [id, o] of old) {
+    if (now.has(id) || !o.r.width) continue;
+    const g = o.el.cloneNode(true); g.classList.remove('skp-enter', 'ss-card'); g.classList.add('skp-leave'); g.removeAttribute('data-id');
+    Object.assign(g.style, { position: 'fixed', left: o.r.left + 'px', top: o.r.top + 'px', width: o.r.width + 'px', height: o.r.height + 'px', margin: '0', zIndex: 400, pointerEvents: 'none' });
+    document.body.append(g); setTimeout(() => g.remove(), 700);
+  }
+}
+// ---- v0.99.85 Card wishlist: cards you want, each with the printing (art) you want, bought in one go on TCGplayer
+// Kept in this browser ('mtgpt.wishlist'): [{ name, qty, p: { id, set, setName, cn, tcg, year, small } | null }].
+// A chosen printing is sent to TCGplayer as its exact product ("qty-productId"); without one TCGplayer picks ("qty Card Name").
+const WISH_KEY = 'mtgpt.wishlist';
+function wishLoad() { const l = lsGet(WISH_KEY, []); return Array.isArray(l) ? l.filter(x => x && x.name) : []; }
+function wishSave(l) { lsSet(WISH_KEY, l); }
+function wishAdd(name, qty) {
+  const r = resolve(name), nm = r ? r.name : String(name || '').trim(); if (!nm) return null;
+  const l = wishLoad(), have = l.find(x => imgKey(x.name) === imgKey(nm));
+  if (have) have.qty = Math.min(99, (have.qty || 1) + (qty || 1)); else l.push({ name: nm, qty: qty || 1, p: null });
+  wishSave(l); return nm;
+}
+function wishLines(l) { return l.map(x => ({ name: x.name, qty: x.qty || 1, p: x.p, tcgLine: x.p && x.p.tcg ? `${x.qty || 1}-${x.p.tcg}` : `${x.qty || 1} ${x.name}`, textLine: x.p ? `${x.qty || 1} ${x.name} [${String(x.p.set).toUpperCase()}] ${x.p.cn}` : `${x.qty || 1} ${x.name}` })); }
+// card names for the suggestions under the box (the loaded card data), best matches first
+function wishSuggest(q) {
+  const t = String(q || '').trim().toLowerCase(); if (t.length < 2) return [];
+  const out = []; for (const c of CARDS.values()) { const n = c.name || ''; const i = n.toLowerCase().indexOf(t); if (i < 0) continue; out.push([i === 0 ? 0 : 1, n.length, n]); if (out.length > 400) break; }
+  return [...new Set(out.sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]))].slice(0, 8);
+}
+// the printing picker for the wishlist: the same Scryfall list as a deck's art, but it only remembers which printing you want
+function wishPickPrint(name, after) {
+  const m = modal(`Wishlist printing: ${name}`, { width: 980, onClose: after });
+  const l = wishLoad(), item = l.find(x => imgKey(x.name) === imgKey(name)), cur = item && item.p;
+  const status = h('div', { class: 'small muted', text: 'Loading every printing from Scryfall…' }), grid = h('div', { class: 'print-grid' });
+  m.body.append(h('p', { class: 'small muted', text: 'Pick the printing you want to buy. TCGplayer is then asked for exactly that one.' }), status, grid);
+  m.foot.append(h('button', { text: 'Any printing', disabled: !cur, onclick: () => { const l2 = wishLoad(), it = l2.find(x => imgKey(x.name) === imgKey(name)); if (it) { it.p = null; wishSave(l2); } m.close(); } }), h('button', { class: 'primary', text: 'Close', onclick: () => m.close() }));
+  fetchPrints(name).then(list => {
+    if (!list.length) { status.textContent = 'Scryfall has no printings with pictures for this card.'; return; }
+    status.textContent = `${list.length} printing${list.length === 1 ? '' : 's'}${cur ? ' — wanted: ' + printLabel(cur) : ''}. Click one to want it.`;
+    grid.replaceChildren(...list.map(p => { const cell = h('button', { class: 'print-cell' + (cur && cur.id === p.id ? ' on' : ''), title: `${p.setName} #${p.cn}${p.tcg ? '' : ' (not sold on TCGplayer)'}` },
+      h('img', { src: p.small, alt: `${name} — ${p.setName}`, loading: 'lazy', draggable: 'false' }), h('span', { class: 'print-set', text: `${String(p.set).toUpperCase()} #${p.cn}` }), h('span', { class: 'print-year muted small', text: p.year + (p.tcg ? '' : ' · not on TCGplayer') }));
+      cell.addEventListener('click', () => { const l2 = wishLoad(), it = l2.find(x => imgKey(x.name) === imgKey(name)); if (it) { it.p = { id: p.id, set: p.set, setName: p.setName, cn: p.cn, tcg: p.tcg, year: p.year, small: p.small }; wishSave(l2); } m.close(); toast('Printing chosen', `${name}: ${printLabel(p)}`); });
+      return cell; }));
+  }).catch(e => { status.textContent = 'Could not reach Scryfall (' + e.message + '). The printings list needs an internet connection.'; });
+}
+function openWishlist() {
+  const m = modal('Card wishlist', { width: 760 });
+  const inp = h('input', { type: 'text', placeholder: 'Add a card… (type its name)', autocomplete: 'off', style: 'flex:1;min-width:0' });
+  const sug = h('div', { class: 'wl-sug' }), list = h('div', { class: 'wl-list' }), sum = h('div', { class: 'small muted wl-sum' });
+  const add = (n) => { const nm = wishAdd(n || inp.value); if (!nm) return; if (!cardInfo(nm)) toast('Added', `${nm} is not in the loaded card data; it is on the list as typed.`); inp.value = ''; sug.replaceChildren(); draw(); inp.focus(); };
+  inp.addEventListener('input', () => sug.replaceChildren(...wishSuggest(inp.value).map(n => h('button', { class: 'wl-sug-b', text: n, onclick: () => add(n) }))));
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const first = sug.querySelector('button'); add(first && !resolve(inp.value) ? first.textContent : inp.value); } });
+  const thumb = x => { const src = x.p && x.p.small ? x.p.small : (() => { try { const i = imgFor(x.name); return i && i.front; } catch (e) { return null; } })(); return src ? h('img', { class: 'wl-img', src, alt: '', loading: 'lazy', draggable: 'false' }) : h('div', { class: 'wl-img wl-noimg', text: (x.name || '?').charAt(0) }); };
+  const draw = () => {
+    const l = wishLoad();
+    list.replaceChildren(...(l.length ? l.map((x, i) => {
+      const set = q => { const l2 = wishLoad(); if (!l2[i]) return; l2[i].qty = Math.max(1, Math.min(99, q)); wishSave(l2); draw(); };
+      return h('div', { class: 'wl-row' }, thumb(x),
+        h('div', { class: 'wl-txt' }, h('b', { text: x.name }), h('span', { class: 'small muted', text: x.p ? printLabel(x.p) + (x.p.tcg ? '' : ' (not on TCGplayer: sent by name)') : 'Any printing' })),
+        h('div', { class: 'wl-qty' }, h('button', { text: '−', 'aria-label': 'One fewer', onclick: () => set((x.qty || 1) - 1) }), h('span', { text: String(x.qty || 1) }), h('button', { text: '+', 'aria-label': 'One more', onclick: () => set((x.qty || 1) + 1) })),
+        h('button', { text: 'Choose art', onclick: () => wishPickPrint(x.name, draw) }),
+        h('button', { class: 'danger', text: 'Remove', onclick: () => { const l2 = wishLoad(); l2.splice(i, 1); wishSave(l2); draw(); } }));
+    }) : [h('div', { class: 'muted wl-empty', text: 'Nothing on your wishlist yet. Type a card name above to add it, then choose the art you want.' })]));
+    const n = l.reduce((a, x) => a + (x.qty || 1), 0), exact = l.filter(x => x.p && x.p.tcg).length;
+    sum.textContent = l.length ? `${n} card${n === 1 ? '' : 's'} (${l.length} different)${exact ? ` · ${exact} with the exact printing you chose` : ''}` : '';
+    buy.disabled = !l.length; cp.disabled = !l.length; clr.disabled = !l.length;
+  };
+  const copy = async (txt, what) => { try { await navigator.clipboard.writeText(txt); toast('Copied', what); } catch (e) { toast('Could not copy', 'Select the list and copy it yourself.'); } };
+  const cp = h('button', { text: 'Copy list', title: 'With set and collector number, for any store that takes a pasted list', onclick: () => copy(wishLines(wishLoad()).map(l => l.textLine).join('\n'), 'Your wishlist is on the clipboard.') });
+  const clr = h('button', { class: 'danger', text: 'Clear', onclick: async () => { if (await appAsk('Clear the wishlist', 'Remove every card from your wishlist?', 'Clear', true)) { wishSave([]); draw(); } } });
+  const buy = h('button', { class: 'primary', text: 'Buy on TCGplayer', onclick: () => {
+    const ls = wishLines(wishLoad()), url = TCG_MASS + encodeURIComponent(ls.map(l => l.tcgLine).join('||'));
+    if (url.length > 7800) { copy(ls.map(l => l.textLine).join('\n'), 'The list is too long for a link, so it is on the clipboard: paste it into the Mass Entry box that just opened.'); window.open(TCG_MASS, '_blank'); }
+    else window.open(url, '_blank'); } });
+  m.body.append(h('p', { class: 'small muted', text: 'Cards you want, with the art you want. Buy on TCGplayer opens their Mass Entry with the list filled in; nothing is bought until you check out there.' }),
+    h('div', { class: 'setrow' }, inp, h('button', { text: 'Add', onclick: () => add() })), sug, list, sum);
+  m.foot.append(clr, cp, buy, h('button', { text: 'Close', onclick: () => m.close() }));
+  draw(); setTimeout(() => inp.focus(), 30);
 }
 init();
 

@@ -84,7 +84,7 @@ function openShockChoice(id, fetched) {
     h('button',{class:'primary',text:`Pay ${N} life — enter untapped`,onclick:()=>{snap();state.life-=N;c.tapped=false;log(`${c.name} entered untapped; paid ${N} life`);next();}})
   );
 }
-let stackDock=null, stackPanelDraw=null, stackUI=null;
+let stackPanelDraw=null, stackUI=null;
 // The stack lives in a permanent panel on the right (v0.70.0), so it never covers the table. On narrow windows (no right column) it falls back to a floating tray.
 let stackBoxShown = true;   // v0.96.16 measured once per frame in layoutPass(): reading offsetParent on every redraw forced a full re-measure
 const stackPanelVisible=()=>stackBoxShown;
@@ -101,21 +101,14 @@ function buildStack(m, panel){
     if(!state||state.phase==='idle'){ m.body.replaceChildren(h('div',{class:'muted small',text:'Start a game to use the stack.'})); m.foot.replaceChildren(); if(panel&&box){ box.classList.remove('live'); if(cnt) cnt.textContent=''; } return; }
     const top=state.stack[state.stack.length-1];
     if(panel&&box){ box.classList.toggle('live',state.stack.length>0); if(cnt) cnt.textContent=state.stack.length?String(state.stack.length):''; }
+    // v0.99.85 the stack itself is the pile of cards on the table (src/91); this panel keeps only your opponent's tools.
+    // The old floating stack window and its list, and the "N on the stack · top: …" summary, are gone.
     m.body.replaceChildren(...[
-      state.stack.length?null:h('div',{class:'muted small',text:'Empty. Add what your opponent casts so you can respond to it.'}),
-      (panel&&state.stack.length)?h('div',{class:'stk-sum'},h('b',{text:`${state.stack.length} on the stack`}),h('span',{class:'muted small',text:' · top: '+String(top.ability?(top.sourceName||top.name):top.name).replace(/ — ability$/,'')+'. Resolve it in the stack window on the table.'})):null,
-      (!panel&&state.stack.length)?h('div',{class:'stk'},[...state.stack].reverse().map((c,i)=>h('div',{class:'stk-item'+(i?'':' top')+(c.opp?' opp':c.ability?' abil':'')},
-        h('div',{class:'stk-name'},(i?'':h('span',{class:'stk-top',text:'TOP'})),`${c.opp?"Opponent's ":''}${c.name.replace(/ — ability$/,'')}${c.xValue!==undefined?` (X = ${c.xValue})`:''}`),
-        h('div',{class:'stk-sub',text:(c.opp?'Cast by your opponent':c.ability?(c.trigger?'Triggered ability':'Activated ability'):'Spell')+(c.modeTexts?' — '+c.modeTexts.map(t=>{t=c.xValue!==undefined?t.replace(/\bX\b/g,String(c.xValue)):t;return t.length>40?t.slice(0,37)+'…':t}).join('; '):'')+(targetsText(c)?' → '+targetsText(c):'')})))) : null,
-      state.stack.length?h('div',{class:'stk-hint'},h('i',{class:'stk-dot'}),'Green outlines: cast or activate in response.'):null,
+      state.stack.length?h('div',{class:'muted small',text:'The stack is on the table. Add what your opponent casts in response here.'}):h('div',{class:'muted small',text:'Empty. Add what your opponent casts so you can respond to it.'}),
       h('details',Object.assign({class:'stk-opp'},state.stack.length?{}:{open:true}),h('summary',{text:'Opponent casts something'}),h('div',{class:'setrow'},oppName,oppType,h('button',{text:'Add',onclick:addOpp}))),
       h('div',{class:'pbtns',style:'margin-top:8px'},h('button',{text:'View top 10 of library',onclick:()=>openLibraryManipulation()}))
     ].filter(Boolean));
-    m.foot.replaceChildren(...((state.stack.length&&!panel)?[
-      h('button',{text:'Pass priority',onclick:()=>{m.close();passPriority();}}),
-      (()=>{const cw=cantBeCounteredWhy(top);return h('button',{class:'danger',text:cw?"Can't be countered":'Countered',disabled:!!cw,title:cw?`${top.name} can't be countered: ${cw}`:`${top.opp?"Opponent's ":''}${top.name} is countered: it is removed from the stack without resolving`,onclick:()=>{counterTopOfStack();draw();}});})(),
-      h('button',{class:'primary',text:'Resolve top',title:`Resolve ${top.opp?"opponent's ":''}${top.name}`,onclick:()=>{resolveTopOfStack();draw();}})
-    ]:(panel?[]:[h('button',{text:'Close',onclick:()=>m.close()})])));
+    m.foot.replaceChildren();
   };
   return draw;
 }
@@ -127,7 +120,6 @@ function openStack() {
   // v0.99.56 one stack window only: the panel on the table. "Open the stack" unfolds it; with nothing on the stack it opens the
   // opponent tools (the right column, or the drawer when the phone is upright). The old floating "The Stack" window is gone.
   if(!state||state.phase==='idle')return;
-  if(stackDock){ try{ stackDock.close(); }catch(e){} stackDock=null; }
   ensureStackPanel(); stackPanelDraw();
   if (typeof stackMin !== 'undefined' && stackMin) { stackMin = false; drawStackStage(); }
   const st=$('#stackStage');

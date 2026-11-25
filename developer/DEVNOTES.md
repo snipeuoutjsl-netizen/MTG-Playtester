@@ -1,5 +1,7 @@
 
 
+**v0.99.85** src/91-stack-pile.js: skPile(list,busy) replaces the stack rows (rows remain only for pseudo items); drawStackStage wraps drawStackStage0 with skBeforeDraw/skAfterDraw (leave ghosts). Sidebar stack panel = opponent tools only (old floating stack window code removed). bs-stack chip removed. src/92-wishlist.js (mtgpt.wishlist, wishPickPrint, TCG_MASS). ifYouDoOptions combines several 'if you do' effects and adds Decline; option flag `final` disables the rest and lets the panel finish. Hall chapter title 'Deck Selection'.
+
 **v0.99.84** src/90-rules-batch-4.js (called from batch3Options): b4Choose/b4RunSentence ("of your choice" -> substitute -> effectOptions), fx 'nomaxhand' (staticFx), fx 'flashall' (isInstantSpeed via fxFlashAll), Vehicles become creatures, Those creatures gain, combat-requirement notes. effectOptions strips/keeps "X unless <cond>" sentences via evalCond. durationOptions: '~' subject fixed (no \b after ~), equipped creature. GRANTABLE += protection from …, infect, wither, shadow, fear, intimidate. turnCond: this land entered this turn; N or more <type> entered; played a land (fixed). batch3 X pumps ask X when unknown. Audit /tmp/remaudit.js now strips ability words and skips Activate-only / costs / enters-with lines.
 
 **v0.99.83** Portrait mat rows: `74px <creatures ×1.9> auto <bottom ×0.8>` (fitBattlefieldCards). Portrait HUD: #gstates flexes into row 1 (gs-trim nowrap, min 86px).
