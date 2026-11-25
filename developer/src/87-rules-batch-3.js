@@ -65,13 +65,15 @@ function batch3Options(t, sents, obj, src, out, drop) {
     const m = /^(target creature(?: you control)?|~|this creature|it|that creature|enchanted creature|equipped creature) gets ([+-])(x|\d+)\/([+-])(x|\d+) until end of turn(?:, where x is (its power|[^.]+))?\.?$/i.exec(s);
     if (!m || !/x/i.test(m[3] + m[5])) continue;
     const ownPower = /^its power$/i.test(m[6] || ''); if (m[6] && !ownPower) continue;   // other "where X is …" are read by applyWhereX before this
-    if (!ownPower && obj.xValue == null) continue;
+    const askX = !ownPower && obj.xValue == null;   // v0.99.84 X not known (Sickening Shoal, Untamed Might cast without a paid X): ask for it
     const subj = m[1].toLowerCase();
     const who = () => /^target/.test(subj) ? perms().map(x => ({ id: x.id, name: x.name })) : /^(?:enchanted|equipped)/.test(subj) ? (() => { const g = srcPerm(), host = g && g.att != null ? findCard(g.att) : null; return host ? [{ id: host.card.id, name: host.card.name }] : []; })() : (srcPerm() ? [{ id: srcPerm().id, name: src }] : []);
     const val = (id, sign, part) => sign * (/x/i.test(part) ? (ownPower ? b3Power(id) : obj.xValue) : +part);
-    const sp = m[2] === '-' ? -1 : 1, st = m[4] === '-' ? -1 : 1, xs = ownPower ? 'X is its power' : 'X = ' + obj.xValue;
+    const sp = m[2] === '-' ? -1 : 1, st = m[4] === '-' ? -1 : 1, xs = ownPower ? 'X is its power' : askX ? 'choose X' : 'X = ' + obj.xValue;
     out.push({ covers: [s], full: sents.length === 1, label: `${who().map(x => x.name).join(', ') || m[1]} gets ${m[2]}${m[3].toUpperCase()}/${m[4]}${m[5].toUpperCase()} until end of turn (${xs})`, fn: () => {
-      const l = who(); if (!l.length) { toast('No creature', 'There is no creature to change.'); return; } snap();
+      const l = who(); if (!l.length) { toast('No creature', 'There is no creature to change.'); return; }
+      if (askX && obj.xValue == null) { askNumber(`${src}: X`, `What is X for "${s.replace(/\.$/, '')}"?`, 1, v => { if (v == null) return; obj.xValue = Math.max(0, +v || 0); batch3XApply(l, m, sp, st, ownPower, obj, src); }); return; }
+      snap();
       for (const x of l) { const p = val(x.id, sp, m[3]), tt = val(x.id, st, m[5]); addFx({ kind: 'pt', targetId: x.id, p, t: tt, until: 'eot', srcName: src, srcId: obj.sourceId || null }); log(`${src}: ${x.name} gets ${sgnN(p)}/${sgnN(tt)} until end of turn`); }
       runToughnessSBA(); render(); } });
     drop.push(/^Remember \(until end of turn\): .*gets [+-]X\//i);
@@ -114,4 +116,12 @@ function batch3Options(t, sents, obj, src, out, drop) {
       if (mine.length) log(`${src}: you already control ${mine.map(x => x.name).join(', ')}; nothing changes`);
       else { addFx({ kind: 'note', until: 'eot', srcName: src, text: 'You control the stolen creature until end of turn (opponent\'s creature, play it out at the table)' }); log(`${src}: gain control of your opponent's creature until end of turn (apply it at the real table)`); } render(); } });
       drop.push(/^Remember \(until end of turn\): (?:Until end of turn, )?gain control of /i); } }
+  batch4Options(t, sents, obj, src, out, drop);   // v0.99.84 src/90
+}
+
+// v0.99.84 the +X/+X / -X/-X pump once X has been chosen
+function batch3XApply(l, m, sp, st, ownPower, obj, src) {
+  const val = (id, sign, part) => sign * (/x/i.test(part) ? (ownPower ? b3Power(id) : obj.xValue) : +part);
+  snap(); for (const x of l) { const p = val(x.id, sp, m[3]), tt = val(x.id, st, m[5]); addFx({ kind: 'pt', targetId: x.id, p, t: tt, until: 'eot', srcName: src, srcId: obj.sourceId || null }); log(`${src}: ${x.name} gets ${sgnN(p)}/${sgnN(tt)} until end of turn (X = ${obj.xValue})`); }
+  runToughnessSBA(); render();
 }

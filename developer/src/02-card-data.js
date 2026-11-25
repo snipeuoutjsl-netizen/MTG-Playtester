@@ -683,7 +683,8 @@ function hasKw(c, kw) {
   if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
-const GRANTABLE = ['shroud', 'islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
+const GRANTABLE = ['shroud', 'islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender',
+  'infect', 'wither', 'shadow', 'horsemanship', 'fear', 'intimidate', 'protection from white', 'protection from blue', 'protection from black', 'protection from red', 'protection from green', 'protection from creatures', 'protection from artifacts', 'protection from everything', 'protection from multicolored', 'protection from colorless'];   // v0.99.84 more keywords a spell can give until end of turn
 // Keywords a creature has only because of other permanents' static abilities (shown in the preview).
 function grantedKeywords(c) {
   const out = [];
@@ -715,7 +716,7 @@ function staticNote(c) {
 function isInstantSpeed(c) {
   const i = c && cardInfo(c.name); if (!i || i.land) return false;
   const t=(i.t||'').split(' // ')[0];
-  return /\bInstant\b/.test(t) || kwLine(i.tx, 'flash');
+  return /\bInstant\b/.test(t) || kwLine(i.tx, 'flash') || fxFlashAll(c);   // v0.99.84 "… as though they had flash" this turn
 }
 // Summoning sickness: a creature that has not been under your control since your most recent turn began
 // cannot attack or use {T} abilities, unless it has haste. (Goldfish: only your own turns exist.)

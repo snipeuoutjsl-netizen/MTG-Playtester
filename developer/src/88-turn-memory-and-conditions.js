@@ -43,7 +43,11 @@ function turnCond(t, g) {
   if ((m = t.match(/^you(?:'ve| have)? drawn (\w+) or more cards this turn$|^you drew (\w+) or more cards this turn$/))) { const k = CS_NUM(m[1] || m[2]); return isNaN(k) ? null : memCount('drawn') >= k; }
   if (/^you(?:'ve| have)? cast another spell this turn$/.test(t)) return spellsCastNow() >= 1 + (g && g._castCounted === state.turn ? 1 : 0);
   if (/^you(?:'ve| have)? cast (?:a|another) (?:noncreature|instant or sorcery|instant|sorcery|creature|artifact|enchantment) spell this turn$/.test(t)) return null;   // the kind of spell is not recorded yet
-  if (/^you(?:'ve| have)? played a land this turn$/.test(t)) return typeof landDropUsed === 'function' ? landDropUsed() > 0 : null;
+  if (/^you(?:'ve| have)? played a land this turn$/.test(t)) return (state.landsPlayed || 0) > 0;
+  if (/^(?:~|this (?:land|creature|permanent|artifact|enchantment)) entered (?:the battlefield )?this turn$/.test(t)) return !!g && g.enteredTurn === state.turn;   // "Activate only if this land entered this turn"
+  if ((m = t.match(/^(\w+) or more (nonland permanents|creatures|artifacts|lands|permanents) entered (?:the battlefield )?under your control this turn$/))) { const k = CS_NUM(m[1]); if (isNaN(k)) return null;
+    const ty = { 'nonland permanents': x => isNonlandMem(x), creatures: x => /\bCreature\b/.test(x.type || ''), artifacts: x => /\bArtifact\b/.test(x.type || ''), lands: x => /\bLand\b/.test(x.type || ''), permanents: () => true }[m[2]];
+    return memThisTurn('entered', ty).length >= k; }
   // coven: three or more creatures with different powers
   if (/^you control three or more creatures with different powers$/.test(t)) return new Set(state.battlefield.filter(c => permZone(c) === 'creatures').map(c => ptCalc(c).p)).size >= 3;
   return null;
