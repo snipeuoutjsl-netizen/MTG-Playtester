@@ -7059,8 +7059,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.92';
+const APP_VERSION = '0.99.93';
 const CHANGELOG = [
+  { v: '0.99.93', title: 'Phones always get the newest version', notes: ['FIX: the phone and web app could keep showing an older version (with the old Resolving window and Hand chip) for a while after an update. The app now checks for a new version when you open it, when you come back to it and every 20 minutes, and shows "Version … is ready. Update now": one tap reloads into it.', 'FIX: the web app no longer mixes an old app file with a new page: every app file is checked with the server instead of the browser\'s short-term cache.'] },
   { v: '0.99.92', title: 'No more Resolving screen, a new hand handle on phones, combat arrows and room sounds', notes: ['FIX: the Resolving screen is gone for good. When a spell or ability leaves the stack, what it does just happens (Kozilek\'s Command: the tokens appear, the scry window opens, then you draw and it goes to the graveyard). Only a real decision is asked, as one short question: a "you may", a choice between effects, or how much to pay. Anything the app cannot do is a "Do by hand" note.', 'FIX: a spell can no longer be left hanging half-resolved: with no window of its own open, it finishes by itself.', 'PHONES: the hand has a handle on top of the tray instead of the floating Hand chip that covered buttons. Tap it, or swipe it down or up, to hide or show the hand; hidden, only the handle stays at the bottom.', 'NEW: combat arrows fly from your attackers to your opponent with the damage numbers, and a win gets confetti and a short fanfare.', 'NEW: each Library room has its own quiet sound (torches crackling in the dungeon, birds in the grove, wind in the castle, chimes in the tower) and two things on the desk. Turn the sounds off in Settings, Sound: Library room sounds.', 'Cleanup: the old Resolving panel code and styles are removed.'] },
   { v: '0.99.91', title: 'Practice opponent', notes: ['NEW: Practice opponent (Game tools). The goldfish can fight back: choose Aggro, Midrange or Control (or keep the Goldfish) and Easy, Normal or Hard.', 'Its turn happens between yours: it attacks you with a clock that grows (Aggro hits hardest), and Midrange and Control destroy your biggest creature every few turns (not hexproof or indestructible ones). A note and the log say what it did.', 'On your turn a Control opponent may cast Counterspell at a spell you cast: it goes on the stack, so you can respond to it (or let it resolve and your spell is countered). Aggro and Midrange opponents may chump-block your biggest attacker (not fliers or menace; trample still gets through).', 'The opponent\u2019s life box shows who you are playing against. Undo takes back what it did. Puzzles always use the goldfish.', 'Combat damage now counts in the game recap too.'] },
   { v: '0.99.90', title: 'Puzzles', notes: ['NEW: Puzzles (Library contents, or Game tools). Win-this-turn puzzles with real cards: each starts in your main phase with your hand, lands and creatures set out and your opponent at a set life total; find the line that wins before the turn ends. Five to start, from one star to three (Two bolts, Haste makes waste, Spike and spear, Pump and prowess, Everything at once), each with a hint.', 'A bar over the table shows the puzzle, the life to beat, Hint and Restart. Win and it is marked solved (with Next puzzle); end the turn without winning and you can try again.', 'Save this moment as a puzzle (Game tools): freezes any position of your own games (hand, battlefield with tokens and counters, graveyard, exile, the top of your library and both life totals) so you can replay it and look for a better line.'] },
@@ -15634,6 +15635,31 @@ function deskObjectsEl(room) {
   return box;
 }
 function ambPlaying() { return ambNodes.length > 0 && !!ambTimer; }
+// ---- v0.99.93 the web app (and the phone home-screen app) says when a newer version is out, and reloads into it in one tap.
+// A home-screen app on a phone can stay open for days, so "it appears on the next launch" was not enough: v0.99.92 had been
+// out for ten minutes and a phone still showed the old Resolving screen. GitHub Pages publishes version.json with every release.
+function verNewer(a, b) { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; } return false; }
+let webUpdSeen = null;
+function webUpdCheck() {
+  if (window.desktop || typeof location === 'undefined' || location.protocol !== 'https:' || typeof fetch !== 'function') return;
+  fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => { if (j && j.v && verNewer(j.v, APP_VERSION)) webUpdBanner(j.v); }).catch(() => {});
+}
+function webUpdBanner(v) {
+  if (webUpdSeen === v || document.getElementById('webUpd')) return; webUpdSeen = v;
+  const b = h('div', { id: 'webUpd', class: 'web-upd', role: 'status' }, h('span', { text: `Version ${v} is ready.` }),
+    h('button', { class: 'primary', text: 'Update now', onclick: () => webUpdReload() }),
+    h('button', { class: 'web-upd-x', text: '✕', title: 'Later', 'aria-label': 'Later', onclick: () => b.remove() }));
+  document.body.append(b);
+}
+async function webUpdReload() {
+  try { const r = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (r) await r.update(); } catch (e) { /* no worker */ }
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch (e) { /* no caches */ }
+  location.reload();
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  setTimeout(webUpdCheck, 4000); setInterval(webUpdCheck, 20 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') webUpdCheck(); });
+}
 init();
 
 })();
