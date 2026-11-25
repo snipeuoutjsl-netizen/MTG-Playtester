@@ -252,7 +252,11 @@ const RETURN_RE = /\b(?:Return|Put) target ((?:[a-z\-]+ )*?)card (?:with mana va
 function matchesGraveSpec(card, spec) {
   const t=frontType(card)||'';
   if (spec.mv) { const i=cardInfo(card.name), v=i?i.cmc||0:0; if (spec.mv.rel==='or less' ? v>spec.mv.n : spec.mv.rel==='or greater' ? v<spec.mv.n : v!==spec.mv.n) return false; }
-  return spec.words.every(w => w==='legendary' ? /Legendary/i.test(t) : w==='nonlegendary' ? !/Legendary/i.test(t) : w==='nonland' ? !/\bLand\b/i.test(t) : new RegExp('\\b'+w+'\\b','i').test(t));
+  const one = w => w==='legendary' ? /Legendary/i.test(t) : w==='nonlegendary' ? !/Legendary/i.test(t) : w==='nonland' ? !/\bLand\b/i.test(t) : new RegExp('\\b'+w+'\\b','i').test(t);
+  // v0.99.107 "instant or sorcery card", "artifact, creature, or enchantment card": any one of the listed kinds (Snapcaster Mage found nothing before)
+  const ws = (spec.words || []).map(w => w.replace(/,$/, '')).filter(Boolean);
+  if (ws.includes('or') || ws.includes('and/or')) { const alts = ws.filter(w => w !== 'or' && w !== 'and/or'); return alts.some(one); }
+  return ws.every(one);
 }
 let targetChosenFor=null;
 // Carry out the "Return target ..." sentence of a resolving spell. Returns the spell text left for the effect panel.
