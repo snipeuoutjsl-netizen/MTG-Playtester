@@ -5,7 +5,7 @@ import sys, numpy as np
 from PIL import Image
 import importlib.util
 spec = importlib.util.spec_from_file_location('wg', __import__('os').path.join(__import__('os').path.dirname(__import__('os').path.abspath(__file__)), 'wood-gen2.py')); wg = importlib.util.module_from_spec(spec); spec.loader.exec_module(wg)
-P, EX, EY = 2200., 800., 40.
+P, EX, EY = 1300., 800., 40.
 Y0, YF, YA = 540., 836., 876.          # back edge (wall), front edge, bottom of the apron (room coordinates)
 XB0, XB1 = 590., 1010.                 # back edge left/right
 L, T, W, H = 440, 540, 720, 340        # the picture's place in the room
