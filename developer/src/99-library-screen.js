@@ -33,6 +33,7 @@ function drawLibraryScreen(el) {
     h('div', { class: 'lib-brand' }, (() => { const x = h('span', { class: 'lib-logo', 'aria-hidden': 'true' }); x.innerHTML = '<svg viewBox="0 0 40 38" width="34" height="32"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M2 13 20 2l18 11M7 14h26M10 16v17m8-17v17m8-17v17m8-17v17M5 35h30"/></g></svg>'; return x; })(),
       h('span', { class: 'lib-title', text: 'Library of Alexandria' }), h('span', { class: 'lib-sub', text: 'Goldfishing archive' })),
     h('nav', { class: 'lib-nav', 'aria-label': 'Library tools' },
+      (() => { const n = packsToOpen(); const b = btn('Packs', () => openPackScreen(), 'link lib-packs', n ? `You have ${n} pack${n === 1 ? '' : 's'} to open` : 'Open packs you earned by winning games and solving puzzles'); if (n) b.append(h('i', { class: 'lib-badge', text: String(n) })); return b; })(),   // v0.99.106
       btn('Puzzles', () => openPuzzles(), 'link', 'Win-this-turn puzzles, and moments saved from your games'),
       btn('Hand lab', () => openHandLab(libSel || cur), 'link', 'Draw thousands of opening hands for a deck'),
       btn('Wishlist', () => openWishlist(), 'link', 'Cards you want, with the art you want'),
@@ -43,7 +44,7 @@ function drawLibraryScreen(el) {
   // sidebar
   const modeTab = (k, lab, n) => h('button', { class: 'lib-side-row' + (mode === k ? ' on' : ''), onclick: () => { if (mode === k) return; setGameMode(k); libSel = null; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); redraw(); } }, h('span', { text: lab }), h('em', { text: String(n) }));
   const deckRow = n => { let cols = []; try { cols = deckColorsOf(parseDeck(decks[n].text)); } catch (e) { cols = []; }
-    return h('button', { class: 'lib-deck-row' + (n === libSel ? ' on' : '') + (n === cur ? ' cur' : ''), title: n, onclick: () => { libSel = n; redraw(); } }, libPips(cols, 'sm'), h('span', { class: 'lib-deck-nm', text: n }), favs.includes(n) ? h('i', { class: 'lib-star', text: '★' }) : null); };
+    return h('button', { class: 'lib-deck-row' + (n === libSel ? ' on' : '') + (n === cur ? ' cur' : ''), title: n, onclick: () => { libSel = n; if (libFilter === 'collection') libFilter = 'all'; redraw(); } }, libPips(cols, 'sm'), h('span', { class: 'lib-deck-nm', text: n }), favs.includes(n) ? h('i', { class: 'lib-star', text: '★' }) : null); };
   const recent = libRecent().filter(n => inMode.includes(n)).slice(0, 3);
   const search = h('input', { class: 'lib-search', type: 'search', placeholder: `Search ${inMode.length} deck${inMode.length === 1 ? '' : 's'}`, value: libQuery, 'aria-label': 'Search your decks' });
   search.addEventListener('input', () => { libQuery = search.value; const list = el.querySelector('.lib-decklist'); if (list) { const sh = inMode.filter(n => (libFilter !== 'fav' || favs.includes(n)) && (!libQuery || n.toLowerCase().includes(libQuery.toLowerCase()))); list.replaceChildren(...(sh.length ? sh.map(deckRow) : [h('div', { class: 'lib-empty-s', text: 'No deck matches.' })])); } });
@@ -53,6 +54,7 @@ function drawLibraryScreen(el) {
     btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'add', 'Paste a list or load a file'),
     h('button', { class: 'lib-side-row' + (libFilter === 'all' ? ' on' : ''), onclick: () => { libFilter = 'all'; redraw(); } }, h('span', { text: '◈  All decks' }), h('em', { text: String(inMode.length) })),
     h('button', { class: 'lib-side-row' + (libFilter === 'fav' ? ' on' : ''), onclick: () => { libFilter = 'fav'; redraw(); } }, h('span', { text: '★  Favorites' }), h('em', { text: String(inMode.filter(n => favs.includes(n)).length) })),
+    h('button', { class: 'lib-side-row lib-coll-row' + (libFilter === 'collection' ? ' on' : ''), onclick: () => { libFilter = 'collection'; redraw(); } }, h('span', { text: '▣  Archive' }), h('em', { text: String(new Set([...deckCardIndex().keys(), ...Object.values(collState().cards).map(e => e.n)]).size) })),   // v0.99.106 every card in your decks and from packs
     FEATURES.commander ? h('div', { class: 'lib-cap', text: 'Formats' }) : null,
     FEATURES.commander ? modeTab('standard', '◌  Decks', decksInMode(decks, 'standard').length) : null,
     FEATURES.commander ? modeTab('commander', '◌  Commander', decksInMode(decks, 'commander').length) : null,
@@ -63,7 +65,8 @@ function drawLibraryScreen(el) {
     h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk));
   // main: the selected deck
   const main = h('main', { class: 'lib-main' });
-  if (!libSel) {
+  if (libFilter === 'collection') main.append(...collectionPage(redraw).filter(Boolean));   // v0.99.106
+  else if (!libSel) {
     main.append(h('div', { class: 'lib-emptystate' }, h('div', { class: 'lib-crumb', text: mode === 'commander' ? 'Commander' : 'Decks' }),
       h('h1', { class: 'lib-h1', text: 'Your library is empty' }), h('p', { class: 'lib-tag', text: mode === 'commander' ? 'Import a Commander deck: put your commander under a “Commander” heading.' : 'Import a deck list to start goldfishing.' }),
       btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'gold big')));

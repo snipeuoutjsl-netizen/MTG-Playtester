@@ -7150,8 +7150,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.105';
+const APP_VERSION = '0.99.106';
 const CHANGELOG = [
+  { v: '0.99.106', title: 'Packs and the Archive', notes: ['PACKS: winning a game earns a pack (the Victory screen offers to tear it open), and so does solving each built-in puzzle the first time. Packs you have not opened are kept: the Packs button in the Library shows how many.', 'Opening one: choose a set (or Random set), tear the pack open, then turn the cards over one at a time, or Reveal all. A pack is 15 cards from a real set laid out like a booster: a basic land, 10 commons, 3 uncommons and a rare, which is a mythic about 1 time in 8. About 1 pack in 3 has a foil in place of a common. The cards come from Scryfall, so opening needs the internet; a set\'s cards are kept after the first pack from it.', 'THE ARCHIVE (Library sidebar): every card you have. Everything shows all cards; In your decks lists every card across all your decks, with how many decks use it and the most copies one deck needs; From packs shows each printing you opened, with how many you have, foils and rarity (cards from your latest pack are marked New). Filter by deck, card type, set or rarity, and search.', 'The pack wrapper and the card backs are the Library of Alexandria logo (no Magic logos or set symbols).'] },
   { v: '0.99.105', title: 'Puzzle bar fix', notes: ['FIX: the puzzle bar (Hint, Restart, Puzzles) stayed on screen after a puzzle was over. It now goes away as soon as the puzzle is solved or failed, and it stays hidden while the Library is open.'] },
   { v: '0.99.104', title: 'One board layout', notes: ['The Original board layout (the arrangement from before v0.74) is removed, along with the four switches for the parts of the updated layout. Everyone uses the updated layout: two lanes, the slim zone rail, the slimmer right column and the land and artifact piles. If you had switched to Original, the table now opens in the updated layout.', 'Settings, Table tab: the Board layout chooser is gone; the board effects, playmat and frame are unchanged.'] },
   { v: '0.99.103', title: 'Rooms and dungeons', notes: ['ROOMS (Duskmourn): cast a Room one door at a time. The door you cast enters unlocked, and its "when you unlock this door" ability triggers. The card shows both doors as chips: an open padlock for an unlocked door, a closed one for a locked door. Click a locked door (or use the ability menu) to unlock it as a sorcery for its mana cost; unlocking does not use the stack. The Room has only the abilities of its unlocked doors. When both are open it is fully unlocked, and eerie abilities trigger. A Room put onto the battlefield without being cast has both doors locked.', 'DUNGEONS: "venture into the dungeon" is now played out. With no dungeon you choose one of the three, shown as maps. Each venture moves your marker one room down (at a fork you click the room you want on the map), and that room\'s ability goes on the stack and resolves. After the last room the dungeon is completed and leaves the command zone.', 'THE DUNGEON TRACKER: while you are in a dungeon, a Dungeon panel above the Stack shows the map with your marker, the path you took and how many dungeons you have completed. The Dungeon icon among the game-state icons opens the same map (on phones too), with buttons to venture by hand.', 'THE INITIATIVE: "you take the initiative" (or clicking the Initiative icon) ventures into Undercity, and so does each of your upkeeps while you have it. "You become the monarch" is now read too.', 'Conditions about dungeons are read: "if you\'ve completed a dungeon" (Gloom Stalker, Undermountain Adventurer), "as long as you\'ve completed a dungeon" for a whole group (Nadaar gives your other creatures +1/+1), "if you haven\'t completed Tomb of Annihilation" (Acererak). "Whenever you complete a dungeon" triggers, including Dungeon Crawler from your graveyard.', 'FIX: the puzzle bar stayed on screen over the Library; it now hides while the Library is open.', 'UPDATES FROM THE LIBRARY: the Library\'s top bar always shows the version. Click it to check for an update now; when one is out it reads "Update to v…" and installs it (the desktop app) or reloads into it (the web app on phones and computers).'] },
@@ -11759,12 +11760,14 @@ function showGameEnd(which, title, sub) {
   if (!state || $("#gameEndBox") || window.__noGameEnd) return;
   clearPromptsForGameEnd();
   const won = which !== 'you'; won ? matchRecord.w++ : matchRecord.l++;
+  if (won) earnPack(`you won a game with ${currentDeckName() || 'your deck'}`);   // v0.99.106 a win earns a pack
   const name = currentDeckName(); let rc = null; try { rc = recapFinish(won, title || ''); } catch (e) { rc = null; }   // v0.99.89 the game's recap page
   const m = modal(won ? 'You won the game' : 'You lost the game', { width: 560, sticky: true });
   m.el.id = 'gameEndBox'; m.el.classList.add(won ? 'ge-win' : 'ge-loss');
   m.body.append(h('div', { class: 'ge-big', text: won ? 'Victory' : 'Defeat' }), h('div', { class: 'ge-sub', text: title ? title + (sub ? ': ' + sub : '') : (won ? 'The opponent is at 0 life.' : 'You are at 0 life.') }),
     h('div', { class: 'ge-rec', text: `This session: ${matchRecord.w} won, ${matchRecord.l} lost` }),
     rc ? recapEl(rc) : null,
+    won ? h('button', { class: 'ge-pack', title: 'Tear open the pack this win earned (it is kept if you open it later)', onclick: () => { m.close(); openPackScreen(); } }, h('span', { class: 'ge-pack-i', 'aria-hidden': 'true' }), h('b', { text: 'You earned a pack' }), h('span', { text: 'Tear it open' })) : null,
     h('div', { class: 'ge-btns' },
       h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
@@ -15599,9 +15602,11 @@ function startPuzzle0(p) {
 // the game's end inside a puzzle: solved, or the turn ran out
 function puzzleResult(won, why) {
   const pz = state && state.puzzle; if (!pz || pz.over) return; pz.over = true;
-  if (won) { const s = pzSolved(); s[pz.id] = Date.now(); lsSet(PZ_SOLVED, s); }
+  let packNow = false;
+  if (won) { const s = pzSolved(); packNow = !s[pz.id] && !pz.saved; s[pz.id] = Date.now(); lsSet(PZ_SOLVED, s); if (packNow) earnPack(`you solved the puzzle "${pz.title}"`); }   // v0.99.106 the first solve of each puzzle earns a pack
   const m = modal(won ? 'Puzzle solved' : 'Not this time', { width: 460, sticky: true }); m.el.classList.add(won ? 'ge-win' : 'ge-loss');
   m.body.append(h('div', { class: 'ge-big', text: won ? 'Solved!' : 'Try again' }), h('div', { class: 'ge-sub', text: won ? `${pz.title}: your opponent is at ${state.oppLife} life.` : (why || `${pz.title}: your opponent survived the turn.`) }));
+  if (packNow) m.body.append(h('button', { class: 'ge-pack', title: 'Tear open the pack this puzzle earned (it is kept if you open it later)', onclick: () => { m.close(); openPackScreen(); } }, h('span', { class: 'ge-pack-i', 'aria-hidden': 'true' }), h('b', { text: 'First solve: you earned a pack' }), h('span', { text: 'Tear it open' })));
   const p = pzFind(pz.id);
   m.foot.append(h('button', { text: 'Puzzles', onclick: () => { m.close(); openPuzzles(); } }), p ? h('button', { class: won ? '' : 'primary', text: 'Play it again', onclick: () => { m.close(); startPuzzle(p); } }) : null,
     won && pzNext(pz.id) ? h('button', { class: 'primary', text: 'Next puzzle', onclick: () => { m.close(); startPuzzle(pzNext(pz.id)); } }) : null, h('button', { text: 'Close', onclick: () => m.close() }));
@@ -15938,6 +15943,90 @@ function libUpdateBtn() {
       if (v && verNewer(v, APP_VERSION)) { webUpdFound(v); return; }
       if (!v) { toast('Could not check for updates', 'The version list could not be reached. Check your connection and try again; the app also checks by itself every 20 minutes.'); return; }
       toast("You're up to date", `Version ${APP_VERSION} is the newest version.`); }); } });
+}
+// ---- v0.99.106 The Archive: the cards you have. Three views:
+//  - Everything: every card from your decks and your packs, one tile per card name;
+//  - In your decks: every card across all your decks (both formats), with how many decks use it and the most copies one deck needs;
+//  - From packs: every printing you opened, with how many you have (foils apart) and its rarity; cards from your latest pack are New
+//    until you have looked at the Archive.
+// It is a page of the Library (the "Archive" row in the sidebar); the Packs button in the Library's top bar opens packs.
+let collSrc = 'all', collSet = 'all', collRar = 'all', collType = 'all', collDeck = 'all', collQuery = '';
+function openCollection() {
+  try { libFilter = 'collection'; if (typeof hallOpen === 'function' && hallOpen()) drawHall(); else openHall(); } catch (e) { console.error(e); }
+}
+function collStats() { const c = collState(), all = Object.values(c.cards); return { unique: all.length, total: all.reduce((n, e) => n + e.c + e.f, 0), foils: all.reduce((n, e) => n + e.f, 0) }; }
+const COLL_RORDER = { mythic: 0, rare: 1, uncommon: 2, common: 3 };
+const COLL_TYPES = [['Creature', 'Creatures'], ['Planeswalker', 'Planeswalkers'], ['Instant', 'Instants'], ['Sorcery', 'Sorceries'], ['Artifact', 'Artifacts'], ['Enchantment', 'Enchantments'], ['Land', 'Lands']];
+function collTypeOf(name) { const i = cardInfo(name) || resolve(name); const t = String((i && i.t) || '').split(' // ')[0]; return (COLL_TYPES.find(([k]) => new RegExp('\\b' + k + '\\b').test(t)) || ['Other'])[0]; }
+// every card in your decks: name -> { n, decks: Set, need (most copies in one deck), copies (all decks together) }
+function deckCardIndex() {
+  const decks = loadDecks(), out = new Map();
+  for (const [dn, dk] of Object.entries(decks)) { let d; try { d = parseDeck(dk.text); } catch (e) { continue; }
+    const here = new Map(); for (const x of [...(d.main || []), ...(d.side || []), ...(d.commander || [])]) { const r = resolve(x.name), nm = r ? r.name : x.name; here.set(nm, (here.get(nm) || 0) + (x.qty || 1)); }
+    for (const [nm, q] of here) { const e = out.get(nm) || { n: nm, decks: new Set(), need: 0, copies: 0 }; e.decks.add(dn); e.need = Math.max(e.need, q); e.copies += q; out.set(nm, e); } }
+  return out;
+}
+function collectionPage(redraw) {
+  const c = collState(), packCards = Object.values(c.cards), st = collStats(), ps = packState(), di = deckCardIndex(), seen = c.seen || 0;
+  // pictures of deck cards come from the app's image cache
+  if (!collectionPage._asked) { collectionPage._asked = true; try { loadCachedImages([...di.keys()]).then(n => { if (n && libFilter === 'collection') redraw(); }); } catch (e) {} }
+  const zoom = h('div', { class: 'coll-zoom' }); zoom.addEventListener('click', () => zoom.classList.remove('on'));
+  const showZoom = (img, name, cap) => { zoom.replaceChildren(img ? h('img', { src: img, alt: name }) : h('div', { class: 'coll-txt big' }, h('b', { text: name })), h('div', { class: 'coll-zcap', text: cap })); zoom.classList.add('on'); };
+  const pic = (img, name) => { if (!img) return h('div', { class: 'coll-txt' }, h('b', { text: name })); const im = h('img', { src: img, alt: name, loading: 'lazy', draggable: 'false' }); im.addEventListener('error', () => im.replaceWith(h('div', { class: 'coll-txt' }, h('b', { text: name })))); return im; };
+  const deckImg = n => { const im = imgFor(n, null); return im ? im.front : ''; };
+  // ---- the tiles of each view
+  let items = [];
+  if (collSrc === 'packs') {
+    items = packCards.filter(e => (collSet === 'all' || e.set === collSet) && (collRar === 'all' || e.r === collRar || (collRar === 'foil' && e.f > 0)))
+      .sort((a, b) => (b.last || 0) - (a.last || 0) || (COLL_RORDER[a.r] ?? 9) - (COLL_RORDER[b.r] ?? 9) || a.n.localeCompare(b.n))
+      .map(e => ({ key: e.set + '#' + e.cn, n: e.n, img: e.img, cls: 'r-' + e.r + (e.f ? ' has-foil' : ''), foil: e.f > 0, count: `×${e.c + e.f}`, isNew: (e.t || 0) > seen,
+        title: `${e.n} · ${e.sn} #${e.cn} · ${PK_RARITY[e.r] || e.r}${e.f ? ` · ${e.f} foil` : ''}`, cap: `${e.n} · ${e.sn} · ${PK_RARITY[e.r] || e.r} · you have ${e.c}${e.f ? ` + ${e.f} foil` : ''}` }));
+  } else {
+    const byName = new Map();
+    for (const e of packCards) { const x = byName.get(e.n) || { n: e.n, owned: 0, foil: 0, img: e.img, r: e.r, decks: null, last: 0, isNew: false }; x.owned += e.c + e.f; x.foil += e.f; x.last = Math.max(x.last, e.last || 0); x.isNew = x.isNew || (e.t || 0) > seen; if ((COLL_RORDER[e.r] ?? 9) < (COLL_RORDER[x.r] ?? 9)) x.r = e.r; byName.set(e.n, x); }
+    if (collSrc === 'decks') for (const k of [...byName.keys()]) if (!di.has(k)) byName.delete(k);
+    for (const [nm, d] of di) { const x = byName.get(nm) || { n: nm, owned: 0, foil: 0, img: '', r: '', last: 0, isNew: false }; x.deck = d; if (!x.img) x.img = deckImg(nm); byName.set(nm, x); }
+    if (collSrc === 'decks') for (const [k, x] of [...byName]) if (!x.deck) byName.delete(k);
+    items = [...byName.values()].filter(x => (collType === 'all' || collTypeOf(x.n) === collType) && (collDeck === 'all' || (x.deck && x.deck.decks.has(collDeck))))
+      .sort((a, b) => (b.deck ? b.deck.decks.size : 0) - (a.deck ? a.deck.decks.size : 0) || (b.owned - a.owned) || a.n.localeCompare(b.n))
+      .map(x => { const nd = x.deck ? x.deck.decks.size : 0;
+        const parts = [nd ? `in ${nd} deck${nd === 1 ? '' : 's'} (up to ${x.deck.need} in one)` : '', x.owned ? `${x.owned} from packs${x.foil ? `, ${x.foil} foil` : ''}` : ''].filter(Boolean);
+        return { key: x.n, n: x.n, img: x.img, cls: x.r ? 'r-' + x.r : '', foil: x.foil > 0, count: x.owned ? `×${x.owned}` : '', decksN: nd, isNew: x.isNew,
+          title: `${x.n}${parts.length ? ' · ' + parts.join(' · ') : ''}${nd ? '\n' + [...x.deck.decks].join(', ') : ''}`, cap: `${x.n} · ${parts.join(' · ')}` }; });
+  }
+  const tile = it => { const t = h('button', { class: 'coll-tile ' + it.cls, type: 'button', title: it.title }, pic(it.img, it.n), it.foil ? h('i', { class: 'pk-foil' }) : null,
+      it.count ? h('span', { class: 'coll-n', text: it.count }) : null, it.decksN ? h('span', { class: 'coll-dk', text: `${it.decksN} deck${it.decksN === 1 ? '' : 's'}` }) : null, it.isNew ? h('em', { class: 'coll-new', text: 'New' }) : null);
+    t.addEventListener('click', () => showZoom(it.img, it.n, it.cap)); t.addEventListener('mouseenter', () => { try { showPreview({ name: it.n }); } catch (er) {} }); return t; };
+  // ---- controls
+  const tab = (k, lab, n) => h('button', { class: 'coll-tab' + (collSrc === k ? ' on' : ''), type: 'button', onclick: () => { collSrc = k; redraw(); } }, lab, h('em', { text: String(n) }));
+  const allNames = new Set([...di.keys(), ...packCards.map(e => e.n)]);
+  const chip = (cur, set, k, lab) => h('button', { class: 'coll-chip' + (cur === k ? ' on' : ''), type: 'button', onclick: () => { set(k); redraw(); } }, lab);
+  const sel = (opts, cur, set, aria) => { const s = h('select', { class: 'coll-sel', 'aria-label': aria }, ...opts.map(([v, l]) => h('option', { value: v, text: l }))); s.value = opts.some(o => o[0] === cur) ? cur : 'all'; s.addEventListener('change', () => { set(s.value); redraw(); }); return s; };
+  const search = h('input', { class: 'lib-search coll-search', type: 'search', placeholder: 'Search the Archive', value: collQuery, 'aria-label': 'Search the Archive' });
+  const applySearch = () => { const g = document.querySelector('#hall .coll-grid'); if (!g) return; const q = collQuery.toLowerCase(); for (const t of g.children) t.hidden = !!q && !t.title.toLowerCase().includes(q); };
+  search.addEventListener('input', () => { collQuery = search.value; applySearch(); }); setTimeout(applySearch, 0);
+  const filters = collSrc === 'packs'
+    ? [sel([['all', 'All sets'], ...[...new Map(packCards.map(e => [e.set, e.sn])).entries()].sort((a, b) => a[1].localeCompare(b[1]))], collSet, v => collSet = v, 'Set'),
+       h('div', { class: 'coll-chips' }, ...[['all', 'All'], ['mythic', 'Mythic'], ['rare', 'Rare'], ['uncommon', 'Uncommon'], ['common', 'Common'], ['foil', 'Foil']].map(([k, l]) => chip(collRar, v => collRar = v, k, l)))]
+    : [sel([['all', 'All decks'], ...Object.keys(loadDecks()).sort((a, b) => a.localeCompare(b)).map(n => [n, n])], collDeck, v => collDeck = v, 'Deck'),
+       h('div', { class: 'coll-chips' }, chip(collType, v => collType = v, 'all', 'All'), ...COLL_TYPES.map(([k, l]) => chip(collType, v => collType = v, k, l)))];
+  // looking at the Archive marks the pack cards seen (their New marks stay until you leave this page)
+  setTimeout(() => { const v = collState(); const last = Math.max(0, ...Object.values(v.cards).map(e => e.last || 0)); if (last > (v.seen || 0)) { const raw = lsGet(COLL_KEY, {}) || {}; raw.seen = last; lsSet(COLL_KEY, raw); } }, 0);
+  const tag = collSrc === 'packs' ? (st.unique ? `${st.total} card${st.total === 1 ? '' : 's'} from packs, ${st.unique} different${st.foils ? `, ${st.foils} foil` : ''} · ${ps.opened} pack${ps.opened === 1 ? '' : 's'} opened.` : 'Cards you open from packs are kept here.')
+    : collSrc === 'decks' ? `${di.size} different cards across ${Object.keys(loadDecks()).length} deck${Object.keys(loadDecks()).length === 1 ? '' : 's'}.`
+    : `${allNames.size} different cards: ${di.size} in your decks, ${new Set(packCards.map(e => e.n)).size} from packs.`;
+  const empty = collSrc === 'packs' && !st.unique ? h('section', { class: 'lib-panel coll-empty' }, h('div', { class: 'lib-cap', text: 'Nothing here yet' }), h('p', { text: 'Win a game: the Victory screen offers a pack to tear open. Solving a puzzle for the first time earns one too. Every card you open lands here, with how many you have.' }))
+    : !items.length ? h('div', { class: 'lib-empty-s', text: allNames.size ? 'No card matches.' : 'No cards yet: add a deck or open a pack.' }) : null;
+  return [
+    h('div', { class: 'lib-head' },
+      h('div', { class: 'lib-head-t' }, h('div', { class: 'lib-crumb', text: 'Archive' }), h('h1', { class: 'lib-h1', text: 'The Archive' }), h('p', { class: 'lib-tag', text: tag })),
+      h('div', { class: 'lib-head-go' },
+        h('button', { class: 'lib-btn gold big', text: ps.bank ? `Open a pack (${ps.bank})` : 'Open a pack', title: ps.bank ? 'Tear open a pack you earned' : 'Win a game or solve a puzzle for the first time to earn a pack', onclick: () => openPackScreen() }),
+        h('span', { class: 'lib-muted small', text: 'Earn packs by winning games and by solving each puzzle the first time.' }))),
+    h('div', { class: 'coll-tabs', role: 'tablist' }, tab('all', 'Everything', allNames.size), tab('decks', 'In your decks', di.size), tab('packs', 'From packs', st.unique)),
+    h('div', { class: 'coll-bar' }, ...filters, search),
+    empty || h('div', { class: 'coll-grid' }, items.map(tile)),
+    zoom];
 }
 // ---- v0.99.103 The dungeon tracker. The map is drawn from the dungeon's rooms: one row per depth, lines for the paths, the venture
 // marker on the current room, the rooms you passed through in gold, and (while you choose) the rooms you can move to lit up to click.
@@ -16302,6 +16391,7 @@ function drawLibraryScreen(el) {
     h('div', { class: 'lib-brand' }, (() => { const x = h('span', { class: 'lib-logo', 'aria-hidden': 'true' }); x.innerHTML = '<svg viewBox="0 0 40 38" width="34" height="32"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M2 13 20 2l18 11M7 14h26M10 16v17m8-17v17m8-17v17m8-17v17M5 35h30"/></g></svg>'; return x; })(),
       h('span', { class: 'lib-title', text: 'Library of Alexandria' }), h('span', { class: 'lib-sub', text: 'Goldfishing archive' })),
     h('nav', { class: 'lib-nav', 'aria-label': 'Library tools' },
+      (() => { const n = packsToOpen(); const b = btn('Packs', () => openPackScreen(), 'link lib-packs', n ? `You have ${n} pack${n === 1 ? '' : 's'} to open` : 'Open packs you earned by winning games and solving puzzles'); if (n) b.append(h('i', { class: 'lib-badge', text: String(n) })); return b; })(),   // v0.99.106
       btn('Puzzles', () => openPuzzles(), 'link', 'Win-this-turn puzzles, and moments saved from your games'),
       btn('Hand lab', () => openHandLab(libSel || cur), 'link', 'Draw thousands of opening hands for a deck'),
       btn('Wishlist', () => openWishlist(), 'link', 'Cards you want, with the art you want'),
@@ -16312,7 +16402,7 @@ function drawLibraryScreen(el) {
   // sidebar
   const modeTab = (k, lab, n) => h('button', { class: 'lib-side-row' + (mode === k ? ' on' : ''), onclick: () => { if (mode === k) return; setGameMode(k); libSel = null; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); redraw(); } }, h('span', { text: lab }), h('em', { text: String(n) }));
   const deckRow = n => { let cols = []; try { cols = deckColorsOf(parseDeck(decks[n].text)); } catch (e) { cols = []; }
-    return h('button', { class: 'lib-deck-row' + (n === libSel ? ' on' : '') + (n === cur ? ' cur' : ''), title: n, onclick: () => { libSel = n; redraw(); } }, libPips(cols, 'sm'), h('span', { class: 'lib-deck-nm', text: n }), favs.includes(n) ? h('i', { class: 'lib-star', text: '★' }) : null); };
+    return h('button', { class: 'lib-deck-row' + (n === libSel ? ' on' : '') + (n === cur ? ' cur' : ''), title: n, onclick: () => { libSel = n; if (libFilter === 'collection') libFilter = 'all'; redraw(); } }, libPips(cols, 'sm'), h('span', { class: 'lib-deck-nm', text: n }), favs.includes(n) ? h('i', { class: 'lib-star', text: '★' }) : null); };
   const recent = libRecent().filter(n => inMode.includes(n)).slice(0, 3);
   const search = h('input', { class: 'lib-search', type: 'search', placeholder: `Search ${inMode.length} deck${inMode.length === 1 ? '' : 's'}`, value: libQuery, 'aria-label': 'Search your decks' });
   search.addEventListener('input', () => { libQuery = search.value; const list = el.querySelector('.lib-decklist'); if (list) { const sh = inMode.filter(n => (libFilter !== 'fav' || favs.includes(n)) && (!libQuery || n.toLowerCase().includes(libQuery.toLowerCase()))); list.replaceChildren(...(sh.length ? sh.map(deckRow) : [h('div', { class: 'lib-empty-s', text: 'No deck matches.' })])); } });
@@ -16322,6 +16412,7 @@ function drawLibraryScreen(el) {
     btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'add', 'Paste a list or load a file'),
     h('button', { class: 'lib-side-row' + (libFilter === 'all' ? ' on' : ''), onclick: () => { libFilter = 'all'; redraw(); } }, h('span', { text: '◈  All decks' }), h('em', { text: String(inMode.length) })),
     h('button', { class: 'lib-side-row' + (libFilter === 'fav' ? ' on' : ''), onclick: () => { libFilter = 'fav'; redraw(); } }, h('span', { text: '★  Favorites' }), h('em', { text: String(inMode.filter(n => favs.includes(n)).length) })),
+    h('button', { class: 'lib-side-row lib-coll-row' + (libFilter === 'collection' ? ' on' : ''), onclick: () => { libFilter = 'collection'; redraw(); } }, h('span', { text: '▣  Archive' }), h('em', { text: String(new Set([...deckCardIndex().keys(), ...Object.values(collState().cards).map(e => e.n)]).size) })),   // v0.99.106 every card in your decks and from packs
     FEATURES.commander ? h('div', { class: 'lib-cap', text: 'Formats' }) : null,
     FEATURES.commander ? modeTab('standard', '◌  Decks', decksInMode(decks, 'standard').length) : null,
     FEATURES.commander ? modeTab('commander', '◌  Commander', decksInMode(decks, 'commander').length) : null,
@@ -16332,7 +16423,8 @@ function drawLibraryScreen(el) {
     h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk));
   // main: the selected deck
   const main = h('main', { class: 'lib-main' });
-  if (!libSel) {
+  if (libFilter === 'collection') main.append(...collectionPage(redraw).filter(Boolean));   // v0.99.106
+  else if (!libSel) {
     main.append(h('div', { class: 'lib-emptystate' }, h('div', { class: 'lib-crumb', text: mode === 'commander' ? 'Commander' : 'Decks' }),
       h('h1', { class: 'lib-h1', text: 'Your library is empty' }), h('p', { class: 'lib-tag', text: mode === 'commander' ? 'Import a Commander deck: put your commander under a “Commander” heading.' : 'Import a deck list to start goldfishing.' }),
       btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'gold big')));
@@ -16386,6 +16478,175 @@ function drawLibraryScreen(el) {
   }
   el.replaceChildren(h('div', { class: 'lib-app' }, top, h('div', { class: 'lib-body' }, side, main)));
   try { const on = el.querySelector('.lib-decklist .lib-deck-row.on'); if (on) on.scrollIntoView({ block: 'nearest' }); } catch (e) { /* scrolling only */ }
+}
+// ---- v0.99.106 Opening a pack. A screen over everything: the pack (the app's own wrapper: no Magic logos or set symbols), a set to
+// choose (Random set by default), then tear it: the top strip comes off, the cards spill out face down, and you flip them one at a
+// time (the rare is last, as in a real pack) or Reveal all. Rares, mythics and foils light up as they turn. The cards were already
+// added to your Archive when the pack was torn, so closing early loses nothing.
+const PK_RARITY = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', mythic: 'Mythic rare', land: 'Basic land' };
+let pkOpenNow = null;
+const pkTxt = x => h('div', { class: 'pk-txt' }, h('b', { text: x.n }), h('span', { text: (x.rec && x.rec.mc) || '' }), h('i', { text: (x.rec && x.rec.t) || '' }));
+const pkImg = x => { const im = h('img', { src: x.img, alt: x.n, draggable: 'false' }); im.addEventListener('error', () => { const f = im.parentElement; if (f) { f.classList.remove('img'); im.replaceWith(pkTxt(x)); } }); return im; };   // a picture that can't load (offline) shows the card's words
+const pkSvg = (cls, html) => { const d = h('div', { class: cls }); d.innerHTML = html; return d; };
+function openPackScreen() {
+  if (document.querySelector('.pk-ov')) return;
+  const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
+  const ov = h('div', { class: 'pk-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Open a pack' });
+  const close = () => { document.removeEventListener('keydown', onKey, true); ov.classList.add('leaving'); setTimeout(() => ov.remove(), motion ? 260 : 0); pkOpenNow = null; try { if (typeof hallOpen === 'function' && hallOpen()) drawHall(); } catch (e) {} };
+  const onKey = e => { if (!ov.isConnected) { document.removeEventListener('keydown', onKey, true); return; } if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const z = ov.querySelector('.pk-zoom.on'); if (z) z.classList.remove('on'); else close(); } };
+  document.addEventListener('keydown', onKey, true);
+  const zoom = h('div', { class: 'pk-zoom' }); zoom.addEventListener('click', () => zoom.classList.remove('on'));
+  const head = h('div', { class: 'pk-head' }), stage = h('div', { class: 'pk-stage' }), foot = h('div', { class: 'pk-foot' });
+  ov.append(h('button', { class: 'pk-x', type: 'button', text: '✕', title: 'Close (Esc)', 'aria-label': 'Close', onclick: close }), head, stage, foot, zoom);
+  document.body.append(ov); pkOpenNow = { ov, close };
+  const setSel = h('select', { class: 'pk-set', 'aria-label': 'Which set' }, h('option', { value: 'random', text: 'Random set' }));
+  packSets().then(list => { for (const s of list) setSel.append(h('option', { value: s.code, text: `${s.name} (${s.date.slice(0, 4)})` })); const last = packState().lastSet; if (last && [...setSel.options].some(o => o.value === last)) setSel.value = last; upd(); }).catch(() => {});
+  const wrapLabel = h('span', { class: 'pk-wrap-set' });
+  const upd = () => { const o = setSel.options[setSel.selectedIndex]; wrapLabel.textContent = o ? o.textContent.replace(/ \(\d{4}\)$/, '') : 'Random set'; };
+  setSel.addEventListener('change', upd); upd();
+  const wrapper = () => h('button', { class: 'pk-pack', type: 'button', title: 'Tear it open', 'aria-label': 'Tear the pack open' },
+    h('i', { class: 'pk-strip' }, h('i', { class: 'pk-notch' })),
+    h('div', { class: 'pk-face' }, pkSvg('pk-logo', HALL_LOGO), wrapLabel),   // the wrapper is the logo alone (and the set it is from)
+    h('i', { class: 'pk-crimp' }));
+  const choose = () => {
+    const n = packsToOpen(); ov.classList.remove('revealing');
+    head.replaceChildren(h('div', { class: 'lib-cap', text: 'Packs' }), h('h2', { text: n ? `You have ${n} pack${n === 1 ? '' : 's'} to open` : 'No packs to open' }),
+      h('p', { class: 'pk-sub', text: n ? 'Choose a set, then tear the pack open. Each pack holds 10 commons, 3 uncommons, a rare (sometimes a mythic) and a basic land; about one in three has a foil.' : 'Win a game, or solve a puzzle for the first time, to earn a pack. Your opened cards are in the Archive.' }));
+    if (!n) { stage.replaceChildren(h('div', { class: 'pk-empty', text: '0' })); foot.replaceChildren(h('button', { class: 'lib-btn ghost', text: 'View the Archive', onclick: () => { close(); openCollection(); } }), h('button', { class: 'lib-btn ghost', text: 'Close', onclick: close })); return; }
+    const pack = wrapper(); pack.addEventListener('click', () => tear(pack));
+    stage.replaceChildren(h('div', { class: 'pk-packwrap' }, pack, h('div', { class: 'pk-hint', text: 'Click the pack to tear it open' })));
+    foot.replaceChildren(h('label', { class: 'pk-setrow' }, h('span', { text: 'Set' }), setSel), h('button', { class: 'lib-btn gold', text: 'Tear it open', onclick: () => tear(pack) }), h('button', { class: 'lib-btn ghost', text: 'View the Archive', onclick: () => { close(); openCollection(); } }));
+  };
+  let busy = false;
+  const tear = async pack => {
+    if (busy) return; busy = true; pack.classList.add('shaking'); pack.disabled = true;
+    const hint = stage.querySelector('.pk-hint'); if (hint) hint.textContent = 'Looking up the cards…';
+    let res = null; try { res = await openPack(setSel.value); } catch (e) { console.error(e); res = null; }
+    busy = false; if (!ov.isConnected) return;
+    if (!res) { pack.classList.remove('shaking'); pack.disabled = false; if (hint) hint.textContent = 'Click the pack to tear it open'; return; }
+    try { sfx('shuffle'); } catch (e) {}
+    pack.classList.remove('shaking'); pack.classList.add('torn');
+    setTimeout(() => reveal(res), motion ? 700 : 0);
+  };
+  const cardEl = (x, i) => {
+    const inner = h('div', { class: 'pk-inner' },
+      pkSvg('pk-back', HALL_LOGO),
+      h('div', { class: 'pk-front' + (x.img ? ' img' : '') }, x.img ? pkImg(x) : h('div', { class: 'pk-txt' }, h('b', { text: x.n }), h('span', { text: (x.rec && x.rec.mc) || '' }), h('i', { text: (x.rec && x.rec.t) || '' })), x.foil ? h('i', { class: 'pk-foil' }) : null));
+    const el = h('button', { class: `pk-card r-${x.foil ? 'foil' : x.slot}`, type: 'button', style: `--i:${i}`, 'aria-label': `Card ${i + 1}, face down. Click to turn it over.` }, inner,
+      h('div', { class: 'pk-tag' }, h('span', { text: x.foil ? `Foil ${(PK_RARITY[x.r] || x.r).toLowerCase()}` : PK_RARITY[x.slot] || PK_RARITY[x.r] || x.r }), x.isNew ? h('em', { text: 'New' }) : null));
+    el.addEventListener('click', () => { if (!el.classList.contains('up')) flip(el, x); else { zoom.replaceChildren(x.img ? h('img', { src: x.img, alt: x.n }) : h('div', { class: 'pk-txt big' }, h('b', { text: x.n }), h('i', { text: (x.rec && x.rec.t) || '' }), h('p', { text: (x.rec && x.rec.tx) || '' }))); zoom.classList.add('on'); } });
+    return el;
+  };
+  let left = 0, resNow = null;
+  const flip = (el, x) => { if (el.classList.contains('up')) return; el.classList.add('up'); el.setAttribute('aria-label', `${x.n}, ${PK_RARITY[x.slot] || x.r}${x.isNew ? ', new' : ''}`); left--;
+    try { sfx(/rare|mythic|foil/.test(x.slot) || x.foil ? 'win' : 'draw'); } catch (e) {}
+    if (!left) done(); };
+  const done = () => { const r = resNow, nNew = r.cards.filter(c => c.isNew).length, more = packsToOpen();
+    foot.replaceChildren(h('span', { class: 'pk-added', text: `Added to your Archive: ${r.cards.length} cards${nNew ? `, ${nNew} new` : ''}.` }),
+      more ? h('button', { class: 'lib-btn gold', text: `Open another (${more} left)`, onclick: () => choose() }) : null,
+      h('button', { class: 'lib-btn ghost', text: 'View the Archive', onclick: () => { close(); openCollection(); } }), h('button', { class: 'lib-btn ghost', text: 'Close', onclick: close })); };
+  const reveal = res => {
+    resNow = res; left = res.cards.length; ov.classList.add('revealing');
+    head.replaceChildren(h('div', { class: 'lib-cap', text: res.setName }), h('h2', { text: 'Your pack' }), h('p', { class: 'pk-sub', text: 'Click a card to turn it over. The rare is last.' }));
+    const grid = h('div', { class: 'pk-grid' }, res.cards.map(cardEl)); stage.replaceChildren(grid);
+    const all = h('button', { class: 'lib-btn gold', text: 'Reveal all', onclick: () => { all.disabled = true; [...grid.children].forEach((el, i) => setTimeout(() => flip(el, res.cards[i]), motion ? i * 110 : 0)); } });
+    foot.replaceChildren(all);
+    pkFit(grid);
+  };
+  choose();
+  window.addEventListener('resize', () => { const g = ov.querySelector('.pk-grid'); if (g) pkFit(g); });
+}
+// the biggest card size at which the 15 cards fit the stage (5 x 3 on a wide screen, 3 x 5 upright; scrolls on a tiny screen)
+function pkFit(grid) {
+  const st = grid.parentElement; if (!st) return; const W = st.clientWidth - 8, H = st.clientHeight - 8, n = grid.children.length;
+  let best = 60; for (const cols of [8, 5, 4, 3]) { const rows = Math.ceil(n / cols), cw = Math.min((W - (cols - 1) * 12) / cols, ((H - (rows - 1) * 34) / rows - 26) / 1.395); if (cw > best) best = cw; }
+  grid.style.setProperty('--cw', Math.max(60, Math.min(230, Math.floor(best))) + 'px');
+}
+// ---- v0.99.106 Packs. Winning a game earns a pack, and so does solving a puzzle for the first time. A pack is 15 cards from a real set,
+// laid out like a booster: 10 commons, 3 uncommons, 1 rare (a mythic about 1 time in 8, when the set has mythics) and 1 basic land; about
+// one pack in three has a foil in place of a common. The cards come from Scryfall: the set's booster cards are looked up once (search
+// "set:<code> is:booster") and kept in this browser, so later packs of that set open without waiting. Opened cards go to the Collection
+// (src/99-collection.js). Packs you have not opened yet are kept and can be opened any time from the Library.
+const PACK_KEY = 'mtgpt.packs', COLL_KEY = 'mtgpt.collection';
+const PACK_SRC = { fetchJson: url => netFetch(url).then(r => r.ok ? r.json() : null) };   // the tests serve real card objects through this
+function packState() { const v = lsGet(PACK_KEY, null) || {}; return { bank: Math.max(0, +v.bank || 0), opened: +v.opened || 0, earned: Array.isArray(v.earned) ? v.earned.slice(-30) : [], lastSet: v.lastSet || 'random' }; }
+function packSave(p) { lsSet(PACK_KEY, p); }
+function packsToOpen() { return packState().bank; }
+function earnPack(why) {
+  const p = packState(); p.bank++; p.earned.push({ why, at: Date.now() }); packSave(p);
+  try { log(`You earned a pack: ${why}`); } catch (e) {}
+  try { if (typeof hallOpen === 'function' && hallOpen()) drawHall(); } catch (e) {}
+  return p.bank;
+}
+// ---- the sets a pack can come from: Scryfall's main expansions and core sets, newest first (kept for a week)
+async function packSets() {
+  const c = lsGet('mtgpt.packSets', null); if (c && Array.isArray(c.list) && c.list.length && Date.now() - c.at < 7 * 86400000) return c.list;
+  const j = await PACK_SRC.fetchJson('https://api.scryfall.com/sets'); if (!j || !Array.isArray(j.data)) return c && c.list || [];
+  const today = new Date().toISOString().slice(0, 10);
+  const list = j.data.filter(s => ['expansion', 'core'].includes(s.set_type) && !s.digital && s.released_at && s.released_at <= today && (s.card_count || 0) >= 150)
+    .sort((a, b) => b.released_at.localeCompare(a.released_at)).slice(0, 40).map(s => ({ code: s.code, name: s.name, date: s.released_at }));
+  lsSet('mtgpt.packSets', { at: Date.now(), list }); return list;
+}
+// ---- one set's cards by rarity (IndexedDB; the six sets used most recently are kept)
+function packEntry(o) {
+  const f = o.card_faces || [], img = o.image_uris ? (o.image_uris.normal || o.image_uris.large) : (f[0] && f[0].image_uris && f[0].image_uris.normal) || '';
+  const back = !o.image_uris && f[1] && f[1].image_uris ? f[1].image_uris.normal : '';
+  let rec = null; try { rec = compact(o); } catch (e) { rec = null; }
+  return { n: o.name, cn: o.collector_number, r: o.rarity, set: o.set, sn: o.set_name, img, back, basic: /\bBasic\b.*\bLand\b/.test(o.type_line || ''), rec };
+}
+async function packSearchAll(q) {
+  let url = 'https://api.scryfall.com/cards/search?unique=prints&q=' + encodeURIComponent(q), out = [];
+  for (let page = 0; url && page < 8; page++) { const j = await PACK_SRC.fetchJson(url); if (!j || !Array.isArray(j.data)) break; out = out.concat(j.data); url = j.has_more ? j.next_page : null; if (url) await sleep(110); }
+  return out;
+}
+async function packPool(code) {
+  let pool = null; try { pool = await idbGet('pool:' + code); } catch (e) { pool = null; }
+  if (pool && pool.v === 1 && pool.common && pool.common.length >= 10) return pool;
+  const cards = (await packSearchAll(`set:${code} is:booster`)).map(packEntry);
+  let lands = cards.filter(c => c.basic);
+  if (!lands.length) { await sleep(110); lands = (await packSearchAll(`set:${code} type:basic`)).map(packEntry); }
+  pool = { v: 1, code, name: (cards[0] || {}).sn || code, common: [], uncommon: [], rare: [], mythic: [], land: lands };
+  for (const c of cards) if (!c.basic && pool[c.r]) pool[c.r].push(c);
+  if (pool.common.length < 10 || pool.uncommon.length < 3 || !pool.rare.length) return null;
+  try { await idbSet('pool:' + code, pool); const keep = lsGet('mtgpt.packPools', []).filter(x => x !== code); keep.unshift(code); for (const old of keep.slice(6)) idbDelete(['pool:' + old]).catch(() => {}); lsSet('mtgpt.packPools', keep.slice(0, 6)); } catch (e) { /* kept in memory only */ }
+  return pool;
+}
+// ---- what is in one pack (rng = Math.random unless the tests pass their own)
+function packFromPool(pool, rng = Math.random) {
+  const pick = (list, n, avoid) => { const out = [], seen = new Set(avoid || []); for (let g = 0; out.length < n && g < 400; g++) { const c = list[Math.floor(rng() * list.length)]; if (!c || seen.has(c.n)) continue; seen.add(c.n); out.push(c); } return out; };
+  const commons = pick(pool.common, 10), uncommons = pick(pool.uncommon, 3);
+  const rareSlot = pool.mythic.length && rng() < 1 / 8 ? pick(pool.mythic, 1) : pick(pool.rare, 1);
+  const land = pool.land.length ? pick(pool.land, 1) : pick(pool.common, 1, commons.map(c => c.n));
+  const cards = [...land.map(c => ({ ...c, slot: 'land' })), ...commons.map(c => ({ ...c, slot: 'common' })), ...uncommons.map(c => ({ ...c, slot: 'uncommon' }))];
+  if (rng() < 1 / 3) {   // a foil of any rarity takes the place of a common
+    const x = rng(), from = x < 0.7 ? pool.common : x < 0.9 ? pool.uncommon : x < 0.98 || !pool.mythic.length ? pool.rare : pool.mythic;
+    const f = pick(from, 1); if (f.length) { const i = cards.findIndex(c => c.slot === 'common'); cards.splice(i, 1); cards.push({ ...f[0], slot: 'foil', foil: true }); }
+  }
+  cards.push(...rareSlot.map(c => ({ ...c, slot: c.r })));   // the rare (or mythic) is last, as in a real pack
+  return cards;
+}
+// ---- the collection (localStorage: one entry per printing)
+function collState() { const v = lsGet(COLL_KEY, null) || {}; return { cards: v.cards || {}, seen: +v.seen || 0 }; }
+function collAdd(cards) {
+  const c = collState(), now = Date.now();
+  for (const x of cards) { const k = x.set + '#' + x.cn, e = c.cards[k] || { n: x.n, set: x.set, sn: x.sn, cn: x.cn, r: x.r, img: x.img, back: x.back || '', c: 0, f: 0, t: now };
+    if (x.foil) e.f++; else e.c++; e.last = now; c.cards[k] = e; }
+  lsSet(COLL_KEY, c);
+  try { const recs = cards.filter(x => x.rec && !cardInfo(x.n)); if (recs.length) { for (const x of recs) META.set(norm(x.n), normFaces(Object.assign({}, x.rec))); saveMeta(); } } catch (e) { /* card data: the rules engine can read the cards you opened */ }
+}
+// ---- opening one: choose the set, look it up, make the pack, take it from the bank, add the cards, then show the opening
+async function openPack(setCode) {
+  const p = packState(); if (p.bank < 1) { toast('No packs to open', 'Win a game or solve a puzzle for the first time to earn a pack.'); return null; }
+  if (navigator.onLine === false) { toast('Packs need the internet', 'The cards in a pack come from Scryfall. Connect and try again; your packs are kept.'); return null; }
+  let sets = []; try { sets = await packSets(); } catch (e) { sets = []; }
+  if (!sets.length) { toast('Could not reach Scryfall', (typeof lastNetReason !== 'undefined' && lastNetReason) || 'The set list could not be loaded. Your packs are kept; try again later.'); return null; }
+  const tryCodes = setCode && setCode !== 'random' ? [setCode] : sets.map(s => s.code).sort(() => Math.random() - 0.5).slice(0, 4);
+  let pool = null; for (const code of tryCodes) { try { pool = await packPool(code); } catch (e) { pool = null; } if (pool) break; }
+  if (!pool) { toast('Could not open the pack', 'The set\'s cards could not be loaded. Your pack is kept; try again or choose another set.'); return null; }
+  const cards = packFromPool(pool); { const have = collState().cards; for (const x of cards) x.isNew = !have[x.set + '#' + x.cn]; }
+  const q = packState(); q.bank = Math.max(0, q.bank - 1); q.opened++; q.lastSet = setCode || 'random'; packSave(q);
+  collAdd(cards);
+  return { set: pool.code, setName: pool.name, cards };
 }
 // ---- v0.99.103 Room cards (Duskmourn), CR 709.5. A Room is a split card whose halves (doors) are enchantments.
 //  - Casting: you choose one door and cast it (the half chooser); when it resolves the Room enters with THAT door unlocked (709.5b), and its
