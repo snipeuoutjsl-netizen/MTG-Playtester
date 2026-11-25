@@ -10,15 +10,16 @@ const LAYOUT_DEFS = [
   ['gyFan', 'Fan graveyard / exile on hover', 'Hover the graveyard or exile pile to fan out its top three cards; click to open the whole zone']
 ];
 const layoutOn = k => !!(settings.layout && settings.layout[k] !== false);
-// v0.74 Board arrangement: 'original' (the layout up to v0.73) or 'updated'. Each part of the updated layout has its own switch (Settings > Layout).
+// v0.74 Board arrangement: the parts of the updated layout (each sets a body class; v0.99.104 all are always on)
 const LAY_DEFS = [
   ['lanes', 'Two lanes', 'Creatures get one wide lane across the top and are centred in it; lands and other permanents share one band below, lands on the left.'],
   ['rail', 'Slim zone rail', 'Library, graveyard and exile become three card-sized slots on a slim rail at the edge. Click one to open it; hover for a list.'],
   ['side', 'Slimmer right column', 'The enlarged card preview, the stack and the log share a narrower right column (286px instead of 330px), so the board is wider.'],
   ['mix', 'Land and artifact piles', 'Untapped lands (and mana artifacts) that make the same colours share a pile, all tapped ones share one pile, and a land or artifact with an activated ability only piles with exact copies. Other non-creature artifacts pile when they are identical. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
 ];
-const layMode = () => settings.layoutMode !== 'original';
-const layV = k => layMode() && !(settings.lay && settings.lay[k] === false);
+// v0.99.104 the original layout (before v0.74) and the per-part switches are gone: the updated layout, all parts on, is the only one
+const layMode = () => true;
+const layV = k => true;
 function applyLayout() {
   const b = document.body; if (!b) return;
   b.classList.toggle('lay-new', layMode());

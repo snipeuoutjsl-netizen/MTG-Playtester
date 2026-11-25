@@ -7150,8 +7150,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.103';
+const APP_VERSION = '0.99.104';
 const CHANGELOG = [
+  { v: '0.99.104', title: 'One board layout', notes: ['The Original board layout (the arrangement from before v0.74) is removed, along with the four switches for the parts of the updated layout. Everyone uses the updated layout: two lanes, the slim zone rail, the slimmer right column and the land and artifact piles. If you had switched to Original, the table now opens in the updated layout.', 'Settings, Table tab: the Board layout chooser is gone; the board effects, playmat and frame are unchanged.'] },
   { v: '0.99.103', title: 'Rooms and dungeons', notes: ['ROOMS (Duskmourn): cast a Room one door at a time. The door you cast enters unlocked, and its "when you unlock this door" ability triggers. The card shows both doors as chips: an open padlock for an unlocked door, a closed one for a locked door. Click a locked door (or use the ability menu) to unlock it as a sorcery for its mana cost; unlocking does not use the stack. The Room has only the abilities of its unlocked doors. When both are open it is fully unlocked, and eerie abilities trigger. A Room put onto the battlefield without being cast has both doors locked.', 'DUNGEONS: "venture into the dungeon" is now played out. With no dungeon you choose one of the three, shown as maps. Each venture moves your marker one room down (at a fork you click the room you want on the map), and that room\'s ability goes on the stack and resolves. After the last room the dungeon is completed and leaves the command zone.', 'THE DUNGEON TRACKER: while you are in a dungeon, a Dungeon panel above the Stack shows the map with your marker, the path you took and how many dungeons you have completed. The Dungeon icon among the game-state icons opens the same map (on phones too), with buttons to venture by hand.', 'THE INITIATIVE: "you take the initiative" (or clicking the Initiative icon) ventures into Undercity, and so does each of your upkeeps while you have it. "You become the monarch" is now read too.', 'Conditions about dungeons are read: "if you\'ve completed a dungeon" (Gloom Stalker, Undermountain Adventurer), "as long as you\'ve completed a dungeon" for a whole group (Nadaar gives your other creatures +1/+1), "if you haven\'t completed Tomb of Annihilation" (Acererak). "Whenever you complete a dungeon" triggers, including Dungeon Crawler from your graveyard.', 'FIX: the puzzle bar stayed on screen over the Library; it now hides while the Library is open.', 'UPDATES FROM THE LIBRARY: the Library\'s top bar always shows the version. Click it to check for an update now; when one is out it reads "Update to v…" and installs it (the desktop app) or reloads into it (the web app on phones and computers).'] },
   { v: '0.99.102', title: 'Double-faced cards, read face by face', notes: ['FIX: a land on the back of a modal double-faced card (Soporific Springs, Emeria, Shatterskull, Fell Mire, Agadeem, Turntimber, Witch-Blessed Meadow ...) tapped for nothing. So did a transformed land (Azcanta, the Sunken Ruin; Temple of Civilization; Itlimoc). Each face now makes the mana its own text says.', 'FIX: a Pathway made both of its colours; each face now makes only its own (Hengegate W, Mistgate U).', 'A modal double-faced card in your hand asks which face when you use it: play the land face with your land drop, or cast the spell face. Pathways can be played as either face, and a card with two spell faces can be cast as its back face (Valki or Tibalt, Esika or The Prismatic Bridge). The face you cast is the permanent it becomes.', 'A modal back face has its own mana value (Tibalt 7, Soporific Springs 0); a transformed face keeps the front face\'s. The halves of split, adventure and flip cards have their own colours (Ice is blue, Stomp red).', 'Puzzles: their cards now load like a deck\'s. Card data is looked up from Scryfall before the puzzle starts, and the pictures fill in as you play (before, cards not in your decks showed as text placeholders).', 'The deck box: point at a card and it shows enlarged in a column beside the stacks, never over them.'] },
   { v: '0.99.101', title: 'The deck box', notes: ['The Library’s deck page shows the deck in a 3D deck box between its name and Begin goldfish. It floats, turns toward the pointer, and its lid lifts a little when you point at it.', 'Click the box: the lid opens and the cards come out the way your opening hand is dealt, one at a time, landing laid out on the screen by card type in mana-value order (one stack per card, its copies fanned down).', 'Click a card to see it large (click again, or Escape, to put it down). Close the box, press Escape or click the backdrop and the cards fly back in and the lid shuts.'] },
@@ -9458,15 +9459,16 @@ const LAYOUT_DEFS = [
   ['gyFan', 'Fan graveyard / exile on hover', 'Hover the graveyard or exile pile to fan out its top three cards; click to open the whole zone']
 ];
 const layoutOn = k => !!(settings.layout && settings.layout[k] !== false);
-// v0.74 Board arrangement: 'original' (the layout up to v0.73) or 'updated'. Each part of the updated layout has its own switch (Settings > Layout).
+// v0.74 Board arrangement: the parts of the updated layout (each sets a body class; v0.99.104 all are always on)
 const LAY_DEFS = [
   ['lanes', 'Two lanes', 'Creatures get one wide lane across the top and are centred in it; lands and other permanents share one band below, lands on the left.'],
   ['rail', 'Slim zone rail', 'Library, graveyard and exile become three card-sized slots on a slim rail at the edge. Click one to open it; hover for a list.'],
   ['side', 'Slimmer right column', 'The enlarged card preview, the stack and the log share a narrower right column (286px instead of 330px), so the board is wider.'],
   ['mix', 'Land and artifact piles', 'Untapped lands (and mana artifacts) that make the same colours share a pile, all tapped ones share one pile, and a land or artifact with an activated ability only piles with exact copies. Other non-creature artifacts pile when they are identical. Every land in a pile keeps its name visible, and clicking one land taps or untaps just that land.']
 ];
-const layMode = () => settings.layoutMode !== 'original';
-const layV = k => layMode() && !(settings.lay && settings.lay[k] === false);
+// v0.99.104 the original layout (before v0.74) and the per-part switches are gone: the updated layout, all parts on, is the only one
+const layMode = () => true;
+const layV = k => true;
 function applyLayout() {
   const b = document.body; if (!b) return;
   b.classList.toggle('lay-new', layMode());
@@ -9849,7 +9851,7 @@ let settingsTab = 'gfx';
 // windows have their own tabs. ('mat' and 'snd' panes are still built, then folded into their merged tab.)
 const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['lib', 'Library'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
 const SET_TAB_ALIAS = { mat: 'board', snd: 'anim' };
-const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged (lanes, zone rail, piles, board effects), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'Board effects (piles, combat lane, turn strip and more), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['Library of Alexandria (MTG Playtester) is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -10003,20 +10005,7 @@ function openSettings() {
     return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
   const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.mat=h('div',{class:'settab'}); P.snd=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox); P.a11y.append(buildA11yTab());
-  { const box = h('div'), draw = () => {
-      const mk = (v, label, desc) => { const r = h('input', { type: 'radio', name: 'laymode' }); r.checked = (settings.layoutMode || 'updated') === v; r.addEventListener('change', () => { settings.layoutMode = v; saveSettings(); applyLayout(); render(); draw(); });
-        return h('label', { class: 'teachopt' }, r, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); };
-      box.replaceChildren(
-        h('div', { class: 'fhead', text: 'Board layout' }),
-        mk('updated', 'Updated', 'two lanes, slim zone rail, slimmer right column, one pile per land name'),
-        mk('original', 'Original', 'the arrangement from before v0.74. Switch back any time; the table changes immediately'),
-        h('div', { class: 'fhead', text: 'Parts of the updated layout' }),
-        h('div', { class: 'small muted', style: 'margin:-2px 0 6px', text: layMode() ? 'Each part has its own switch.' : 'These apply only when Updated is selected.' }),
-        h('div', { class: 'setgrid' }, LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
-          cb.addEventListener('change', () => { settings.lay = { ...(settings.lay || {}), [k]: cb.checked }; saveSettings(); applyLayout(); render(); });
-          return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })),
-        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat and the frame are further down this tab.' }));
-    }; draw(); P.layout.append(box); }
+  // v0.99.104 the Board layout chooser (Updated / Original) and its part switches are removed: the updated layout is the only one
   const foilBox=h('div');
   const drawFoil=()=>{ const sel=h('select'); for(const [v,l] of [['off','Off'],['some','Some cards (about 1 in 5)'],['all','Every card']]) sel.append(h('option',{value:v,text:l})); sel.value=settings.foil||'off';
     sel.addEventListener('change',()=>{settings.foil=sel.value;saveSettings();render();});
