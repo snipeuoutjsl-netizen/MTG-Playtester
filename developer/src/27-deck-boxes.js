@@ -243,7 +243,8 @@ function openDeckPicker() {   // v0.99.44 if the bookcase itself fails, a plain 
 function bookcaseEl(names, cur, mode, cb) {
   if (!names.length) return h('div', { class: 'muted bk-empty', text: mode === 'commander' ? 'No Commander decks yet. Use “Import / new deck” and put your commander under a “Commander” heading.' : 'No decks yet. Use “Import / new deck” to paste a decklist.' });
   BOOK_SCALE = cb.scale || 1;
-  try { return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / BOOKS_PER_SHELF)) }, (_, r) => h('div', { class: 'bk-shelf', style: `--sk:${r}` }, h('div', { class: 'bk-row' }, names.slice(r * BOOKS_PER_SHELF, (r + 1) * BOOKS_PER_SHELF).map(n => deckBoxEl(n, n === cur,
+  const per = cb.perShelf || BOOKS_PER_SHELF;   // v0.99.97 the Library sets its own shelf size
+  try { return h('div', { class: 'bk-case' }, Array.from({ length: Math.max(cb.minShelves || 0, Math.ceil(names.length / per)) }, (_, r) => h('div', { class: 'bk-shelf', style: `--sk:${r}` }, h('div', { class: 'bk-row' }, names.slice(r * per, (r + 1) * per).map(n => deckBoxEl(n, n === cur,
     () => cb.pick(n), () => openDeckArtPicker(n, cb.redraw), () => cb.edit(n), () => openCustomArt(n, cb.redraw), () => openSideboarding(n, cb.redraw),
     (tile, d) => pullDeckBox(cb.host, tile, Object.assign(d, { redraw: cb.redraw, beginLabel: cb.beginLabel, scene: cb.scene }))))), h('div', { class: 'bk-plank' })))); } finally { BOOK_SCALE = 1; }
 }

@@ -36,7 +36,7 @@ const up = await p.evaluate(()=>({ ui: document.documentElement.classList.contai
 ok('upright phone gets the one-column table (lands left and other permanents right in one zone), no sideways scrolling', up.ui && up.w === 520 && up.sw <= up.w && up.col === 1 && up.matCols === 2 && up.landsLeft && up.drawer !== 'none', JSON.stringify(up));
 await p.evaluate(()=>__d.openHall()); await p.waitForTimeout(600);
 const hp = await p.evaluate(()=>({ portrait: document.getElementById('hall').classList.contains('portrait'), shelves: [...document.querySelectorAll('#hall .bk-shelf')].filter(x=>getComputedStyle(x).display!=='none').length }));
-ok('upright Library: portrait room with three shelves', hp.portrait && hp.shelves === 3, JSON.stringify(hp)); await p.evaluate(()=>__d.closeHall(false));
+ok('upright Library: portrait room with four shelves', hp.portrait && hp.shelves === 4, JSON.stringify(hp)); await p.evaluate(()=>__d.closeHall(false));
 // v0.99.92 the hand's handle is part of the hand tray (not floating over the table or a window); tapping it tucks and raises the hand
 { await p.evaluate(()=>{ document.getElementById('modalRoot').innerHTML=''; document.body.classList.remove('hand-tuck'); __d.render(); }); await p.waitForTimeout(300);
   const b0 = await p.evaluate(()=>{ const t=document.getElementById('handTab'), r=t.getBoundingClientRect(); return { inTray: t.parentElement && t.parentElement.id === 'handWrap', y: Math.round(r.top), x: r.left + r.width/2, cy: r.top + r.height/2, w: Math.round(r.width), txt: t.textContent }; });

@@ -2837,12 +2837,6 @@ html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bot
 #hall.v2:not(.portrait) .dc-torch { top: 250px; } #hall.v2:not(.portrait) .dc-torch.l { left: 34px; } #hall.v2:not(.portrait) .dc-torch.r { left: 1522px; }
 #hall.v2:not(.portrait) .dc-candle.a { left: 44px; top: 200px; } #hall.v2:not(.portrait) .dc-candle.b { left: 1532px; top: 240px; } #hall.v2:not(.portrait) .dc-candle.c { left: 1530px; top: 440px; transform: none; }
 /* each room's bookcase wood (2D boards, so the filter is safe) */
-#hall.v2.room-castle .hall-case > i, #hall.v2.room-castle .bk-plank { filter: saturate(.15) brightness(1.15) contrast(1.05); }
-#hall.v2.room-castle .hall-case { filter: saturate(.35); }
-#hall.v2.room-dungeon .hall-case, #hall.v2.room-dungeon .bk-plank { filter: brightness(.55) saturate(.6); }
-#hall.v2.room-tower .hall-case, #hall.v2.room-tower .bk-plank { filter: hue-rotate(-30deg) saturate(1.1) brightness(.7); }
-#hall.v2.room-grove .hall-case, #hall.v2.room-grove .bk-plank { filter: brightness(1.35) saturate(.55) sepia(.1); }
-#hall.v2:not(.portrait) .bk-row .bk-face.bottom { display: none; }   /* we look at the shelves from the front: a book's underside never shows */
 /* with a deck taken down, its cards are laid out on the desk, so the open book stands up in front of the bookcase (like a lectern) */
 #hall.v2:not(.portrait) .hall-tome { transition: top .45s cubic-bezier(.22,1,.36,1), height .45s cubic-bezier(.22,1,.36,1), transform .45s cubic-bezier(.22,1,.36,1); }
 #hall.v2:not(.portrait) .hall-tome.deck-open { top: 150px; height: 410px; transform: translateZ(70px) rotateX(6deg); }
@@ -2886,7 +2880,6 @@ html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bot
 #hall.v2.portrait .bk-row { bottom: auto; top: 0; height: 160px; padding: 0 24px; z-index: 1; }
 #hall.v2.portrait .bk-plank { top: 156px; height: 24px; transform: none; z-index: 3; background: linear-gradient(180deg, rgba(255,230,185,.30) 0, rgba(255,215,160,.12) 7px, rgba(0,0,0,.28) 8px, rgba(255,220,170,.16) 9px, rgba(0,0,0,0) 14px, rgba(0,0,0,.35) 100%), var(--wood-plank) 0 20% / 900px auto, #6a4020; box-shadow: 0 7px 10px -2px rgba(0,0,0,.65); }
 #hall.v2.portrait .bk-plank::before, #hall.v2.portrait .bk-plank::after { content: none; }
-#hall.v2.portrait .bk-row .bk-face.bottom { display: none; }
 #hall.v2.portrait .hall-desktop { left: 0; width: 900px; top: 700px; height: 900px; }
 #hall.v2.portrait .hall-stand, #hall.v2.portrait .hall-tome-shadow, #hall.v2.portrait .dc-banner, #hall.v2.portrait .dc-torch, #hall.v2.portrait .dc-candle { display: none; }
 #hall.v2.portrait .hall-tome { left: 24px; top: 734px; width: 852px; height: 846px; transform: none; grid-template-columns: 1fr; grid-template-rows: auto 1fr; filter: drop-shadow(0 14px 16px rgba(0,0,0,.55)); }
@@ -2912,3 +2905,85 @@ html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bot
 #hall.v2.portrait .hall-spread.dk { top: 736px; left: 20px; right: 20px; }
 #hall.v2 .bk-end { transform: translateZ(40px); }   /* in front of the books' 3D sides, so the right-hand bookend is never hidden */
 #hall.v2 .bk-end.r { margin-left: 20px; }
+/* ===== v0.99.97 the bookcase in depth, and books with their pages =====
+   The camera now looks from just above the bookcase (perspective origin near the top of the room), as it does at the desk, so you see
+   the top of each shelf and the page block on top of every book, never their undersides. The case is built in 3D: the back panel is the
+   case itself, the crown, sides and middle divider stand 128px in front of it with inner faces running back, and each shelf is a board
+   with a front edge and a top surface. No filters on these parts (a filter flattens 3D): each room tints the wood with a blend layer. */
+#hall.v2 .hall-world { perspective: 2200px; }
+#hall.v2:not(.portrait) .hall-world { perspective-origin: 800px 40px; }
+#hall.v2.portrait .hall-world { perspective-origin: 450px 40px; }
+#hall.v2 .hall-case, #hall.v2 .hall-case > i { transform-style: preserve-3d; }
+#hall.v2 .hall-case::after { transform: translateZ(1px); }
+#hall.v2 .hall-case .hc-crown, #hall.v2 .hall-case .hc-side, #hall.v2 .hall-case .hc-mid, #hall.v2 .hall-case .hc-base { transform: translateZ(128px); }
+#hall.v2 .hall-case > i::after { content: ''; position: absolute; background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,.25)), var(--wood-plank) 0 0 / 900px auto, #4a2c14; background-blend-mode: var(--case-blend, normal); }
+#hall.v2 .hall-case .hc-side.l::after, #hall.v2 .hall-case .hc-mid::after { top: 0; bottom: 0; left: 100%; width: 128px; transform-origin: 0 50%; transform: rotateY(90deg); }
+#hall.v2 .hall-case .hc-side.r::after { top: 0; bottom: 0; right: 100%; width: 128px; transform-origin: 100% 50%; transform: rotateY(-90deg); }
+#hall.v2 .hall-case .hc-mid::before { content: ''; position: absolute; top: 0; bottom: 0; right: 100%; width: 128px; transform-origin: 100% 50%; transform: rotateY(-90deg); background: linear-gradient(270deg, rgba(0,0,0,.55), rgba(0,0,0,.2)), var(--wood-plank) 0 0 / 900px auto, #4a2c14; }
+#hall.v2 .hall-case .hc-crown::after { left: 30px; right: 30px; top: 100%; height: 128px; transform-origin: 50% 0; transform: rotateX(-90deg); background: linear-gradient(0deg, rgba(0,0,0,.75), rgba(0,0,0,.45)), var(--wood-plank) 0 0 / 900px auto, #3a2210; }
+#hall.v2 .hall-case .hc-base::after { left: 30px; right: 30px; bottom: 100%; height: 128px; transform-origin: 50% 100%; transform: rotateX(90deg); background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(255,215,160,.06)), var(--wood-plank) 0 0 / 900px auto, #5a361a; }
+/* the shelves: front edge in front of the books, top surface back to the case */
+#hall.v2 .bk-plank { transform: translateZ(128px); transform-style: preserve-3d; }
+#hall.v2 .bk-plank::before, #hall.v2 .bk-plank::after { content: ''; position: absolute; left: 0; right: 0; height: 128px; transform-origin: 50% 0; transform: rotateX(-90deg); }
+#hall.v2 .bk-plank::before { top: 0; background: linear-gradient(0deg, rgba(0,0,0,.40), rgba(0,0,0,0) 55%), var(--wood-plank) 0 10% / 900px auto, #6a4020; background-blend-mode: var(--case-blend, normal); }
+#hall.v2 .bk-plank::after { top: 100%; background: linear-gradient(0deg, rgba(0,0,0,.6), rgba(15,8,3,.4)), var(--wood-plank) 0 70% / 900px auto, #4a2c14; }
+#hall.v2 .bk-shelf::after { content: none; }
+/* the room tints the wood (every board, front and inner faces alike) without flattening it */
+#hall.v2.room-castle { --case-tint: rgba(255,236,200,.10); }
+#hall.v2.room-dungeon { --case-tint: rgba(8,5,3,.48); }
+#hall.v2.room-tower { --case-tint: rgba(46,22,78,.34); }
+#hall.v2.room-grove { --case-tint: rgba(240,226,196,.30); }
+#hall.v2.v3[class*="room-"] .hall-case > i, #hall.v2.v3[class*="room-"] .hall-case > i::after, #hall.v2.v3[class*="room-"] .hall-case .hc-mid::before,
+#hall.v2.v3[class*="room-"] .bk-plank, #hall.v2.v3[class*="room-"] .bk-plank::before, #hall.v2.v3[class*="room-"] .bk-plank::after { box-shadow: inset 0 0 0 999px var(--case-tint, transparent); }
+#hall.v2.v3[class*="room-"] .hall-case { box-shadow: inset 0 0 0 999px var(--case-tint, transparent), 0 30px 50px -10px rgba(0,0,0,.75); }
+/* ===== v0.99.97 a bookcase on each side of the room (landscape), the desk and the book between them =====
+   Nothing stands in front of the books any more: the open book lies (or, with a deck taken down, stands) in the middle of the room.
+   8 shelves of 10 = 80 decks before the shelves page. */
+#hall.v3:not(.portrait) .hall-case { top: 14px; width: 480px; height: 872px; }
+#hall.v3:not(.portrait) .hall-case.case-l { left: 22px; } #hall.v3:not(.portrait) .hall-case.case-r { left: 1098px; }
+#hall.v3:not(.portrait) .hall-case .hc-mid { display: none; }
+#hall.v3:not(.portrait) .hall-case .hc-crown { height: 54px; } #hall.v3:not(.portrait) .hall-case .hc-side { top: 50px; }
+#hall.v3:not(.portrait) .hall-case .hc-base { height: 50px; }
+#hall.v3:not(.portrait) .hall-case::after { top: 54px; bottom: 50px; }
+#hall.v3:not(.portrait) .bk-shelf { width: 420px; height: 190px; }
+#hall.v3:not(.portrait) .bk-shelf:nth-child(n) { display: block; }
+#hall.v3:not(.portrait) .bk-shelf:nth-child(1) { left: 52px; top: 70px; }   #hall.v3:not(.portrait) .bk-shelf:nth-child(2) { left: 52px; top: 260px; }
+#hall.v3:not(.portrait) .bk-shelf:nth-child(3) { left: 52px; top: 450px; }  #hall.v3:not(.portrait) .bk-shelf:nth-child(4) { left: 52px; top: 640px; }
+#hall.v3:not(.portrait) .bk-shelf:nth-child(5) { left: 1128px; top: 70px; } #hall.v3:not(.portrait) .bk-shelf:nth-child(6) { left: 1128px; top: 260px; }
+#hall.v3:not(.portrait) .bk-shelf:nth-child(7) { left: 1128px; top: 450px; } #hall.v3:not(.portrait) .bk-shelf:nth-child(8) { left: 1128px; top: 640px; }
+#hall.v3:not(.portrait) .bk-shelf:nth-child(n+9) { display: none; }
+#hall.v3:not(.portrait) .bk-row { height: 164px; padding: 0 12px; gap: 3px; }
+#hall.v3:not(.portrait) .bk-plank { top: 160px; height: 22px; }
+#hall.v3:not(.portrait) .bk-end { height: 84px; }
+/* the middle of the room: the sign on the wall, the desk and the book */
+#hall.v3:not(.portrait) .hall-plaque { left: 590px; top: 18px; width: 420px; height: 100px; }
+#hall.v3:not(.portrait) .hall-desktop { left: 440px; width: 720px; top: 500px; height: 480px; }
+#hall.v3:not(.portrait) .hall-tome { left: 512px; top: 418px; width: 576px; height: 380px; transform: translateZ(30px) rotateX(10deg); }
+#hall.v3:not(.portrait) .hall-tome .hall-page { padding: 18px 20px 16px; }
+#hall.v3:not(.portrait) .hall-tome .tm-title { font-size: 22px; }
+#hall.v3:not(.portrait) .hall-tome .tm-toc .hall-link { font-size: 12.5px; }
+#hall.v3:not(.portrait) .hall-tome.deck-open { top: 130px; height: 360px; transform: translateZ(30px) rotateX(4deg); }
+#hall.v3:not(.portrait) .hall-spread.dk { left: 520px; right: 520px; top: 510px; --cw: 84px; }
+#hall.v3:not(.portrait) .hall-hint { display: none; }
+#hall.v3:not(.portrait) .dc-banner { top: 128px; width: 54px; height: 250px; } #hall.v3:not(.portrait) .dc-banner.l { left: 530px; } #hall.v3:not(.portrait) .dc-banner.r { left: 1016px; }
+#hall.v3:not(.portrait) .dc-torch { top: 150px; } #hall.v3:not(.portrait) .dc-torch.l { left: 540px; } #hall.v3:not(.portrait) .dc-torch.r { left: 1016px; }
+#hall.v3:not(.portrait) .dc-candle.a { left: 560px; top: 180px; } #hall.v3:not(.portrait) .dc-candle.b { left: 1018px; top: 200px; } #hall.v3:not(.portrait) .dc-candle.c { left: 790px; top: 150px; }
+/* upright phone: one tall case with four shelves of 16 (64 decks before the shelves page) */
+#hall.v3.portrait .hall-case { top: 30px; height: 790px; }
+#hall.v3.portrait .hall-case .hc-crown { height: 54px; } #hall.v3.portrait .hall-case .hc-side { top: 50px; } #hall.v3.portrait .hall-case .hc-base { height: 46px; }
+#hall.v3.portrait .hall-case::after { top: 54px; bottom: 46px; }
+#hall.v3.portrait .hall-plaque { top: 4px; }
+#hall.v3.portrait .bk-shelf { left: 56px; width: 788px; height: 172px; }
+#hall.v3.portrait .bk-shelf:nth-child(1) { top: 92px; } #hall.v3.portrait .bk-shelf:nth-child(2) { top: 264px; } #hall.v3.portrait .bk-shelf:nth-child(3) { top: 436px; } #hall.v3.portrait .bk-shelf:nth-child(4) { top: 608px; display: block; }
+#hall.v3.portrait .bk-shelf:nth-child(n+5) { display: none; }
+#hall.v3.portrait .bk-row { height: 146px; padding: 0 10px; gap: 2px; }
+#hall.v3.portrait .bk-plank { top: 142px; height: 22px; }
+#hall.v3.portrait .bk-end { height: 76px; }
+#hall.v3.portrait .hall-desktop { top: 816px; }
+#hall.v3.portrait .hall-tome { top: 846px; height: 734px; }
+#hall.v3.portrait .hall-tome:not(.deck-open) > .hall-page { zoom: 1.7; }
+#hall.v3:not(.portrait) .bk-plank, #hall.v3.portrait .bk-plank { transform: translateZ(128px); }   /* in front of the books' spines (books stand 62px out, 102px deep) */
+/* the deck taken down stands on the desk to the left of its cards, between the bookcases, so it never covers a shelf */
+#hall.v3:not(.portrait) .dbx-turn { left: 450px; top: 380px; }
+#hall.v3:not(.portrait) .hall-spread.dk { left: 650px; right: 460px; }
+#hall.v2[class*="room-"] .bk-plank { filter: none; }   /* the old per-room plank filters flattened the 3D shelf; the tint above replaces them */
