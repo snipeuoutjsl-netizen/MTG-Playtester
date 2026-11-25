@@ -7,7 +7,16 @@ const PUZZLES = [
   { id: 'p-haste', title: 'Haste makes waste', level: 2, opp: 7, life: 20, turn: 3, hand: ['Goblin Guide', 'Monastery Swiftspear', 'Lightning Bolt'], bf: ['Mountain', 'Mountain', 'Mountain'], hint: 'Both creatures have haste. Prowess only counts spells cast after the Swiftspear is on the battlefield.' },
   { id: 'p-spike', title: 'Spike and spear', level: 2, opp: 9, life: 20, turn: 3, hand: ['Lava Spike', 'Lightning Bolt'], bf: ['Monastery Swiftspear', 'Mountain', 'Mountain'], hint: 'Cast both spells before combat damage: every noncreature spell makes the Swiftspear bigger.' },
   { id: 'p-pump', title: 'Pump and prowess', level: 3, opp: 11, life: 20, turn: 4, hand: ['Giant Growth', 'Lightning Bolt'], bf: ['Monastery Swiftspear', 'Goblin Guide', 'Mountain', 'Forest'], hint: 'Grow the creature that also gets bigger from the spell itself, and send the Bolt at your opponent.' },
-  { id: 'p-all', title: 'Everything at once', level: 3, opp: 13, life: 20, turn: 5, hand: ['Lightning Bolt', 'Giant Growth', 'Lava Spike'], bf: ['Grizzly Bears', 'Goblin Guide', 'Mountain', 'Mountain', 'Forest'], hint: 'Three lands, three spells, two attackers: every point counts.' }];
+  { id: 'p-all', title: 'Everything at once', level: 3, opp: 13, life: 20, turn: 5, hand: ['Lightning Bolt', 'Giant Growth', 'Lava Spike'], bf: ['Grizzly Bears', 'Goblin Guide', 'Mountain', 'Mountain', 'Forest'], hint: 'Three lands, three spells, two attackers: every point counts.' },
+  // v0.99.107 more puzzles, each about a different part of the game (every one is played out by the tests to prove it can be solved)
+  { id: 'p-double', title: 'Double trouble', level: 2, opp: 10, life: 20, turn: 3, hand: ['Temur Battle Rage', 'Giant Growth'], bf: ['Goblin Guide', 'Mountain', 'Mountain', 'Forest'], hint: 'Double strike deals combat damage twice. Make the creature as big as you can first.' },
+  { id: 'p-landfall', title: 'Every land counts twice', level: 2, opp: 9, life: 20, turn: 4, hand: ['Arid Mesa'], bf: ['Plated Geopede', 'Steppe Lynx', 'Mountain'], lib: ['Mountain', 'Plains', 'Wastes', 'Wastes', 'Wastes'], hint: 'A fetch land is a land entering, and the land it fetches is another one. Both creatures have landfall.' },
+  { id: 'p-cascade', title: 'Cascade order', level: 2, opp: 8, life: 20, turn: 4, hand: ['Bloodbraid Elf', 'Monastery Swiftspear'], bf: ['Mountain', 'Mountain', 'Mountain', 'Forest', 'Forest'], lib: ['Mountain', 'Lightning Bolt', 'Wastes', 'Wastes', 'Wastes'], hint: 'Cascade casts the first cheaper spell on top of your library for free. A spell cast by cascade is still cast: what else notices that?' },
+  { id: 'p-snap', title: 'Back from the graveyard', level: 2, opp: 8, life: 20, turn: 4, hand: ['Snapcaster Mage', 'Lava Spike'], gy: ['Lightning Bolt'], bf: ['Goblin Guide', 'Island', 'Mountain', 'Mountain', 'Mountain'], hint: 'Snapcaster Mage gives a spell in your graveyard flashback. Count your mana: you need all four lands.' },
+  { id: 'p-dungeon', title: 'The trap is set', level: 2, opp: 8, life: 20, turn: 5, hand: ['Find the Path', 'Lightning Bolt'], bf: ['Forest', 'Forest', 'Mountain', 'Mountain'], dungeon: { name: 'Undercity', room: 'Forge', path: ['Secret Entrance', 'Forge'] }, hint: 'You are in Undercity, on Forge (the Dungeon panel shows the map). Venturing moves your marker one room down: choose the room that hurts.' },
+  { id: 'p-storm', title: 'Storm warning', level: 3, opp: 4, life: 20, turn: 3, hand: ['Lotus Petal', 'Desperate Ritual', 'Manamorphose', 'Grapeshot'], bf: ['Mountain', 'Mountain'], hint: 'Grapeshot is copied once for each spell cast before it this turn. Rituals pay for themselves; keep two mana for the finisher.' },
+  { id: 'p-fireblast', title: 'Burn the boats', level: 3, opp: 14, life: 20, turn: 4, hand: ['Fireblast', 'Lightning Bolt', 'Lava Spike'], bf: ['Monastery Swiftspear', 'Mountain', 'Mountain', 'Mountain', 'Mountain'], hint: 'Fireblast can be cast by sacrificing two Mountains instead of paying its cost. Every spell also grows the Swiftspear: attack after casting them.' },
+  { id: 'p-fiend', title: 'Feed the fiend', level: 3, opp: 16, life: 20, turn: 4, hand: ['Desperate Ritual', 'Manamorphose', 'Manamorphose', 'Lava Spike'], bf: ['Kiln Fiend', 'Mountain', 'Mountain'], hint: 'Kiln Fiend gets +3/+0 for every instant or sorcery you cast. Manamorphose gives back the mana it costs.' }];
 const PZ_KEY = 'mtgpt.puzzles', PZ_SOLVED = 'mtgpt.puzzlesSolved';
 const pzSaved = () => { const l = lsGet(PZ_KEY, []); return Array.isArray(l) ? l : []; };
 const pzSolved = () => lsGet(PZ_SOLVED, {}) || {};
@@ -47,6 +56,8 @@ function startPuzzle0(p) {
   for (const x of p.gy || []) state.graveyard.push(pzCard(x, turn));
   for (const x of p.exile || []) state.exile.push(pzCard(x, turn));
   const lib = (p.lib && p.lib.length) ? p.lib : Array(20).fill('Wastes'); for (const x of lib) state.library.push(pzCard(x, turn));
+  if (p.dungeon) state.dungeon = JSON.parse(JSON.stringify(p.dungeon));   // v0.99.107 a puzzle may start with your venture marker in a dungeon
+  if (p.gs) state.gs = Object.assign(state.gs || {}, JSON.parse(JSON.stringify(p.gs)));
   state.puzzle = { id: p.id, title: p.title, turn, hint: p.hint || '', saved: !!p.saved };
   state.log.push(`Puzzle: ${p.title}. Win this turn: your opponent is at ${state.oppLife} life.`);
   enterStep(MAIN1, true); render(); try { turnBanner(); } catch (e) {}
@@ -74,7 +85,7 @@ function savePuzzleFromGame() {
   m.body.append(h('div', { class: 'psub', text: 'Your hand, battlefield (tokens and counters too), graveyard, exile, the top of your library and both life totals are saved. The puzzle starts in your Main phase 1 of this turn: win before the turn ends.' }), nm);
   m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }), h('button', { class: 'primary', text: 'Save puzzle', onclick: () => {
     const p = { id: 'u-' + Date.now(), saved: true, title: nm.value.trim() || 'My puzzle', level: 0, opp: state.oppLife, life: state.life, turn: state.turn,
-      hand: state.hand.map(strip), bf: state.battlefield.map(strip), gy: state.graveyard.map(strip), exile: state.exile.map(strip), lib: state.library.slice(0, 20).map(strip), hint: '' };
+      hand: state.hand.map(strip), bf: state.battlefield.map(strip), gy: state.graveyard.map(strip), exile: state.exile.map(strip), lib: state.library.slice(0, 20).map(strip), hint: '', dungeon: state.dungeon ? JSON.parse(JSON.stringify(state.dungeon)) : undefined, gs: state.gs && (state.gs.dungeonsDone || state.gs.init || state.gs.monarch) ? { dungeonsDone: state.gs.dungeonsDone, init: state.gs.init, monarch: state.gs.monarch } : undefined };
     const l = pzSaved(); l.push(p); lsSet(PZ_KEY, l); m.close(); toast('Puzzle saved', `${p.title}: find it in Puzzles (Library contents).`); } }));
 }
 function openPuzzles() {

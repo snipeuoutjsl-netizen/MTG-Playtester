@@ -1,5 +1,9 @@
 
 
+## v0.99.107
+- 8 puzzles in PUZZLES; startPuzzle0 applies p.dungeon and p.gs (savePuzzleFromGame stores them). tests/puzzle-solutions.js plays every new puzzle's intended line through the engine (cr-rules 'UI puzzles 2').
+- matchesGraveSpec: words joined by 'or' / 'and/or' are alternatives (Snapcaster Mage's 'instant or sorcery card in your graveyard' matched nothing).
+
 ## v0.99.106
 - Packs (src/99-packs.js): PACK_SRC.fetchJson (tests serve tests/packset.json, real Wilds of Eldraine card objects, through it); packSets (Scryfall /sets: expansion + core, released, >= 150 cards, newest 40, kept a week); packPool(code) (search 'set:<code> is:booster', basics from the same search or 'type:basic'; kept in IndexedDB as pool:<code>, six sets); packFromPool(pool, rng) = land, 10 commons, 3 uncommons, rare/mythic (1/8) last, foil (1/3) replaces a common; packState in mtgpt.packs {bank, opened, earned, lastSet}; collState in mtgpt.collection {cards: set#cn -> {n,set,sn,cn,r,img,back,c,f,t,last}, seen}; opened cards also go into META so the rules engine can read them.
 - Earning: showGameEnd (a win) and puzzleResult (first solve of a built-in puzzle, never a saved one) call earnPack and show the .ge-pack button.
