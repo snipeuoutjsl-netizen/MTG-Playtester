@@ -82,6 +82,7 @@ function drawLibraryScreen(el) {
           h('div', { class: 'lib-crumb', text: `${mode === 'commander' ? 'Commander' : 'Decks'}  /  Deck ${String(idx).padStart(2, '0')} of ${inMode.length}${isCur ? '  ·  in use' : ''}` }),
           h('h1', { class: 'lib-h1' }, h('span', { text: libSel }), h('button', { class: 'lib-fav' + (fav ? ' on' : ''), text: fav ? '★' : '☆', title: fav ? 'Remove from favorites' : 'Add to favorites', 'aria-pressed': String(fav), onclick: () => { libToggleFav(libSel); redraw(); } })),
           h('p', { class: 'lib-tag', text: `${libColorName(cols)}${typeLine ? ' · ' + typeLine : ''}.` })),
+        libBoxEl(libSel, deck, cols),   // v0.99.101 the deck in its 3D box: click to open it and lay the cards out
         h('div', { class: 'lib-head-go' },
           btn('▶  Begin goldfish', () => { libTouch(libSel); beginWith(libSel); }, 'gold big', 'Shuffle up and draw an opening hand with this deck'),
           h('label', { class: 'lib-chk small' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), h('span', { text: 'I go first (on the play)' })),
