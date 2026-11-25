@@ -1,5 +1,9 @@
 
 
+## v0.99.98
+- developer/desk-gen3.py renders the table (720x340 at 440,540; perspective 2200, origin 800,40; back edge 590..1010 at y 540, front edge at y 836, apron to 876) as a transparent webp embedded as --desk-v3.
+- v3: tome bottom at y 540 with translateZ(150) rotateX(14deg) (stands on the table); bk-stage translateZ(36) (books set back from the shelf front at 128); plank fronts 26px; deck box at 505,466; spread 720..1130 from y 600.
+
 ## v0.99.97
 - Library v3 (#hall.v3, added with v2 in drawHall): two .hall-case elements (case-l, case-r; portrait: case-one), shelves 1-4 left and 5-8 right (420 wide, 190 apart), PER_SHELF/SHELVES in drawHall (landscape 10x8, portrait 16x4) passed to bookcaseEl as perShelf/minShelves; scale 0.7 (portrait 0.66).
 - 3D: world perspective 2200, origin near the top (800,40 / 450,40); case pieces at translateZ(128) with inner faces (::after/::before rotateY/rotateX); planks translateZ(128) with top/bottom faces; book stages stay at z 62. Room tints are inset box-shadows (--case-tint), the old per-room plank filters are off (a filter flattens 3D).
