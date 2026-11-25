@@ -3216,3 +3216,17 @@ body.a11y-calm #hall.lib2 .lbx-float, body.a11y-calm #hall.lib2 .lbx-shadow { an
   #hall.lib2 .lbx-bar { align-items: center; } #hall.lib2 .lbx-bar h2 { font-size: 22px; } #hall.lib2 .lbx-bar .lib-muted { display: none; }
 }
 #hall.lib2 .lbx-ov.leaving .lbx-gh { opacity: 0; transition: opacity .25s; }
+/* v0.99.102 the enlarged card when pointing at one in the opened box: its own column on the right, so it never covers a stack */
+#hall.lib2 .lbx-main { flex: 1 1 auto; min-height: 0; display: flex; gap: 22px; }
+#hall.lib2 .lbx-main > .lbx-body { flex: 1 1 auto; min-width: 0; }
+#hall.lib2 .lbx-peek { flex: none; width: clamp(230px, 20vw, 300px); align-self: stretch; display: flex; flex-direction: column; padding-left: 20px; border-left: 1px solid #604638; }
+#hall.lib2 .lbx-peek-in, #hall.lib2 .lbx-peek-idle { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; animation: lbxPeek .18s ease-out both; }
+@keyframes lbxPeek { from { opacity: 0; transform: translateY(6px); } }
+#hall.lib2 .lbx-peek-img { width: 100%; aspect-ratio: 63 / 88; object-fit: cover; border-radius: 4.5% / 3.3%; box-shadow: 0 12px 34px rgba(0,0,0,.65), 0 0 0 1px rgba(227,194,122,.25); }
+#hall.lib2 .lbx-peek-back { width: 46%; aspect-ratio: 63 / 88; object-fit: cover; border-radius: 4.5% / 3.3%; opacity: .9; box-shadow: 0 6px 16px rgba(0,0,0,.55); }
+#hall.lib2 .lbx-peek-txt { aspect-ratio: 63 / 88; box-sizing: border-box; padding: 16px; border-radius: 14px; background: linear-gradient(160deg, #2a2430, #1c1820); border: 1px solid #604638; color: #e8dcc0; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+#hall.lib2 .lbx-peek-txt b { font: 600 19px/1.2 Georgia, serif; color: #f2e6cc; } #hall.lib2 .lbx-peek-txt i { color: #c9b78f; font-size: 13px; } #hall.lib2 .lbx-peek-txt p { margin: 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+#hall.lib2 .lbx-peek-cap { display: flex; flex-direction: column; gap: 3px; } #hall.lib2 .lbx-peek-cap b { font: 600 16px/1.25 Georgia, serif; color: #e9d29a; } #hall.lib2 .lbx-peek-cap span { font-size: 12px; color: #a99f8c; letter-spacing: .02em; }
+#hall.lib2 .lbx-peek-idle { align-items: center; text-align: center; color: #8d8473; font: italic 14px/1.4 Georgia, serif; }
+#hall.lib2 .lbx-peek-blank { width: 100%; aspect-ratio: 63 / 88; border-radius: 14px; border: 1px dashed #4d3a30; background: repeating-linear-gradient(135deg, rgba(96,70,56,.08) 0 10px, transparent 10px 20px); }
+#hall.lib2 .lbx-ov.leaving .lbx-peek { opacity: 0; transition: opacity .25s; }

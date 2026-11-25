@@ -1,4 +1,4 @@
-// LOA_VERSION 0.99.101 (the app reads this to tell a newer version is out; bump.py keeps it current)
+// LOA_VERSION 0.99.102 (the app reads this to tell a newer version is out; bump.py keeps it current)
 // Library of Alexandria, web app service worker (v0.99.54).
 // The app's own files are kept for offline use and refreshed from the network whenever it is reachable (network first),
 // so a new version appears on the next launch. v0.99.93: every request skips the browser's own 10-minute HTTP cache (cache: 'no-cache'),

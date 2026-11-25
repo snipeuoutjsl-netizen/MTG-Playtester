@@ -82,7 +82,8 @@ function dropCardOn(id, kind, x) {
   if (f && f.zone === 'hand' && kind === 'hand') { const slot = handSlotAt(x); clearHandMarker(); dragHand = null; reorderHand(id, slot); return; }
   clearHandMarker();
   if (f && f.zone === 'hand' && kind === 'battlefield') {
-    if (isLandName(f.card.name)) playLand(id);
+    if (mdfcHasLandFace(f.card)) playMdfc(f.card);
+    else if (isLandName(f.card.name)) playLand(id);
     else if (isSpellCard(f.card) || isInstantSpeed(f.card)) castSpell(id);
     else if (canPlaySorcerySpeedNow()) moveCard(id, 'battlefield');
     else toast('Wrong phase', 'This card can only be played during your main phase.');

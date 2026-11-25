@@ -154,7 +154,8 @@ function showCardMenu(c, zone, x, y) {
   if (zone === 'battlefield' && state.exile.some(x => x.hiddenBy === c.id)) items.push({ label: 'Hideaway: play the exiled card free', title: 'When the hideaway condition is met, play the exiled card without paying its mana cost', fn: () => hideawayPlay(c.id) });
   if (zone === 'battlefield' && fetchInfo(c)) { items.push({ label: c.tapped ? 'Fetch… (needs an untapped land)' : 'Activate: sacrifice and fetch…', fn: () => c.tapped ? toast('Cannot fetch', 'Fetch lands have {T} in their cost, so the land must be untapped.') : openFetch(c) }); items.push('-'); }
   if (zone === 'hand') {
-    if (isLandName(c.name)) items.push({ label: 'Play land', fn: () => playLand(c.id) });
+    if (mdfcHasLandFace(c)) { const p = mdfcParent(c); p.fc.forEach((r, i) => items.push(r.land ? { label: `Play ${r.name} (land)`, fn: () => playLand(c.id, i || undefined) } : { label: `Cast ${r.name} — put on stack`, fn: () => { state.halfChosen = c.id; if (i) castAsHalf(c, i); castSpell(c.id); } })); }
+    else if (isLandName(c.name)) items.push({ label: 'Play land', fn: () => playLand(c.id) });
     else if (mdfcLandFace(c)) { items.push({ label: `Play ${mdfcLandFace(c).name} (land)`, fn: () => playLand(c.id, 1) }); items.push({ label: `Cast ${c.name.split(' // ')[0]} — put on stack`, fn: () => castSpell(c.id) }); }
     else if (isSpellCard(c) || isInstantSpeed(c)) items.push({ label: 'Cast — put on stack', fn: () => castSpell(c.id) });
     else items.push({ label: 'Play to battlefield', fn: () => {

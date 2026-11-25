@@ -29,6 +29,17 @@ function libBoxCards(deck) {
 function libOpenBox(zone, deckName, deck) {
   const hall = zone.closest('#hall'); if (!hall || hall.querySelector('.lbx-ov')) return;
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
+  // v0.99.102 pointing at a card shows it enlarged in a column of its own on the right (never over the stacks); touch screens keep tap-to-enlarge
+  const hover = !!(window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) && window.innerWidth >= 900;
+  const peek = hover ? h('aside', { class: 'lbx-peek', 'aria-live': 'polite' }) : null;
+  const peekIdle = () => peek && peek.replaceChildren(h('div', { class: 'lbx-peek-idle' }, h('div', { class: 'lbx-peek-blank' }), h('span', { text: 'Point at a card to see it here' })));
+  let peekName = null, peekT = 0;
+  const peekShow = c => { if (!peek) return; clearTimeout(peekT); if (!c) { peekT = setTimeout(() => { peekName = null; peekIdle(); }, 250); return; } if (peekName === c.name) return; peekName = c.name;
+    const im = imgFor(c.name, deckName), info = cardInfo(c.name), rec = c.rec || info;
+    const pic = im ? h('img', { class: 'lbx-peek-img', src: im.front, alt: c.name }) : h('div', { class: 'lbx-peek-txt' }, h('b', { text: c.name }), rec && rec.mc ? h('div', {}, symbols(String(rec.mc).split(' // ')[0])) : null, h('i', { text: rec ? String(rec.t || '').split(' // ')[0] : '' }), info && info.tx ? h('p', { text: info.tx }) : null, rec && rec.pt ? h('div', { text: rec.pt }) : null);
+    peek.replaceChildren(h('div', { class: 'lbx-peek-in' }, pic, im && im.back ? h('img', { class: 'lbx-peek-back', src: im.back, alt: 'Back face', title: 'Back face' }) : null,
+      h('div', { class: 'lbx-peek-cap' }, h('b', { text: `${c.qty} × ${c.name}` }), h('span', { text: rec ? String(rec.t || '').replace(/ \/\/ /g, '  //  ') : '' })))); };
+  peekIdle();
   const grid = h('div', { class: 'lbx-grid' }), body = h('div', { class: 'lbx-body' }, grid), zoom = h('div', { class: 'lbx-zoom', role: 'dialog', 'aria-label': 'Card' });
   const showCard = c => {
     const im = imgFor(c.name, deckName), info = cardInfo(c.name);
@@ -52,6 +63,7 @@ function libOpenBox(zone, deckName, deck) {
     if (motion && !flown) st.style.opacity = '0';   // hidden until they fly out of the box
     if (c.qty > 1) st.append(h('em', { class: 'lbx-qty', text: '×' + c.qty }));
     st.addEventListener('click', e => { e.stopPropagation(); showCard(c); });
+    st.addEventListener('pointerenter', () => peekShow(c)); st.addEventListener('pointerleave', () => peekShow(null)); st.addEventListener('focus', () => peekShow(c));
     return st;
   };
   const build = () => grid.replaceChildren(...libBoxCards(deck).map(([title, list]) =>
@@ -87,9 +99,9 @@ function libOpenBox(zone, deckName, deck) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (zoom.classList.contains('on')) zoom.classList.remove('on'); else close(); } };
   const ov = h('div', { class: 'lbx-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${deckName}: every card in the deck` },
     h('div', { class: 'lbx-bar' },
-      h('div', { class: 'lbx-bar-t' }, h('div', { class: 'lib-cap', text: 'The box, opened' }), h('h2', { text: deckName }), h('span', { class: 'lib-muted', text: `${sum(deck.main)} cards · by card type, in mana-value order · click a card to see it large` })),
+      h('div', { class: 'lbx-bar-t' }, h('div', { class: 'lib-cap', text: 'The box, opened' }), h('h2', { text: deckName }), h('span', { class: 'lib-muted', text: `${sum(deck.main)} cards · by card type, in mana-value order · point at a card to see it enlarged, click to see it full size` })),
       h('button', { class: 'lib-btn ghost lbx-x', text: 'Close the box', onclick: () => close() })),
-    body, zoom);
+    h('div', { class: 'lbx-main' + (peek ? ' peeking' : '') }, body, peek), zoom);
   ov.addEventListener('click', e => { if (e.target === ov || e.target === body || e.target === grid) close(); });
   zoom.addEventListener('click', () => zoom.classList.remove('on'));
   document.addEventListener('keydown', onKey, true);

@@ -58,7 +58,36 @@ function compact(o) {
 // lookup by name - type, power/toughness, abilities, triggers - sees the face that is actually up (rule 712).
 // Split, aftermath and adventure cards keep the old combined reading for now (their halves are cast separately; see the changelog).
 const FACES = new Map();   // normalized back-face name -> face record
-function regFaces(c) { if (c && c.fc) for (const fr of c.fc) if (fr.fi >= 1 || (fr.half && fr.fi === 0)) FACES.set(norm(fr.name), fr); return c; }
+function regFaces(c) { if (c && c.fc) { faceFix(c); for (const fr of c.fc) if (fr.fi >= 1 || (fr.half && fr.fi === 0)) FACES.set(norm(fr.name), fr); } return c; }
+// v0.99.102 each face is read as its own card (rule 712.8: a face up has only that face's characteristics). Runs on every load, so card data
+// saved by an older version is corrected too:
+//  - the mana a face makes is read from that face's own text (Scryfall's produced_mana is for the whole card, so a Pathway's front face
+//    made both colours and a land on the back face - Soporific Springs, Azcanta, the Ixalan lands - made none);
+//  - a modal double-faced card's back face has the mana value of its own mana cost (712.8e covers only transforming cards, which keep the front's);
+//  - the halves of split / adventure / aftermath cards are the colours of their own mana costs (205.2 / 709.4a / 715.4), a flip card's
+//    flipped half keeps the card's colours (710.1b).
+const FACE_ANY = ['W', 'U', 'B', 'R', 'G'];
+function faceProd(tx, whole) {
+  const out = new Set();
+  for (const line of String(tx || '').replace(/\([^)]*\)/g, ' ').split('\n')) {
+    const i = line.search(/\bAdd\b/); if (i < 0) continue; const part = line.slice(i);
+    for (const m of part.matchAll(/\{([WUBRGC])\}/g)) out.add(m[1]);
+    if (/\bmana of any (?:one )?colou?r|\bany combination of colou?rs|\bmana in any combination/i.test(part)) for (const k of (whole && whole.length ? whole.filter(x => FACE_ANY.includes(x)) : FACE_ANY)) out.add(k);
+    if (/\bmana of any type/i.test(part)) for (const k of [...FACE_ANY, 'C']) out.add(k);
+  }
+  return out.size ? [...out] : undefined;
+}
+const faceCostCols = mc => [...new Set([...String(mc || '').matchAll(/\{([^}]+)\}/g)].flatMap(m => m[1].split('/').filter(x => FACE_ANY.includes(x))))].sort((a, b) => FACE_ANY.indexOf(a) - FACE_ANY.indexOf(b));
+function faceFix(c) {
+  if (!c || !c.fc || c.fc.length < 2 || c.__ff) return;
+  for (const r of c.fc) {
+    const pr = faceProd(r.tx, c.prod); if (pr) r.prod = pr; else delete r.prod;
+    if (c.mdfc && r.fi >= 1 && typeof symCmc === 'function') { try { r.cmc = symCmc(r.mc || '') || 0; } catch (e) { /* keep */ } }
+    if (c.kind && c.kind !== 'prepare' && r.mc) r.col = faceCostCols(r.mc);
+    if (c.lo === 'flip') r.col = (c.col || []).slice();
+  }
+  try { Object.defineProperty(c, '__ff', { value: true, enumerable: false }); } catch (e) { /* frozen record */ }
+}
 function normFaces(c) {
   if (!c) return c;
   if (c.fc !== undefined) return regFaces(c);
@@ -229,15 +258,18 @@ function transformPerm(id, to) {
 // While a half is being cast the card is named after that half (c.faceOf keeps the real name), so cost, type, targets and effect are all read from
 // that half alone. It goes back to its whole-card name as soon as it leaves the stack, or if you abandon the cast.
 function halfParent(c) { const p = c && !c.token ? cardInfo(c.faceOf || c.name) : null; return p && p.fc && p.kind ? p : null; }
+// v0.99.102 CR 712.12: a modal double-faced card is cast as either face. Its faces go through the same "one half at a time" flow; a land face is played instead.
+function mdfcParent(c) { const p = c && !c.token ? cardInfo(c.faceOf || c.name) : null; return p && p.fc && p.fc.length > 1 && p.mdfc && !p.kind ? p : null; }
 function halfOptions(c) {   // the ways this card in your hand can be cast: fi null = the card itself
   if (!c || c.token || c.faceOf || c.fromExile || c.fromGy) return [];
+  { const q = mdfcParent(c); if (q && !q.land && q.fc[1] && !q.fc[1].land) return [{ fi: null, rec: q.fc[0], label: q.fc[0].name }, { fi: 1, rec: q.fc[1], label: q.fc[1].name + ' (back face)' }]; }
   const p = cardInfo(c.name); if (!p || !p.fc || !p.kind || p.kind === 'prepare') return [];
   if (p.kind === 'adventure') return [{ fi: null, rec: p.fc[0], label: p.fc[0].name }, { fi: 1, rec: p.fc[1], label: p.fc[1].name + ' (adventure)' }];
   if (p.kind === 'aftermath') return [{ fi: 0, rec: p.fc[0], label: p.fc[0].name }];   // the other half can only be cast from the graveyard
   return p.fc.map((r, i) => ({ fi: i, rec: r, label: r.name }));
 }
-function castAsHalf(c, fi) { const p = halfParent(c); if (!p) return; if (!c.faceOf) c.faceOf = c.name; c.name = p.fc[fi].name; c.face = fi; c.half = true; }
-function restoreHalf(c) { if (c && c.half) { c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
+function castAsHalf(c, fi) { const p = halfParent(c) || mdfcParent(c); if (!p) return; if (!c.faceOf) c.faceOf = c.name; c.name = p.fc[fi].name; c.face = fi; c.half = true; }
+function restoreHalf(c) { if (c && c.half) { if (state && mdfcParent(c) && state.battlefield.includes(c)) { delete c.half; return; }   /* v0.99.102 CR 712.12: a modal face cast as the spell is the permanent it becomes; it is the whole card again when it leaves (rule 712.14) */ c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
 function withHalf(c, fi, fn) {
   if (fi === null || fi === undefined) return fn();
   const was = { n: c.name, f: c.faceOf, fc: c.face, h: c.half }; castAsHalf(c, fi);
@@ -407,8 +439,9 @@ function parseLookDistribute(tx, inner) {
   return { n, slots, full: ok, alt, covers };
 }
 function openHalfChooser(c, opts, pick) {
-  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which half?`, { width: 560, sticky: true, onCancel: () => {} });
-  m.body.append(h('div', { class: 'psub', text: 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
+  const md = !!mdfcParent(c);
+  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which ${md ? 'face' : 'half'}?`, { width: 560, sticky: true, onCancel: () => {} });
+  m.body.append(h('div', { class: 'psub', text: md ? 'A modal double-faced card is cast as one face or the other (rule 712.12). The face you choose is the spell, and the permanent it becomes.' : 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
   const list = h('div', { class: 'prelist' });
   for (const o of opts) {
     const st = withHalf(c, o.fi, () => { if (!canCastNow(c)) return { ok: false, why: state.stack.length ? 'only instants can be cast now' : 'wrong timing' }; const pm = canPayMana(c); return pm && !pm.ok ? { ok: false, why: pm.reason === 'color' ? 'not the right colours' : 'not enough mana' } : { ok: true }; });
@@ -418,6 +451,30 @@ function openHalfChooser(c, opts, pick) {
   }
   m.body.append(list);
   m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }));
+}
+// v0.99.102 CR 712.12 / 305.9: a modal double-faced card with a land face in your hand (Sink into Stupor // Soporific Springs, a Pathway):
+// using it asks which face. A land face is played with your land drop and enters as that face; a spell face is cast as usual.
+function mdfcHasLandFace(c) { const p = mdfcParent(c); return !!(p && !c.faceOf && p.fc.some(f => f.land)); }
+function playMdfc(c) {
+  const p = mdfcParent(c); if (!p) return false;
+  const rows = p.fc.map((r, i) => {
+    let ok, why;
+    if (r.land) { ok = canPlayLandNow(); why = ok ? '' : landDropUsed() ? 'you have already played a land this turn' : 'lands are played in your main phase with an empty stack'; }
+    else { const st = withHalf(c, i ? i : null, () => { if (!canCastNow(c)) return { ok: false, why: state.stack.length ? 'only instants can be cast now' : 'wrong timing' }; const pm = canPayMana(c); return pm && !pm.ok ? { ok: false, why: 'not enough mana' } : { ok: true }; }); ok = st.ok; why = st.why || ''; }
+    return { r, i, ok, why };
+  });
+  const m = modal(`${String(c.name).split(' // ').join(' / ')}: which face?`, { width: 560, sticky: true, onCancel: () => {} });
+  m.body.append(h('div', { class: 'psub', text: 'A modal double-faced card is played as one face or the other (rule 712.12). A land face uses your land drop; a spell face is cast.' }));
+  const list = h('div', { class: 'prelist' });
+  for (const x of rows) {
+    const row = h('div', { class: 'row' + (x.ok ? '' : ' dim') }, h('span', { class: 'nm' }, (x.r.land ? 'Play ' : 'Cast ') + x.r.name, ' ', x.r.mc ? symbols(x.r.mc) : ''), h('span', { class: 'muted small', text: x.ok ? x.r.t.replace(/\s+—.*$/, '') + (x.r.land ? ' · uses your land drop' : '') : `Cannot ${x.r.land ? 'play' : 'cast'}: ${x.why}` }));
+    row.addEventListener('click', () => { m.close(); const g = findCard(c.id); if (!g || g.zone !== 'hand') return;
+      if (x.r.land) playLand(c.id, x.i || undefined);
+      else { state.halfChosen = c.id; if (x.i) castAsHalf(g.card, x.i); castSpell(c.id); } });
+    list.append(row);
+  }
+  m.body.append(list); m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }));
+  return true;
 }
 function isSpellCard(c) {
   const i = c && cardInfo(c.name);
