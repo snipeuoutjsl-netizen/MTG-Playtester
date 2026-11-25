@@ -1717,6 +1717,10 @@ body.mullhand #modalRoot .backdrop:not(.dock):not(.resolve) > .modal, body.mullp
 body.mullhand #overlay .pcard { transition: opacity .3s ease-out, transform .3s ease-out; }
 body.dealing #overlay .pcard { opacity: 0; transform: scale(.96); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { body.mullhand #overlay .pcard { transition: none; } }
+
+/* Keep keyboard focus visible on every native control, even where a component
+   reset (for example, the deck selector) removes the browser's default ring. */
+:where(button, select, input, textarea):focus-visible { outline: 2px solid var(--gold) !important; outline-offset: 2px; }
 /* the Opening hand prompt is centred in the space above the large hand */
 body.mullhand #overlay { padding-bottom: calc(var(--openhand, 0px) + 16px); }
 /* v0.99.35 the stack stage is the thing to look at while something is on the stack: it sits above every zone and card on the table (zones, hovered or tapped piles reach z-index 60),
