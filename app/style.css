@@ -3023,3 +3023,121 @@ body.a11y-calm #hall.v3 .hall-tome, body.a11y-calm #hall.v3 .dbx-turn > .bk.big,
 #hall.v3:not(.portrait) .hall-tome { top: 150px; }
 #hall.v3:not(.portrait) .hall-tome.deck-open { top: 112px; transform: translateZ(120px) rotateX(6deg) scale(.86); transform-origin: 50% 0; }
 #hall.v3:not(.portrait) .hall-spread.dk { top: 548px; }
+/* ===== v0.99.99 the Library, redesigned: a clean screen (src/99-library-screen.js) ===== */
+#hall.lib2 { background: linear-gradient(180deg, #151525, #211b24); color: #f1e5cd; overflow: hidden; }
+#hall.lib2::before, #hall.lib2::after { content: none !important; }
+#hall.lib2 .lib-app { position: absolute; inset: 0; display: flex; flex-direction: column; font-family: system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  background: radial-gradient(circle at 84% 8%, rgba(67,49,91,.22), transparent 30%), radial-gradient(circle at 18% 88%, rgba(155,89,61,.12), transparent 34%), linear-gradient(180deg, #151525, #211b24); }
+#hall.lib2 .lib-top { flex: none; display: flex; align-items: center; gap: 16px; min-height: 64px; padding: 8px 22px; padding-top: max(8px, calc(env(safe-area-inset-top) * var(--vpk, 1))); background: #17151a; border-bottom: 1px solid rgba(129,97,61,.65); box-sizing: border-box; }
+#hall.lib2 .lib-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+#hall.lib2 .lib-logo { color: #e5c47e; display: inline-flex; }
+#hall.lib2 .lib-title { font: 400 21px/1 Georgia, 'Times New Roman', serif; letter-spacing: .1em; text-transform: uppercase; color: #f3e7d0; white-space: nowrap; }
+#hall.lib2 .lib-sub { font-size: 11.5px; letter-spacing: .25em; text-transform: uppercase; color: #9e8a70; white-space: nowrap; }
+#hall.lib2 .lib-nav { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+#hall.lib2 .lib-btn { font: 600 13px system-ui, sans-serif; border-radius: 7px; padding: 8px 14px; border: 1px solid transparent; cursor: pointer; color: #e9d9b8; background: transparent; min-height: 0; }
+#hall.lib2 .lib-btn.link { color: #c9b99c; letter-spacing: .06em; text-transform: uppercase; font-size: 12.5px; }
+#hall.lib2 .lib-btn.link:hover, #hall.lib2 .lib-btn.link:focus-visible { color: #f1d28a; background: rgba(255,255,255,.04); }
+#hall.lib2 .lib-btn.ghost { border-color: #957343; background: #30251f; color: #e5c985; }
+#hall.lib2 .lib-btn.ghost:hover { background: #3b2e25; }
+#hall.lib2 .lib-btn.ghost.danger { border-color: #7a3b2e; color: #e8a08c; background: #2a1c1a; }
+#hall.lib2 .lib-btn.gold { background: linear-gradient(180deg, #f0d79b, #b88b4b); color: #2c211a; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; box-shadow: 0 8px 22px rgba(8,7,11,.46); }
+#hall.lib2 .lib-btn.gold:hover { filter: brightness(1.06); }
+#hall.lib2 .lib-btn.big { padding: 14px 26px; font-size: 14.5px; }
+#hall.lib2 .lib-btn.small { padding: 6px 11px; font-size: 12px; }
+#hall.lib2 .lib-btn.add { width: 100%; text-align: left; padding: 11px 16px; border: 1px solid #b48c50; background: #35291f; color: #f0d597; font-size: 14px; }
+#hall.lib2 .lib-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 300px 1fr; }
+#hall.lib2 .lib-side { background: #1b171d; border-right: 1px solid #614834; padding: 22px 20px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+#hall.lib2 .lib-cap { font-size: 10.5px; letter-spacing: .24em; text-transform: uppercase; color: #a99478; margin: 14px 0 6px; }
+#hall.lib2 .lib-side > .lib-cap:first-child { margin-top: 0; }
+#hall.lib2 .lib-cap.sub { margin: 2px 0 12px; color: #93816b; letter-spacing: .15em; }
+#hall.lib2 .lib-side > *, #hall.lib2 .lib-main > * { flex-shrink: 0; }
+#hall.lib2 .lib-side-row, #hall.lib2 .lib-deck-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; color: #d7c7ad; font: 14px system-ui, sans-serif; padding: 9px 12px; border-radius: 6px; cursor: pointer; min-height: 0; }
+#hall.lib2 .lib-side-row em { margin-left: auto; font-style: normal; font-size: 12px; color: #9d8b73; }
+#hall.lib2 .lib-side-row:hover, #hall.lib2 .lib-deck-row:hover { background: rgba(255,255,255,.04); }
+#hall.lib2 .lib-side-row.on, #hall.lib2 .lib-deck-row.on { background: #322532; color: #f2d79e; }
+#hall.lib2 .lib-deck-row { font-family: Georgia, serif; font-size: 13.5px; padding: 7px 12px; }
+#hall.lib2 .lib-deck-row.cur .lib-deck-nm::after { content: '  · in use'; font: 11px system-ui, sans-serif; color: #8fae7f; }
+#hall.lib2 .lib-deck-nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#hall.lib2 .lib-star { font-style: normal; color: #e5c47e; font-size: 12px; }
+#hall.lib2 .lib-search { width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 6px; border: 1px solid #47372e; background: #221c21; color: #f1e5cd; font: 13px system-ui, sans-serif; margin-bottom: 4px; }
+#hall.lib2 .lib-decklist { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-height: 120px; overflow-y: auto; }
+#hall.lib2 .lib-empty-s { color: #8f7b69; font-size: 13px; padding: 8px 12px; }
+#hall.lib2 .lib-local { margin-top: 12px; padding: 12px 14px; border: 1px solid #47372e; border-radius: 7px; background: #211c20; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: #8c7d6c; }
+#hall.lib2 .lib-local b { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #d4c3a5; font-weight: 600; }
+#hall.lib2 .lib-chk { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #c9b99c; cursor: pointer; margin-top: 6px; }
+#hall.lib2 .lib-chk.small { font-size: 12px; margin-top: 4px; }
+#hall.lib2 .lib-chk input { accent-color: #c9a04e; width: 15px; height: 15px; margin: 0; }
+#hall.lib2 .lib-pips { display: inline-flex; gap: 5px; flex: none; }
+#hall.lib2 .lib-pip { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 -2px 3px rgba(0,0,0,.25), 0 0 0 1px rgba(0,0,0,.35); }
+#hall.lib2 .lib-pips.sm { gap: 3px; } #hall.lib2 .lib-pips.sm .lib-pip { width: 8px; height: 8px; }
+#hall.lib2 .lib-main { overflow-y: auto; padding: 34px 40px 40px; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+#hall.lib2 .lib-head { display: flex; align-items: flex-start; gap: 24px; }
+#hall.lib2 .lib-head-t { flex: 1 1 auto; min-width: 0; }
+#hall.lib2 .lib-head-go { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+#hall.lib2 .lib-crumb { font-size: 11px; letter-spacing: .24em; text-transform: uppercase; color: #a28c6c; }
+#hall.lib2 .lib-h1 { display: flex; align-items: center; gap: 12px; margin: 10px 0 6px; font: 400 38px/1.1 Georgia, 'Times New Roman', serif; color: #f1e5cd; overflow-wrap: anywhere; }
+#hall.lib2 .lib-fav { border: 0; background: transparent; color: #8f7b69; font-size: 24px; cursor: pointer; padding: 0 4px; min-height: 0; line-height: 1; }
+#hall.lib2 .lib-fav.on, #hall.lib2 .lib-fav:hover { color: #e5c47e; }
+#hall.lib2 .lib-tag { margin: 0; font: italic 15px Georgia, serif; color: #aa9980; }
+#hall.lib2 .lib-panel { background: linear-gradient(180deg, #30232a, #211a20); border: 1px solid #604638; border-radius: 9px; padding: 22px 28px; box-shadow: 0 8px 28px rgba(8,7,11,.46); min-width: 0; }
+#hall.lib2 .lib-panel .lib-cap { margin-top: 0; }
+#hall.lib2 .lib-stats { display: flex; align-items: stretch; flex-wrap: wrap; }
+#hall.lib2 .lib-stat { display: flex; align-items: baseline; gap: 10px; padding: 6px 26px; border-left: 1px solid #594537; }
+#hall.lib2 .lib-stat:first-child { padding-left: 0; border-left: 0; }
+#hall.lib2 .lib-stat b { font: 400 22px Georgia, serif; color: #f0e1c4; }
+#hall.lib2 .lib-stat span { font-size: 12.5px; color: #98856f; text-transform: uppercase; letter-spacing: .06em; }
+#hall.lib2 .lib-stat.col { flex-direction: column; gap: 6px; margin-left: auto; }
+#hall.lib2 .lib-stat-c { display: flex; align-items: center; gap: 10px; }
+#hall.lib2 .lib-stat-c span { color: #c6b699; }
+#hall.lib2 .lib-muted { color: #91816c; font-size: 12px; text-transform: none; letter-spacing: 0; }
+#hall.lib2 .lib-row-h { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+#hall.lib2 .lib-row-h .lib-cap { margin: 0; }
+#hall.lib2 .lib-row-h .lib-btn.link { color: #b39765; text-transform: none; letter-spacing: 0; }
+#hall.lib2 .lib-grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr); gap: 20px; }
+#hall.lib2 .lib-ph { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+#hall.lib2 .lib-ph h2 { margin: 0; font: 400 20px Georgia, serif; color: #e8d8bd; }
+#hall.lib2 .lib-bars { display: flex; align-items: flex-end; gap: 6%; height: 210px; margin: 24px 6px 0; padding-bottom: 26px; border-bottom: 1px solid #6a5440; position: relative; }
+#hall.lib2 .lib-bar { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; }
+#hall.lib2 .lib-bar i { display: block; width: 100%; min-height: 2px; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, #d9b678, #b08a52); opacity: .9; }
+#hall.lib2 .lib-bar b { font: 600 12px system-ui, sans-serif; color: #e8ddc9; margin-bottom: 6px; }
+#hall.lib2 .lib-bar span { position: absolute; bottom: -24px; font-size: 12px; color: #a89478; }
+#hall.lib2 .lib-note-i { margin: 18px 0 0; font: italic 13px Georgia, serif; color: #9d8c74; }
+#hall.lib2 .lib-feat-list { display: flex; flex-direction: column; gap: 14px; }
+#hall.lib2 .lib-feat-row { display: flex; align-items: center; gap: 12px; }
+#hall.lib2 .lib-feat-ic { flex: none; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; color: #d7e3c3; background: #30402c; border: 1px solid #90ac6c; }
+#hall.lib2 .lib-feat-nm { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+#hall.lib2 .lib-feat-nm b { font: 400 14.5px Georgia, serif; color: #e4d3b4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#hall.lib2 .lib-feat-nm em { font-style: normal; font-size: 11px; color: #8e7d68; }
+#hall.lib2 .lib-feat-q { font-size: 12.5px; color: #b59a68; }
+#hall.lib2 .lib-callout { display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; padding: 18px 24px; border: 1px solid #594332; border-radius: 9px; background: #211d21; }
+#hall.lib2 .lib-callout-t { flex: 1 1 360px; min-width: 0; border-left: 3px solid #ba9256; padding-left: 18px; }
+#hall.lib2 .lib-callout-t .lib-cap { margin: 0 0 8px; color: #d5bd8b; }
+#hall.lib2 .lib-callout .lib-notes { font: italic 14.5px/1.5 Georgia, serif; color: #dfd0b6; background: none; border: 0; padding: 0; margin: 0; }
+#hall.lib2 .lib-callout .lib-notes .fhead { display: none; }
+#hall.lib2 .lib-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; flex: 1 1 300px; }
+#hall.lib2 .lib-emptystate { margin: auto; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+#hall.lib-menu .lib-menu-row, .modal.lib-menu .lib-menu-row { display: block; width: 100%; text-align: left; margin: 2px 0; }
+/* narrower windows and upright phones: the sidebar becomes a compact strip above the deck page */
+@media (max-width: 980px) { #hall.lib2 .lib-grid { grid-template-columns: 1fr; } #hall.lib2 .lib-stat.col { margin-left: 0; } }
+@media (max-width: 760px) {
+  #hall.lib2 .lib-top { flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+  #hall.lib2 .lib-sub { display: none; } #hall.lib2 .lib-title { font-size: 17px; }
+  #hall.lib2 .lib-nav { width: 100%; justify-content: flex-start; margin-left: 0; }
+  #hall.lib2 .lib-btn.link { padding: 6px 9px; font-size: 11.5px; }
+  #hall.lib2 .lib-body { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #hall.lib2 .lib-side > *, #hall.lib2 .lib-main > * { flex-shrink: 0; }
+  #hall.lib2 .lib-side { border-right: 0; border-bottom: 1px solid #614834; padding: 14px 14px 12px; overflow: visible; }
+  #hall.lib2 .lib-decklist { flex-direction: row; overflow-x: auto; overflow-y: hidden; min-height: 0; gap: 6px; padding-bottom: 4px; }
+  #hall.lib2 .lib-decklist .lib-deck-row { flex: none; width: auto; max-width: 220px; border: 1px solid #3c2f2a; }
+  #hall.lib2 .lib-deck-row.recent { display: none; } #hall.lib2 .lib-side > .lib-cap:nth-of-type(3) { display: none; }
+  #hall.lib2 .lib-local { display: none; }
+  #hall.lib2 .lib-main { overflow: visible; padding: 18px 14px 28px; }
+  #hall.lib2 .lib-head { flex-direction: column; gap: 14px; } #hall.lib2 .lib-head-go { align-self: stretch; }
+  #hall.lib2 .lib-h1 { font-size: 30px; }
+  #hall.lib2 .lib-panel { padding: 16px; }
+  #hall.lib2 .lib-stat { padding: 6px 14px; } #hall.lib2 .lib-stat b { font-size: 19px; }
+  #hall.lib2 .lib-bars { height: 160px; }
+  #hall.lib2 .lib-actions { justify-content: flex-start; }
+}
+#hall.lib2 .lib-nav .lib-btn { position: static; }   /* old corner-button rules must not move the top-bar buttons */
+#hall.lib2 .lib-decklist > * { flex-shrink: 0; }   /* a long list scrolls; its rows never squash */

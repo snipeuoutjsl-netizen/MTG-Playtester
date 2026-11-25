@@ -44,7 +44,7 @@ function winConfetti() {
 let ambTimer = null, ambNodes = [];
 function ambStop() { clearInterval(ambTimer); ambTimer = null; for (const n of ambNodes) { try { n.stop ? n.stop() : n.disconnect(); } catch (e) {} } ambNodes = []; }
 function ambStart() {
-  ambStop(); const so = settings.sound; if (!so || !so.on || so.ambience === false) return;
+  ambStop(); const so = settings.sound; if (!so || !so.on || so.ambience === false || !libClassic()) return;   // v0.99.99 room sounds belong to the 3D room
   const ac = audio(); if (!ac) return; if (ac.state === 'suspended') document.addEventListener('pointerdown', () => { try { ac.resume(); } catch (e) {} }, { once: true });
   const room = typeof hallRoom === 'function' ? hallRoom() : 'library', vol = Math.max(0, Math.min(1, so.vol === undefined ? .5 : so.vol)) * .22;
   const out = ac.createGain(); out.gain.value = vol; out.connect(ac.destination); ambNodes.push(out);

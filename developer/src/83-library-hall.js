@@ -54,6 +54,7 @@ function closeHall(anim) {
   else done();
 }
 function beginWith(name) {
+  try { libTouch(name); } catch (e) { /* recent list only */ }
   lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true);
   // v0.99.51 a new game from the Library while one is in progress: windows left open by the old game (a trigger, the stack, a search)
   // belong to it, so they are cleared before the new game is dealt; if starting fails, the table is shown with a message, not a blank screen.
@@ -234,6 +235,8 @@ function hallTurnTo(k) {
 }
 function drawHall() {
   const el = document.getElementById('hall'); if (!el) return;
+  if (!libClassic()) { drawLibraryScreen(el); return; }   // v0.99.99 the clean Library screen (src/99-library-screen.js); the 3D room below is kept, switched off
+  el.classList.remove('lib2');
   const decks = loadDecks(), mode = gameMode(), all = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
   const portrait = hallWantsPortrait(); el.classList.toggle('portrait', portrait); el.classList.add('v2', 'v3');
   // v0.99.97 a bookcase on each side of the room (landscape: 2 x 4 shelves of 10) or one tall case (upright phone: 4 shelves of 16)
