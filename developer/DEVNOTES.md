@@ -1,6 +1,9 @@
 
 
 ## v0.99.99
+- src/99-library-screen.js: drawLibraryScreen (#hall.lib2) replaces the 3D room unless localStorage mtgpt.libClassic (Settings → Library → Classic 3D Library). Favorites 'mtgpt.favDecks', recent 'mtgpt.recentDecks' (libTouch in beginWith). Room sounds only in the classic room. Tests: UI library / UI library 2 for the new screen; rooms, desk, swap and polish run with the classic room switched on.
+- The update notice reads the version from the first line of sw.js (LOA_VERSION, kept current by bump.py): the v0.99.93 version.json never shipped because the Pages workflow change was not committed and workflow files cannot be changed from here.
+- The 3D work below (v3 perspective, levitation) stays in the classic room.
 - v3 perspective 1300 (table re-rendered with desk-gen3.py P=1300); lighter plank top faces.
 - Levitation: hallLevitate (translate property, so it composes with the 3D transform) on .hall-tome and .dbx-turn > .bk.big; .hall-tome-shadow is an ellipse on the table (hidden while a deck is open). Deck book at 212,236 (left case) or 1188 when the pulled tile is on shelves 5-8 (:has); spread 476..1124 from y 548; deck-open tome scale .86 at y 112.
 
