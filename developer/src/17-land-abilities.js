@@ -228,7 +228,7 @@ function handAbilityReady(c){
   }catch(e){ return ''; }
   return '';
 }
-function handInteraction(c){ const r=handInteractionSpell(c); return r!=='ready' && handAbilityReady(c) ? 'ready' : r; }
+function handInteraction(c){ const r=handInteractionSpell(c); if(r!=='ready' && mdfcHasLandFace(c) && !isLandName(c.name) && state && state.phase==='play' && canPlayLandNow()) return 'ready'; return r!=='ready' && handAbilityReady(c) ? 'ready' : r; }
 function handInteractionSpell(c){
   const ho=halfOptions(c); if(!ho.length) return handInteraction0(c);
   const rank={ready:3,mana:2,timing:1,'':0}; let best=null;
@@ -390,7 +390,8 @@ function onCardDbl(c, zone) {
     else toggleTap(c.id);
   }
   else if (zone === 'hand') {
-    if (isLandName(c.name)) playLand(c.id);
+    if (mdfcHasLandFace(c)) playMdfc(c);
+    else if (isLandName(c.name)) playLand(c.id);
     else if (isSpellCard(c) || isInstantSpeed(c)) castSpell(c.id);
     else if (canPlaySorcerySpeedNow()) moveCard(c.id, 'battlefield');
     else toast('Wrong phase', 'This card can only be played during your main phase.');

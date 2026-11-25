@@ -18,7 +18,23 @@ function pzCard(x, turn) {   // a card from a puzzle: a name (built-in) or a sav
   if (c.enteredTurn === undefined || c.enteredTurn >= turn) c.enteredTurn = src.sick ? turn : turn - 1;
   return c;
 }
+// v0.99.102 a puzzle's cards are usually not in your decks, so the app had no card data or pictures for them (they showed as plain text
+// placeholders, and without card data the rules could not read them). Starting a puzzle now fetches what is missing from Scryfall, the same
+// way a deck import does: card data first (the puzzle waits for it), pictures after (they fill in while you play).
+function pzNames(p) { return [...new Set([].concat(p.hand || [], p.bf || [], p.gy || [], p.exile || [], p.lib || []).map(x => typeof x === 'string' ? x : x && !x.token ? x.faceOf || x.name : null).filter(Boolean))]; }
+let pzFetching = false;
 function startPuzzle(p) {
+  const names = pzNames(p), noData = names.filter(n => !cardInfo(n));
+  if (!noData.length || navigator.onLine === false || pzFetching) { startPuzzle0(p); if (noData.length && navigator.onLine === false) toast('Puzzle cards offline', `No card data yet for ${noData.join(', ')}. Connect to the internet once so the puzzle's cards can be looked up.`); pzPictures(names); return; }
+  pzFetching = true; toast(`Puzzle: ${p.title}`, `Looking up ${noData.length} card${noData.length === 1 ? '' : 's'} for this puzzle…`);
+  (async () => { try { for (let i = 0; i < 40 && imgJob.running; i++) await sleep(250); await downloadImages(noData); } catch (e) { /* started below either way */ } finally { pzFetching = false; }
+    startPuzzle0(p); const still = names.filter(n => !cardInfo(n)); if (still.length) toast('Some puzzle cards were not found', `${still.join(', ')}: ${lastNetReason || 'Scryfall could not be reached.'}`); pzPictures(names); })();
+}
+async function pzPictures(names) {
+  try { if (await loadCachedImages(names)) render(); const miss = names.filter(n => !IMG.has(imgKey(n)));
+    if (miss.length && navigator.onLine !== false && typeof autoImages !== 'undefined' && autoImages) { for (let i = 0; i < 40 && imgJob.running; i++) await sleep(250); await downloadImages(miss); render(); } } catch (e) { /* pictures are optional */ }
+}
+function startPuzzle0(p) {
   try { if (typeof hallOpen === 'function' && hallOpen()) closeHall(true); } catch (e) { /* the Library may be closed */ }
   document.querySelectorAll('#modalRoot .backdrop').forEach(x => x.remove());
   state = freshState(); undoStack = []; selected = null; bottomSel.clear(); try { lifePrev = { you: null, opp: null }; } catch (e) { /* life display */ }

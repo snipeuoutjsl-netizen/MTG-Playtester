@@ -209,7 +209,11 @@ function landManaColors(c) {
   // so their old mana abilities no longer apply.
   if (eff.override) return eff.types.includes('Mountain') ? ['R'] : [];
   const i = cardInfo(c.name), key = norm(c.name);
-  const prod = (i && i.prod && i.prod.length) ? i.prod : BASIC_PRODUCES[key] || [];
+  // v0.99.102 the face that is up: a double-faced card's whole-card record lists the mana of both faces (a Pathway's front made both colours),
+  // so its front face's own list is used; a back face (Soporific Springs, Azcanta) is its own record. With no list, the land's text is read.
+  const src = i && i.fc && !i.kind && i.fc[0] && norm(i.name) === key ? i.fc[0] : i;
+  let prod = (src && src.prod && src.prod.length) ? src.prod : BASIC_PRODUCES[key] || [];
+  if (!prod.length) { const abs = landManaAbilities(c); prod = [...new Set(abs.flatMap(a => a.any ? ['W','U','B','R','G'] : a.per ? [a.per.col] : (a.fixed || a.choice || [])))]; }
   const out = new Set(prod.map(x=>String(x).toUpperCase()).filter(x=>/^[WUBRGC]$/.test(x)));
   for (const k of landBlockedColors(c)) out.delete(k);
   { const abs = landManaAbilities(c); if (abs.some(a => a.cmdId)) { const can = new Set(abs.flatMap(a => landAbUsable(a, c) ? abColors(a) : [])); for (const k of [...out]) if (!can.has(k)) out.delete(k); } }   // v0.99.71 a restricted ability (Verge lands) adds nothing while its condition is not met

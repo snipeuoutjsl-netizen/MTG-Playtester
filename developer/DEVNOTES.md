@@ -1,5 +1,14 @@
 
 
+## v0.99.102
+- faceFix (02-card-data.js, run by regFaces on every load so saved card data is corrected): per-face prod read from the face's own Add text (faceProd), modal back face cmc = symCmc(face mc), split/adventure/aftermath half colours from the half's cost, flip halves keep the card colours.
+- landManaColors: uses the face that is up (the whole-card record's fc[0] when the front is up) and falls back to landManaAbilities when no produced-mana list exists.
+- mdfcParent / halfOptions: a spell-spell MDFC offers its back face through the half chooser; castAsHalf accepts MDFCs; restoreHalf keeps the face when the card is on the battlefield (it reverts on leaving, rule 712.14).
+- playMdfc: the which-face chooser for MDFCs with a land face (double-click, drag to the battlefield, context menu); handInteraction counts a playable land face as ready.
+- Puzzles: startPuzzle fetches missing card data (downloadImages) before startPuzzle0, then pzPictures fills in images.
+- Deck box hover preview (.lbx-peek) in its own column; only with a fine pointer and a window at least 900 wide.
+- Not covered yet: Room cards (Duskmourn) are read as one spell (no doors, no unlocking).
+
 ## v0.99.101
 - src/99-library-box.js: libBoxEl (3D box: faces .lbx-f front/back/left/right/bottom/inner, lid .lbx-lid hinged at the back top edge, --lid 16deg on hover, 118deg open; tiltWith for the pointer) placed in .lib-head between .lib-head-t and .lib-head-go.
 - libOpenBox: .lbx-ov fixed overlay in #hall; a clone of the box (.lbx-ghost) sits at the same screen spot above the backdrop and opens; the cards deal out after 560ms with the same keyframes as the game's opening-hand deal (scale .4, rotate -10deg, 560ms, cubic-bezier(.2,.8,.2,1), 170ms apart for the first 7, then the rest within ~1.6s) and sfx('draw'); closing flies them back and shuts the lid. Fit: biggest --cw (150 down to 66, phones 58) with no scrolling.

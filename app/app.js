@@ -141,7 +141,36 @@ function compact(o) {
 // lookup by name - type, power/toughness, abilities, triggers - sees the face that is actually up (rule 712).
 // Split, aftermath and adventure cards keep the old combined reading for now (their halves are cast separately; see the changelog).
 const FACES = new Map();   // normalized back-face name -> face record
-function regFaces(c) { if (c && c.fc) for (const fr of c.fc) if (fr.fi >= 1 || (fr.half && fr.fi === 0)) FACES.set(norm(fr.name), fr); return c; }
+function regFaces(c) { if (c && c.fc) { faceFix(c); for (const fr of c.fc) if (fr.fi >= 1 || (fr.half && fr.fi === 0)) FACES.set(norm(fr.name), fr); } return c; }
+// v0.99.102 each face is read as its own card (rule 712.8: a face up has only that face's characteristics). Runs on every load, so card data
+// saved by an older version is corrected too:
+//  - the mana a face makes is read from that face's own text (Scryfall's produced_mana is for the whole card, so a Pathway's front face
+//    made both colours and a land on the back face - Soporific Springs, Azcanta, the Ixalan lands - made none);
+//  - a modal double-faced card's back face has the mana value of its own mana cost (712.8e covers only transforming cards, which keep the front's);
+//  - the halves of split / adventure / aftermath cards are the colours of their own mana costs (205.2 / 709.4a / 715.4), a flip card's
+//    flipped half keeps the card's colours (710.1b).
+const FACE_ANY = ['W', 'U', 'B', 'R', 'G'];
+function faceProd(tx, whole) {
+  const out = new Set();
+  for (const line of String(tx || '').replace(/\([^)]*\)/g, ' ').split('\n')) {
+    const i = line.search(/\bAdd\b/); if (i < 0) continue; const part = line.slice(i);
+    for (const m of part.matchAll(/\{([WUBRGC])\}/g)) out.add(m[1]);
+    if (/\bmana of any (?:one )?colou?r|\bany combination of colou?rs|\bmana in any combination/i.test(part)) for (const k of (whole && whole.length ? whole.filter(x => FACE_ANY.includes(x)) : FACE_ANY)) out.add(k);
+    if (/\bmana of any type/i.test(part)) for (const k of [...FACE_ANY, 'C']) out.add(k);
+  }
+  return out.size ? [...out] : undefined;
+}
+const faceCostCols = mc => [...new Set([...String(mc || '').matchAll(/\{([^}]+)\}/g)].flatMap(m => m[1].split('/').filter(x => FACE_ANY.includes(x))))].sort((a, b) => FACE_ANY.indexOf(a) - FACE_ANY.indexOf(b));
+function faceFix(c) {
+  if (!c || !c.fc || c.fc.length < 2 || c.__ff) return;
+  for (const r of c.fc) {
+    const pr = faceProd(r.tx, c.prod); if (pr) r.prod = pr; else delete r.prod;
+    if (c.mdfc && r.fi >= 1 && typeof symCmc === 'function') { try { r.cmc = symCmc(r.mc || '') || 0; } catch (e) { /* keep */ } }
+    if (c.kind && c.kind !== 'prepare' && r.mc) r.col = faceCostCols(r.mc);
+    if (c.lo === 'flip') r.col = (c.col || []).slice();
+  }
+  try { Object.defineProperty(c, '__ff', { value: true, enumerable: false }); } catch (e) { /* frozen record */ }
+}
 function normFaces(c) {
   if (!c) return c;
   if (c.fc !== undefined) return regFaces(c);
@@ -312,15 +341,18 @@ function transformPerm(id, to) {
 // While a half is being cast the card is named after that half (c.faceOf keeps the real name), so cost, type, targets and effect are all read from
 // that half alone. It goes back to its whole-card name as soon as it leaves the stack, or if you abandon the cast.
 function halfParent(c) { const p = c && !c.token ? cardInfo(c.faceOf || c.name) : null; return p && p.fc && p.kind ? p : null; }
+// v0.99.102 CR 712.12: a modal double-faced card is cast as either face. Its faces go through the same "one half at a time" flow; a land face is played instead.
+function mdfcParent(c) { const p = c && !c.token ? cardInfo(c.faceOf || c.name) : null; return p && p.fc && p.fc.length > 1 && p.mdfc && !p.kind ? p : null; }
 function halfOptions(c) {   // the ways this card in your hand can be cast: fi null = the card itself
   if (!c || c.token || c.faceOf || c.fromExile || c.fromGy) return [];
+  { const q = mdfcParent(c); if (q && !q.land && q.fc[1] && !q.fc[1].land) return [{ fi: null, rec: q.fc[0], label: q.fc[0].name }, { fi: 1, rec: q.fc[1], label: q.fc[1].name + ' (back face)' }]; }
   const p = cardInfo(c.name); if (!p || !p.fc || !p.kind || p.kind === 'prepare') return [];
   if (p.kind === 'adventure') return [{ fi: null, rec: p.fc[0], label: p.fc[0].name }, { fi: 1, rec: p.fc[1], label: p.fc[1].name + ' (adventure)' }];
   if (p.kind === 'aftermath') return [{ fi: 0, rec: p.fc[0], label: p.fc[0].name }];   // the other half can only be cast from the graveyard
   return p.fc.map((r, i) => ({ fi: i, rec: r, label: r.name }));
 }
-function castAsHalf(c, fi) { const p = halfParent(c); if (!p) return; if (!c.faceOf) c.faceOf = c.name; c.name = p.fc[fi].name; c.face = fi; c.half = true; }
-function restoreHalf(c) { if (c && c.half) { c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
+function castAsHalf(c, fi) { const p = halfParent(c) || mdfcParent(c); if (!p) return; if (!c.faceOf) c.faceOf = c.name; c.name = p.fc[fi].name; c.face = fi; c.half = true; }
+function restoreHalf(c) { if (c && c.half) { if (state && mdfcParent(c) && state.battlefield.includes(c)) { delete c.half; return; }   /* v0.99.102 CR 712.12: a modal face cast as the spell is the permanent it becomes; it is the whole card again when it leaves (rule 712.14) */ c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
 function withHalf(c, fi, fn) {
   if (fi === null || fi === undefined) return fn();
   const was = { n: c.name, f: c.faceOf, fc: c.face, h: c.half }; castAsHalf(c, fi);
@@ -490,8 +522,9 @@ function parseLookDistribute(tx, inner) {
   return { n, slots, full: ok, alt, covers };
 }
 function openHalfChooser(c, opts, pick) {
-  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which half?`, { width: 560, sticky: true, onCancel: () => {} });
-  m.body.append(h('div', { class: 'psub', text: 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
+  const md = !!mdfcParent(c);
+  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which ${md ? 'face' : 'half'}?`, { width: 560, sticky: true, onCancel: () => {} });
+  m.body.append(h('div', { class: 'psub', text: md ? 'A modal double-faced card is cast as one face or the other (rule 712.12). The face you choose is the spell, and the permanent it becomes.' : 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
   const list = h('div', { class: 'prelist' });
   for (const o of opts) {
     const st = withHalf(c, o.fi, () => { if (!canCastNow(c)) return { ok: false, why: state.stack.length ? 'only instants can be cast now' : 'wrong timing' }; const pm = canPayMana(c); return pm && !pm.ok ? { ok: false, why: pm.reason === 'color' ? 'not the right colours' : 'not enough mana' } : { ok: true }; });
@@ -501,6 +534,30 @@ function openHalfChooser(c, opts, pick) {
   }
   m.body.append(list);
   m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }));
+}
+// v0.99.102 CR 712.12 / 305.9: a modal double-faced card with a land face in your hand (Sink into Stupor // Soporific Springs, a Pathway):
+// using it asks which face. A land face is played with your land drop and enters as that face; a spell face is cast as usual.
+function mdfcHasLandFace(c) { const p = mdfcParent(c); return !!(p && !c.faceOf && p.fc.some(f => f.land)); }
+function playMdfc(c) {
+  const p = mdfcParent(c); if (!p) return false;
+  const rows = p.fc.map((r, i) => {
+    let ok, why;
+    if (r.land) { ok = canPlayLandNow(); why = ok ? '' : landDropUsed() ? 'you have already played a land this turn' : 'lands are played in your main phase with an empty stack'; }
+    else { const st = withHalf(c, i ? i : null, () => { if (!canCastNow(c)) return { ok: false, why: state.stack.length ? 'only instants can be cast now' : 'wrong timing' }; const pm = canPayMana(c); return pm && !pm.ok ? { ok: false, why: 'not enough mana' } : { ok: true }; }); ok = st.ok; why = st.why || ''; }
+    return { r, i, ok, why };
+  });
+  const m = modal(`${String(c.name).split(' // ').join(' / ')}: which face?`, { width: 560, sticky: true, onCancel: () => {} });
+  m.body.append(h('div', { class: 'psub', text: 'A modal double-faced card is played as one face or the other (rule 712.12). A land face uses your land drop; a spell face is cast.' }));
+  const list = h('div', { class: 'prelist' });
+  for (const x of rows) {
+    const row = h('div', { class: 'row' + (x.ok ? '' : ' dim') }, h('span', { class: 'nm' }, (x.r.land ? 'Play ' : 'Cast ') + x.r.name, ' ', x.r.mc ? symbols(x.r.mc) : ''), h('span', { class: 'muted small', text: x.ok ? x.r.t.replace(/\s+—.*$/, '') + (x.r.land ? ' · uses your land drop' : '') : `Cannot ${x.r.land ? 'play' : 'cast'}: ${x.why}` }));
+    row.addEventListener('click', () => { m.close(); const g = findCard(c.id); if (!g || g.zone !== 'hand') return;
+      if (x.r.land) playLand(c.id, x.i || undefined);
+      else { state.halfChosen = c.id; if (x.i) castAsHalf(g.card, x.i); castSpell(c.id); } });
+    list.append(row);
+  }
+  m.body.append(list); m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }));
+  return true;
 }
 function isSpellCard(c) {
   const i = c && cardInfo(c.name);
@@ -4871,7 +4928,11 @@ function landManaColors(c) {
   // so their old mana abilities no longer apply.
   if (eff.override) return eff.types.includes('Mountain') ? ['R'] : [];
   const i = cardInfo(c.name), key = norm(c.name);
-  const prod = (i && i.prod && i.prod.length) ? i.prod : BASIC_PRODUCES[key] || [];
+  // v0.99.102 the face that is up: a double-faced card's whole-card record lists the mana of both faces (a Pathway's front made both colours),
+  // so its front face's own list is used; a back face (Soporific Springs, Azcanta) is its own record. With no list, the land's text is read.
+  const src = i && i.fc && !i.kind && i.fc[0] && norm(i.name) === key ? i.fc[0] : i;
+  let prod = (src && src.prod && src.prod.length) ? src.prod : BASIC_PRODUCES[key] || [];
+  if (!prod.length) { const abs = landManaAbilities(c); prod = [...new Set(abs.flatMap(a => a.any ? ['W','U','B','R','G'] : a.per ? [a.per.col] : (a.fixed || a.choice || [])))]; }
   const out = new Set(prod.map(x=>String(x).toUpperCase()).filter(x=>/^[WUBRGC]$/.test(x)));
   for (const k of landBlockedColors(c)) out.delete(k);
   { const abs = landManaAbilities(c); if (abs.some(a => a.cmdId)) { const can = new Set(abs.flatMap(a => landAbUsable(a, c) ? abColors(a) : [])); for (const k of [...out]) if (!can.has(k)) out.delete(k); } }   // v0.99.71 a restricted ability (Verge lands) adds nothing while its condition is not met
@@ -5582,7 +5643,7 @@ function handAbilityReady(c){
   }catch(e){ return ''; }
   return '';
 }
-function handInteraction(c){ const r=handInteractionSpell(c); return r!=='ready' && handAbilityReady(c) ? 'ready' : r; }
+function handInteraction(c){ const r=handInteractionSpell(c); if(r!=='ready' && mdfcHasLandFace(c) && !isLandName(c.name) && state && state.phase==='play' && canPlayLandNow()) return 'ready'; return r!=='ready' && handAbilityReady(c) ? 'ready' : r; }
 function handInteractionSpell(c){
   const ho=halfOptions(c); if(!ho.length) return handInteraction0(c);
   const rank={ready:3,mana:2,timing:1,'':0}; let best=null;
@@ -5744,7 +5805,8 @@ function onCardDbl(c, zone) {
     else toggleTap(c.id);
   }
   else if (zone === 'hand') {
-    if (isLandName(c.name)) playLand(c.id);
+    if (mdfcHasLandFace(c)) playMdfc(c);
+    else if (isLandName(c.name)) playLand(c.id);
     else if (isSpellCard(c) || isInstantSpeed(c)) castSpell(c.id);
     else if (canPlaySorcerySpeedNow()) moveCard(c.id, 'battlefield');
     else toast('Wrong phase', 'This card can only be played during your main phase.');
@@ -6635,7 +6697,8 @@ function showCardMenu(c, zone, x, y) {
   if (zone === 'battlefield' && state.exile.some(x => x.hiddenBy === c.id)) items.push({ label: 'Hideaway: play the exiled card free', title: 'When the hideaway condition is met, play the exiled card without paying its mana cost', fn: () => hideawayPlay(c.id) });
   if (zone === 'battlefield' && fetchInfo(c)) { items.push({ label: c.tapped ? 'Fetch… (needs an untapped land)' : 'Activate: sacrifice and fetch…', fn: () => c.tapped ? toast('Cannot fetch', 'Fetch lands have {T} in their cost, so the land must be untapped.') : openFetch(c) }); items.push('-'); }
   if (zone === 'hand') {
-    if (isLandName(c.name)) items.push({ label: 'Play land', fn: () => playLand(c.id) });
+    if (mdfcHasLandFace(c)) { const p = mdfcParent(c); p.fc.forEach((r, i) => items.push(r.land ? { label: `Play ${r.name} (land)`, fn: () => playLand(c.id, i || undefined) } : { label: `Cast ${r.name} — put on stack`, fn: () => { state.halfChosen = c.id; if (i) castAsHalf(c, i); castSpell(c.id); } })); }
+    else if (isLandName(c.name)) items.push({ label: 'Play land', fn: () => playLand(c.id) });
     else if (mdfcLandFace(c)) { items.push({ label: `Play ${mdfcLandFace(c).name} (land)`, fn: () => playLand(c.id, 1) }); items.push({ label: `Cast ${c.name.split(' // ')[0]} — put on stack`, fn: () => castSpell(c.id) }); }
     else if (isSpellCard(c) || isInstantSpeed(c)) items.push({ label: 'Cast — put on stack', fn: () => castSpell(c.id) });
     else items.push({ label: 'Play to battlefield', fn: () => {
@@ -7075,8 +7138,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.101';
+const APP_VERSION = '0.99.102';
 const CHANGELOG = [
+  { v: '0.99.102', title: 'Double-faced cards, read face by face', notes: ['FIX: a land on the back of a modal double-faced card (Soporific Springs, Emeria, Shatterskull, Fell Mire, Agadeem, Turntimber, Witch-Blessed Meadow ...) tapped for nothing. So did a transformed land (Azcanta, the Sunken Ruin; Temple of Civilization; Itlimoc). Each face now makes the mana its own text says.', 'FIX: a Pathway made both of its colours; each face now makes only its own (Hengegate W, Mistgate U).', 'A modal double-faced card in your hand asks which face when you use it: play the land face with your land drop, or cast the spell face. Pathways can be played as either face, and a card with two spell faces can be cast as its back face (Valki or Tibalt, Esika or The Prismatic Bridge). The face you cast is the permanent it becomes.', 'A modal back face has its own mana value (Tibalt 7, Soporific Springs 0); a transformed face keeps the front face\'s. The halves of split, adventure and flip cards have their own colours (Ice is blue, Stomp red).', 'Puzzles: their cards now load like a deck\'s. Card data is looked up from Scryfall before the puzzle starts, and the pictures fill in as you play (before, cards not in your decks showed as text placeholders).', 'The deck box: point at a card and it shows enlarged in a column beside the stacks, never over them.'] },
   { v: '0.99.101', title: 'The deck box', notes: ['The Library’s deck page shows the deck in a 3D deck box between its name and Begin goldfish. It floats, turns toward the pointer, and its lid lifts a little when you point at it.', 'Click the box: the lid opens and the cards come out the way your opening hand is dealt, one at a time, landing laid out on the screen by card type in mana-value order (one stack per card, its copies fanned down).', 'Click a card to see it large (click again, or Escape, to put it down). Close the box, press Escape or click the backdrop and the cards fly back in and the lid shuts.'] },
   { v: '0.99.100', title: 'The Library, redesigned: clean and simple', notes: ['NEW LIBRARY SCREEN: a top bar (Puzzles, Hand lab, Wishlist, Help, Settings, Back to the table), a sidebar with your collection, and a page for the deck you choose.', 'The sidebar: Add a deck, All decks and Favorites (star a deck on its page), Decks and Commander, the decks you opened recently, a search box and every deck with its colours. On a phone it sits above the deck page as a row of decks you swipe through.', 'The deck page: Begin goldfish (with I go first), Continue the game in progress, the deck profile (cards, sideboard, average mana value, lands, colours, last played), the mana curve, its featured cards, the Librarian\'s notes and recaps, and Sideboard, Hand lab, Card art & printings, Box art, Buy this deck and Delete.', 'FIX: v0.99.99 went out without this redesign (only the 3D room changes reached the release); this version carries it.', 'The 3D Library is shelved, not gone: turn on Settings → Library → Classic 3D Library to use it.'] },
   { v: '0.99.99', title: 'The Library: shelves you can see, and a floating deck book', notes: ['A closer camera: you now see the top of every shelf, not only its front edge, so the books stand on real shelves. The table is redrawn for the same camera.', 'The open book floats above the table instead of standing on it.', 'When you take a deck down, its book floats out in front of the bookcase it came from, the deck\'s cards take the whole table, and the open book floats above them with the deck\'s details.'] },
@@ -10127,7 +10191,8 @@ function dropCardOn(id, kind, x) {
   if (f && f.zone === 'hand' && kind === 'hand') { const slot = handSlotAt(x); clearHandMarker(); dragHand = null; reorderHand(id, slot); return; }
   clearHandMarker();
   if (f && f.zone === 'hand' && kind === 'battlefield') {
-    if (isLandName(f.card.name)) playLand(id);
+    if (mdfcHasLandFace(f.card)) playMdfc(f.card);
+    else if (isLandName(f.card.name)) playLand(id);
     else if (isSpellCard(f.card) || isInstantSpeed(f.card)) castSpell(id);
     else if (canPlaySorcerySpeedNow()) moveCard(id, 'battlefield');
     else toast('Wrong phase', 'This card can only be played during your main phase.');
@@ -15479,7 +15544,23 @@ function pzCard(x, turn) {   // a card from a puzzle: a name (built-in) or a sav
   if (c.enteredTurn === undefined || c.enteredTurn >= turn) c.enteredTurn = src.sick ? turn : turn - 1;
   return c;
 }
+// v0.99.102 a puzzle's cards are usually not in your decks, so the app had no card data or pictures for them (they showed as plain text
+// placeholders, and without card data the rules could not read them). Starting a puzzle now fetches what is missing from Scryfall, the same
+// way a deck import does: card data first (the puzzle waits for it), pictures after (they fill in while you play).
+function pzNames(p) { return [...new Set([].concat(p.hand || [], p.bf || [], p.gy || [], p.exile || [], p.lib || []).map(x => typeof x === 'string' ? x : x && !x.token ? x.faceOf || x.name : null).filter(Boolean))]; }
+let pzFetching = false;
 function startPuzzle(p) {
+  const names = pzNames(p), noData = names.filter(n => !cardInfo(n));
+  if (!noData.length || navigator.onLine === false || pzFetching) { startPuzzle0(p); if (noData.length && navigator.onLine === false) toast('Puzzle cards offline', `No card data yet for ${noData.join(', ')}. Connect to the internet once so the puzzle's cards can be looked up.`); pzPictures(names); return; }
+  pzFetching = true; toast(`Puzzle: ${p.title}`, `Looking up ${noData.length} card${noData.length === 1 ? '' : 's'} for this puzzle…`);
+  (async () => { try { for (let i = 0; i < 40 && imgJob.running; i++) await sleep(250); await downloadImages(noData); } catch (e) { /* started below either way */ } finally { pzFetching = false; }
+    startPuzzle0(p); const still = names.filter(n => !cardInfo(n)); if (still.length) toast('Some puzzle cards were not found', `${still.join(', ')}: ${lastNetReason || 'Scryfall could not be reached.'}`); pzPictures(names); })();
+}
+async function pzPictures(names) {
+  try { if (await loadCachedImages(names)) render(); const miss = names.filter(n => !IMG.has(imgKey(n)));
+    if (miss.length && navigator.onLine !== false && typeof autoImages !== 'undefined' && autoImages) { for (let i = 0; i < 40 && imgJob.running; i++) await sleep(250); await downloadImages(miss); render(); } } catch (e) { /* pictures are optional */ }
+}
+function startPuzzle0(p) {
   try { if (typeof hallOpen === 'function' && hallOpen()) closeHall(true); } catch (e) { /* the Library may be closed */ }
   document.querySelectorAll('#modalRoot .backdrop').forEach(x => x.remove());
   state = freshState(); undoStack = []; selected = null; bottomSel.clear(); try { lifePrev = { you: null, opp: null }; } catch (e) { /* life display */ }
@@ -15853,6 +15934,17 @@ function libBoxCards(deck) {
 function libOpenBox(zone, deckName, deck) {
   const hall = zone.closest('#hall'); if (!hall || hall.querySelector('.lbx-ov')) return;
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
+  // v0.99.102 pointing at a card shows it enlarged in a column of its own on the right (never over the stacks); touch screens keep tap-to-enlarge
+  const hover = !!(window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) && window.innerWidth >= 900;
+  const peek = hover ? h('aside', { class: 'lbx-peek', 'aria-live': 'polite' }) : null;
+  const peekIdle = () => peek && peek.replaceChildren(h('div', { class: 'lbx-peek-idle' }, h('div', { class: 'lbx-peek-blank' }), h('span', { text: 'Point at a card to see it here' })));
+  let peekName = null, peekT = 0;
+  const peekShow = c => { if (!peek) return; clearTimeout(peekT); if (!c) { peekT = setTimeout(() => { peekName = null; peekIdle(); }, 250); return; } if (peekName === c.name) return; peekName = c.name;
+    const im = imgFor(c.name, deckName), info = cardInfo(c.name), rec = c.rec || info;
+    const pic = im ? h('img', { class: 'lbx-peek-img', src: im.front, alt: c.name }) : h('div', { class: 'lbx-peek-txt' }, h('b', { text: c.name }), rec && rec.mc ? h('div', {}, symbols(String(rec.mc).split(' // ')[0])) : null, h('i', { text: rec ? String(rec.t || '').split(' // ')[0] : '' }), info && info.tx ? h('p', { text: info.tx }) : null, rec && rec.pt ? h('div', { text: rec.pt }) : null);
+    peek.replaceChildren(h('div', { class: 'lbx-peek-in' }, pic, im && im.back ? h('img', { class: 'lbx-peek-back', src: im.back, alt: 'Back face', title: 'Back face' }) : null,
+      h('div', { class: 'lbx-peek-cap' }, h('b', { text: `${c.qty} × ${c.name}` }), h('span', { text: rec ? String(rec.t || '').replace(/ \/\/ /g, '  //  ') : '' })))); };
+  peekIdle();
   const grid = h('div', { class: 'lbx-grid' }), body = h('div', { class: 'lbx-body' }, grid), zoom = h('div', { class: 'lbx-zoom', role: 'dialog', 'aria-label': 'Card' });
   const showCard = c => {
     const im = imgFor(c.name, deckName), info = cardInfo(c.name);
@@ -15876,6 +15968,7 @@ function libOpenBox(zone, deckName, deck) {
     if (motion && !flown) st.style.opacity = '0';   // hidden until they fly out of the box
     if (c.qty > 1) st.append(h('em', { class: 'lbx-qty', text: '×' + c.qty }));
     st.addEventListener('click', e => { e.stopPropagation(); showCard(c); });
+    st.addEventListener('pointerenter', () => peekShow(c)); st.addEventListener('pointerleave', () => peekShow(null)); st.addEventListener('focus', () => peekShow(c));
     return st;
   };
   const build = () => grid.replaceChildren(...libBoxCards(deck).map(([title, list]) =>
@@ -15911,9 +16004,9 @@ function libOpenBox(zone, deckName, deck) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (zoom.classList.contains('on')) zoom.classList.remove('on'); else close(); } };
   const ov = h('div', { class: 'lbx-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${deckName}: every card in the deck` },
     h('div', { class: 'lbx-bar' },
-      h('div', { class: 'lbx-bar-t' }, h('div', { class: 'lib-cap', text: 'The box, opened' }), h('h2', { text: deckName }), h('span', { class: 'lib-muted', text: `${sum(deck.main)} cards · by card type, in mana-value order · click a card to see it large` })),
+      h('div', { class: 'lbx-bar-t' }, h('div', { class: 'lib-cap', text: 'The box, opened' }), h('h2', { text: deckName }), h('span', { class: 'lib-muted', text: `${sum(deck.main)} cards · by card type, in mana-value order · point at a card to see it enlarged, click to see it full size` })),
       h('button', { class: 'lib-btn ghost lbx-x', text: 'Close the box', onclick: () => close() })),
-    body, zoom);
+    h('div', { class: 'lbx-main' + (peek ? ' peeking' : '') }, body, peek), zoom);
   ov.addEventListener('click', e => { if (e.target === ov || e.target === body || e.target === grid) close(); });
   zoom.addEventListener('click', () => zoom.classList.remove('on'));
   document.addEventListener('keydown', onKey, true);
