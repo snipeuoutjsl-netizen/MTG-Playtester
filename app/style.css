@@ -3366,3 +3366,70 @@ body.a11y-calm .pk-pack, body.a11y-calm .pk-face, body.a11y-calm .pk-foil, body.
 .pk-ov .lib-btn:hover { border-color: #e3c27a; color: #f4e2b2; }
 .pk-ov .lib-btn.gold { background: linear-gradient(#f0d79b, #b88b4b); color: #1a130a; border-color: #f0d79b; letter-spacing: .12em; text-transform: uppercase; font-weight: 800; padding: 12px 26px; box-shadow: 0 4px 16px rgba(227,194,122,.25); }
 .pk-ov .lib-btn:disabled { opacity: .5; cursor: default; }
+/* ===== v0.99.108 the shelf: every deck as its floating box ===== */
+#hall.lib2 .lib-shelf { display: grid; gap: 26px 18px; margin-top: 26px; padding-bottom: 20px; }
+#hall.lib2 .lib-shelf.lg { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+#hall.lib2 .lib-shelf.md { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); }
+#hall.lib2 .lib-shelf.sm { grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 18px 12px; }
+#hall.lib2 .lib-shelf .lib-shelf-box { width: auto; height: auto; margin: 0; padding: 22px 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 0; border-radius: 16px; transition: background .2s; }
+#hall.lib2 .lib-shelf .lib-shelf-box:hover { background: rgba(227,194,122,.06); }
+#hall.lib2 .lib-shelf.lg .lib-shelf-box { --W: 128px; --H: 180px; --D: 78px; }
+#hall.lib2 .lib-shelf.md .lib-shelf-box { --W: 104px; --H: 146px; --D: 64px; }
+#hall.lib2 .lib-shelf.sm .lib-shelf-box { --W: 84px; --H: 118px; --D: 52px; padding-top: 16px; }
+#hall.lib2 .lib-shelf .lbx-float { animation-delay: var(--d, 0s); }
+#hall.lib2 .lib-shelf .lbx-shadow { position: static; margin: 10px 0 0; animation-delay: var(--d, 0s); width: calc(var(--W) * 1.05); }
+#hall.lib2 .lib-shelf-lab { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 10px; max-width: 100%; text-align: center; }
+#hall.lib2 .lib-shelf-lab b { font: 400 16px/1.2 Georgia, 'Times New Roman', serif; color: #f2e6cc; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#hall.lib2 .lib-shelf.sm .lib-shelf-lab b { font-size: 14px; }
+#hall.lib2 .lib-shelf-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #a99f8c; }
+#hall.lib2 .lib-crumb-back { padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+#hall.lib2 .lib-crumb-back:hover { color: #f2e6cc; }
+@media (max-width: 760px) { #hall.lib2 .lib-shelf, #hall.lib2 .lib-shelf.lg, #hall.lib2 .lib-shelf.md, #hall.lib2 .lib-shelf.sm { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 10px; } #hall.lib2 .lib-shelf .lib-shelf-box { --W: 84px; --H: 118px; --D: 52px; padding-top: 14px; } }
+/* ===== v0.99.108 accessibility on the Library screen (and the Archive, packs, the deck box and the dungeon map) =====
+   High contrast: solid dark panels, white text, light-grey secondary text, bright gold borders; nothing relies on a faint colour. */
+body.a11y-contrast #hall.lib2 { background: #05050a; }
+body.a11y-contrast #hall.lib2 .lib-top, body.a11y-contrast #hall.lib2 .lib-side { background: #000; border-color: #e3c27a; }
+body.a11y-contrast #hall.lib2 .lib-main { background: #07070c; }
+body.a11y-contrast #hall.lib2 .lib-panel, body.a11y-contrast #hall.lib2 .lib-callout, body.a11y-contrast #hall.lib2 .lib-local { background: #000; border: 2px solid #e3c27a; }
+body.a11y-contrast #hall.lib2 .lib-h1, body.a11y-contrast #hall.lib2 .lib-shelf-lab b, body.a11y-contrast #hall.lib2 .lib-deck-nm, body.a11y-contrast #hall.lib2 .lib-side-row, body.a11y-contrast #hall.lib2 .lib-stat b, body.a11y-contrast #hall.lib2 .lib-feat-nm b { color: #fff; }
+body.a11y-contrast #hall.lib2 .lib-cap, body.a11y-contrast #hall.lib2 .lib-crumb, body.a11y-contrast #hall.lib2 .lib-tag, body.a11y-contrast #hall.lib2 .lib-muted, body.a11y-contrast #hall.lib2 .lib-stat span, body.a11y-contrast #hall.lib2 .lib-shelf-sub, body.a11y-contrast #hall.lib2 .lib-side-row em, body.a11y-contrast #hall.lib2 .lib-feat-nm span, body.a11y-contrast #hall.lib2 .coll-tab em { color: #e6e6ee; opacity: 1; }
+body.a11y-contrast #hall.lib2 .lib-nav .lib-btn, body.a11y-contrast #hall.lib2 .lib-btn.link { color: #ffe7a3; }
+body.a11y-contrast #hall.lib2 button, body.a11y-contrast #hall.lib2 input, body.a11y-contrast #hall.lib2 select { border-color: #e3c27a; }
+body.a11y-contrast #hall.lib2 .lib-btn.ghost, body.a11y-contrast #hall.lib2 .coll-chip, body.a11y-contrast #hall.lib2 .lib-search, body.a11y-contrast #hall.lib2 .coll-sel { background: #000; color: #fff; border: 2px solid #e3c27a; }
+body.a11y-contrast #hall.lib2 .lib-side-row.on, body.a11y-contrast #hall.lib2 .lib-deck-row.on, body.a11y-contrast #hall.lib2 .coll-chip.on { background: #3a2c08; color: #fff; outline: 2px solid #ffd84d; outline-offset: -2px; }
+body.a11y-contrast #hall.lib2 .coll-tab { color: #e6e6ee; } body.a11y-contrast #hall.lib2 .coll-tab.on { color: #fff; border-bottom-width: 3px; border-bottom-color: #ffd84d; }
+body.a11y-contrast #hall.lib2 .lib-bar i { background: #ffd84d; opacity: 1; } body.a11y-contrast #hall.lib2 .lib-bar span, body.a11y-contrast #hall.lib2 .lib-bar b { color: #fff; } body.a11y-contrast #hall.lib2 .lib-bars { border-bottom: 2px solid #e3c27a; }
+body.a11y-contrast #hall.lib2 .coll-tile, body.a11y-contrast #hall.lib2 .lib-shelf-box { outline: 2px solid #8a7a50; outline-offset: 0; }
+body.a11y-contrast #hall.lib2 .lib-shelf .lib-shelf-box:hover { background: #1c1606; outline-color: #ffd84d; }
+body.a11y-contrast .pk-ov { background: #000; } body.a11y-contrast .pk-sub, body.a11y-contrast .pk-hint, body.a11y-contrast .pk-tag { color: #e6e6ee; opacity: 1; }
+body.a11y-contrast .pk-card.up .pk-tag { opacity: 1; } body.a11y-contrast .pk-ov .lib-btn { border: 2px solid #e3c27a; color: #fff; } body.a11y-contrast .pk-ov .lib-btn.gold { color: #000; }
+body.a11y-contrast #hall.lib2 .lbx-ov { background: #000; } body.a11y-contrast #hall.lib2 .lbx-gh, body.a11y-contrast #hall.lib2 .lbx-bar .lib-muted { color: #fff; }
+body.a11y-contrast .dg-room { background: #000; border: 2px solid #9a8a60; color: #fff; } body.a11y-contrast .dg-room span { color: #e6e6ee; } body.a11y-contrast .dg-room.cur { border-color: #ffd84d; }
+body.a11y-contrast .dg-room.can { border: 2px dashed #9cc8ff; } body.a11y-contrast .dg-map .dg-lines line { stroke: #b8b0a0; }
+/* Larger click targets on the Library */
+body.a11y-targets #hall.lib2 .lib-side-row, body.a11y-targets #hall.lib2 .lib-deck-row { min-height: 46px; }
+body.a11y-targets #hall.lib2 .lib-btn.small, body.a11y-targets #hall.lib2 .coll-chip, body.a11y-targets #hall.lib2 .coll-tab { min-height: 44px; }
+body.a11y-targets #hall.lib2 .lib-nav .lib-btn { min-height: 44px; padding-left: 10px; padding-right: 10px; }
+/* Strong keyboard focus: the Library's own buttons and the deck boxes */
+body.a11y-focus #hall.lib2 :focus-visible, body.a11y-focus .pk-ov :focus-visible { outline: 3px solid #ffd84d !important; outline-offset: 3px !important; }
+/* Calm motion: the shelf and the packs stand still */
+body.a11y-calm #hall.lib2 .lib-shelf .lbx-float, body.a11y-calm #hall.lib2 .lib-shelf .lbx-shadow, body.a11y-calm #hall.lib2 .lbx-lid { animation: none !important; transition: none !important; }
+body.a11y-contrast #hall.lib2 .coll-chip, body.a11y-contrast #hall.lib2 .coll-empty p, body.a11y-contrast #hall.lib2 .coll-tab em, body.a11y-contrast #hall.lib2 .lbx-card i, body.a11y-contrast #hall.lib2 .lbx-peek-cap span, body.a11y-contrast #hall.lib2 .lbx-peek-idle, body.a11y-contrast #hall.lib2 .lbx-peek-txt i,
+body.a11y-contrast #hall.lib2 .lib-btn.link, body.a11y-contrast #hall.lib2 .lib-cap.sub, body.a11y-contrast #hall.lib2 .lib-chk, body.a11y-contrast #hall.lib2 .lib-empty-s, body.a11y-contrast #hall.lib2 .lib-fav, body.a11y-contrast #hall.lib2 .lib-feat-nm em, body.a11y-contrast #hall.lib2 .lib-feat-q,
+body.a11y-contrast #hall.lib2 .lib-local, body.a11y-contrast #hall.lib2 .lib-local *, body.a11y-contrast #hall.lib2 .lib-note-i, body.a11y-contrast #hall.lib2 .lib-row-h .lib-btn.link, body.a11y-contrast #hall.lib2 .lib-stat-c span, body.a11y-contrast #hall.lib2 .lib-sub, body.a11y-contrast #hall.lib2 .lib-callout, body.a11y-contrast #hall.lib2 .lib-callout * { color: #f0f0f4; opacity: 1; }
+body.a11y-contrast #hall.lib2 .lib-btn.ghost { color: #ffe7a3; } body.a11y-contrast #hall.lib2 .lib-btn.ghost.danger { color: #ffb4a0; }
+body.a11y-contrast #hall.lib2 .lib-fav.on, body.a11y-contrast #hall.lib2 .lib-star { color: #ffd84d; }
+body.a11y-contrast #hall.lib2 .lib-deck-row.cur .lib-deck-nm::after { color: #b6f0a0; }
+body.a11y-contrast #hall.lib2 .lib-callout *:not(button):not(.lib-btn) { color: #f0f0f4 !important; opacity: 1 !important; }
+.pk-hint.pk-err { color: #ffb4a0; max-width: 460px; text-align: center; line-height: 1.45; }
+/* v0.99.108 the pack's loading bar, and the God Pack */
+.pk-load { width: min(460px, 86vw); display: flex; flex-direction: column; gap: 8px; align-items: stretch; text-align: center; }
+.pk-load-bar { height: 10px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid #604638; overflow: hidden; }
+.pk-load-fill { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, #b88b4b, #f0d79b, #b88b4b); background-size: 200% 100%; animation: pkLoad 1.2s linear infinite; transition: width .35s ease; }
+@keyframes pkLoad { to { background-position: -200% 0; } }
+.pk-load-msg { color: #ece1c8; font-size: 14px; } .pk-load-why { color: #a99f8c; font-size: 12.5px; line-height: 1.45; }
+body.a11y-contrast .pk-load-why { color: #e6e6ee; } body.a11y-calm .pk-load-fill { animation: none; }
+.pk-ov.god { background: radial-gradient(ellipse 70% 60% at 50% 40%, rgba(160,110,40,.5), transparent 70%), rgba(9,8,14,.95); }
+.pk-ov.god .pk-head h2 { background: linear-gradient(90deg, #fff1bd, #e9c26a, #ff9ad5, #9ad8ff, #e9c26a); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.pk-ov.god .pk-back { box-shadow: inset 0 0 0 3px #fff1bd, inset 0 0 0 7px #2a1a35, 0 0 22px rgba(255,220,140,.55); }
+.pk-card.up.r-foil .pk-front { box-shadow: 0 0 0 2px #c9a0ff, 0 0 26px rgba(201,160,255,.5); }

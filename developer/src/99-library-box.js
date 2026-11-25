@@ -3,7 +3,7 @@
 // of the box onto the screen, grouped by card type in mana-value order (one stack per card, its copies fanned down).
 // Clicking a card shows it large. Close, Escape or a click on the backdrop sends the cards back into the box and shuts the lid.
 const LBX_GROUPS = [['Creatures', ['Creature']], ['Planeswalkers & Battles', ['Planeswalker', 'Battle']], ['Instants & Sorceries', ['Instant', 'Sorcery']], ['Artifacts', ['Artifact']], ['Enchantments', ['Enchantment']], ['Other', ['Other', 'Unknown']], ['Lands', ['Land']]];
-function libBoxEl(deckName, deck, cols) {
+function libBoxEl(deckName, deck, cols, opts = {}) {   // opts.onPick: the click picks the deck (the shelf) instead of opening the box; opts.label: shown under the box
   const a = DECKBOX_COL[cols[0] || ''], b = DECKBOX_COL[cols[1] || cols[0] || ''], im = imgFor(deckArtName(deckName, deck), deckName);
   const face = (cls, ...kids) => h('div', { class: 'lbx-f ' + cls }, ...kids);
   const box = h('div', { class: 'lbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
@@ -15,8 +15,10 @@ function libBoxEl(deckName, deck, cols) {
     h('div', { class: 'lbx-lid' }, face('ltop'), face('lfront'), face('lleft'), face('lright')));
   const zone = h('button', { class: 'lib-box', type: 'button', title: 'Open the box to lay out every card', 'aria-label': `Deck box for ${deckName}. Open it to see every card.` },
     h('div', { class: 'lbx-float' }, box), h('i', { class: 'lbx-shadow', 'aria-hidden': 'true' }));
+  if (opts.label) zone.append(opts.label);
+  if (opts.onPick) { zone.title = `${deckName}: open its page`; zone.setAttribute('aria-label', `${deckName}. Open its page.`); }
   tiltWith(zone, box);
-  zone.addEventListener('click', () => libOpenBox(zone, deckName, deck));
+  zone.addEventListener('click', () => opts.onPick ? opts.onPick() : libOpenBox(zone, deckName, deck));
   return zone;
 }
 function libBoxCards(deck) {

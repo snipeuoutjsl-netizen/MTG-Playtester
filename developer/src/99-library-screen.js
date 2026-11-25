@@ -19,8 +19,9 @@ function libColorName(cols) { if (!cols.length) return 'Colorless'; if (cols.len
 function libPips(cols, cls) { return h('span', { class: 'lib-pips ' + (cls || '') }, (cols.length ? cols : ['C']).map(c => h('i', { class: 'lib-pip', style: `background:${c === 'C' ? '#b9b0a0' : WUBRG_COL['WUBRG'.indexOf(c)]}`, title: LIB_COLN[c] || 'Colorless' }))); }
 function libAgo(t) { if (!t) return null; const d = Math.max(0, Math.round((Date.now() - t) / 86400000)); return d === 0 ? 'Today' : d === 1 ? 'Yesterday' : `${d} days ago`; }
 function drawLibraryScreen(el) {
+  try { const n = packBackPay(); if (n) setTimeout(() => toast('Packs for your solved puzzles', `You had solved ${n} puzzle${n === 1 ? '' : 's'} before packs existed: ${n} pack${n === 1 ? ' was' : 's were'} added. Open them from Packs.`), 600); } catch (e) {}   // v0.99.108
   const decks = loadDecks(), mode = gameMode(), inMode = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), favs = libFavs(), cur = currentDeckName();
-  if (!libSel || !decks[libSel] || !inMode.includes(libSel)) libSel = inMode.includes(cur) ? cur : inMode[0] || null;
+  if (libSel && (!decks[libSel] || !inMode.includes(libSel))) libSel = null;   // v0.99.108 no deck picked = the shelf of deck boxes
   const shown = inMode.filter(n => (libFilter !== 'fav' || favs.includes(n)) && (!libQuery || n.toLowerCase().includes(libQuery.toLowerCase())));
   const inGame = !!(state && state.deckName), redraw = () => drawLibraryScreen(el);
   el.classList.remove('v2', 'v3', 'portrait'); el.classList.add('lib2');
@@ -52,20 +53,19 @@ function drawLibraryScreen(el) {
   const side = h('aside', { class: 'lib-side', 'aria-label': 'Your collection' },
     h('div', { class: 'lib-cap', text: 'Your collection' }),
     btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'add', 'Paste a list or load a file'),
-    h('button', { class: 'lib-side-row' + (libFilter === 'all' ? ' on' : ''), onclick: () => { libFilter = 'all'; redraw(); } }, h('span', { text: '◈  All decks' }), h('em', { text: String(inMode.length) })),
-    h('button', { class: 'lib-side-row' + (libFilter === 'fav' ? ' on' : ''), onclick: () => { libFilter = 'fav'; redraw(); } }, h('span', { text: '★  Favorites' }), h('em', { text: String(inMode.filter(n => favs.includes(n)).length) })),
+    h('button', { class: 'lib-side-row' + (libFilter === 'all' ? ' on' : ''), onclick: () => { libFilter = 'all'; libSel = null; redraw(); } }, h('span', { text: '◈  All decks' }), h('em', { text: String(inMode.length) })),
+    h('button', { class: 'lib-side-row' + (libFilter === 'fav' ? ' on' : ''), onclick: () => { libFilter = 'fav'; libSel = null; redraw(); } }, h('span', { text: '★  Favorites' }), h('em', { text: String(inMode.filter(n => favs.includes(n)).length) })),
     h('button', { class: 'lib-side-row lib-coll-row' + (libFilter === 'collection' ? ' on' : ''), onclick: () => { libFilter = 'collection'; redraw(); } }, h('span', { text: '▣  Archive' }), h('em', { text: String(new Set([...deckCardIndex().keys(), ...Object.values(collState().cards).map(e => e.n)]).size) })),   // v0.99.106 every card in your decks and from packs
     FEATURES.commander ? h('div', { class: 'lib-cap', text: 'Formats' }) : null,
     FEATURES.commander ? modeTab('standard', '◌  Decks', decksInMode(decks, 'standard').length) : null,
     FEATURES.commander ? modeTab('commander', '◌  Commander', decksInMode(decks, 'commander').length) : null,
-    recent.length ? h('div', { class: 'lib-cap', text: 'Recently opened' }) : null,
-    ...recent.map(deckRow).map(x => { x.classList.add('recent'); return x; }),
     h('div', { class: 'lib-cap', text: libFilter === 'fav' ? 'Favorites' : 'Decks' }), search,
     h('div', { class: 'lib-decklist' }, ...(shown.length ? shown.map(deckRow) : [h('div', { class: 'lib-empty-s', text: inMode.length ? (libFilter === 'fav' ? 'No favorites yet: star a deck on its page.' : 'No deck matches.') : 'No decks yet.' })])),
     h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk));
   // main: the selected deck
   const main = h('main', { class: 'lib-main' });
   if (libFilter === 'collection') main.append(...collectionPage(redraw).filter(Boolean));   // v0.99.106
+  else if (!libSel && inMode.length) main.append(...libShelf(libFilter === 'fav' ? inMode.filter(n => favs.includes(n)) : inMode, { cur, favs, decks, mode, inGame, fav: libFilter === 'fav', pick: n => { libSel = n; redraw(); } }));   // v0.99.108
   else if (!libSel) {
     main.append(h('div', { class: 'lib-emptystate' }, h('div', { class: 'lib-crumb', text: mode === 'commander' ? 'Commander' : 'Decks' }),
       h('h1', { class: 'lib-h1', text: 'Your library is empty' }), h('p', { class: 'lib-tag', text: mode === 'commander' ? 'Import a Commander deck: put your commander under a “Commander” heading.' : 'Import a deck list to start goldfishing.' }),
@@ -82,7 +82,7 @@ function drawLibraryScreen(el) {
     main.append(
       h('div', { class: 'lib-head' },
         h('div', { class: 'lib-head-t' },
-          h('div', { class: 'lib-crumb', text: `${mode === 'commander' ? 'Commander' : 'Decks'}  /  Deck ${String(idx).padStart(2, '0')} of ${inMode.length}${isCur ? '  ·  in use' : ''}` }),
+          h('div', { class: 'lib-crumb' }, h('button', { class: 'lib-crumb-back', type: 'button', title: 'Back to all your decks', onclick: () => { libSel = null; redraw(); } }, `← ${libFilter === 'fav' ? 'Favorites' : mode === 'commander' ? 'Commander' : 'Decks'}`), `  /  Deck ${String(idx).padStart(2, '0')} of ${inMode.length}${isCur ? '  ·  in use' : ''}`),
           h('h1', { class: 'lib-h1' }, h('span', { text: libSel }), h('button', { class: 'lib-fav' + (fav ? ' on' : ''), text: fav ? '★' : '☆', title: fav ? 'Remove from favorites' : 'Add to favorites', 'aria-pressed': String(fav), onclick: () => { libToggleFav(libSel); redraw(); } })),
           h('p', { class: 'lib-tag', text: `${libColorName(cols)}${typeLine ? ' · ' + typeLine : ''}.` })),
         libBoxEl(libSel, deck, cols),   // v0.99.101 the deck in its 3D box: click to open it and lay the cards out
@@ -120,4 +120,25 @@ function drawLibraryScreen(el) {
   }
   el.replaceChildren(h('div', { class: 'lib-app' }, top, h('div', { class: 'lib-body' }, side, main)));
   try { const on = el.querySelector('.lib-decklist .lib-deck-row.on'); if (on) on.scrollIntoView({ block: 'nearest' }); } catch (e) { /* scrolling only */ }
+}
+
+// v0.99.108 The shelf: with no deck picked, All decks (or Favorites) shows every deck as its floating 3D deck box, the decks you played
+// most recently first. The boxes get smaller as there are more of them, and the page scrolls when they don't fit. Clicking a box opens
+// that deck's page; All decks (or the ← Decks link on the page) comes back here.
+function libShelf(names, o) {
+  const rec = libRecent(), order = [...rec.filter(n => names.includes(n)), ...names.filter(n => !rec.includes(n))];
+  const size = order.length <= 4 ? 'lg' : order.length <= 10 ? 'md' : 'sm';
+  const items = order.map((n, i) => { let deck, cols = []; try { deck = parseDeck(o.decks[n].text); cols = deckColorsOf(deck); } catch (e) { deck = { main: [], side: [] }; }
+    const notes = deckNotes(n) || {}, recent = rec.indexOf(n);
+    const label = h('span', { class: 'lib-shelf-lab' }, h('b', { text: n }), h('span', { class: 'lib-shelf-sub' }, libPips(cols, 'sm'), h('span', { text: [n === o.cur ? 'in use' : '', recent >= 0 && recent < 4 ? (notes.last ? `played ${libAgo(notes.last).toLowerCase()}` : 'recent') : '', o.favs.includes(n) ? '★' : ''].filter(Boolean).join(' · ') })));
+    const el = libBoxEl(n, deck, cols, { onPick: () => o.pick(n), label }); el.classList.add('lib-shelf-box'); el.style.setProperty('--d', `${(i % 7) * -0.6}s`); return el; });
+  const nDecks = order.length;
+  return [
+    h('div', { class: 'lib-head' },
+      h('div', { class: 'lib-head-t' },
+        h('div', { class: 'lib-crumb', text: o.fav ? 'Favorites' : o.mode === 'commander' ? 'Commander' : 'Decks' }),
+        h('h1', { class: 'lib-h1', text: o.fav ? 'Your favorites' : 'Your decks' }),
+        h('p', { class: 'lib-tag', text: nDecks ? `${nDecks} deck${nDecks === 1 ? '' : 's'}, most recently played first. Pick a box to see the deck.` : 'No favorites yet: star a deck on its page.' })),
+      o.inGame ? h('div', { class: 'lib-head-go' }, h('button', { class: 'lib-btn ghost', text: `Continue: ${state.deckName}`, title: 'Back to the game in progress (Esc)', onclick: () => closeHall(true) })) : null),
+    nDecks ? h('div', { class: 'lib-shelf ' + size }, items) : null];
 }
