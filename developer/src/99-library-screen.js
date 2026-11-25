@@ -38,7 +38,7 @@ function drawLibraryScreen(el) {
       btn('Wishlist', () => openWishlist(), 'link', 'Cards you want, with the art you want'),
       btn('Help', helpMenu, 'link'),
       btn('Settings', () => openSettings(), 'link'),
-      window.desktop && window.__updAvail ? btn(`Update to v${window.__updAvail.latest}`, () => openUpdate(window.__updAvail), 'gold small lib-upd', 'Read what changed and install it') : null,
+      libUpdateBtn(),   // v0.99.103 always: the version (click to check) or "Update to v…"
       inGame ? btn('Back to the table', () => closeHall(true), 'ghost lib-close', 'Return to the game in progress (Esc)') : null));
   // sidebar
   const modeTab = (k, lab, n) => h('button', { class: 'lib-side-row' + (mode === k ? ' on' : ''), onclick: () => { if (mode === k) return; setGameMode(k); libSel = null; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); redraw(); } }, h('span', { text: lab }), h('em', { text: String(n) }));

@@ -58,6 +58,7 @@ function activatedAbilitiesFor(c){
     const pc=parseAbilityCost(cost,short);
     res.push({cost:boast?'Boast \u2014 '+cost:cost,effect,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length});
   }
+  for(const u of roomUnlockAbilities(c,res.length)) res.push(u);   // v0.99.103 unlocking a Room's locked door (special action, CR 709.5)
   return res;
 }
 function activatedAbilityFor(c){ return activatedAbilitiesFor(c)[0]||null; }
@@ -101,6 +102,7 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
     if(ab.removeN){ addCounter(c.id,-ab.removeN,ab.removeKind); log(`${c.name}: removed ${ab.removeN} counter${ab.removeN===1?'':'s'} as a cost`); }
     // Costs are paid as the ability is activated, so a sacrificed permanent is already gone when the ability resolves.
     if(ab.selfSac){ log(`${c.name}: sacrificed as a cost`); leaveBattlefield(c,'graveyard'); }
+    if(ab.unlock!==undefined){ render(); unlockDoor(c,ab.unlock); return; }   // v0.99.103 a special action: no stack, no priority (CR 116.2m)
     const obj={ability:true,id:state.nextId++,name:`${c.name} — ability`,sourceId:ab.selfSac?null:c.id,sourceName:c.name,cost:ab.cost,text:ab.effect,target,targets};
     // v0.86 rule 605.3b: a mana ability (no target, adds mana, not a loyalty ability) does not use the stack: it resolves the moment it is activated, so Black Lotus works.
     if(!targets && /^Add\b/i.test(String(ab.effect).trim())){

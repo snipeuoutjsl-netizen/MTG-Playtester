@@ -80,6 +80,7 @@ function faceProd(tx, whole) {
 const faceCostCols = mc => [...new Set([...String(mc || '').matchAll(/\{([^}]+)\}/g)].flatMap(m => m[1].split('/').filter(x => FACE_ANY.includes(x))))].sort((a, b) => FACE_ANY.indexOf(a) - FACE_ANY.indexOf(b));
 function faceFix(c) {
   if (!c || !c.fc || c.fc.length < 2 || c.__ff) return;
+  if (!c.kind && c.fc.every(f => /\bRoom\b/.test(f.t || ''))) { c.kind = 'room'; c.mdfc = false; for (const r of c.fc) { r.kind = 'room'; r.half = true; r.land = false; } }   // v0.99.103 Room cards saved by an older version (read then as a two-faced card)
   for (const r of c.fc) {
     const pr = faceProd(r.tx, c.prod); if (pr) r.prod = pr; else delete r.prod;
     if (c.mdfc && r.fi >= 1 && typeof symCmc === 'function') { try { r.cmc = symCmc(r.mc || '') || 0; } catch (e) { /* keep */ } }
@@ -96,9 +97,9 @@ function normFaces(c) {
   const txs = c.tx.split('\n//\n'), ts = String(c.t || '').split(' // ');
   if (txs.length !== c.faces.length || ts.length !== c.faces.length) return c;
   const mls = c.fml && c.fml.length === c.faces.length ? c.fml : null, mp = String(c.mc || '').split(' // ');
-  const adv = ts.some(t => /\bAdventure\b/.test(t)), spl = !adv && ts.every(t => /^(?:Instant|Sorcery)\b/.test(t.replace(/^(?:Legendary|Snow|Tribal)\s+/, '')));
-  if (adv || spl) {   // v0.77: the halves of an adventure / split / aftermath card are spells you cast one at a time
-    c.kind = adv ? 'adventure' : (/\baftermath\b/i.test(txs[1] || '') ? 'aftermath' : 'split');
+  const adv = ts.some(t => /\bAdventure\b/.test(t)), spl = !adv && ts.every(t => /^(?:Instant|Sorcery)\b/.test(t.replace(/^(?:Legendary|Snow|Tribal)\s+/, ''))), room = !adv && !spl && ts.every(t => /\bRoom\b/.test(t));
+  if (adv || spl || room) {   // v0.77: the halves of an adventure / split / aftermath card are spells you cast one at a time (v0.99.103: and the doors of a Room, CR 709.5)
+    c.kind = room ? 'room' : adv ? 'adventure' : (/\baftermath\b/i.test(txs[1] || '') ? 'aftermath' : 'split');
     c.fc = c.faces.map((n, i) => {
       const mc = mls ? mls[i] : (mp.length === c.faces.length ? mp[i] : (i === 0 ? mp[0] : ''));
       const r = { name: n, t: ts[i], tx: txs[i], mc, cmc: 0, land: false, bf: c.name, fi: i, kind: c.kind, col: (c.fcl && c.fcl[i]) || (i === 0 ? c.col : []) };
@@ -231,9 +232,9 @@ const AW_CACHE = new WeakMap();
 function awInfo(base) { if (!base || !base.tx || !AW_RE.test(base.tx)) { AW_RE.lastIndex = 0; return base; } AW_RE.lastIndex = 0; let r = AW_CACHE.get(base); if (!r || r.__src !== base.tx) { r = Object.assign({}, base, { tx: stripAW(base.tx), __src: base.tx }); AW_CACHE.set(base, r); } return r; }
 // v0.99.40 the rules a permanent has now: a Class (CR 716.2b) or Spacecraft (CR 721.2) only has the level/station sections it has reached,
 // so its triggers and statics are read from that text (marked ovr so the trigger cache keys on the text).
-function rulesInfo(c) { const r = rulesInfo0(c); if (!r || !r.tx || !c || c.token || !state) return r; let tx = r.tx; try { tx = classText(c, stationText(c, r.tx)); } catch (e) { return r; } return tx === r.tx ? r : Object.assign({}, r, { tx, ovr: true }); }
+function rulesInfo(c) { const r = rulesInfo0(c); if (!r || !r.tx || !c || c.token || !state) return r; let tx = r.tx; try { tx = classText(c, stationText(c, roomText(c, r.tx))); } catch (e) { return r; } return tx === r.tx ? r : Object.assign({}, r, { tx, ovr: true }); }
 function rulesInfo0(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
-function cardText(c) { return classText(c, stationText(c, stripAW(cardTextRaw(c)))); }
+function cardText(c) { return classText(c, stationText(c, roomText(c, stripAW(cardTextRaw(c))))); }
 function cardTextRaw(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
@@ -269,7 +270,7 @@ function halfOptions(c) {   // the ways this card in your hand can be cast: fi n
   return p.fc.map((r, i) => ({ fi: i, rec: r, label: r.name }));
 }
 function castAsHalf(c, fi) { const p = halfParent(c) || mdfcParent(c); if (!p) return; if (!c.faceOf) c.faceOf = c.name; c.name = p.fc[fi].name; c.face = fi; c.half = true; }
-function restoreHalf(c) { if (c && c.half) { if (state && mdfcParent(c) && state.battlefield.includes(c)) { delete c.half; return; }   /* v0.99.102 CR 712.12: a modal face cast as the spell is the permanent it becomes; it is the whole card again when it leaves (rule 712.14) */ c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
+function restoreHalf(c) { if (c && c.half) { if (state && mdfcParent(c) && state.battlefield.includes(c)) { delete c.half; return; } if (state && roomParent(c) && state.battlefield.includes(c)) { roomResolved(c); return; }   /* v0.99.102 CR 712.12: a modal face cast as the spell is the permanent it becomes; it is the whole card again when it leaves (rule 712.14) */ c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
 function withHalf(c, fi, fn) {
   if (fi === null || fi === undefined) return fn();
   const was = { n: c.name, f: c.faceOf, fc: c.face, h: c.half }; castAsHalf(c, fi);
@@ -439,9 +440,9 @@ function parseLookDistribute(tx, inner) {
   return { n, slots, full: ok, alt, covers };
 }
 function openHalfChooser(c, opts, pick) {
-  const md = !!mdfcParent(c);
-  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which ${md ? 'face' : 'half'}?`, { width: 560, sticky: true, onCancel: () => {} });
-  m.body.append(h('div', { class: 'psub', text: md ? 'A modal double-faced card is cast as one face or the other (rule 712.12). The face you choose is the spell, and the permanent it becomes.' : 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
+  const md = !!mdfcParent(c), rm = !!roomParent(c);
+  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which ${rm ? 'door' : md ? 'face' : 'half'}?`, { width: 560, sticky: true, onCancel: () => {} });
+  m.body.append(h('div', { class: 'psub', text: rm ? 'Choose a door to cast (rule 709.5). The Room enters with that door unlocked; you can unlock the other door later by paying its cost as a sorcery.' : md ? 'A modal double-faced card is cast as one face or the other (rule 712.12). The face you choose is the spell, and the permanent it becomes.' : 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
   const list = h('div', { class: 'prelist' });
   for (const o of opts) {
     const st = withHalf(c, o.fi, () => { if (!canCastNow(c)) return { ok: false, why: state.stack.length ? 'only instants can be cast now' : 'wrong timing' }; const pm = canPayMana(c); return pm && !pm.ok ? { ok: false, why: pm.reason === 'color' ? 'not the right colours' : 'not enough mana' } : { ok: true }; });
@@ -647,6 +648,12 @@ function parseStaticCard(g) {
           continue;
         } }
       { const cs = parseCondStatic(raw.trim(), g); if (cs) { list.push(cs); continue; } }   // v0.98.5 conditional / scaling statics
+      { // v0.99.103 a bonus for a group with a condition after it: "Other creatures you control get +1/+1 as long as you've completed a dungeon." (Nadaar)
+        const am2 = raw.trim().replace(/\.$/, '').match(/^(.+?) (gets? [+-]\d+\/[+-]\d+|(?:has|have) [a-z ,]+?) as long as (.+)$/i);
+        if (am2 && !/^(?:~|it|this \w+)$/i.test(am2[1].trim())) { const subj0 = parseSubject(am2[1], g), cnd = am2[3];
+          if (subj0 && !subj0.self) { const subj = Object.assign({}, subj0, { test: c => subj0.test(c) && condStaticOn(cnd, g) });
+            let q; if ((q = am2[2].match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { list.push({ line: raw.trim().replace(/\.$/, ''), kind: 'pt', g, subj, p: +q[1], t: +q[2], perFn: null, perText: '', cond: cnd }); continue; }
+            if ((q = am2[2].match(/^(?:has|have) (.+)$/i))) { const kws = q[1].toLowerCase().split(/\s*(?:,|\band\b)\s*/).map(k => k.trim()).filter(k => GRANTABLE.includes(k)); if (kws.length) { list.push({ line: raw.trim().replace(/\.$/, ''), kind: 'kw', g, subj, items: [{ kws, cond: null }], cond: cnd }); continue; } } } } }
       const line = raw.trim().replace(/\.$/, ''); if (!line || /"/.test(line) || /^(as long as|if|when|whenever|at |until)/i.test(line) || /\bas long as\b|\buntil\b/i.test(line)) continue;
       let m;
       // colour: "Each nonland permanent you control is all colors."
@@ -679,6 +686,8 @@ function parseStaticCard(g) {
   }
   return list;
 }
+let condStaticBusy = false;   // v0.99.103 a condition is never read while another one is being read (no loops through the statics)
+function condStaticOn(cnd, g) { if (condStaticBusy) return false; condStaticBusy = true; try { return evalCond(cnd, g) === true; } catch (e) { return false; } finally { condStaticBusy = false; } }
 function statics() {
   if (!state) return [];
   const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '') + (c.token && c.tk ? ':' + (c.tk.tx || '').length : '')).join('|') + '#' + (state.emblems || []).map(e => e.id).join(',');

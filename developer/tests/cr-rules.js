@@ -2152,6 +2152,57 @@ const { setup } = require('./common.js');
       Object.assign(out, { mvAz: mv('Azcanta, the Sunken Ruin'), mvSp: mv('Soporific Springs'), mvTi: mv('Tibalt, Cosmic Impostor'), ice: col('Ice'), stomp: col('Stomp'), stab: col('Stabwhisker the Odious'), fire: col('Fire') });
       s.battlefield = s.battlefield.filter(x => x !== a && x !== o); return out; });
     return { ok: r.a === 'Azcanta, the Sunken Ruin' && r.ac === 'U' && r.pool === 1 && r.o === 'Temple of Civilization' && r.oc === 'W' && r.mvAz === 2 && r.mvSp === 0 && r.mvTi === 7 && r.ice === 'U' && r.stomp === 'R' && r.stab === 'B' && r.fire === 'R', why: JSON.stringify(r) }; });
+  await T('709.5 Rooms', 'a Room is cast one door at a time: Bottomless Pool // Locker Room cast as Bottomless Pool enters with that door unlocked (its "when you unlock this door" triggers) and only its text; Locker Room unlocks for {4}{U} as a sorcery without the stack, then the Room has both doors\' text and is fully unlocked (Scrabbling Skullcrab\'s eerie triggers); a Room put onto the battlefield without being cast has both doors locked and no abilities', async () => { await reset();
+    const r = await ev(async () => { const d = __d, s = d.state, W = ms => new Promise(r => setTimeout(r, ms)), out = {};
+      document.getElementById('modalRoot').innerHTML = ''; s.stack.length = 0; s.pendingTriggers = [];
+      for (let i = 0; i < 6; i++) __get('Island', 'battlefield'); const sk = __get('Scrabbling Skullcrab', 'battlefield'); const id = __get('Bottomless Pool // Locker Room', 'hand'); d.render();
+      const room = () => s.battlefield.find(x => x.id === id) || s.hand.find(x => x.id === id) || s.stack.find(x => x.id === id);
+      out.halves = d.halfOptions(room()).map(o => o.label).join('|');
+      d.castSpell(id); await W(300); out.chooser = (document.querySelector('#modalRoot .modal header') || {}).innerText || '';
+      [...document.querySelectorAll('#modalRoot .modal .prelist .row')].find(x => /Bottomless Pool/.test(x.textContent)).click(); await W(400);
+      const pay = [...document.querySelectorAll('button')].find(b => /Pay and cast/.test(b.textContent)); if (pay) { pay.click(); await W(500); }
+      out.stack = s.stack.map(x => x.name).join();
+      const rs = [...document.querySelectorAll('#stackStage button')].find(b => /Resolve/.test(b.textContent)); if (rs) { rs.click(); await W(900); }
+      const c = room(); out.name = c.name; out.doors = d.roomDoors(c).join(); out.text1 = d.cardText(c);
+      out.trig1 = /unlock this door/i.test([...document.querySelectorAll('#modalRoot .modal')].map(m => m.innerText).join(' ') + s.pendingTriggers.map(t => t.text).join(' ') + s.stack.map(x => x.text || '').join(' ') + s.log.join(' '));
+      out.chips = [...document.querySelectorAll(`.card[data-id="${id}"] .room-door`)].map(b => b.className.replace('room-door ', '')).join();
+      document.getElementById('modalRoot').innerHTML = ''; s.stack.length = 0; s.pendingTriggers = [];
+      const ab = d.activatedAbilitiesFor(c).find(a => a.unlock === 1); out.unlockCost = ab && ab.cost;
+      d.activateAbility(id, false, ab.ix); await W(400); const pay2 = [...document.querySelectorAll('button')].find(b => /Pay and activate/.test(b.textContent)); if (pay2) { pay2.click(); await W(600); }
+      out.doors2 = d.roomDoors(c).join(); out.text2 = d.cardText(c); out.stack2 = s.stack.length; out.tapped = s.battlefield.filter(x => x.name === 'Island' && x.tapped).length;
+      out.eerie = s.pendingTriggers.some(t => t.cardId === sk && /fully unlock/i.test(t.text)) || /Scrabbling Skullcrab/.test([...document.querySelectorAll('#modalRoot .modal')].map(m => m.innerText).join(' ')) || s.stack.some(x => x.sourceId === sk);
+      document.getElementById('modalRoot').innerHTML = ''; s.stack.length = 0; s.pendingTriggers = [];
+      const id2 = __get('Funeral Room // Awakening Hall', 'battlefield'), c2 = s.battlefield.find(x => x.id === id2); out.locked = d.roomDoors(c2).join() + '|' + JSON.stringify(d.cardText(c2));
+      return out; });
+    return { ok: r.halves === 'Bottomless Pool|Locker Room' && /which door/.test(r.chooser) && r.stack === 'Bottomless Pool' && r.name === 'Bottomless Pool // Locker Room' && r.doors === 'true,false' && /^When you unlock this door, return up to one target creature/.test(r.text1) && !/combat damage/.test(r.text1) && r.trig1 && r.chips === 'open,locked'
+      && /^\{4\}\{U\}: Unlock Locker Room/.test(r.unlockCost) && r.doors2 === 'true,true' && /combat damage to a player, draw a card/.test(r.text2) && r.stack2 === 0 && r.tapped === 6 && r.eerie && r.locked === 'false,false|""', why: JSON.stringify(r) }; });
+  await T('309 + 701.49', 'venture into the dungeon: with no dungeon you choose one (Lost Mine of Phandelver) and its first room\'s ability resolves (scry 1); with two exits you click the room on the map (Mine Tunnels: a Treasure; Dark Pool: drain 1); the bottom room (Temple of Dumathoin: draw) completes the dungeon, which leaves the command zone; then "you\'ve completed a dungeon" is true (Nadaar gives other creatures +1/+1, Gloom Stalker has double strike)', async () => { await reset();
+    const r = await ev(async () => { const d = __d, s = d.state, W = ms => new Promise(r => setTimeout(r, ms)), out = {};
+      document.getElementById('modalRoot').innerHTML = ''; s.stack.length = 0; s.pendingTriggers = []; s.dungeon = null; s.gs = {};
+      const settle = async () => { for (let k = 0; k < 12; k++) { await W(250); const sc = [...document.querySelectorAll('#modalRoot .modal footer button.primary')].find(b => /Done|Confirm|Keep|OK|Continue/i.test(b.textContent)); if (sc) { sc.click(); continue; } const rs = [...document.querySelectorAll('#stackStage button')].find(b => /Resolve/.test(b.textContent)); if (rs && s.stack.length) { rs.click(); continue; } if (s.pendingTriggers.length) { d.flushTriggers(); continue; } break; } };
+      const nd = __get('Nadaar, Selfless Paladin', 'battlefield'), gb = __get('Grizzly Bears', 'battlefield'), gl = __get('Gloom Stalker', 'battlefield'); d.render();
+      const bear = () => d.ptCalc(s.battlefield.find(x => x.id === gb)); out.bear0 = bear().p + '/' + bear().t;
+      d.venture('dungeon', 'Test'); await W(300); out.picks = document.querySelectorAll('.dg-pick').length;
+      [...document.querySelectorAll('.dg-pick')].find(b => /Lost Mine/.test(b.textContent)).click(); await W(300); out.room1 = s.dungeon && s.dungeon.room; await settle();
+      d.venture('dungeon', 'Test'); await W(300); out.can = [...document.querySelectorAll('.dg-room.can b')].map(b => b.textContent).join('|');
+      [...document.querySelectorAll('.dg-room.can')].find(b => /Mine Tunnels/.test(b.textContent)).click(); await W(300); await settle(); out.treasure = s.battlefield.some(c => /Treasure/.test(c.name));
+      d.venture('dungeon', 'Test'); await W(300); const l0 = [s.life, s.oppLife]; [...document.querySelectorAll('.dg-room.can')].find(b => /Dark Pool/.test(b.textContent)).click(); await W(300); await settle(); out.drain = [s.life - l0[0], s.oppLife - l0[1]].join();
+      const h0 = s.hand.length; d.venture('dungeon', 'Test'); await W(300); await settle(); await W(500); d.render(); await W(300);
+      out.drew = s.hand.length - h0; out.dungeon = s.dungeon; out.done = (s.gs.dungeonsDone || []).join(); out.cond = d.evalCond("you've completed a dungeon");
+      out.bear1 = bear().p + '/' + bear().t; out.ds = d.hasKw ? d.hasKw(s.battlefield.find(x => x.id === gl), 'double strike') : null;
+      out.box = !!document.getElementById('dungeonBox'); return out; });
+    return { ok: r.picks === 3 && r.room1 === 'Cave Entrance' && r.can === 'Goblin Lair|Mine Tunnels' && r.treasure && r.drain === '1,-1' && r.drew === 1 && r.dungeon === null && r.done === 'Lost Mine of Phandelver' && r.cond === true && r.bear0 === '2/2' && r.bear1 === '3/3' && r.ds !== false && r.box, why: JSON.stringify(r) }; });
+  await T('725 initiative', 'taking the initiative (Avenging Hunter\'s "you take the initiative") ventures into Undercity: its first room, Secret Entrance, triggers; the initiative icon is on; each upkeep while you have it ventures again', async () => { await reset();
+    const r = await ev(async () => { const d = __d, s = d.state, W = ms => new Promise(r => setTimeout(r, ms)), out = {};
+      document.getElementById('modalRoot').innerHTML = ''; s.stack.length = 0; s.pendingTriggers = []; s.dungeon = null; s.gs = {};
+      out.read = d.recognizedEffects('You take the initiative.').join();
+      d.takeInitiative('Avenging Hunter'); await W(400);
+      for (let k = 0; k < 6 && !s.dungeon; k++) { const rs = [...document.querySelectorAll('#stackStage button')].find(b => /Resolve/.test(b.textContent)); if (rs && s.stack.length) { rs.click(); await W(500); } else if (s.pendingTriggers.length) { d.flushTriggers(); await W(300); } else break; }
+      out.init = !!s.gs.init; out.dungeon = s.dungeon && s.dungeon.name + ':' + s.dungeon.room; out.icon = (document.querySelector('#gstates .sti[data-gs="initiative"]') || {}).className;
+      document.getElementById('modalRoot').innerHTML = ''; s.stack.length = 0; s.pendingTriggers = [];
+      d.enterStep(1, true); out.upkeep = s.pendingTriggers.map(t => t.effect).join('|') + s.stack.map(x => x.text || '').join('|'); s.pendingTriggers = []; s.stack.length = 0; document.getElementById('modalRoot').innerHTML = '';
+      return out; });
+    return { ok: /initiative/i.test(r.read) && r.init && r.dungeon === 'Undercity:Secret Entrance' && /\bon\b/.test(r.icon || '') && /Venture into Undercity/i.test(r.upkeep), why: JSON.stringify(r) }; });
   await T('UI library reopen', 'Library hall: after closing with its fade-out, opening it again shows it (opacity 1), not an invisible screen; the top-bar button reads "Return to the Library"', async () => { await reset();
     const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)); __d.openHall(); await W(200); __d.closeHall(true); await W(900); document.getElementById('btnDecks').click(); await W(300);
       const op = getComputedStyle(document.getElementById('hall')).opacity, on = document.body.classList.contains('hall-on'), lab = document.getElementById('btnDecks').textContent.trim(); __d.closeHall(false); return { op, on, lab }; });

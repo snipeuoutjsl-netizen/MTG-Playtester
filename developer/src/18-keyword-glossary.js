@@ -431,7 +431,7 @@ function renderInner() {
   if (state) { healHalves(); if (state.halfChosen) setTimeout(checkHalfAbandon, 80); }
   if (state && state.sagaWait && state.sagaWait.length) setTimeout(() => { try { sagaCheck(); } catch (e) { console.error(e); } }, 0);
   animCapture();
-  runToughnessSBA();
+  runToughnessSBA(); try { dungeonSBA(); } catch (e) { console.error(e); }
   document.body.classList.toggle('responding', !!state && state.phase === 'play' && state.stack.length > 0);
   document.body.classList.toggle('imgmode', showImages && (IMG.size > 0 || CUSTOM.size > 0));
   document.body.classList.toggle('castflight', castFlightOn()); document.body.classList.toggle('hand3d', animOn('hand3d')); document.body.classList.toggle('bffloat', animOn('bfFloat')); document.body.classList.toggle('handfloat', animOn('handFloat'));
@@ -444,7 +444,7 @@ function renderInner() {
   lifeFx('opp', $('#oppNum'), has ? (state.oppLife ?? 20) : 20);
   $('#oppBox').title = has && state.dmgHistory && state.dmgHistory.length ? 'Combat damage dealt so far: ' + state.dmgHistory.map(d => `turn ${d.turn}: ${d.dmg}`).join(', ') : 'Goldfish opponent life. Combat damage from your attackers is subtracted automatically.';
   const cbt = $('#btnCombat'); if (cbt) cbt.hidden = !(has && state.phase === 'play' && STEPS[state.step].id === 'attack' && !state.phasePause && !(state.combat && state.combat.declared));
-  renderManaPool(); drawStateIcons();
+  renderManaPool(); drawStateIcons(); try { drawDungeonBox(); } catch (e) { console.error(e); }
   for (const z of ['library', 'graveyard', 'exile', 'command']) { const n = has ? (state[z] || []).length : 0; const pc = $('#pcnt-' + z); if (!pc) continue; pc.textContent = n; pc.classList.toggle('zero', !n); }
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
   { const n = has ? state.library.length : 0; const ls = $('#libstack'); ls.dataset.thick = n > 40 ? 3 : n > 15 ? 2 : n > 0 ? 1 : 0; ls.title = teach('libraryMenu') ? 'Click for draw, look, scry, surveil, mill, search' : ''; }

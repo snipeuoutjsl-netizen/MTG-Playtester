@@ -33,6 +33,7 @@ const GS_ICON = {
   landfall: '<path d="M12 3v9M8.500 8.500 12 12l3.500-3.500M3 20l5-4.500 4 3 4-3 5 4.500z"/>',
   energy: '<rect x="3" y="7.500" width="15" height="9" rx="2"/><path d="M21 11v2M10.500 9.500l-2 3h3l-2 3"/>',
   poison: '<path d="M12 3s6 6.500 6 11a6 6 0 0 1-12 0c0-4.500 6-11 6-11z"/><path d="M9.500 15h5"/>',
+  dungeon: '<path d="M4 21V9l8-6 8 6v12"/><path d="M9 21v-6a3 3 0 0 1 6 0v6"/><path d="M4 13h3M17 13h3"/>',
   experience: '<path d="M12 3l2.600 5.600 6 .8-4.400 4.200 1.100 6L12 16.700 6.700 19.600l1.100-6L3.400 9.400l6-.8z"/>'
 };
 function gameStates() {
@@ -44,6 +45,8 @@ function gameStates() {
   add('storm', 'Storm', sc > 0, sc || '', `Spells cast this turn (yours and your opponent's): ${sc}. A spell with storm is copied once for each spell cast before it this turn (rule 702.40).`);
   add('monarch', 'Monarch', !!gs.monarch, '', 'You are the monarch (rule 724): you draw a card at the beginning of your end step (the app queues that trigger for you), and whoever deals combat damage to the monarch takes the crown. Click to take or lose it.', { manual: true });
   add('initiative', 'Initiative', !!gs.init, '', 'You have the initiative (rule 725): venture into the Undercity when you take it and at the beginning of your upkeep. Whoever deals combat damage to the player with the initiative takes it. Click to take or lose it.', { manual: true });
+  { const dg = state.dungeon, dn = Array.isArray(gs.dungeonsDone) ? gs.dungeonsDone.length : 0;   // v0.99.103 venture into the dungeon (CR 309): click for the map
+    add('dungeon', 'Dungeon', !!dg, dn || '', dg ? `In ${dg.name}: your venture marker is on ${dg.room}.${dn ? ` Dungeons completed: ${dn}.` : ''} Click to see the map.` : `No dungeon right now.${dn ? ` Dungeons completed: ${dn}.` : ''} Venturing into the dungeon puts one in the command zone (rule 309). Click to see the dungeons.`); }
   add('ascend', 'City’s blessing', !!gs.citys, gs.citys ? '' : (perms >= 1 ? perms + '/10' : ''), 'Ascend (rule 702.131): you get the city’s blessing the moment you control ten or more permanents, and you keep it for the rest of the game. The app checks this for you; click to set or clear it by hand.', { manual: true });
   add(gs.dn === 'night' ? 'night' : 'day', gs.dn === 'night' ? 'Night' : gs.dn === 'day' ? 'Day' : 'Day / night', !!gs.dn, '', 'Day and night (rule 726): once a daybound or nightbound permanent appears it becomes day. It becomes night if the active player cast no spells during their own previous turn, and day if they cast two or more. Click to cycle: not set, day, night.', { manual: true, gsKey: 'dn' });
   if (skipDrawSource()) add('skipdraw', 'Skip draws', !!gs.skipDraw, '', 'Necrodominance lets you skip any card you would draw. While this is on, every draw is skipped (your draw step too). Click to switch it on or off. Turn it off again when you want to draw.', { manual: true, functional: true });
@@ -84,12 +87,13 @@ function drawStateIcons() {
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('#gstates .sti'); if (!b || !state || !b._s) return;
   const s = b._s, gs = state.gs || (state.gs = {});
+  if (s.key === 'dungeon') { openDungeonMap(); return; }   // v0.99.103 the dungeon map
   if (s.counter) { snap(); gs[s.counter] = (gs[s.counter] || 0) + 1; log(`${s.label}: ${gs[s.counter]}`); if (s.counter === 'poison' && gs.poison >= 10) toast('Ten poison counters', 'A player with ten or more poison counters loses the game (rule 704.5c).'); render(); return; }
   if (s.manual) {
     snap();
     if (s.gsKey === 'dn') { gs.dn = !gs.dn ? 'day' : gs.dn === 'day' ? 'night' : ''; log(`It is now ${gs.dn || 'neither day nor night'}`); }
     else if (s.key === 'monarch') { gs.monarch = !gs.monarch; log(gs.monarch ? 'You are the monarch' : 'You are no longer the monarch'); }
-    else if (s.key === 'initiative') { gs.init = !gs.init; log(gs.init ? 'You have the initiative' : 'You no longer have the initiative'); }
+    else if (s.key === 'initiative') { if (!gs.init) { takeInitiative('You'); return; } gs.init = false; log('You no longer have the initiative'); }   // v0.99.103 taking it ventures into Undercity (rule 725.2)
     else if (s.key === 'skipdraw') { gs.skipDraw = !gs.skipDraw; log(gs.skipDraw ? 'Skip draws is ON: cards you would draw are skipped' : 'Skip draws is OFF: you draw normally'); }
     else if (s.key === 'ascend') { gs.citys = !gs.citys; log(gs.citys ? 'You have the city’s blessing' : 'City’s blessing cleared'); }
     render(); return;

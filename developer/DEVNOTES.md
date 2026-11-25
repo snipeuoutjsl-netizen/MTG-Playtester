@@ -1,5 +1,13 @@
 
 
+## v0.99.103
+- Rooms (src/99-rooms.js): normFaces gives Room cards kind 'room' (faceFix converts saved records); halves cast through halfOptions/castAsHalf; restoreHalf -> roomResolved sets c.doors [left, right] when the cast door lands; roomText limits rulesInfo/cardText to unlocked doors; roomUnlockAbilities adds 'Unlock <door>' abilities (ab.unlock) handled in activateAbility as a special action (no stack); roomUnlocked queues 'When you unlock this door', 'When you fully unlock this Room' and 'whenever you fully unlock a Room' (eerie) triggers; roomBadge draws the door chips in cardEl. c.doors is cleared on leaving the battlefield.
+- Dungeons (src/99-dungeons.js, 99-dungeon-ui.js): rooms parsed from the dungeon's Oracle text (cardInfo, else DUNGEON_TEXT copy of the four dungeons, Undercity is a token so it can't be looked up by name). state.dungeon {name, room, path, final, seen}; state.gs.dungeonsDone []. venture(kind, src) -> picker (dungeonPickNew) / branch (dungeonPickRoom); the room ability is queued as a trigger (noYield) with t.dungeon; dungeonSBA (called each render after runToughnessSBA) completes after the bottom room's ability has left the stack.
+- Readers: dungeonOptions (from batch5Options): venture into the dungeon / Undercity, 'X and venture', take the initiative, become the monarch, and the dungeon rooms' own wordings (each player loses N, 'unless they discard / sacrifice', Oubliette, goad, Throne of the Dead Three). dungeonCond (from evalCond). parseStaticCard reads '<group> gets +N/+N as long as <cond>' with condStaticOn (re-entrancy guarded).
+- askAlwaysYield skips triggers flagged noYield (dungeon rooms, initiative, Room doors).
+- Tracker: #dungeonBox inserted before #stackBox (drawDungeonBox each render); 'dungeon' game-state icon opens openDungeonMap (the phone route).
+- body.hall-on hides #puzzleBar.
+
 ## v0.99.102
 - faceFix (02-card-data.js, run by regFaces on every load so saved card data is corrected): per-face prod read from the face's own Add text (faceProd), modal back face cmc = symCmc(face mc), split/adventure/aftermath half colours from the half's cost, flip halves keep the card colours.
 - landManaColors: uses the face that is up (the whole-card record's fc[0] when the front is up) and falls back to landManaAbilities when no produced-mana list exists.
