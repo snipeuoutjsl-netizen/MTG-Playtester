@@ -138,7 +138,7 @@ function startGame() {
   dealingStart();
   lifePrev = { you: null, opp: null }; lastStepShown = null;
   const deck = getCurrentDeck();
-  if (!deck || !deck.main.length) { alert('Import a deck first (Import / edit deck).'); return; }
+  if (!deck || !deck.main.length) { appNotice('No deck', 'Import a deck first (Import / edit deck).'); return; }
   state = freshState();
   state.newGameReset = true;   // v0.99.44 on screen every card of the old game goes back into the library before the new seven are dealt (card ids start again, so an old card must never be mistaken for a new one)
   undoStack = []; selected = null; bottomSel.clear();

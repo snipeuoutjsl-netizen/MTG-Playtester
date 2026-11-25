@@ -835,7 +835,7 @@ function effectOptionsBase(tx, obj) {
       const lbl = (n) => `Create ${n === 'X' ? 'X' : n} ${d.pt ? d.pt + ' ' : ''}${d.name} token${n === 1 ? '' : 's'}`;
       const ix = sp0.findIndex(sp => sp.kind === 'player'), tgt = ix >= 0 && /\btarget (?:player|opponent) creates?\b/i.test(tx) ? (obj.targets || []).find(t => t.spec === ix) : null;
       if (tgt && tgt.id === 'opp') { opts.push({ label: `Opponent creates ${d.count} ${d.pt ? d.pt + ' ' : ''}${d.name} token${d.count === 1 ? '' : 's'} (their side is not tracked: log only)`, fn: () => log(`${src}: opponent creates ${d.count} ${d.name} token${d.count === 1 ? '' : 's'}`) }); continue; }
-      opts.push({ label: lbl(d.count), fn: () => { let n = d.count; if (n === 'X') { n = parseInt(prompt(`How many ${d.name} tokens (X)?`, '1'), 10) || 0; } if (n > 0) makeTokensFromDef(d, n, src); } });
+      opts.push({ label: lbl(d.count), fn: async () => { let n = d.count; if (n === 'X') { n = (await appAskNumber(`${src}: X`, `How many ${d.name} tokens (X)?`, 1)) || 0; } if (n > 0) makeTokensFromDef(d, n, src); } });
     } }
   const txNq = tx.replace(/"[^"]*"/g, ' ');
   // v0.99.77 CR 106.6 "Spend this mana only to …" after an Add: the mana floats with that restriction (Lord of the Forsaken, Titans' Nest)
@@ -910,10 +910,7 @@ function openAbilityEffect(obj, done) {
       const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
       for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
       if (!keep.length) { const said = sents.join(' ').replace(/^(?:it|this \w+)\b/i, obj.sourceName || 'It').replace(/\btarget ([^.,;]+?) (?:an opponent controls|you don't control|your opponent controls)\b/gi, "the $1 you chose on your opponent's side").replace(/\btarget ([a-z ]+?)(?=[.,;]| and\b)/gi, 'the $1 you chose'); const msg = untracked ? `${said} Your opponent's permanents are not on this table, so apply it to the real card (mark the damage or remove it there).` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); log(`Resolved: ${obj.name}`);
-        if (untracked) {   // v0.99.76 something you must do on the real table is shown in the stack window until you press Done (a toast was easy to miss)
-          const m = modal(`Resolving: ${obj.sourceName || obj.name}`, { width: 520, sticky: true, noClose: true, resolve: true });
-          m.body.append(h('div', { class: 'psub', text: said }), h('div', { class: 'muted small', text: "Your opponent's permanents are not on this table: apply it to the real card (mark the damage, or remove the permanent if it dies)." }));
-          m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); render(); if (done) done(); } })); render(); return; }
+        // v0.99.82 no window for it any more: the stack panel's "What the app did" and the log already say what to do on the real table
         toast(`${obj.sourceName || 'Ability'} resolves`, msg); render(); if (done) done(); return; }
       if (keep.length < sents.length) { if (untracked) log(`${obj.sourceName || obj.name}: the part about ${what} is applied on the real table (the opponent's permanents are not tracked)`); const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
     }
@@ -979,10 +976,10 @@ function openAbilityEffect(obj, done) {
     } else if (o.special === 'payLifeDraw') {
       const inp = h('input', { type: 'number', min: 0, max: Math.max(0, state.life), value: 0, style: 'width:70px' });
       const go = h('button', { class: 'primary', text: 'Pay life and draw' });
-      go.addEventListener('click', () => {
+      go.addEventListener('click', async () => {
         const n = Math.max(0, Math.min(parseInt(inp.value, 10) || 0, state.life));
         if (!n) { toast('Nothing paid', 'You chose to pay 0 life, so you draw nothing.'); return; }
-        if (n >= state.life && !confirm(`Paying ${n} life would put you at ${state.life - n}. Continue?`)) return;
+        if (n >= state.life && !(await appAsk('Pay life', `Paying ${n} life would put you at ${state.life - n}. Continue?`, 'Pay', true))) return;
         snap(); state.life -= n; const d = drawCards(n); log(`${obj.sourceName}: paid ${n} life, drew ${d}`);
         go.disabled = true; inp.disabled = true; render();
       });
@@ -1030,6 +1027,6 @@ function openCascade(obj, done) {
     if (cast && hit) { if (state.pendingTriggers.length) resolvePendingTrigger(); else openStack(); }
   };
   if (hit) m.foot.append(h('button', { text: 'Do not cast', onclick: () => finish(false) }), h('button', { class: 'primary', text: `Cast ${hit.name} free`, onclick: () => finish(true) }));
-  else m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: () => finish(false) }));
+  else { toast(`Cascade: nothing found`, `${seen.length} card${seen.length === 1 ? '' : 's'} went to the bottom of your library.`); finish(false); }   // v0.99.82 nothing to decide: no window to dismiss
 }
 

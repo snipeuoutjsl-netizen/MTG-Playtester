@@ -133,20 +133,20 @@ async function importCardData(file) {
     if (head[0] === 0x1f && head[1] === 0x8b && typeof DecompressionStream !== 'undefined') {   // gzip-compressed copy
       text = await new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text();
     } else if (head[0] === 0x50 && head[1] === 0x4b) {
-      alert('That is a .zip file. Extract it first, or use the "Download from Scryfall" button instead.'); updateDbStatus(); return;
+      appNotice('Card data', 'That is a .zip file. Extract it first, or use the "Download from Scryfall" button instead.'); updateDbStatus(); return;
     } else text = await file.text();
     updateDbStatus('Parsing…');
     await new Promise(r => setTimeout(r, 30));
     let raw;
     try { raw = JSON.parse(text.replace(/^\uFEFF/, '')); } catch (e) {
-      alert('That file is not valid JSON (it starts with: "' + text.slice(0, 40).replace(/\s+/g, ' ') + '"). Try the "Download from Scryfall" button instead.'); updateDbStatus(); return;
+      appNotice('Card data', 'That file is not valid JSON (it starts with: "' + text.slice(0, 40).replace(/\s+/g, ' ') + '"). Try the "Download from Scryfall" button instead.'); updateDbStatus(); return;
     }
     if (raw && !Array.isArray(raw) && raw.data && raw.meta && typeof raw.data === 'object') {   // MTGJSON AtomicCards / ModernAtomic …
       const first = Object.values(raw.data)[0];
-      if (!Array.isArray(first)) { alert('That looks like an MTGJSON “AllPrintings” file, which is organised by set. Please use “AtomicCards” (or ModernAtomic, LegacyAtomic…) instead.'); updateDbStatus(); return; }
+      if (!Array.isArray(first)) { appNotice('Card data', 'That looks like an MTGJSON “AllPrintings” file, which is organised by set. Please use “AtomicCards” (or ModernAtomic, LegacyAtomic…) instead.'); updateDbStatus(); return; }
       raw = mtgjsonToCards(raw);
     }
-    if (!Array.isArray(raw)) { alert('Unexpected format. Use the "Oracle Cards" bulk file from Scryfall or an "AtomicCards" file from MTGJSON.'); updateDbStatus(); return; }
+    if (!Array.isArray(raw)) { appNotice('Card data', 'Unexpected format. Use the "Oracle Cards" bulk file from Scryfall or an "AtomicCards" file from MTGJSON.'); updateDbStatus(); return; }
     updateDbStatus('Indexing cards…');
     await new Promise(r => setTimeout(r, 30));
     const out = []; const seen = new Set(); const toks = [];
@@ -159,18 +159,18 @@ async function importCardData(file) {
       seen.add(k);
       out.push(compact(o));
     }
-    if (!out.length) { alert('No cards found in that file.'); updateDbStatus(); return; }
+    if (!out.length) { appNotice('Card data', 'No cards found in that file.'); updateDbStatus(); return; }
     installCards(out); mergeTokens(toks);
     let saved = true;
     try { await idbSet('cards', out); await idbSet('tokens', (() => { const a = []; TOKENDB.forEach(x => x.forEach(r => a.push(r))); return a; })()); } catch (e) { saved = false; }
     updateDbStatus();
     syncTokens(true);
-    if (!saved) alert('Cards loaded, but your browser would not save them. You will need to load the file again next time.');
+    if (!saved) appNotice('Card data', 'Cards loaded, but your browser would not save them. You will need to load the file again next time.');
     render();
     prepareImages();
   } catch (e) {
     console.error(e);
-    alert('Could not load card data: ' + e.message);
+    appNotice('Card data', 'Could not load card data: ' + e.message);
     updateDbStatus();
   }
 }

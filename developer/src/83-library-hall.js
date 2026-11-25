@@ -202,7 +202,10 @@ function hallWantsPortrait() { const el = document.getElementById('hall'); retur
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
   const vp = document.querySelector('#hall .hall-view'), st = vp && vp.querySelector('.hall-stage'); if (!st) return;
   const W = hallPortrait() ? 900 : HALL_W, H = hallPortrait() ? 1600 : HALL_H;
-  const k = Math.min(vp.clientWidth / W, vp.clientHeight / H) || 1; st.style.setProperty('--hs', String(Math.max(0.2, Math.min(1.6, k))));
+  // v0.99.82 upright phones: the sign is centred at the top and the corner buttons sit over it, so the room starts below the buttons
+  const cor = document.querySelector('#hall .hall-corner'), R = hallPortrait() && cor ? Math.max(0, cor.getBoundingClientRect().bottom - vp.getBoundingClientRect().top + 6) : 0;
+  const k = Math.max(0.2, Math.min(1.6, Math.min(vp.clientWidth / W, (vp.clientHeight - R) / H) || 1)); st.style.setProperty('--hs', String(k));
+  const top0 = (vp.clientHeight - H * k) / 2; st.style.top = R && top0 < R ? `calc(50% + ${Math.round(R - top0)}px)` : '';
   const sp = vp.querySelector('.hall-spread.dk'); if (sp && sp._fit) requestAnimationFrame(() => sp._fit());   // v0.99.63 refit the desk cards to the new window
 }
 window.addEventListener('resize', () => { if (!hallOpen()) return; if (hallWantsPortrait() !== hallPortrait()) drawHall(); else hallFit(); });

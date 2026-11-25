@@ -102,5 +102,5 @@ function openDiscover(n, srcName) {
     render(); if (how === 'cast') { if (state.pendingTriggers.length) resolvePendingTrigger(); else openStack(); }
   };
   if (hit) m.foot.append(h('button', { text: 'Put into hand', onclick: () => finish('hand') }), h('button', { class: 'primary', text: `Cast ${hit.name} free`, onclick: () => finish('cast') }));
-  else m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: () => finish(null) }));
+  else { toast(`Discover: nothing found`, `${seen.length} card${seen.length === 1 ? '' : 's'} went to the bottom of your library.`); finish(null); }   // v0.99.82 nothing to decide: no window to dismiss
 }
