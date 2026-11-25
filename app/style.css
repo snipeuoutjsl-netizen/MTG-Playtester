@@ -1003,14 +1003,14 @@ body.dragging-card #row-hand .card:hover:not(.dragclone) { transform: none; box-
 #modalRoot .backdrop.dock .modal { pointer-events: auto; width: 340px !important; max-height: calc(100vh - 100px); box-shadow: 0 12px 36px rgba(0,0,0,.55); }
 .backdrop.dock .modal footer { justify-content: stretch; }
 .backdrop.dock .modal footer button { flex: 1 1 auto; }
-.stk { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
-.stk-item { border: 1px solid var(--line); border-left: 4px solid var(--accent, #6aa0ff); border-radius: 8px; padding: 6px 9px; background: rgba(255,255,255,.03); }
-.stk-item.top { background: rgba(255,255,255,.07); box-shadow: 0 0 0 1px rgba(255,255,255,.08) inset; }
-.stk-item.opp { border-left-color: #e05555; }
-.stk-item.abil { border-left-color: #c9a64b; }
-.stk-name { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-.stk-top { font-size: 9px; letter-spacing: .08em; background: var(--accent, #6aa0ff); color: #000; border-radius: 3px; padding: 1px 5px; }
-.stk-sub { font-size: 11px; color: var(--muted, #9aa); margin-top: 2px; }
+
+
+
+
+
+
+
+
 .stk-hint { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #a9e9bd; margin: 6px 0; }
 .stk-dot { width: 12px; height: 12px; border-radius: 3px; box-shadow: 0 0 0 2px rgba(70,220,120,.9); flex: 0 0 auto; }
 .stk-opp { margin-top: 8px; font-size: 12px; }
@@ -1028,8 +1028,8 @@ body.responding #row-hand .card:not(.cast-ready) { opacity: .5; filter: saturate
 .stk-count:empty { display: none; }
 #stackBox.live { border-color: var(--accent, #6aa0ff); box-shadow: 0 0 0 1px var(--accent, #6aa0ff), 0 0 22px rgba(106,160,255,.35); background: color-mix(in srgb, var(--panel) 88%, var(--accent, #6aa0ff) 12%); }
 #stackBox.live .boxhead { font-size: 16px; }
-#stackBox.live .stk-item { padding: 9px 11px; }
-#stackBox.live .stk-name { font-size: 15px; }
+
+
 #stackBox.live .stk-sub { font-size: 12px; }
 #stackBox.flash { animation: stkFlash .9s ease-out; }
 @keyframes stkFlash { 0% { box-shadow: 0 0 0 3px var(--accent, #6aa0ff), 0 0 34px 6px rgba(106,160,255,.7); } 100% { box-shadow: 0 0 0 1px var(--accent, #6aa0ff), 0 0 22px rgba(106,160,255,.35); } }
@@ -1073,11 +1073,11 @@ body.responding #row-hand .card:not(.cast-ready) { opacity: .5; filter: saturate
 
 /* v0.70.2 floating stack in the middle of the table */
 #stackStage { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 18px 10px; border-radius: 18px; background: radial-gradient(ellipse at center, rgba(8,12,24,.78), rgba(8,12,24,.45) 70%, transparent); pointer-events: none; transition: box-shadow .2s, background .2s; }
-#stackStage[hidden] { display: none; }.ss-card { position: relative; width: 112px; aspect-ratio: 5 / 7; margin-right: -58px; border-radius: 8px; overflow: hidden; background: #181b26; border: 2px solid rgba(255,255,255,.18); box-shadow: 0 8px 18px rgba(0,0,0,.6); z-index: calc(10 - var(--i)); transform: translateY(calc(var(--i) * 6px)) rotate(calc(var(--i) * 2.2deg)); animation: ssIn .35s ease-out backwards; }
-.ss-card.top { width: 168px; border-color: var(--accent, #6aa0ff); box-shadow: 0 0 0 2px var(--accent, #6aa0ff), 0 0 26px rgba(106,160,255,.55), 0 12px 24px rgba(0,0,0,.65); transform: none; }
-.ss-card.opp { border-color: #e05555; } .ss-card.top.opp { box-shadow: 0 0 0 2px #e05555, 0 0 26px rgba(224,85,85,.55), 0 12px 24px rgba(0,0,0,.65); }
-.ss-card.abil { border-color: #c9a64b; } .ss-card.top.abil { box-shadow: 0 0 0 2px #c9a64b, 0 0 26px rgba(201,166,75,.5), 0 12px 24px rgba(0,0,0,.65); }
-.ss-card img { width: 100%; height: 100%; object-fit: cover; display: block; }@keyframes ssIn { from { opacity: 0; transform: translateY(-30px) scale(.8); } }
+#stackStage[hidden] { display: none; }
+
+
+
+@keyframes ssIn { from { opacity: 0; transform: translateY(-30px) scale(.8); } }
 body.dragging-card #stackStage:not([hidden]) { pointer-events: auto; }
 #stackStage.over { background: radial-gradient(ellipse at center, rgba(40,120,70,.7), rgba(8,12,24,.5) 70%, transparent); box-shadow: 0 0 0 3px rgba(70,220,120,.9), 0 0 40px rgba(70,220,120,.45); }@media (prefers-reduced-motion: reduce) { .ss-card { animation: none; } }
 
@@ -1237,7 +1237,7 @@ body.responding #btnDraw, body.responding #btnUntap, body.responding #btnNextPha
 @keyframes pickPulse { 0%, 100% { box-shadow: 0 0 0 rgba(91,156,245,0); } 50% { box-shadow: 0 0 14px rgba(91,156,245,.6); } }
 @media (prefers-reduced-motion: reduce) { #handWrap.picking .card.pickable { animation: none; } }
 
-body.castflight .ss-card { animation: none; }
+
 
 /* v0.90.2 sideboarding screen, centre-bar buttons */
 .sbd-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 10px 0; }
@@ -2588,3 +2588,64 @@ html.portrait-ui #gamebar .hud > #gstates.hudbox { flex: 1 1 0; min-width: 0; fl
 html.portrait-ui body.gs-all #gamebar .hud > #gstates.hudbox { flex: 1 1 100%; overflow: visible; }
 html.portrait-ui #gamebar .hud > #manaHud { flex: 0 1 auto; min-width: 0; }
 html.portrait-ui #gamebar .hud > #gstates.hudbox.gs-trim { flex-wrap: nowrap; min-width: 86px; justify-content: center; }
+
+/* ===== v0.99.85 the stack as a pile of cards: newest on top, askew; abilities carry a slip with their words; cards lift away as they resolve ===== */
+#stackStage .skp { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; padding: 12px 14px 6px; }
+#stackStage .skp-pile { position: relative; width: calc(var(--skw) + 14px); }
+#stackStage .skp-card { position: absolute; left: 6px; width: var(--skw); aspect-ratio: 63 / 88; margin: 0; border-radius: 7px; overflow: hidden; cursor: default;
+  background: linear-gradient(160deg, #2a2f3d, #151821); border: 1px solid rgba(255,255,255,.16);
+  transform: translateX(var(--dx, 0)) rotate(var(--rot, 0deg)); transform-origin: 50% 60%;
+  box-shadow: 0 2px 0 rgba(0,0,0,.35), 0 6px 14px rgba(0,0,0,.45); transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; filter: brightness(.82) saturate(.85); }
+#stackStage .skp-card img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+#stackStage .skp-card:hover, #stackStage .skp-card:focus-visible { transform: translateX(calc(var(--dx, 0) + 10px)) translateY(-6px) rotate(0deg); filter: none; z-index: 50 !important; outline: none; box-shadow: 0 0 0 2px rgba(227,185,92,.7), 0 12px 24px rgba(0,0,0,.55); }
+#stackStage .skp-card.top { filter: none; box-shadow: 0 0 0 2px rgba(106,160,255,.85), 0 0 18px rgba(106,160,255,.45), 0 10px 22px rgba(0,0,0,.55); }
+#stackStage .skp-card.top.opp { box-shadow: 0 0 0 2px rgba(240,110,90,.9), 0 0 18px rgba(240,110,90,.45), 0 10px 22px rgba(0,0,0,.55); }
+#stackStage .skp-card.busy { box-shadow: 0 0 0 2px rgba(227,185,92,.95), 0 0 22px rgba(227,185,92,.55), 0 10px 22px rgba(0,0,0,.55); animation: skpBusy 1.4s ease-in-out infinite; }
+@keyframes skpBusy { 50% { box-shadow: 0 0 0 3px rgba(227,185,92,1), 0 0 34px rgba(227,185,92,.75), 0 10px 22px rgba(0,0,0,.55); } }
+#stackStage .skp-face { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px; font-size: 11px; color: #e8e2d4; }
+#stackStage .skp-face b { font-size: 12px; line-height: 1.2; } #stackStage .skp-face span { opacity: .7; }
+/* the slip across an ability's card: the words that are on the stack */
+#stackStage .skp-slip { position: absolute; left: -2px; right: -2px; top: 47%; display: flex; gap: 5px; align-items: flex-start; padding: 5px 7px 6px; transform: rotate(-3deg);
+  background: linear-gradient(180deg, #f6ecd2, #e6d6ae); color: #2b1a0c; font: 600 9.5px/1.25 Georgia, serif; border-top: 1px solid #b89a5c; border-bottom: 1px solid #b89a5c;
+  box-shadow: 0 3px 8px rgba(0,0,0,.45); max-height: 46%; overflow: hidden; }
+#stackStage .skp-slip i { font-style: normal; color: #a8301c; font-size: 11px; line-height: 1; }
+#stackStage .skp-card.top .skp-slip { background: linear-gradient(180deg, #fff6dc, #f0dfb4); box-shadow: 0 0 0 1px rgba(227,185,92,.8), 0 0 12px rgba(255,214,120,.7), 0 3px 8px rgba(0,0,0,.45); }
+#stackStage .skp-stamp { position: absolute; right: 6px; top: 8px; transform: rotate(12deg); padding: 1px 6px; border: 2px solid #8fd3ff; color: #8fd3ff; font: 800 10px/1.3 system-ui, sans-serif; letter-spacing: .12em; border-radius: 4px; background: rgba(10,20,30,.6); }
+#stackStage .skp-n { position: absolute; left: 5px; bottom: 5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: rgba(8,10,16,.82); color: #cfd6e4; font: 700 10px/18px system-ui, sans-serif; text-align: center; text-transform: uppercase; letter-spacing: .04em; }
+#stackStage .skp-card.top .skp-n { background: #6aa0ff; color: #08101e; } #stackStage .skp-card.busy .skp-n { background: #e3b95c; color: #1d1405; }
+/* the caption beside the pile */
+#stackStage .skp-caps { min-width: 0; padding-top: 2px; }
+#stackStage .skp-cap { display: flex; flex-direction: column; gap: 4px; animation: skpCap .18s ease; }
+@keyframes skpCap { from { opacity: 0; transform: translateY(4px); } }
+#stackStage .skp-cap-tag { align-self: flex-start; padding: 1px 8px; border-radius: 999px; background: rgba(106,160,255,.18); color: #9fc2ff; font: 700 10px/1.6 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+#stackStage .skp-cap.opp .skp-cap-tag { background: rgba(240,110,90,.18); color: #ffb3a6; }
+#stackStage .skp-cap-name { font-size: 15px; line-height: 1.2; }
+#stackStage .skp-cap-kind { font-size: 12px; color: var(--muted, #9aa3b2); }
+#stackStage .skp-cap-words { font: 13px/1.35 Georgia, serif; color: #efe6cf; padding: 6px 8px; border-left: 2px solid rgba(227,185,92,.7); background: rgba(227,185,92,.07); border-radius: 0 6px 6px 0; }
+#stackStage .skp-cap-tg { font-size: 12.5px; color: #b9e3c4; }
+/* arriving and leaving */
+.skp-card.skp-enter { animation: skpDrop .42s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes skpDrop { from { opacity: 0; transform: translateX(var(--dx, 0)) translateY(-46px) rotate(calc(var(--rot, 0deg) - 14deg)) scale(1.12); } }
+.skp-card.skp-leave { position: fixed; border-radius: 7px; overflow: hidden; animation: skpLift .62s ease-in forwards; box-shadow: 0 0 0 2px rgba(227,185,92,.9), 0 0 30px rgba(255,214,120,.8); }
+@keyframes skpLift { 0% { opacity: 1; } 35% { opacity: 1; transform: translateY(-22px) rotate(-4deg) scale(1.08); filter: brightness(1.35); } 100% { opacity: 0; transform: translateY(-70px) rotate(6deg) scale(.7); filter: brightness(2) blur(2px); } }
+.skp-card.skp-leave img { width: 100%; height: 100%; object-fit: cover; display: block; }
+@media (prefers-reduced-motion: reduce) { .skp-card.skp-enter, .skp-card.skp-leave, #stackStage .skp-card.busy { animation: none; } }
+html.portrait-ui #stackStage .skp { gap: 10px; }
+
+/* v0.99.85 the pile never replays an entrance on a redraw; only a card that just arrived drops in */
+#stackStage .skp-card { animation: none; }
+#stackStage .skp-card.skp-enter { animation: skpDrop .42s cubic-bezier(.2,1.5,.4,1) both; }
+body.castflight #stackStage .skp-card.skp-enter { animation: none; }
+#stackStage .sk-hint { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+#stackStage .sk-hint .stk-dot { flex: 0 0 auto; }
+/* v0.99.85 card wishlist */
+.wl-sug { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; min-height: 0; }
+.wl-sug-b { font-size: 12px; padding: 4px 10px; border-radius: 999px; }
+.wl-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; max-height: 52vh; overflow-y: auto; }
+.wl-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03); }
+.wl-img { width: 54px; aspect-ratio: 63 / 88; border-radius: 4px; object-fit: cover; display: block; }
+.wl-noimg { display: flex; align-items: center; justify-content: center; background: #1b1f2a; color: var(--muted); font-weight: 700; }
+.wl-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; } .wl-txt b { overflow-wrap: anywhere; }
+.wl-qty { display: flex; align-items: center; gap: 6px; } .wl-qty button { width: 28px; padding: 3px 0; } .wl-qty span { min-width: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+.wl-empty { padding: 16px 4px; } .wl-sum { margin-top: 8px; }
+html.portrait-ui .wl-row { grid-template-columns: 46px minmax(0, 1fr) auto; } html.portrait-ui .wl-row > button { grid-column: span 1; }

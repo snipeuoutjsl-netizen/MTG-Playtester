@@ -991,7 +991,7 @@ function openAbilityEffect(obj, done) {
       go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
     } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });
+      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   if (o.final) for (const r of applyBtns) if (r.o !== o) { r.b.disabled = true; r.b.title = 'You chose: ' + o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });   // v0.99.85 a final choice (do it / decline) finishes the window
       applyBtns.push({ o, b });
       box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
     }

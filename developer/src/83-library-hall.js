@@ -246,7 +246,7 @@ function drawHall() {
   const chk = (label, checked, onchange, cls) => h('label', { class: 'hall-chk ink-chk ' + (cls || '') }, h('input', { type: 'checkbox', checked, onchange }), h('i', { class: 'ink-box', 'aria-hidden': 'true' }), h('span', { text: label }));
   const left = h('div', { class: 'hall-page left' },
     h('div', { class: 'tm-chap', text: cmd ? 'Chapter II' : 'Chapter I' }),
-    h('div', { class: 'tm-title', text: cmd ? 'The Commander Game' : 'The Standard Game' }),
+    h('div', { class: 'tm-title', text: cmd ? 'Commander Deck Selection' : 'Deck Selection' }),   // v0.99.85 not "The Standard Game": Standard is also an MTG format
     h('div', { class: 'tm-orn', 'aria-hidden': 'true', text: '\u2767' }),
     inGame ? h('div', { class: 'tm-para tm-cont' }, ink(`Continue: ${state.deckName}`, () => closeHall(true), 'primary', 'Back to the game in progress (Esc)'), h('span', { class: 'tm-aside', text: ` — turn ${state.turn || 1}, the game waits for you.` })) : null,
     h('div', { class: 'tm-para' }, h('span', { class: 'bk-lead', text: 'The deck in hand is ' }), h('b', { class: 'tm-deck', text: cur || 'none yet' }), h('span', { class: 'bk-lead', text: '.' })),
@@ -255,6 +255,7 @@ function drawHall() {
     h('div', { class: 'tm-begin' }, ink(inGame ? 'Begin a new game' : `Begin with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, 'tm-go' + (inGame ? '' : ' primary'), 'Shuffle up and deal with the deck in hand')));
   const entries = [
     ['Import a deck', () => openDeckEditor(cmd ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'],
+    ['Card wishlist', () => openWishlist(), 'Cards you want, with the art you want, to buy in one go'],   // v0.99.85
     ['Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'],
     ['Settings', () => openSettings()],
     ['Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }],

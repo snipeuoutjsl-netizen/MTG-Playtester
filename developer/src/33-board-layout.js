@@ -121,7 +121,8 @@ let stackMin = false;
 function stackKind(c) {
   return c.kindTxt ? c.kindTxt : c.pseudo ? 'Rules check' : c.opp ? "Opponent's " + (c.ability ? 'ability' : 'spell') : c.ability ? (c.trigger ? 'Triggered ability' : c.pw ? 'Loyalty ability' : 'Activated ability') : c.copy ? 'Copy of your spell' : 'Your spell';
 }
-function drawStackStage() {
+function drawStackStage() { const old = skBeforeDraw(); drawStackStage0(); skAfterDraw(old); }   // v0.99.85 cards lift off the pile as they leave (src/91)
+function drawStackStage0() {
   const el = $('#stackStage'); if (!el) return;
   const resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied
   const resPick = !!state && state.phase === 'play' && state.discarding > 0 && (layoutOn('pickCentre') || (!state.stack.length && !!handPick && !!handPick.res));   // v0.94.2 every hand choice, not only ones from a resolving ability
@@ -178,7 +179,7 @@ function drawStackStage() {
       (() => { const n = sameSourceRun(); return n >= 2 ? h('button', { class: 'ss-all', text: `Resolve all ${n}`, title: `Resolve every ${top.sourceName} trigger on top of the stack, one after another. It stops at anything from another card, so you can still respond to that.`, onclick: () => resolveAllFromSource() }) : null; })(),
       main];
     if (splitSecondOn()) note = h('div', { class: 'sk-note warn', text: 'Split second: no spells or abilities (except mana abilities) until it resolves.' });
-    hint = h('div', { class: 'sk-hint', text: 'Drag a card here to respond' });
+    hint = h('div', { class: 'sk-hint' }, h('i', { class: 'stk-dot' }), 'Green outlines can be cast or activated in response: tap one, or drag it onto the pile.');   // v0.99.85 the sidebar's hint moved here
   }
   const count = state.stack.length;
   const head = h('div', { class: 'sk-head', onclick: e => { if (e.target.closest('button')) return; stackMin = !stackMin; drawStackStage(); } },
@@ -190,7 +191,7 @@ function drawStackStage() {
   if (stackMin && !resPick && !panel) { el.replaceChildren(head); return; }
   if (panel) { el.classList.remove('min'); if (resAb) { note = null; buttons = []; } }   // its own Done button finishes it   // the panel itself says what is resolving and holds its choices
   el.replaceChildren(head,
-    list.length ? h('div', { class: 'sk-list' }, list.map(row)) : null,
+    list.length ? (list.some(c => c && c.pseudo) ? h('div', { class: 'sk-list' }, list.map(row)) : skPile(list, !!(resSpell || resAb || resPick))) : null,   // v0.99.85 a pile of cards (src/91)
     note, panel, linesEl(),
     h('div', { class: 'sk-foot ss-btns' }, ...buttons.filter(Boolean)), hint);
 }
@@ -215,7 +216,7 @@ function drawBoardStrip() {
     })))));
   // v0.90.2 floating mana is shown once (top bar), not twice; the strip carries the Next phase / Next turn buttons instead.
   const info = h('div', { class: 'bs-info' },
-    state.stack.length ? h('span', { class: 'bs-stack', text: `stack ${state.stack.length}` }) : null);
+    null);   // v0.99.85 the "stack N" chip on the phase strip is gone: the pile on the table shows the stack (it also sat over Cleanup)
   const acts = bsActionsEl(); el.replaceChildren(track, info, acts);
   scheduleLayout();
 }

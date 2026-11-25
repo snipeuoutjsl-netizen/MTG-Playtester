@@ -178,7 +178,7 @@ function showCardMenu(c, zone, x, y) {
     items.push({ label: 'Top of library', fn: () => moveCard(c.id, 'library', 'top') });
     items.push({ label: 'Bottom of library', fn: () => moveCard(c.id, 'library', 'bottom') });
   }
-  if (!c.token && cardInfo(c.name)) { items.push('-'); items.push({ label: 'How the app reads this card…', fn: () => openCardReading(c.name) }); }
+  if (!c.token && cardInfo(c.name)) { items.push('-'); items.push({ label: 'How the app reads this card…', fn: () => openCardReading(c.name) }); items.push({ label: 'Add to card wishlist', fn: () => { const nm = wishAdd(c.name); if (nm) toast('On your wishlist', `${nm}. Choose its art in Card wishlist (Library contents).`); } }); }   // v0.99.85 wishlist
   showMenu(x, y, items);
 }
 
