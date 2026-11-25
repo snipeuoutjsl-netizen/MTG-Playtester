@@ -1988,7 +1988,7 @@ function effectOptionsBase(tx, obj) {
     if (/^(?:it|that creature|that permanent|they|those creatures)\b/i.test(sent.trim()) && /\btarget\b/i.test(prev) && !((obj.targets || []).some(t => t.kind === 'perm'))) continue;   // v0.99.68 "it" is the target, which has not been chosen here
     if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue;
     if (imp && /^(?:(?:until the end of your next turn|until end of turn|this turn|until your next end step),?\s*)?you may (?:play|cast) /i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
-  if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
+  if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; const stx0 = obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : ''; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), stx0), then: cb => openScry(v, /surveil/i.test(w), stx0, cb) }); }   // v0.99.92 then: the next effect waits for the window
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
   // v0.86 amass (rule 701.47): "Then amass Orcs 1."
@@ -2108,9 +2108,12 @@ function openAbilityEffect(obj, done) {
     if (!one && pre.length > 1 && pre.length <= 4) {
       const plain = tx.replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target'), labs = pre.map(o => String(o.label || '').toLowerCase());   // v0.99.79 "target player or planeswalker" is the target, chosen already: its "or" is not a choice left (Skullcrack)
       const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain)
-        && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
+        && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && (typeof o.then === 'function' || !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label)))
         && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));
-      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all);
+        // v0.99.92 in order (CR 608.2c); a scry or surveil opens its window and the effects after it wait for it (Kozilek's Command: tokens, scry 5, then draw)
+        let k = 0; const step = () => { while (k < pre.length) { const o = pre[k++]; if (typeof o.then === 'function') { o.then(() => { render(); step(); }); return; } o.fn(); } gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); };
+        step(); return; }
     }
     if (clean) {
       const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
@@ -2120,64 +2123,39 @@ function openAbilityEffect(obj, done) {
     // v0.99.86 nothing the app can apply: say what to do by hand and finish, instead of a window that only says so
     if (!pre.length) { const t0 = String(tx || '').trim(); log(`${obj.sourceName || 'Ability'}: do by hand (the app does not apply this): ${t0 || 'no text'}`); if (t0) toast(`${obj.sourceName || 'Ability'}: do by hand`, t0); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
   }
-  const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 520, sticky: true, noClose: true, resolve: true });
-  let opts = visibleOptions(effectOptions(tx, obj));   // v0.99.25 an understood multi-step ability is one ordered button
-  // The automatic 'delayedDraw' already covers a delayed draw; drop the generic duplicate button (it caused a second draw).
+  // v0.99.92 no Resolving window any more: when a spell or ability leaves the stack, what it does just happens. Only a real decision
+  // (a "you may", a choice between effects, an amount to pay) is asked, as one short question; anything the app cannot apply is a "do by hand" note.
+  resolveNoPanel(obj, tx, done);
+}
+function resolveNoPanel(obj, tx, done) {
+  let opts = []; try { opts = visibleOptions(effectOptions(tx, obj)); } catch (e) { opts = []; }
   if (opts.some(x => x.special === 'delayedDraw')) opts = opts.filter(x => !(x.label && /^Create delayed trigger: Draw a card/i.test(x.label)));
-  const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   for (const o of opts) if (o.special === 'delayedDraw' && !obj._delayedSet) { obj._delayedSet = true; addFx({ kind: 'delayed', when: 'upkeep', draw: 1, text: 'Draw a card.', srcName: obj.sourceName, srcId: obj.sourceId || null }); log(`${obj.sourceName}: you will draw a card at the beginning of the next turn's upkeep`); }
-  const used = new Set();
-  // v0.99.69 each effect happens once: applying one locks the buttons that would repeat part of it ("Scry 3" after "Scry 3, then draw a card"),
-  // and when every effect has been applied (and nothing is left to do by hand) the window finishes by itself, so no extra action can follow
-  const applyBtns = [], low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
-  const lockOverlaps = o => { const a = low(o.label); for (const r of applyBtns) if (r.o !== o && !r.b.disabled) { const b2 = low(r.o.label); if (b2 && (a.includes(b2) || b2.includes(a))) { r.b.disabled = true; r.b.title = 'Already done as part of: ' + o.label; } } };
-  let finished = false; const finishNow = () => { if (finished) return; finished = true; m.close(); log(`Resolved: ${obj.name}`); if (done) done(); };
-  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return;   // v0.99.86 a clause left to do by hand no longer holds the window open
-    const wait = () => { if (finished) return; if ([...document.querySelectorAll('.modal')].some(x => x !== m.el && !x.classList.contains('res-panel'))) { setTimeout(wait, 300); return; } setTimeout(finishNow, 350); }; wait(); };
-  const box = h('div', { class: 'prelist' });
-  for (const o of opts) {
-    if (o.special === 'delayedDraw') continue;
-    if (o.special === 'lookTop') {
-      const out = h('span', { class: 'muted small' });
-      const go = h('button', { class: 'primary', text: obj.target === 'opp' ? 'Look (opponent)' : 'Look at your top card' });
-      go.addEventListener('click', () => {
-        go.disabled = true;
-        if (obj.target === 'opp') { out.textContent = 'You target an opponent. A goldfish game has no opponent library, so there is nothing to see. The card stays where it is.'; return; }
-        const top = state.library[0];
-        if (!top) { out.textContent = 'Your library is empty.'; return; }
-        const i = cardInfo(top.name);
-        out.replaceChildren(h('b', { text: top.name }), ` ${i && i.mc ? i.mc : ''} ${i && i.t ? '· ' + i.t : ''} (it stays on top)`);
-        log(`${obj.sourceName}: looked at the top card of your library: ${top.name}`);
-      });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: obj.target === 'opp' ? 'Look at the top card of the opponent’s library' : 'Look at the top card of your library' }), go), h('div', { class: 'row' }, out));
-    } else if (o.special === 'payLifeDraw') {
-      const inp = h('input', { type: 'number', min: 0, max: Math.max(0, state.life), value: 0, style: 'width:70px' });
-      const go = h('button', { class: 'primary', text: 'Pay life and draw' });
-      go.addEventListener('click', async () => {
-        const n = Math.max(0, Math.min(parseInt(inp.value, 10) || 0, state.life));
-        if (!n) { toast('Nothing paid', 'You chose to pay 0 life, so you draw nothing.'); return; }
-        if (n >= state.life && !(await appAsk('Pay life', `Paying ${n} life would put you at ${state.life - n}. Continue?`, 'Pay', true))) return;
-        snap(); state.life -= n; const d = drawCards(n); log(`${obj.sourceName}: paid ${n} life, drew ${d}`);
-        go.disabled = true; inp.disabled = true; render();
-      });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'How much life do you pay?' }), inp, go));
-    } else if (o.special === 'cascade') {
-      const go = h('button', { class: 'primary', text: 'Resolve cascade…' });
-      go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
-    } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   if (o.final) for (const r of applyBtns) if (r.o !== o) { r.b.disabled = true; r.b.title = 'You chose: ' + o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });   // v0.99.85 a final choice (do it / decline) finishes the window
-      applyBtns.push({ o, b });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
-    }
-  }
-  m.body.append(
-    h('div', { class: 'psub', text: tx || 'This ability has no text.' }),
-    delayed ? h('div', { class: 'psub', text: 'A delayed triggered ability was created. In a real game the next turn is your opponent’s, so you draw during THEIR upkeep. In this goldfish game there is no opponent turn, so you draw at the start of your own next upkeep, before your draw step.' }) : null,
-    opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
-    box,
-    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} miss = miss.filter(x => !gapCovered(x, opts)); return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'Do these by hand (the app does not apply them):' }), ...miss.map(x => h('div', { class: 'small', text: '\u2022 ' + x }))) : null; })());
-  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => finishNow() }));
+  opts = opts.filter(o => o.special !== 'delayedDraw');
+  const who = obj.sourceName || 'Ability';
+  let gaps = []; try { gaps = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) { gaps = []; } gaps = gaps.filter(x => !gapCovered(x, opts));
+  let finished = false; const finish = () => { if (finished) return; finished = true; if (gaps.length) { log(`${who}: do by hand (the app does not apply this): ${gaps.join(' ')}`); toast('Do by hand', gaps.join(' ')); }
+    if (!opts.length && !gaps.length && String(tx || '').trim()) { log(`${who}: do by hand (the app does not apply this): ${tx}`); toast(`${who}: do by hand`, tx); }
+    log(`Resolved: ${obj.name}`); render(); if (done) done(); };
+  if (opts.some(o => o.special === 'cascade')) { openCascade(obj, done); return; }
+  // each effect once: drop an option that is part of a longer one ("Scry 3" beside "Scry 3, then draw a card")
+  const low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
+  opts = opts.filter((o, i) => o.special || !opts.some((p, j) => j !== i && !p.special && low(p.label) !== low(o.label) && low(p.label).includes(low(o.label))));
+  const run = async list => { for (const o of list) {
+      if (o.special === 'lookTop') { if (obj.target === 'opp') { toast(`${who}`, 'A goldfish opponent has no library: nothing to look at.'); continue; } const top = state.library[0]; if (top) { log(`${who}: looked at the top card of your library: ${top.name}`); toast(`${who}: top card`, `${top.name} (it stays on top)`); } continue; }
+      if (o.special === 'payLifeDraw') { const n = await appAskNumber('Pay how much life?', `${who}: you draw that many cards.`, 0); const k = Math.max(0, Math.min(+n || 0, state.life)); if (k) { snap(); state.life -= k; const d = drawCards(k); log(`${who}: paid ${k} life, drew ${d}`); } continue; }
+      if (typeof o.fn !== 'function') continue;
+      if (typeof o.then === 'function') { await new Promise(r => { try { o.then(() => { render(); r(); }); } catch (e) { r(); } }); continue; }
+      try { o.fn(); } catch (e) { console.error(e); } render(); } };
+  const plain = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target');
+  const choice = opts.length > 1 && (/\bchoose one\b|\bchoose\b/i.test(plain) || opts.some(o => o.final) || (/\bor\b/i.test(plain) && !/\band\b|\bthen\b/i.test(plain)));
+  (async () => {
+    if (!opts.length) { finish(); return; }
+    if (choice) { const i = await appChoose(who, tx, opts.map(o => o.label)); if (i !== null && opts[i] && !/^Decline\b/i.test(opts[i].label || '')) { log(`${who}: ${opts[i].label}`); await run([opts[i]]); } else log(`${who}: declined`); finish(); return; }
+    if (/\byou may\b/i.test(plain) && !opts.some(o => o.def)) { const all = opts.map(o => o.label).join('; ');
+      if (!(await appAsk(who, `${tx}`, all.length < 60 ? all : 'Do it'))) { log(`${who}: you chose not to`); gaps = []; finish(); return; } }
+    log(`${who}: applied automatically \u2014 ${opts.map(o => o.label).join('; ')}`); toast(`${who} resolves`, opts.map(o => o.label).join('; '));
+    await run(opts); finish(); })();
 }
 function openCascade(obj, done) {
   const src = cardInfo(obj.sourceName), mv = src ? src.cmc : 0;
@@ -3760,9 +3738,9 @@ function stepResolveRun() {
   const run = RES_RUN; if (!run || !state) return;
   if (gameIsOver() || Date.now() - run.t0 > 10 * 60000) { RES_RUN = null; return; }
   { const ay = document.querySelector('#modalRoot .ay-offer'); const no = ay && [...ay.querySelectorAll('button')].find(b => b.textContent === 'Ask every time'); if (no) { no.click(); setTimeout(stepResolveRun, 60); return; } }   // you chose Resolve all: the Always yield offer is answered "not now"
-  const win = document.querySelector('#modalRoot .backdrop, #stackStage .res-panel');
+  const win = document.querySelector('#modalRoot .backdrop');
   if (!win && state.pendingTriggers.length && !state.resolving && !state.resolvingAb) flushTriggers();
-  const busy = state.resolving || state.resolvingAb || document.querySelector('#modalRoot .backdrop, #stackStage .res-panel') || state.pendingTriggers.length;
+  const busy = state.resolving || state.resolvingAb || document.querySelector('#modalRoot .backdrop') || state.pendingTriggers.length;
   if (busy) { setTimeout(stepResolveRun, 150); return; }   // waiting for you to answer a choice (or to order new triggers)
   const top = state.stack[state.stack.length - 1];
   if (!top || !top.ability || !top.trigger || top.opp || top.sourceId !== run.src) { RES_RUN = null; if (run.done) log(`Resolve all: ${run.done} of ${run.name}'s triggers resolved`); render(); return; }
@@ -4657,7 +4635,7 @@ let autoRunBusy = false;
 function autoResumeTurn() {
   if (!state || state.phase !== 'play' || state.autoRun !== state.turn || autoRunBusy) return;
   if (state.step >= MAIN1) { state.autoRun = 0; return; }
-  const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding || state.resolving || state.resolvingAb || state.phasePause || document.querySelector('#modalRoot .backdrop:not(.dock), #stackStage .res-panel');
+  const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding || state.resolving || state.resolvingAb || state.phasePause || document.querySelector('#modalRoot .backdrop:not(.dock)');
   if (busy()) return;
   autoRunBusy = true;
   setTimeout(() => { autoRunBusy = false;
@@ -5740,7 +5718,7 @@ function onCardDbl(c, zone) {
   if (!state || state.phase !== 'play' || state.discarding || holdForTriggers()) return;
   // v0.99.62 one double tap = one action. Phones can deliver the double tap twice (the browser's own and the touch layer's), which opened a spell's choices twice.
   { const now = Date.now(); if (lastDblAct.id === c.id && now - lastDblAct.t < 600) return; lastDblAct = { id: c.id, t: now }; }
-  if (document.querySelector('#modalRoot .modal, #stackStage .modal.res-panel') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
+  if (document.querySelector('#modalRoot .modal') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
   if (zone === 'battlefield') {
     if (isPlaneswalker(c)) openLoyalty(c);
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);
@@ -6385,10 +6363,12 @@ function dealCombatDamage(){
     total+=pw.n*mult; parts.push(`${f.card.name} ${pw.n*mult}${mult===2?' (double strike)':''}${pw.star?' (* power counted as 0: adjust the opponent life by hand)':''}`);
   }
   cb.dealt=true;
+  const fxHits=[]; for(const d of dealers){ if(d.id===blk) continue; const n=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(n>0) fxHits.push({id:d.id,dmg:n}); }
   { const fog=(state.fx||[]).find(e=>e.kind==='fog'); if(fog && total>0){ log(`Combat damage: ${parts.join(', ')} = ${total}, all prevented (${fog.srcName||'an effect'}: prevent all combat damage this turn)`); toast('Combat damage prevented',`${fog.srcName||'An effect'} prevents all combat damage this turn.`); return; } }   // v0.99.79 Fog (CR 615)
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
+  try { if(total>0) combatFx(fxHits); } catch(e) { /* the arrows are decoration */ }   // v0.99.92
   const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn; try { if(total>0) recapNote('opp',-total); } catch(e) { /* recap only */ }   // v0.99.91 combat damage counts in the recap too
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
@@ -6679,10 +6659,9 @@ function modal(title, opts) {
     h('header', null, h('span', { text: title }), h('button', { text: '✕', hidden: !!opts.noClose, title: opts.onCancel ? 'Cancel and go back' : 'Close', onclick: () => { close(); if (opts.onCancel) opts.onCancel(); } })),
     body, foot);
   if (opts.noClose) m.dataset.noclose = '1';
-  const back = h('div', { class: 'backdrop' + (opts.dock ? ' dock' : '') + (opts.resolve ? ' resolve' : '') }, m);
+  const back = h('div', { class: 'backdrop' + (opts.dock ? ' dock' : '') }, m);
   // v0.99.66 a resolving effect's choices live inside the stack window (drawStackStage moves this panel there), so the card being resolved,
   // the stack behind it and the choices are one window; when the stack window is not shown it stays a floating window as before
-  if (opts.resolve) { m.classList.add('res-panel'); m._home = back; setTimeout(() => { try { drawStackStage(); } catch (e) { /* no table */ } }, 0); }
   back.addEventListener('mousedown', e => { if (e.target === back && !opts.sticky && !opts.dock) close(); });
   root.append(back);
   let closed = false;
@@ -6690,7 +6669,6 @@ function modal(title, opts) {
     if (closed) return;
     closed = true;
     back.remove(); if (m.isConnected) m.remove();
-    if (opts.resolve) setTimeout(() => { try { drawStackStage(); } catch (e) { /* no table */ } }, 0);
     if (state && state.halfChosen) setTimeout(checkHalfAbandon, 80);
     if (opts.onClose) opts.onClose();
   }
@@ -6703,7 +6681,7 @@ document.addEventListener('dragover', ev => { if (ev.dataTransfer && [...ev.data
 document.addEventListener('drop', async ev => {
   const fs = ev.dataTransfer && ev.dataTransfer.files; if (!fs || !fs.length) return;
   ev.preventDefault();
-  if (document.querySelector('#modalRoot .modal, #stackStage .modal.res-panel')) { toast('Finish this window first', 'Close the open window, then drop the file again.'); return; }
+  if (document.querySelector('#modalRoot .modal')) { toast('Finish this window first', 'Close the open window, then drop the file again.'); return; }
   const f = [...fs].find(x => /\.(txt|dec|dek|text)$/i.test(x.name) || /^text\//.test(x.type));
   if (!f) { toast('Not a decklist', 'Drop a .txt decklist file.'); return; }
   openDeckEditor({ blank: true, text: (await f.text()).replace(/\r\n?/g, '\n'), name: f.name.replace(/\.[^.]+$/, '').replace(/_+/g, ' ').trim() });
@@ -7081,8 +7059,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.91';
+const APP_VERSION = '0.99.92';
 const CHANGELOG = [
+  { v: '0.99.92', title: 'No more Resolving screen, a new hand handle on phones, combat arrows and room sounds', notes: ['FIX: the Resolving screen is gone for good. When a spell or ability leaves the stack, what it does just happens (Kozilek\'s Command: the tokens appear, the scry window opens, then you draw and it goes to the graveyard). Only a real decision is asked, as one short question: a "you may", a choice between effects, or how much to pay. Anything the app cannot do is a "Do by hand" note.', 'FIX: a spell can no longer be left hanging half-resolved: with no window of its own open, it finishes by itself.', 'PHONES: the hand has a handle on top of the tray instead of the floating Hand chip that covered buttons. Tap it, or swipe it down or up, to hide or show the hand; hidden, only the handle stays at the bottom.', 'NEW: combat arrows fly from your attackers to your opponent with the damage numbers, and a win gets confetti and a short fanfare.', 'NEW: each Library room has its own quiet sound (torches crackling in the dungeon, birds in the grove, wind in the castle, chimes in the tower) and two things on the desk. Turn the sounds off in Settings, Sound: Library room sounds.', 'Cleanup: the old Resolving panel code and styles are removed.'] },
   { v: '0.99.91', title: 'Practice opponent', notes: ['NEW: Practice opponent (Game tools). The goldfish can fight back: choose Aggro, Midrange or Control (or keep the Goldfish) and Easy, Normal or Hard.', 'Its turn happens between yours: it attacks you with a clock that grows (Aggro hits hardest), and Midrange and Control destroy your biggest creature every few turns (not hexproof or indestructible ones). A note and the log say what it did.', 'On your turn a Control opponent may cast Counterspell at a spell you cast: it goes on the stack, so you can respond to it (or let it resolve and your spell is countered). Aggro and Midrange opponents may chump-block your biggest attacker (not fliers or menace; trample still gets through).', 'The opponent\u2019s life box shows who you are playing against. Undo takes back what it did. Puzzles always use the goldfish.', 'Combat damage now counts in the game recap too.'] },
   { v: '0.99.90', title: 'Puzzles', notes: ['NEW: Puzzles (Library contents, or Game tools). Win-this-turn puzzles with real cards: each starts in your main phase with your hand, lands and creatures set out and your opponent at a set life total; find the line that wins before the turn ends. Five to start, from one star to three (Two bolts, Haste makes waste, Spike and spear, Pump and prowess, Everything at once), each with a hint.', 'A bar over the table shows the puzzle, the life to beat, Hint and Restart. Win and it is marked solved (with Next puzzle); end the turn without winning and you can try again.', 'Save this moment as a puzzle (Game tools): freezes any position of your own games (hand, battlefield with tokens and counters, graveyard, exile, the top of your library and both life totals) so you can replay it and look for a better line.'] },
   { v: '0.99.89', title: 'Game recaps', notes: ['NEW: every game is written down as you play: the land you played, the spells you cast and the damage you dealt each turn. When the game ends, the Victory / Defeat window shows it as an inked page: the turn you won (or lost), a chart of the damage dealt each turn with your best turn marked, and a turn-by-turn list.', 'Each deck keeps its last 20 recaps in its Librarian\u2019s notes in the Library book (Recent games: W T5, W T6 …); click one to reopen it. Undo takes back what it undoes from the recap too.'] },
@@ -7991,7 +7970,9 @@ const SOUND_DEFS = [
   ['enter', 'Entering the battlefield', 'A low thump when a permanent or token arrives'],
   ['land', 'Playing a land', 'A wooden clack'],
   ['resolve', 'A spell or ability resolving', 'A small chime'],
-  ['counter', 'A spell being countered', 'A falling tone']
+  ['counter', 'A spell being countered', 'A falling tone'],
+  ['win', 'Winning', 'A short fanfare when your opponent reaches 0 life'],
+  ['hit', 'Combat damage', 'A thump as attackers hit your opponent']
 ];
 let audioCtx = null, reverbNode = null; const lastSnd = {};
 // A shared soft room reverb: a generated impulse (decaying stereo noise), so no audio files are needed.
@@ -8033,6 +8014,8 @@ function sfx(kind) {
     else if (kind === 'enter') { tone('sine', 150, 50, 0, 0.22, 0.9); noise(0, 0.07, 700, 300, 0.8, 0.5); }
     else if (kind === 'land') { tone('square', 220, 120, 0, 0.05, 0.25); noise(0, 0.05, 1800, 900, 1.5, 0.7); tone('sine', 140, 80, 0.01, 0.12, 0.5); }
     else if (kind === 'resolve') { tone('sine', 880, 880, 0, 0.18, 0.3); tone('sine', 1320, 1320, 0.07, 0.25, 0.25); }
+    else if (kind === 'win') { [[523, 0], [659, .12], [784, .24], [1047, .4]].forEach(([f, t]) => { tone('triangle', f, f, t, .7, .28, .02); tone('sine', f * 2, f * 2, t, .4, .06); }); noise(.4, .9, 3000, 8000, .5, .08); }
+    else if (kind === 'hit') { tone('sine', 110, 45, 0, .25, .9); noise(0, .1, 1200, 300, .7, .6); }
     else if (kind === 'counter') { tone('sawtooth', 520, 90, 0, 0.3, 0.3); noise(0, 0.12, 900, 200, 1, 0.3); }
   } catch (e) { /* sound is never allowed to break the game */ }
 }
@@ -8907,6 +8890,7 @@ function lethalFx(which, title, sub) {
   document.body.appendChild(o); const an = wa(o, [{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: 2600 });
   an.onfinish = () => o.remove(); setTimeout(() => o.remove(), (3200) * 3);
   sparks(innerWidth / 2, innerHeight / 2, you ? '#ff5a4f' : '#ffe27a', 40, 360, 1200);
+  if (!you) { try { winConfetti(); sfx('win'); } catch (e) {} }   // v0.99.92 a celebration
   setTimeout(() => { try { showGameEnd(which, title, sub); } catch (e) { /* the pop-up is a convenience */ } }, 2500);   // v0.96.21 the "Next round" screen
 }
 // ---- turn banner and phase flash
@@ -9479,13 +9463,17 @@ function stackKind(c) {
 function drawStackStage() { const old = skBeforeDraw(); drawStackStage0(); skAfterDraw(old); }   // v0.99.85 cards lift off the pile as they leave (src/91)
 function drawStackStage0() {
   const el = $('#stackStage'); if (!el) return;
-  const resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied
+  let resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied
   const resPick = !!state && state.phase === 'play' && state.discarding > 0 && (layoutOn('pickCentre') || (!state.stack.length && !!handPick && !!handPick.res));   // v0.94.2 every hand choice, not only ones from a resolving ability
-  const resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
+  let resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
+  // v0.99.92 no Resolving screen: an effect that leaves the stack just happens. A spell or ability still marked as resolving is only
+  // waiting for a window of its own (scry, a search, one question); with no such window open it is finished here, so nothing is ever left hanging.
+  if ((resSpell || resAb) && !resPick) { const r0 = state.resolving, a0 = state.resolvingAb; clearTimeout(drawStackStage0.t);
+    if (!document.querySelector('#modalRoot .modal')) drawStackStage0.t = setTimeout(() => { if (!state || document.querySelector('#modalRoot .modal') || state.discarding > 0) return;
+      if (r0 && state.resolving === r0 && !state.stack.length) { log(`${r0.name}: finished resolving`); finishResolving(); } else if (a0 && state.resolvingAb === a0) { state.resolvingAb = null; state.resLines = []; render(); } }, 900); }
+  if ((resSpell || resAb) && !resPick) { const quiet = !state.stack.length; el.classList.remove('resolving'); document.body.classList.remove('res-stage'); if (quiet) { el.hidden = true; el.replaceChildren(); el.classList.remove('has-panel'); return; } resSpell = false; resAb = false; }
   const on = !!state && state.phase === 'play' && (state.stack.length > 0 || resPick || resSpell || resAb);
-  const panel = [...document.querySelectorAll('.modal.res-panel')].pop() || null;
-  const home = () => { if (panel && panel._home && panel.parentNode !== panel._home && panel._home.isConnected) panel._home.append(panel); };
-  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { home(); el.replaceChildren(); el.classList.remove('has-panel'); return; }
+  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { el.replaceChildren(); el.classList.remove('has-panel'); return; }
   el.classList.add('sk'); el.classList.toggle('min', stackMin && !resPick);
   const pickSrc = resPick ? pickSource() : null;
   const items = resPick ? [handPick && handPick.res ? (state.resolving || Object.assign({}, handPick.res, { id: 'res', ability: true })) : pickSrc] : resSpell ? [state.resolving] : resAb ? [state.resolvingAb, ...[...state.stack].reverse()] : [...state.stack].reverse();
@@ -9542,12 +9530,11 @@ function drawStackStage0() {
     h('span', { class: 'sk-sp' }),
     stackMin && main ? (() => { const b = main.cloneNode(true); b.onclick = main.onclick; b.disabled = main.disabled; b.classList.add('sk-mini'); return b; })() : null,
     h('button', { class: 'sk-fold', 'aria-label': stackMin ? 'Show the stack' : 'Fold the stack', title: stackMin ? 'Show the stack' : 'Fold the stack down to one line', text: stackMin ? '▾' : '▴', onclick: () => { stackMin = !stackMin; drawStackStage(); } }));
-  el.classList.toggle('has-panel', !!panel);
-  if (stackMin && !resPick && !panel) { el.replaceChildren(head); return; }
-  if (panel) { el.classList.remove('min'); if (resAb) { note = null; buttons = []; } }   // its own Done button finishes it   // the panel itself says what is resolving and holds its choices
+  el.classList.remove('has-panel');
+  if (stackMin && !resPick) { el.replaceChildren(head); return; }
   el.replaceChildren(head,
     list.length ? (list.some(c => c && c.pseudo) ? h('div', { class: 'sk-list' }, list.map(row)) : skPile(list, !!(resSpell || resAb || resPick))) : null,   // v0.99.85 a pile of cards (src/91)
-    note, panel, linesEl(),
+    note, linesEl(),
     h('div', { class: 'sk-foot ss-btns' }, ...buttons.filter(Boolean)), hint);
 }
 // kept for older callers: the docked panel needs no scaling
@@ -9943,8 +9930,9 @@ function openSettings() {
   }; drawCursor();
   const soundBox=h('div');
   const drawSound=()=>{ soundBox.replaceChildren(
-    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
+    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=!!settings.sound.on; cb.addEventListener('change',()=>{settings.sound.on=cb.checked;saveSettings();musicSettingsChanged();try{if(!cb.checked)ambStop();else if(hallOpen())ambStart();}catch(e){}if(cb.checked)sfx('cast');}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Sound effects'}),h('span',{class:'muted small',text:'Master switch for all game sounds (made on the fly, no files, works offline)'}))); })(),
     (()=>{ const r=h('input',{type:'range',min:0,max:1,step:0.05}); r.value=settings.sound.vol; r.addEventListener('input',()=>{settings.sound.vol=+r.value;saveSettings();}); r.addEventListener('change',()=>sfx('draw')); return h('div',{class:'setrow'},h('label',{text:'Volume'}),r); })(),
+    (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.ambience!==false; cb.addEventListener('change',()=>{settings.sound.ambience=cb.checked;saveSettings();try{if(hallOpen())ambStart();}catch(e){}}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Library room sounds'}),h('span',{class:'muted small',text:'A quiet sound for each Library room while it is open: torches in the dungeon, birds in the grove, wind in the castle.'}))); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.music!==false; cb.addEventListener('change',()=>{settings.sound.music=cb.checked;saveSettings();musicSettingsChanged();}); return h('label',{class:'teachopt'},cb,h('span',null,h('b',{text:'Background music'}),h('span',{class:'muted small',text:'A calm, never-ending ambient loop generated in the app. It starts after your first click.'}))); })(),
     (()=>{ const sel=h('select',null,h('option',{value:'ambient',text:'Calm ambient (pads and bells)'}),...Object.entries(LOFI_SONGS).map(([k,v])=>h('option',{value:k,text:v.label}))); sel.value=musicStyleId(); sel.addEventListener('change',()=>{settings.sound.musicStyle=sel.value;saveSettings();musicSettingsChanged();const d=document.querySelector('.modal .drums-opt');if(d)d.hidden=!LOFI_SONGS[sel.value];}); return h('div',{class:'setrow'},h('label',{text:'Music style'}),sel); })(),
     (()=>{ const cb=h('input',{type:'checkbox'}); cb.checked=settings.sound.musicBeat!==false; cb.addEventListener('change',()=>{settings.sound.musicBeat=cb.checked;saveSettings();}); return h('label',{class:'teachopt drums-opt',hidden:!LOFI_SONGS[settings.sound.musicStyle]},cb,h('span',null,h('b',{text:'Low-fi drums'}),h('span',{class:'muted small',text:'Kick, snare and hats in the low-fi and hip-hop songs. Turn off for just keys, bass and crackle.'}))); })(),
@@ -10741,7 +10729,7 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('keydown', e => {
     if (e.target.closest && e.target.closest('input, textarea, select')) return;
-    if ($('#modalRoot').children.length) { const top = [...document.querySelectorAll('#modalRoot .modal')].pop() || document.querySelector('#stackStage .modal.res-panel'); if (e.key === 'Escape' && top && !top.matches('[data-noclose]')) { const x = top.querySelector('header button'); if (x) x.click(); } return; }   // v0.99.66 the resolve panel may sit in the stack window
+    if ($('#modalRoot').children.length) { const top = [...document.querySelectorAll('#modalRoot .modal')].pop(); if (e.key === 'Escape' && top && !top.matches('[data-noclose]')) { const x = top.querySelector('header button'); if (x) x.click(); } return; }   // v0.99.66 the resolve panel may sit in the stack window
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
     else if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -11654,7 +11642,6 @@ let matchRecord = { w: 0, l: 0 };
 function gameIsOver() { return !!document.getElementById('gameEndBox'); }
 function clearPromptsForGameEnd() {   // v0.99.71 a trigger or choice that was open (Psychic Frog's draw after the lethal hit) must not sit over the result
   document.querySelectorAll('#modalRoot .backdrop').forEach(b => { if (!b.querySelector('#gameEndBox')) b.remove(); });
-  document.querySelectorAll('#stackStage .res-panel').forEach(x => x.remove());
 }
 function showGameEnd(which, title, sub) {
   if (state && state.puzzle) { puzzleResult(which !== 'you', title); return; }   // v0.99.90 a puzzle has its own ending
@@ -14177,13 +14164,13 @@ function hallOpen() { return document.body.classList.contains('hall-on'); }
 function openHall() {
   let el = document.getElementById('hall'); if (!el) { el = h('section', { id: 'hall', 'aria-label': 'The Library' }); document.body.insertBefore(el, document.getElementById('modalRoot') || null); }
   try { el.getAnimations().forEach(x => x.cancel()); } catch (e) {}   // v0.99.52 a finished fade-out (fill: forwards) kept the reopened Library invisible
-  document.body.classList.add('hall-on'); el.hidden = false; drawHall();
+  document.body.classList.add('hall-on'); el.hidden = false; drawHall(); try { ambStart(); } catch (e) {}
   const decks = loadDecks(); try { loadCachedImages(Object.keys(decks).map(n => deckArtName(n, parseDeck(decks[n].text)))).then(k => { if (k && hallOpen()) drawHall(); }); } catch (e) {}
   setTimeout(() => { const f = el.querySelector('.bk-stage, .hall-page button'); if (f) f.focus(); }, 60);
 }
 function closeHall(anim) {
   const el = document.getElementById('hall'); if (!el || !hallOpen()) return;
-  const done = () => { document.body.classList.remove('hall-on'); el.hidden = true; el.replaceChildren(); try { el.getAnimations().forEach(x => x.cancel()); } catch (e) {} render(); };
+  try { ambStop(); } catch (e) {} const done = () => { document.body.classList.remove('hall-on'); el.hidden = true; el.replaceChildren(); try { el.getAnimations().forEach(x => x.cancel()); } catch (e) {} render(); };
   if (anim && animOn('ui') !== false && !reducedMotion() && !document.body.classList.contains('a11y-calm')) { const a = wa(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(1.04)' }], { duration: 420, easing: 'ease-in', fill: 'forwards' }); a.onfinish = () => { done(); const t = document.getElementById('table'); if (t) wa(t, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' }); }; }
   else done();
 }
@@ -14420,6 +14407,7 @@ function drawHall() {
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
     h('button', { text: '›', title: 'More shelves', disabled: hallPage >= pages - 1, onclick: () => { hallPage++; drawHall(); } })) : null;
   world.append(
+    deskObjectsEl(hallRoom()),   // v0.99.92 things on the desk (src/98)
     roomDecorEl(hallRoom()),   // v0.99.87 banners, torches, candles or vines on the wall (src/93)
     h('div', { class: 'hall-plaque' }, h('div', { class: 'hall-plaque-row' }, (() => { const x = h('span', { class: 'hall-logo' }); x.innerHTML = HALL_LOGO; return x; })(), h('div', { class: 'hall-plaque-t' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }))), pager),
     shelf,
@@ -14460,7 +14448,7 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
     const src = e.target.closest && e.target.closest('[draggable="true"]');
     st = { x: e.clientX, y: e.clientY, src, target: e.target, drag: false, held: false, t: Date.now() };
     // v0.99.78 a button, a field or a choice in a window is never press-and-hold: a slow tap on "Pay and cast" or "Cast" must still click it
-    if (e.target.closest && e.target.closest('button, input, select, textarea, a, label, .mode-row, .tgl, #modalRoot .row, .res-panel .row')) { st.noHold = true; return; }
+    if (e.target.closest && e.target.closest('button, input, select, textarea, a, label, .mode-row, .tgl, #modalRoot .row')) { st.noHold = true; return; }
     st.timer = setTimeout(() => {   // press and hold = right-click (card menus, the library menu ...)
       if (!st || st.drag) return; st.held = true; swallowClick = Date.now();
       const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: st.x, clientY: st.y, button: 2 }); (under(st.x, st.y) || st.target).dispatchEvent(ev);
@@ -14552,18 +14540,25 @@ function swipeCue(label) {
   const el = h('div', { class: 'swipe-cue', 'aria-hidden': 'true' }, h('span', { text: '‹‹' }), h('b', { text: label || 'Next' }));
   mat.append(el); setTimeout(() => el.remove(), 700);
 }
-// v0.99.69 upright phones: the hand can be tucked down to a strip (tap the tab), giving the whole height to the table; tap again to raise it
+// v0.99.69 upright phones: the hand can be tucked down to a strip, giving the whole height to the table.
+// v0.99.92 the control is the hand tray's own handle, part of the tray (never floating over the table, a window or its buttons):
+// a full-width bar on top of the hand. Tap it, or swipe it down / up, to tuck or raise the hand; tucked, only the bar shows at the bottom.
 (function handTab() {
   if (typeof document === 'undefined') return;
   const mk = () => {
     const hw = document.getElementById('handWrap'); if (!hw || document.getElementById('handTab')) return;
     const b = document.createElement('button'); b.id = 'handTab'; b.className = 'hand-tab'; b.type = 'button';
-    const label = () => { const n = (state && state.hand) ? state.hand.length : 0, t = document.body.classList.contains('hand-tuck'); b.textContent = (t ? '▴ Hand' : '▾ Hand') + (n ? ` (${n})` : ''); b.setAttribute('aria-label', t ? 'Raise the hand' : 'Tuck the hand away'); };
-    b.addEventListener('click', e => { e.stopPropagation(); document.body.classList.toggle('hand-tuck'); label(); try { render(); } catch (er) { /* no game */ } setTimeout(() => window.__placeHandTab && window.__placeHandTab(), 260); });
-    document.body.append(b); label(); new MutationObserver(label).observe(document.getElementById('row-hand') || hw, { childList: true });
-    // the tab floats above everything (the table would otherwise take its taps), pinned to the top edge of the hand
-    const place = () => { if (!document.documentElement.classList.contains('portrait-ui')) return; const r = hw.getBoundingClientRect(); b.style.top = Math.max(0, Math.min(innerHeight - 40, r.top + 4)) + 'px'; };
-    window.__placeHandTab = place; hw.addEventListener('transitionend', place); addEventListener('resize', place); setInterval(place, 600); place();
+    const grip = document.createElement('i'); grip.className = 'ht-grip'; grip.setAttribute('aria-hidden', 'true'); const txt = document.createElement('span'); txt.className = 'ht-txt'; b.append(grip, txt);
+    const label = () => { const n = (state && state.hand) ? state.hand.length : 0, t = document.body.classList.contains('hand-tuck'); txt.textContent = (t ? 'Show hand' : 'Hide hand') + ` (${n})`; b.setAttribute('aria-label', t ? 'Raise the hand' : 'Tuck the hand away'); b.setAttribute('aria-expanded', String(!t)); };
+    const setTuck = on => { const r = hw.getBoundingClientRect(); document.documentElement.style.setProperty('--tuck', Math.max(0, Math.round(r.height - b.offsetHeight)) + 'px'); document.body.classList.toggle('hand-tuck', on); label(); try { render(); } catch (er) { /* no game */ } };
+    window.__handTuck = setTuck;
+    let y0 = null, moved = false;
+    b.addEventListener('pointerdown', e => { y0 = e.clientY; moved = false; });
+    b.addEventListener('pointermove', e => { if (y0 === null) return; const dy = e.clientY - y0; if (Math.abs(dy) > 24 && !moved) { moved = true; setTuck(dy > 0); } });
+    b.addEventListener('pointerup', () => { y0 = null; });
+    b.addEventListener('click', e => { e.stopPropagation(); if (moved) { moved = false; return; } setTuck(!document.body.classList.contains('hand-tuck')); });
+    hw.prepend(b); label(); new MutationObserver(label).observe(document.getElementById('row-hand') || hw, { childList: true, subtree: true });
+    window.__placeHandTab = () => {};   // the old floating tab was moved by a timer; the handle is part of the tray now
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mk); else mk();
 })();
@@ -14949,6 +14944,13 @@ function appAsk(title, text, okText, danger) {
 }
 function appNotice(title, text) { try { toast(title, text); } catch (e) { /* no table yet */ } try { log(`${title}: ${text}`); } catch (e) { /* no game */ } }
 function appAskNumber(title, note, def) { return new Promise(res => askNumber(title, note, def, v => res(v))); }
+// v0.99.92 one short question with a button for each answer (and "Neither"): the choice an effect leaves you, without a Resolving window
+function appChoose(title, text, labels) {
+  return new Promise(res => { const m = modal(title, { width: 440 }); let done = false; const end = v => { if (done) return; done = true; m.close(); res(v); };
+    m.body.append(h('div', { class: 'psub', text }), h('div', { class: 'choose-list' }, labels.map((l, i) => h('button', { class: 'choose-opt', text: l, onclick: () => end(i) }))));
+    m.foot.append(h('button', { text: 'Neither', onclick: () => end(null) }));
+    const obs = new MutationObserver(() => { if (!document.body.contains(m.el || m.body)) { obs.disconnect(); end(null); } }); try { obs.observe(document.body, { childList: true, subtree: true }); } catch (e) { /* no observer */ } });
+}
 // ---- v0.99.84 rules batch 4: what the Remember audit still found most often
 // "… of your choice" (CR 105.1 colours / 205.3 types): ask, then read the sentence with the answer in it.
 // "until your next turn" / "this turn" allowances: no maximum hand size (CR 402.2), cast as though it had flash (CR 702.8),
@@ -15217,7 +15219,7 @@ function hallRoom() { const v = lsGet('mtgpt.hallLook', null) || {}; return HALL
 function setHallRoom(k) {
   const r = HALL_ROOMS.find(x => x[0] === k); if (!r) return;
   const v = lsGet('mtgpt.hallLook', null) || {}; v.room = k; v.wall = r[2].wall; v.desk = r[2].desk; lsSet('mtgpt.hallLook', v);
-  applyHallLook(); const w = document.querySelector('#hall .hall-world'); if (w) { const old = w.querySelector(':scope > .hall-decor'); const d = roomDecorEl(k); if (old) old.replaceWith(d); else w.prepend(d); }
+  applyHallLook(); const w = document.querySelector('#hall .hall-world'); if (w) { const old = w.querySelector(':scope > .hall-decor'); const d = roomDecorEl(k); if (old) old.replaceWith(d); else w.prepend(d); } if (w) { const o2 = w.querySelector(':scope > .desk-objs'); if (o2) o2.replaceWith(deskObjectsEl(k)); } try { if (hallOpen()) ambStart(); } catch (e) {}
 }
 const DC_BANNER = '<svg viewBox="0 0 64 360" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="dcBn" x1="0" x2="1"><stop offset="0" stop-color="#4a0d0d"/><stop offset=".18" stop-color="#8f1d1a"/><stop offset=".5" stop-color="#b22a22"/><stop offset=".82" stop-color="#8a1b18"/><stop offset="1" stop-color="#3f0b0b"/></linearGradient><linearGradient id="dcRod" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6dc8c"/><stop offset="1" stop-color="#8f6420"/></linearGradient></defs>'
   + '<path d="M8 14 H56 V318 L32 290 L8 318 Z" fill="url(#dcBn)" stroke="#d9b45a" stroke-width="2.5"/>'
@@ -15570,6 +15572,68 @@ function openPractice() {
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#btnPractice'); if (!b) return; try { document.getElementById('gameMenu').hidden = true; } catch (er) {} openPractice(); });
 // the opponent's life box says who you are playing against
 function practiceHud() { const l = document.querySelector('#oppBox .hudlabel'); if (!l) return; const P = practice(), on = practiceOn(); const t = on ? `Opp · ${PRACTICE_STYLES.find(s => s[0] === P.style)[1]}` : 'Opp'; if (l.textContent !== t) { l.textContent = t; l.title = on ? 'Practice opponent: Game tools → Practice opponent' : ''; } }
+// ---- v0.99.92 Polish: attack arrows and damage numbers in combat, a celebration on a win, sounds for each Library room,
+// and a few things on the desk in each room. All of it is drawn and synthesised by the app (no images, no audio files) and all of
+// it steps aside when motion is reduced or sound is off.
+function polishMotion() { try { return !(reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false); } catch (e) { return true; } }
+// combat: an arrow from each creature that dealt damage to your opponent's life box, then the number
+function combatFx(hits) {
+  if (!polishMotion() || !hits || !hits.length) return;
+  const tgt = document.querySelector('#oppBox'), tr = tgt && tgt.getBoundingClientRect(); if (!tr || !tr.width) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'cbfx'); svg.setAttribute('width', innerWidth); svg.setAttribute('height', innerHeight);
+  svg.innerHTML = '<defs><marker id="cbHead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#ff6a3d"/></marker><filter id="cbGlow"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+  document.body.append(svg);
+  const tx = tr.left + tr.width / 2, ty = tr.top + tr.height / 2; let i = 0;
+  for (const { id, dmg } of hits) {
+    const el = document.querySelector(`#mat .card[data-id="${id}"]`); if (!el) continue; const r = el.getBoundingClientRect();
+    const sx = r.left + r.width / 2, sy = r.top + r.height * .3, mx = (sx + tx) / 2 + (sx < tx ? -60 : 60), my = Math.min(sy, ty) - 80;
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', `M${sx} ${sy} Q${mx} ${my} ${tx} ${ty + 8}`); p.setAttribute('class', 'cb-arrow'); p.setAttribute('marker-end', 'url(#cbHead)'); p.setAttribute('filter', 'url(#cbGlow)');
+    p.style.animationDelay = (i * 0.12) + 's'; svg.append(p);
+    const len = p.getTotalLength(); p.style.strokeDasharray = len; p.style.strokeDashoffset = len;
+    const n = h('div', { class: 'cb-num', text: '−' + dmg, style: `left:${sx}px;top:${r.top}px;animation-delay:${i * 0.12}s` }); document.body.append(n); setTimeout(() => n.remove(), 1600);
+    i++;
+  }
+  setTimeout(() => { try { sfx('hit'); } catch (e) {} }, 520);
+  setTimeout(() => svg.remove(), 1500 + i * 120);
+}
+// a win: gold confetti over the lethal message
+function winConfetti() {
+  if (!polishMotion()) return;
+  const box = h('div', { class: 'confetti', 'aria-hidden': 'true' }); const cols = ['#f0d48c', '#e3b95c', '#fff1bd', '#ff9d6e', '#8fd3ff', '#b4f0a0'];
+  for (let k = 0; k < 90; k++) box.append(h('i', { style: `left:${Math.random() * 100}%;--dx:${(Math.random() - .5) * 220}px;--r:${(Math.random() - .5) * 900}deg;--d:${(1.6 + Math.random() * 1.6).toFixed(2)}s;--w:${(Math.random() * .5).toFixed(2)}s;background:${cols[k % cols.length]};width:${5 + Math.random() * 6}px;height:${8 + Math.random() * 8}px` }));
+  document.body.append(box); setTimeout(() => box.remove(), 3800);
+}
+// ---- the sound of each Library room (only while the Library is open, only with sound on)
+let ambTimer = null, ambNodes = [];
+function ambStop() { clearInterval(ambTimer); ambTimer = null; for (const n of ambNodes) { try { n.stop ? n.stop() : n.disconnect(); } catch (e) {} } ambNodes = []; }
+function ambStart() {
+  ambStop(); const so = settings.sound; if (!so || !so.on || so.ambience === false) return;
+  const ac = audio(); if (!ac) return; if (ac.state === 'suspended') document.addEventListener('pointerdown', () => { try { ac.resume(); } catch (e) {} }, { once: true });
+  const room = typeof hallRoom === 'function' ? hallRoom() : 'library', vol = Math.max(0, Math.min(1, so.vol === undefined ? .5 : so.vol)) * .22;
+  const out = ac.createGain(); out.gain.value = vol; out.connect(ac.destination); ambNodes.push(out);
+  const noiseBuf = (() => { const len = ac.sampleRate * 2, b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; return b; })();
+  const bed = (f, q, g) => { const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true; const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q; const gg = ac.createGain(); gg.gain.value = g; s.connect(bp); bp.connect(gg); gg.connect(out); s.start(); ambNodes.push(s); return gg; };
+  const blip = (f1, f2, dur, g, type) => { const t = ac.currentTime, o = ac.createOscillator(), gg = ac.createGain(); o.type = type || 'sine'; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + dur); gg.gain.setValueAtTime(.0001, t); gg.gain.exponentialRampToValueAtTime(g, t + .02); gg.gain.exponentialRampToValueAtTime(.0001, t + dur); o.connect(gg); gg.connect(out); o.start(t); o.stop(t + dur + .05); };
+  const crack = g => { const t = ac.currentTime, s = ac.createBufferSource(); s.buffer = noiseBuf; const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800; const gg = ac.createGain(); gg.gain.setValueAtTime(g, t); gg.gain.exponentialRampToValueAtTime(.0001, t + .05 + Math.random() * .06); s.connect(hp); hp.connect(gg); gg.connect(out); s.start(t, Math.random()); s.stop(t + .15); };
+  if (room === 'dungeon') { bed(220, .7, .5); ambTimer = setInterval(() => { if (Math.random() < .7) crack(.5 + Math.random() * .5); if (Math.random() < .04) blip(70, 55, 2.2, .25, 'sine'); }, 160); }
+  else if (room === 'grove') { bed(1200, .4, .18); ambTimer = setInterval(() => { if (Math.random() < .12) { const f = 2400 + Math.random() * 1600; blip(f, f * 1.25, .09, .35); setTimeout(() => blip(f * 1.1, f * .9, .11, .3), 120); } }, 400); }
+  else if (room === 'castle') { const w = bed(400, .5, .35); ambTimer = setInterval(() => { try { w.gain.setTargetAtTime(.15 + Math.random() * .45, ac.currentTime, .8); } catch (e) {} }, 1200); }
+  else if (room === 'tower') { bed(3000, 2, .05); ambTimer = setInterval(() => { if (Math.random() < .25) { const base = [523, 659, 784, 988, 1175][Math.floor(Math.random() * 5)]; blip(base, base, 1.8, .12, 'triangle'); } }, 700); }
+  else { bed(600, .6, .12); ambTimer = setInterval(() => { if (Math.random() < .3) crack(.18); }, 500); }   // the Library: a quiet room and a fire somewhere
+}
+// ---- on the desk: two things for each room, drawn in SVG, standing either side of the open book
+const DESK_OBJ = {
+  library: ['<svg viewBox="0 0 70 120"><ellipse cx="35" cy="112" rx="26" ry="6" fill="#000" opacity=".35"/><path d="M14 108 h42 l-4 -10 h-34z" fill="#b8892f"/><rect x="28" y="40" width="14" height="60" rx="3" fill="#f3ead3"/><path d="M28 50 q4 8 2 16" stroke="#fff" stroke-width="2" fill="none" opacity=".6"/><line x1="35" y1="40" x2="35" y2="33" stroke="#222" stroke-width="1.4"/></svg>', '<svg viewBox="0 0 90 120"><ellipse cx="40" cy="112" rx="30" ry="6" fill="#000" opacity=".35"/><path d="M20 112 q-4 -30 8 -36 h24 q12 6 8 36z" fill="#1d2a3a"/><rect x="28" y="70" width="24" height="8" rx="2" fill="#0f1720"/><path d="M42 72 L74 8 q6 6 0 14 L46 74z" fill="#efe6cf"/><path d="M44 72 L72 14" stroke="#9a8a6a" stroke-width="1"/></svg>'],
+  castle: ['<svg viewBox="0 0 70 120"><ellipse cx="35" cy="112" rx="22" ry="5" fill="#000" opacity=".35"/><path d="M20 110 h30 l-6 -6 h-18z" fill="#c9a24a"/><rect x="32" y="66" width="6" height="40" fill="#c9a24a"/><path d="M14 30 h42 q0 34 -21 38 q-21 -4 -21 -38z" fill="#d8b456"/><path d="M18 34 h34 q-2 22 -17 26 q-15 -4 -17 -26z" fill="#6e1414"/></svg>', '<svg viewBox="0 0 110 80"><ellipse cx="55" cy="72" rx="46" ry="6" fill="#000" opacity=".35"/><rect x="12" y="40" width="86" height="26" rx="13" fill="#e8dcbc"/><ellipse cx="12" cy="53" rx="8" ry="13" fill="#d9caa4"/><ellipse cx="98" cy="53" rx="8" ry="13" fill="#f2e9d2"/><circle cx="58" cy="54" r="9" fill="#9b1c1c"/><path d="M52 62 l-4 12 M64 62 l4 12" stroke="#9b1c1c" stroke-width="3"/></svg>'],
+  dungeon: ['<svg viewBox="0 0 90 120"><ellipse cx="45" cy="112" rx="32" ry="6" fill="#000" opacity=".4"/><path d="M18 76 q0 -40 27 -40 q27 0 27 40 q0 14 -10 18 v12 h-34 v-12 q-10 -4 -10 -18z" fill="#d9d0bb"/><ellipse cx="34" cy="74" rx="8" ry="10" fill="#1b1612"/><ellipse cx="56" cy="74" rx="8" ry="10" fill="#1b1612"/><path d="M45 84 l-4 9 h8z" fill="#2a221b"/><path d="M33 100 v8 M39 100 v8 M45 100 v8 M51 100 v8 M57 100 v8" stroke="#8a8070" stroke-width="1.5"/><rect x="40" y="16" width="10" height="22" rx="2" fill="#efe4c4"/><path d="M38 38 q7 -6 14 0" fill="#e6d8b0"/></svg>', '<svg viewBox="0 0 90 80"><ellipse cx="45" cy="72" rx="36" ry="6" fill="#000" opacity=".4"/><path d="M8 60 q20 -14 40 0 q20 14 36 0" stroke="#5a5a60" stroke-width="6" fill="none" stroke-dasharray="10 4"/><circle cx="16" cy="58" r="7" fill="none" stroke="#6c6c74" stroke-width="3"/></svg>'],
+  tower: ['<svg viewBox="0 0 90 120"><ellipse cx="45" cy="112" rx="28" ry="6" fill="#000" opacity=".4"/><path d="M24 110 l6 -18 h30 l6 18z" fill="#3a2a5a"/><circle cx="45" cy="62" r="30" fill="url(#crys)"/><defs><radialGradient id="crys" cx=".4" cy=".35"><stop offset="0" stop-color="#e8f0ff"/><stop offset=".45" stop-color="#8fa8ff"/><stop offset="1" stop-color="#3a2f8a"/></radialGradient></defs><ellipse cx="36" cy="50" rx="8" ry="5" fill="#fff" opacity=".6"/></svg>', '<svg viewBox="0 0 60 120"><ellipse cx="30" cy="112" rx="20" ry="5" fill="#000" opacity=".4"/><path d="M22 36 h16 v18 q16 10 16 30 q0 26 -24 26 q-24 0 -24 -26 q0 -20 16 -30z" fill="#7a3fd1" opacity=".85"/><path d="M8 84 q22 8 44 0 v4 q0 22 -22 22 q-22 0 -22 -22z" fill="#c06bff" opacity=".9"/><rect x="21" y="26" width="18" height="12" rx="2" fill="#8a5a2a"/></svg>'],
+  grove: ['<svg viewBox="0 0 90 120"><ellipse cx="45" cy="112" rx="28" ry="6" fill="#000" opacity=".35"/><path d="M26 112 l-4 -30 h46 l-4 30z" fill="#9a5a34"/><rect x="20" y="78" width="50" height="8" rx="2" fill="#b56d40"/>' + Array.from({ length: 9 }, (_, i) => `<path d="M45 80 q${(i - 4) * 9} -${36 + (i % 3) * 10} ${(i - 4) * 14} -${44 + (i % 3) * 12}" stroke="#3f7a2c" stroke-width="3" fill="none"/>`).join('') + '</svg>', '<svg viewBox="0 0 80 90"><ellipse cx="40" cy="84" rx="28" ry="5" fill="#000" opacity=".35"/><path d="M30 84 v-20 h8 v20z" fill="#efe6d0"/><path d="M14 64 q20 -34 44 0z" fill="#c23b2a"/><circle cx="26" cy="56" r="3" fill="#fff"/><circle cx="40" cy="50" r="3" fill="#fff"/><circle cx="50" cy="58" r="2.5" fill="#fff"/><path d="M52 84 v-12 h5 v12z" fill="#efe6d0"/><path d="M46 72 q8 -16 18 0z" fill="#d44c37"/></svg>'] };
+function deskObjectsEl(room) {
+  const o = DESK_OBJ[room] || DESK_OBJ.library, box = h('div', { class: 'desk-objs', 'aria-hidden': 'true' });
+  ['l', 'r'].forEach((side, i) => { const e = h('div', { class: 'desk-obj ' + side }); e.innerHTML = o[i]; box.append(e); });
+  return box;
+}
+function ambPlaying() { return ambNodes.length > 0 && !!ambTimer; }
 init();
 
 })();

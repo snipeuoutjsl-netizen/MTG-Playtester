@@ -37,5 +37,23 @@ ok('upright phone gets the one-column table (lands left and other permanents rig
 await p.evaluate(()=>__d.openHall()); await p.waitForTimeout(600);
 const hp = await p.evaluate(()=>({ portrait: document.getElementById('hall').classList.contains('portrait'), shelves: [...document.querySelectorAll('#hall .bk-shelf')].filter(x=>getComputedStyle(x).display!=='none').length }));
 ok('upright Library: portrait room with three shelves', hp.portrait && hp.shelves === 3, JSON.stringify(hp)); await p.evaluate(()=>__d.closeHall(false));
+// v0.99.92 the hand's handle is part of the hand tray (not floating over the table or a window); tapping it tucks and raises the hand
+{ await p.evaluate(()=>{ document.getElementById('modalRoot').innerHTML=''; document.body.classList.remove('hand-tuck'); __d.render(); }); await p.waitForTimeout(300);
+  const b0 = await p.evaluate(()=>{ const t=document.getElementById('handTab'), r=t.getBoundingClientRect(); return { inTray: t.parentElement && t.parentElement.id === 'handWrap', y: Math.round(r.top), x: r.left + r.width/2, cy: r.top + r.height/2, w: Math.round(r.width), txt: t.textContent }; });
+  await p.touchscreen.tap(b0.x, b0.cy); await p.waitForTimeout(450);
+  const b1 = await p.evaluate(()=>{ const r=document.getElementById('handTab').getBoundingClientRect(); return { tuck: document.body.classList.contains('hand-tuck'), y: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, txt: document.getElementById('handTab').textContent }; });
+  await p.touchscreen.tap(b0.x, b1.y + 10); await p.waitForTimeout(450);
+  const b2 = await p.evaluate(()=>({ tuck: document.body.classList.contains('hand-tuck') }));
+  ok('upright: the hand handle is part of the hand tray; tap it to hide the hand (only the handle stays, at the bottom) and again to show it', b0.inTray && b0.w > 300 && b1.tuck && b1.y > b0.y && b1.bottom <= b1.vh + 1 && /Show hand/.test(b1.txt) && !b2.tuck, JSON.stringify({ b0, b1, b2 })); }
+// v0.99.92 no Resolving screen: Kozilek's Command (X = 5, modes 1 and 2) makes its tokens, opens only the scry window (fully on screen), then draws and goes to the graveyard
+{ const k = await p.evaluate(async ()=>{ const s=__d.state, W=ms=>new Promise(r=>setTimeout(r,ms)); document.getElementById('modalRoot').innerHTML=''; s.phase='play'; s.step=3; s.stack.length=0;
+    const c=Object.assign(__d.newCard("Kozilek's Command"),{id:s.nextId++}); c.modes=[0,1]; c.xValue=5; c.targets=[{kind:'player',id:'you',name:'You'},{kind:'player',id:'you',name:'You'}];
+    s.stack.push(c); const bf0=s.battlefield.length, h0=s.hand.length; __d.resolveTopOfStack(); await W(500);
+    const panel=!!document.querySelector('.res-panel'), stage=!document.getElementById('stackStage').hidden && /Resolving/.test(document.getElementById('stackStage').textContent);
+    const m=document.querySelector('#modalRoot .modal'), mr=m&&m.getBoundingClientRect(); const btn=m&&[...m.querySelectorAll('button')].find(b=>/^Confirm/.test(b.textContent)); const br=btn&&btn.getBoundingClientRect();
+    const hit=br&&document.elementFromPoint(br.left+br.width/2, br.top+br.height/2); const onTop=!!(hit&&btn.contains(hit));
+    if (btn) btn.click(); await W(1500);
+    return { panel, stage, title: m&&m.querySelector('header')&&m.querySelector('header').textContent, fits: !!mr && mr.left >= 0 && mr.right <= innerWidth + 1 && br.bottom <= innerHeight, onTop, tokens: s.battlefield.length-bf0, drew: s.hand.length-h0, gy: s.graveyard.some(x=>x.id===c.id), left: !!s.resolving }; });
+  ok('upright: a resolving spell has no Resolving screen (Kozilek\'s Command: 5 tokens, only the scry window, fully on screen and not covered, then draw, then graveyard)', !k.panel && !k.stage && /Scry 5/.test(k.title||'') && k.fits && k.onTop && k.tokens===5 && k.drew===1 && k.gy && !k.left, JSON.stringify(k)); }
 ok('no page errors', !errs.length, errs.join('; '));
 console.log(`${res.filter(Boolean).length}/${res.length} pass`); await b.close(); process.exit(res.every(Boolean) ? 0 : 1); })();

@@ -819,7 +819,7 @@ function effectOptionsBase(tx, obj) {
     if (/^(?:it|that creature|that permanent|they|those creatures)\b/i.test(sent.trim()) && /\btarget\b/i.test(prev) && !((obj.targets || []).some(t => t.kind === 'perm'))) continue;   // v0.99.68 "it" is the target, which has not been chosen here
     if (ldAll && /^you may play (?:it|the exiled card|that card|those cards|them) this turn/i.test(sent.trim())) continue;
     if (imp && /^(?:(?:until the end of your next turn|until end of turn|this turn|until your next end step),?\s*)?you may (?:play|cast) /i.test(sent.trim())) continue; opts.push(...durationOptions(sent, obj, (obj.targets || []).filter(t => t.kind === 'perm' && !t.gone).map(t => ({ id: t.id, name: t.name })))); }
-  if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : '') }); }
+  if ((mm = tx.match(/\b(scry|scries|surveils?)\s+(\d+)/i))) { const w = /^scr/i.test(mm[1]) ? 'scry' : 'surveil', v = +mm[2]; const stx0 = obj && obj.name ? `${obj.name}: ${w.toLowerCase()} ${v}.` : ''; opts.push({ label: `${w[0].toUpperCase() + w.slice(1)} ${v}`, fn: () => openScry(v, /surveil/i.test(w), stx0), then: cb => openScry(v, /surveil/i.test(w), stx0, cb) }); }   // v0.99.92 then: the next effect waits for the window
   if ((mm = txs.match(/\bmills? (\d+|X) cards?|\bmill (\d+)\b/i)) && !/opponent/i.test(tx) && !isNaN(+(mm[1] || mm[2]))) { const v = +(mm[1] || mm[2]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }
   else if ((mm = txs.match(/\bmills? (an?|one|two|three|four|five|six|seven|eight|nine|ten) cards?\b/i)) && !/opponent|target player|each player/i.test(tx)) { const v = numOf(mm[1]); opts.push({ label: `Mill ${v}`, fn: () => millCards(v) }); }   // v0.86: "mill a card"
   // v0.86 amass (rule 701.47): "Then amass Orcs 1."
@@ -939,9 +939,12 @@ function openAbilityEffect(obj, done) {
     if (!one && pre.length > 1 && pre.length <= 4) {
       const plain = tx.replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target'), labs = pre.map(o => String(o.label || '').toLowerCase());   // v0.99.79 "target player or planeswalker" is the target, chosen already: its "or" is not a choice left (Skullcrack)
       const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain)
-        && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
+        && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && (typeof o.then === 'function' || !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label)))
         && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));
-      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all);
+        // v0.99.92 in order (CR 608.2c); a scry or surveil opens its window and the effects after it wait for it (Kozilek's Command: tokens, scry 5, then draw)
+        let k = 0; const step = () => { while (k < pre.length) { const o = pre[k++]; if (typeof o.then === 'function') { o.then(() => { render(); step(); }); return; } o.fn(); } gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); };
+        step(); return; }
     }
     if (clean) {
       const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
@@ -951,64 +954,39 @@ function openAbilityEffect(obj, done) {
     // v0.99.86 nothing the app can apply: say what to do by hand and finish, instead of a window that only says so
     if (!pre.length) { const t0 = String(tx || '').trim(); log(`${obj.sourceName || 'Ability'}: do by hand (the app does not apply this): ${t0 || 'no text'}`); if (t0) toast(`${obj.sourceName || 'Ability'}: do by hand`, t0); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
   }
-  const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 520, sticky: true, noClose: true, resolve: true });
-  let opts = visibleOptions(effectOptions(tx, obj));   // v0.99.25 an understood multi-step ability is one ordered button
-  // The automatic 'delayedDraw' already covers a delayed draw; drop the generic duplicate button (it caused a second draw).
+  // v0.99.92 no Resolving window any more: when a spell or ability leaves the stack, what it does just happens. Only a real decision
+  // (a "you may", a choice between effects, an amount to pay) is asked, as one short question; anything the app cannot apply is a "do by hand" note.
+  resolveNoPanel(obj, tx, done);
+}
+function resolveNoPanel(obj, tx, done) {
+  let opts = []; try { opts = visibleOptions(effectOptions(tx, obj)); } catch (e) { opts = []; }
   if (opts.some(x => x.special === 'delayedDraw')) opts = opts.filter(x => !(x.label && /^Create delayed trigger: Draw a card/i.test(x.label)));
-  const delayed = /\bat the beginning of (?:the )?next (?:turn's )?upkeep\b/i.test(tx);
   for (const o of opts) if (o.special === 'delayedDraw' && !obj._delayedSet) { obj._delayedSet = true; addFx({ kind: 'delayed', when: 'upkeep', draw: 1, text: 'Draw a card.', srcName: obj.sourceName, srcId: obj.sourceId || null }); log(`${obj.sourceName}: you will draw a card at the beginning of the next turn's upkeep`); }
-  const used = new Set();
-  // v0.99.69 each effect happens once: applying one locks the buttons that would repeat part of it ("Scry 3" after "Scry 3, then draw a card"),
-  // and when every effect has been applied (and nothing is left to do by hand) the window finishes by itself, so no extra action can follow
-  const applyBtns = [], low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
-  const lockOverlaps = o => { const a = low(o.label); for (const r of applyBtns) if (r.o !== o && !r.b.disabled) { const b2 = low(r.o.label); if (b2 && (a.includes(b2) || b2.includes(a))) { r.b.disabled = true; r.b.title = 'Already done as part of: ' + o.label; } } };
-  let finished = false; const finishNow = () => { if (finished) return; finished = true; m.close(); log(`Resolved: ${obj.name}`); if (done) done(); };
-  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return;   // v0.99.86 a clause left to do by hand no longer holds the window open
-    const wait = () => { if (finished) return; if ([...document.querySelectorAll('.modal')].some(x => x !== m.el && !x.classList.contains('res-panel'))) { setTimeout(wait, 300); return; } setTimeout(finishNow, 350); }; wait(); };
-  const box = h('div', { class: 'prelist' });
-  for (const o of opts) {
-    if (o.special === 'delayedDraw') continue;
-    if (o.special === 'lookTop') {
-      const out = h('span', { class: 'muted small' });
-      const go = h('button', { class: 'primary', text: obj.target === 'opp' ? 'Look (opponent)' : 'Look at your top card' });
-      go.addEventListener('click', () => {
-        go.disabled = true;
-        if (obj.target === 'opp') { out.textContent = 'You target an opponent. A goldfish game has no opponent library, so there is nothing to see. The card stays where it is.'; return; }
-        const top = state.library[0];
-        if (!top) { out.textContent = 'Your library is empty.'; return; }
-        const i = cardInfo(top.name);
-        out.replaceChildren(h('b', { text: top.name }), ` ${i && i.mc ? i.mc : ''} ${i && i.t ? '· ' + i.t : ''} (it stays on top)`);
-        log(`${obj.sourceName}: looked at the top card of your library: ${top.name}`);
-      });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: obj.target === 'opp' ? 'Look at the top card of the opponent’s library' : 'Look at the top card of your library' }), go), h('div', { class: 'row' }, out));
-    } else if (o.special === 'payLifeDraw') {
-      const inp = h('input', { type: 'number', min: 0, max: Math.max(0, state.life), value: 0, style: 'width:70px' });
-      const go = h('button', { class: 'primary', text: 'Pay life and draw' });
-      go.addEventListener('click', async () => {
-        const n = Math.max(0, Math.min(parseInt(inp.value, 10) || 0, state.life));
-        if (!n) { toast('Nothing paid', 'You chose to pay 0 life, so you draw nothing.'); return; }
-        if (n >= state.life && !(await appAsk('Pay life', `Paying ${n} life would put you at ${state.life - n}. Continue?`, 'Pay', true))) return;
-        snap(); state.life -= n; const d = drawCards(n); log(`${obj.sourceName}: paid ${n} life, drew ${d}`);
-        go.disabled = true; inp.disabled = true; render();
-      });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'How much life do you pay?' }), inp, go));
-    } else if (o.special === 'cascade') {
-      const go = h('button', { class: 'primary', text: 'Resolve cascade…' });
-      go.addEventListener('click', () => { m.close(); openCascade(obj, done); });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: 'Reveal cards until a cheaper nonland card' }), go));
-    } else {
-      const b = h('button', { text: 'Apply', onclick: () => { if (used.has(o.label) || b.disabled) return; used.add(o.label); b.disabled = true; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && o.label && !uncoveredClauses(tx).length) e.label = o.label; }   if (o.final) for (const r of applyBtns) if (r.o !== o) { r.b.disabled = true; r.b.title = 'You chose: ' + o.label; }   o.fn(); lockOverlaps(o); maybeFinish(); } });   // v0.99.85 a final choice (do it / decline) finishes the window
-      applyBtns.push({ o, b });
-      box.append(h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), b));
-    }
-  }
-  m.body.append(
-    h('div', { class: 'psub', text: tx || 'This ability has no text.' }),
-    delayed ? h('div', { class: 'psub', text: 'A delayed triggered ability was created. In a real game the next turn is your opponent’s, so you draw during THEIR upkeep. In this goldfish game there is no opponent turn, so you draw at the start of your own next upkeep, before your draw step.' }) : null,
-    opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
-    box,
-    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} miss = miss.filter(x => !gapCovered(x, opts)); return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'Do these by hand (the app does not apply them):' }), ...miss.map(x => h('div', { class: 'small', text: '\u2022 ' + x }))) : null; })());
-  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => finishNow() }));
+  opts = opts.filter(o => o.special !== 'delayedDraw');
+  const who = obj.sourceName || 'Ability';
+  let gaps = []; try { gaps = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) { gaps = []; } gaps = gaps.filter(x => !gapCovered(x, opts));
+  let finished = false; const finish = () => { if (finished) return; finished = true; if (gaps.length) { log(`${who}: do by hand (the app does not apply this): ${gaps.join(' ')}`); toast('Do by hand', gaps.join(' ')); }
+    if (!opts.length && !gaps.length && String(tx || '').trim()) { log(`${who}: do by hand (the app does not apply this): ${tx}`); toast(`${who}: do by hand`, tx); }
+    log(`Resolved: ${obj.name}`); render(); if (done) done(); };
+  if (opts.some(o => o.special === 'cascade')) { openCascade(obj, done); return; }
+  // each effect once: drop an option that is part of a longer one ("Scry 3" beside "Scry 3, then draw a card")
+  const low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
+  opts = opts.filter((o, i) => o.special || !opts.some((p, j) => j !== i && !p.special && low(p.label) !== low(o.label) && low(p.label).includes(low(o.label))));
+  const run = async list => { for (const o of list) {
+      if (o.special === 'lookTop') { if (obj.target === 'opp') { toast(`${who}`, 'A goldfish opponent has no library: nothing to look at.'); continue; } const top = state.library[0]; if (top) { log(`${who}: looked at the top card of your library: ${top.name}`); toast(`${who}: top card`, `${top.name} (it stays on top)`); } continue; }
+      if (o.special === 'payLifeDraw') { const n = await appAskNumber('Pay how much life?', `${who}: you draw that many cards.`, 0); const k = Math.max(0, Math.min(+n || 0, state.life)); if (k) { snap(); state.life -= k; const d = drawCards(k); log(`${who}: paid ${k} life, drew ${d}`); } continue; }
+      if (typeof o.fn !== 'function') continue;
+      if (typeof o.then === 'function') { await new Promise(r => { try { o.then(() => { render(); r(); }); } catch (e) { r(); } }); continue; }
+      try { o.fn(); } catch (e) { console.error(e); } render(); } };
+  const plain = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target');
+  const choice = opts.length > 1 && (/\bchoose one\b|\bchoose\b/i.test(plain) || opts.some(o => o.final) || (/\bor\b/i.test(plain) && !/\band\b|\bthen\b/i.test(plain)));
+  (async () => {
+    if (!opts.length) { finish(); return; }
+    if (choice) { const i = await appChoose(who, tx, opts.map(o => o.label)); if (i !== null && opts[i] && !/^Decline\b/i.test(opts[i].label || '')) { log(`${who}: ${opts[i].label}`); await run([opts[i]]); } else log(`${who}: declined`); finish(); return; }
+    if (/\byou may\b/i.test(plain) && !opts.some(o => o.def)) { const all = opts.map(o => o.label).join('; ');
+      if (!(await appAsk(who, `${tx}`, all.length < 60 ? all : 'Do it'))) { log(`${who}: you chose not to`); gaps = []; finish(); return; } }
+    log(`${who}: applied automatically \u2014 ${opts.map(o => o.label).join('; ')}`); toast(`${who} resolves`, opts.map(o => o.label).join('; '));
+    await run(opts); finish(); })();
 }
 function openCascade(obj, done) {
   const src = cardInfo(obj.sourceName), mv = src ? src.cmc : 0;

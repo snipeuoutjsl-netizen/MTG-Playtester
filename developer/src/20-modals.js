@@ -10,10 +10,9 @@ function modal(title, opts) {
     h('header', null, h('span', { text: title }), h('button', { text: '✕', hidden: !!opts.noClose, title: opts.onCancel ? 'Cancel and go back' : 'Close', onclick: () => { close(); if (opts.onCancel) opts.onCancel(); } })),
     body, foot);
   if (opts.noClose) m.dataset.noclose = '1';
-  const back = h('div', { class: 'backdrop' + (opts.dock ? ' dock' : '') + (opts.resolve ? ' resolve' : '') }, m);
+  const back = h('div', { class: 'backdrop' + (opts.dock ? ' dock' : '') }, m);
   // v0.99.66 a resolving effect's choices live inside the stack window (drawStackStage moves this panel there), so the card being resolved,
   // the stack behind it and the choices are one window; when the stack window is not shown it stays a floating window as before
-  if (opts.resolve) { m.classList.add('res-panel'); m._home = back; setTimeout(() => { try { drawStackStage(); } catch (e) { /* no table */ } }, 0); }
   back.addEventListener('mousedown', e => { if (e.target === back && !opts.sticky && !opts.dock) close(); });
   root.append(back);
   let closed = false;
@@ -21,7 +20,6 @@ function modal(title, opts) {
     if (closed) return;
     closed = true;
     back.remove(); if (m.isConnected) m.remove();
-    if (opts.resolve) setTimeout(() => { try { drawStackStage(); } catch (e) { /* no table */ } }, 0);
     if (state && state.halfChosen) setTimeout(checkHalfAbandon, 80);
     if (opts.onClose) opts.onClose();
   }
@@ -34,7 +32,7 @@ document.addEventListener('dragover', ev => { if (ev.dataTransfer && [...ev.data
 document.addEventListener('drop', async ev => {
   const fs = ev.dataTransfer && ev.dataTransfer.files; if (!fs || !fs.length) return;
   ev.preventDefault();
-  if (document.querySelector('#modalRoot .modal, #stackStage .modal.res-panel')) { toast('Finish this window first', 'Close the open window, then drop the file again.'); return; }
+  if (document.querySelector('#modalRoot .modal')) { toast('Finish this window first', 'Close the open window, then drop the file again.'); return; }
   const f = [...fs].find(x => /\.(txt|dec|dek|text)$/i.test(x.name) || /^text\//.test(x.type));
   if (!f) { toast('Not a decklist', 'Drop a .txt decklist file.'); return; }
   openDeckEditor({ blank: true, text: (await f.text()).replace(/\r\n?/g, '\n'), name: f.name.replace(/\.[^.]+$/, '').replace(/_+/g, ' ').trim() });

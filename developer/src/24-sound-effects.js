@@ -6,7 +6,9 @@ const SOUND_DEFS = [
   ['enter', 'Entering the battlefield', 'A low thump when a permanent or token arrives'],
   ['land', 'Playing a land', 'A wooden clack'],
   ['resolve', 'A spell or ability resolving', 'A small chime'],
-  ['counter', 'A spell being countered', 'A falling tone']
+  ['counter', 'A spell being countered', 'A falling tone'],
+  ['win', 'Winning', 'A short fanfare when your opponent reaches 0 life'],
+  ['hit', 'Combat damage', 'A thump as attackers hit your opponent']
 ];
 let audioCtx = null, reverbNode = null; const lastSnd = {};
 // A shared soft room reverb: a generated impulse (decaying stereo noise), so no audio files are needed.
@@ -48,6 +50,8 @@ function sfx(kind) {
     else if (kind === 'enter') { tone('sine', 150, 50, 0, 0.22, 0.9); noise(0, 0.07, 700, 300, 0.8, 0.5); }
     else if (kind === 'land') { tone('square', 220, 120, 0, 0.05, 0.25); noise(0, 0.05, 1800, 900, 1.5, 0.7); tone('sine', 140, 80, 0.01, 0.12, 0.5); }
     else if (kind === 'resolve') { tone('sine', 880, 880, 0, 0.18, 0.3); tone('sine', 1320, 1320, 0.07, 0.25, 0.25); }
+    else if (kind === 'win') { [[523, 0], [659, .12], [784, .24], [1047, .4]].forEach(([f, t]) => { tone('triangle', f, f, t, .7, .28, .02); tone('sine', f * 2, f * 2, t, .4, .06); }); noise(.4, .9, 3000, 8000, .5, .08); }
+    else if (kind === 'hit') { tone('sine', 110, 45, 0, .25, .9); noise(0, .1, 1200, 300, .7, .6); }
     else if (kind === 'counter') { tone('sawtooth', 520, 90, 0, 0.3, 0.3); noise(0, 0.12, 900, 200, 1, 0.3); }
   } catch (e) { /* sound is never allowed to break the game */ }
 }

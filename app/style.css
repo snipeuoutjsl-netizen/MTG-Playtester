@@ -2433,14 +2433,8 @@ html.portrait-ui #bsActions button { padding: 8px 14px; font-size: 14px; }
 #hall .tome-leaf .tl-face img { max-height: 356px; max-width: 100%; border-radius: 10px; box-shadow: 0 4px 10px rgba(60,30,5,.45); display: block; }
 #hall .tome-leaf .tl-face .tc-noimg { width: 240px; height: 336px; border-radius: 10px; border: 2px solid rgba(122,79,29,.5); display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; font: 700 18px Georgia, serif; color: #4a250c; box-sizing: border-box; }
 /* v0.99.66 a resolving effect's choices sit inside the stack window */
-#stackStage .modal.res-panel { position: static; width: auto !important; max-width: none; max-height: none; margin: 8px 0 4px; box-shadow: 0 0 0 1px rgba(227,185,92,.45); border-radius: 10px; transform: none; animation: none; overflow: visible; }
-#stackStage .modal.res-panel > header { font-size: 15px; padding: 8px 12px; }
-#stackStage .modal.res-panel > header button { display: none; }
-#stackStage .modal.res-panel > .mbody { max-height: none; overflow: visible; padding: 8px 12px; }
-#stackStage .modal.res-panel > footer { padding: 8px 12px; }
 #stackStage.sk.has-panel { width: 470px; overflow-y: auto; }
 html.portrait-ui #stackStage.sk.has-panel { width: auto; max-height: calc(100% - 130px); }
-#stackStage .modal.res-panel > header { display: none; }
 /* v0.99.68 upright: the table ends where the fanned hand begins, so no battlefield row sits under the hand (cards shrink to fit instead) */
 html.portrait-ui body:not(.mullhand):not(.mullpick) #mat { padding-bottom: calc(var(--hand-h, 200px) + 6px) !important; }
 /* v0.99.69 upright phones: only active game-state icons (⋯ shows the rest); a tab tucks the hand down to a strip */
@@ -2451,12 +2445,7 @@ html.portrait-ui #gamebar #gstates.hudbox.gs-trim button.sti-more, html.portrait
 .hand-tab { display: none; }
 html.portrait-ui body:not(.mullhand):not(.mullpick):not(.hall-on) .hand-tab { display: block; position: absolute; left: 50%; top: -14px; transform: translateX(-50%); z-index: 60; padding: 5px 16px; border-radius: 999px 999px 0 0; border: 1px solid rgba(227,185,92,.45); border-bottom: 0; background: rgba(14,16,20,.92); color: #e9d9b0; font: 600 13px system-ui, sans-serif; letter-spacing: .03em; }
 html.portrait-ui #handWrap { transition: transform .22s ease; }
-html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #handWrap { transform: translateY(calc(var(--ch, 150px) + 30px)); }
 html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bottom: 46px !important; }
-html.portrait-ui body:not(.mullhand):not(.mullpick):not(.hall-on) .hand-tab { position: fixed; left: auto; right: 10px; transform: none; z-index: 380; border-radius: 999px; border-bottom: 1px solid rgba(227,185,92,.45); }
-/* v0.99.69 upright phones: when the resolving window cannot sit inside the stack window it is centred, full width (not pushed 340px to the right) */
-html.portrait-ui #modalRoot .backdrop.resolve { padding: 10px; justify-content: center; align-items: center; }
-html.portrait-ui #modalRoot .backdrop.resolve .modal { width: 100% !important; max-width: 500px; }
 /* ===== v0.99.70 Library uniformity: the corner buttons are brass-trimmed walnut plaques like the sign; the ribbons sit in front of the raised pages ===== */
 #hall .hall-corner .hall-close, #hall .hall-gear { height: 42px; border-radius: 8px; border: 1px solid #b08a45; color: #f0d48c; cursor: pointer;
   background: linear-gradient(180deg, rgba(255,235,190,.10), transparent 40%), linear-gradient(180deg, #4b2f19, #2b190b);
@@ -2742,7 +2731,7 @@ html.portrait-ui .hl-cols { grid-template-columns: 1fr; }
 .rc-list { margin-top: 4px; font-size: 13px; } .rc-link { padding: 0 4px !important; font-size: 13px !important; } .rc-link.won { color: #2e5f2a !important; }
 .recap-page .rc-turn span { text-align: left; } .recap-page .rc-turn i { text-align: right; } .recap-page { text-align: left; } .recap-page .rc-title, .recap-page .rc-sub { text-align: center; }
 /* v0.99.90 puzzles */
-#puzzleBar { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 6px); transform: translateX(-50%); z-index: 300; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 999px;
+#puzzleBar { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) * var(--vpk, 1) + 6px); transform: translateX(-50%); z-index: 300; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 999px;
   background: rgba(30,20,10,.92); border: 1px solid rgba(227,185,92,.7); box-shadow: 0 6px 18px rgba(0,0,0,.5); color: #f3e6c6; font-size: 13px; max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center; }
 #puzzleBar b { color: #f0d48c; } #puzzleBar button { padding: 3px 10px; font-size: 12px; border-radius: 999px; }
 .pz-list { display: flex; flex-direction: column; gap: 6px; }
@@ -2754,3 +2743,53 @@ html.portrait-ui .pr-grid { grid-template-columns: 1fr; }
 .pr-card { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.03); }
 .pr-card.on { border-color: #e3b95c; box-shadow: 0 0 0 2px rgba(227,185,92,.45); background: rgba(227,185,92,.08); }
 .pr-lvl { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+/* v0.99.92 polish: combat arrows and damage numbers, confetti on a win, things on the Library desk */
+.cbfx { position: fixed; inset: 0; z-index: 9300; pointer-events: none; overflow: visible; }
+.cb-arrow { fill: none; stroke: #ff6a3d; stroke-width: 5; stroke-linecap: round; opacity: .95; animation: cbDraw .55s cubic-bezier(.3,.7,.3,1) forwards, cbFade .5s ease-in .95s forwards; }
+@keyframes cbDraw { to { stroke-dashoffset: 0; } }
+@keyframes cbFade { to { opacity: 0; } }
+.cb-num { position: fixed; z-index: 9310; pointer-events: none; transform: translate(-50%, 0); font: 900 34px/1 Georgia, 'Palatino Linotype', serif; color: #ffefe0; -webkit-text-stroke: 1.5px #8a1a0a; text-shadow: 0 3px 10px rgba(0,0,0,.7), 0 0 16px rgba(255,90,40,.7); opacity: 0; animation: cbNum 1.4s cubic-bezier(.2,.8,.3,1) forwards; }
+@keyframes cbNum { 0% { opacity: 0; transform: translate(-50%, 10px) scale(.6); } 18% { opacity: 1; transform: translate(-50%, -18px) scale(1.25); } 35% { transform: translate(-50%, -26px) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -70px) scale(.95); } }
+.confetti { position: fixed; inset: 0; z-index: 9450; pointer-events: none; overflow: hidden; }
+.confetti i { position: absolute; top: -20px; border-radius: 2px; opacity: .95; animation: cfFall var(--d) cubic-bezier(.25,.6,.45,1) var(--w) forwards; }
+@keyframes cfFall { 0% { transform: translate(0, 0) rotate(0); } 100% { transform: translate(var(--dx), 105vh) rotate(var(--r)); opacity: .7; } }
+.lethal.opp .lethal-t { font-family: Georgia, 'Palatino Linotype', serif; font-size: 58px; color: #ffe9a8; text-shadow: 0 0 30px rgba(255,200,80,.8), 0 4px 24px #000; animation: lethalPop .7s cubic-bezier(.2,1.6,.4,1); }
+@keyframes lethalPop { 0% { transform: scale(.4); opacity: 0; } 100% { transform: none; opacity: 1; } }
+#hall .desk-objs { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+#hall .desk-obj { position: absolute; top: 432px; width: 108px; height: 142px; transform: translateZ(70px); filter: drop-shadow(0 6px 6px rgba(0,0,0,.45)) brightness(.92); }
+#hall .desk-obj svg { width: 100%; height: 100%; display: block; overflow: visible; }
+#hall .desk-obj.l { left: 282px; } #hall .desk-obj.r { left: 1212px; }
+#hall.portrait .desk-objs { display: none; }   /* the open book fills the desk on an upright phone */
+@media (prefers-reduced-motion: reduce) { .cb-arrow, .cb-num, .confetti i { animation: none; } }
+/* v0.99.92 upright phones, whatever width the phone really lays the page out at (390 to 520 px): the top bar is always two rows
+   (Library, new game, on the play, settings / the game buttons, tools, stack & log), the stack panel sits above the hand and the pile
+   counts, and the hand tab never covers a window */
+html.portrait-ui #topbar { flex-wrap: wrap !important; overflow: visible !important; column-gap: 6px; row-gap: 6px; }
+html.portrait-ui #topbar > .brand { order: 0; }
+html.portrait-ui #topbar > #btnDecks { order: 1; }
+html.portrait-ui #topbar > .tb-game { order: 2; }
+html.portrait-ui #topbar > .utility-wrap:not(.game-wrap) { order: 3; margin-left: auto; }
+html.portrait-ui #topbar > .tb-actions { order: 4; flex: 1 1 250px !important; min-width: 0; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+html.portrait-ui #topbar > .tb-actions::-webkit-scrollbar { display: none; }
+html.portrait-ui #topbar > .tb-actions > button { flex: none; }
+html.portrait-ui #topbar > .game-wrap { order: 5; }
+html.portrait-ui #topbar > #btnSideDrawer { order: 6; }
+html.portrait-ui #topbar > .status, html.portrait-ui #topbar > #btnVersion, html.portrait-ui #topbar > .sep, html.portrait-ui #topbar > #deckSelect { order: 9; }
+@media (max-width: 500px) {
+  html.portrait-ui #topbar > .brand { display: none !important; }
+  html.portrait-ui #btnDecks.libret > b:not(#deckCur) { font-size: 0 !important; }
+  html.portrait-ui #btnDecks.libret > b:not(#deckCur)::after { content: 'Library'; font-size: 12px; }
+  html.portrait-ui #btnSideDrawer { padding: 0 9px; font-size: 12px; }
+  html.portrait-ui #topbar > .tb-actions > button { padding-left: 7px; padding-right: 7px; }
+}
+html.portrait-ui #stackStage.sk { z-index: 44; }
+html.portrait-ui body.picking-hand #handWrap { z-index: 46; }
+/* a narrow "other permanents" half never pushes the page wider than the screen */
+#zone-noncreature .zlabel { max-width: calc(100% - 12px); overflow: hidden; }
+@container ncz (max-width: 110px) { #zone-noncreature .zlabel { visibility: hidden; } }
+/* v0.99.92 upright phones: the hand's handle is part of the hand tray, a full-width bar on its top edge (tap or swipe it) */
+html.portrait-ui body:not(.mullhand):not(.mullpick):not(.hall-on) .hand-tab { display: flex; position: relative; left: auto; right: auto; top: auto; transform: none; z-index: 2; width: 100%; height: 30px; margin: 0; padding: 0 12px; box-sizing: border-box; align-items: center; justify-content: center; gap: 10px;
+  border: 0; border-top: 1px solid rgba(227,185,92,.35); border-radius: 14px 14px 0 0; pointer-events: auto; cursor: pointer; background: linear-gradient(180deg, rgba(30,26,20,.96), rgba(14,16,20,.94)); color: #e9d9b0; font: 600 13px system-ui, sans-serif; letter-spacing: .03em; touch-action: none; -webkit-tap-highlight-color: transparent; }
+html.portrait-ui .hand-tab .ht-grip { width: 38px; height: 5px; border-radius: 3px; background: rgba(233,217,176,.55); }
+html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #handWrap { transform: translateY(var(--tuck, 150px)); }
+html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bottom: 40px !important; }
