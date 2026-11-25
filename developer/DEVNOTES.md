@@ -1,5 +1,10 @@
 
 
+## v0.99.97
+- Library v3 (#hall.v3, added with v2 in drawHall): two .hall-case elements (case-l, case-r; portrait: case-one), shelves 1-4 left and 5-8 right (420 wide, 190 apart), PER_SHELF/SHELVES in drawHall (landscape 10x8, portrait 16x4) passed to bookcaseEl as perShelf/minShelves; scale 0.7 (portrait 0.66).
+- 3D: world perspective 2200, origin near the top (800,40 / 450,40); case pieces at translateZ(128) with inner faces (::after/::before rotateY/rotateX); planks translateZ(128) with top/bottom faces; book stages stay at z 62. Room tints are inset box-shadows (--case-tint), the old per-room plank filters are off (a filter flattens 3D).
+- Deck taken down: tome stands at y 130 between the cases, .dbx-turn at 450,380, spread 650..1140; the spread fit (_fit) uses the spread's own width.
+
 ## v0.99.96
 - Library part 2: .bk-title.long/.xlong (by name length, wraps in vertical text), gem pips, .bk-end bookends added in drawHall to rows with 1..9 books, warm lamp + vignette on .hall-view::after (v2), no pgWarp filter on pages, flat pages.
 - Portrait v2 (#hall.v2.portrait): .hall-case full width with three shelves (780 wide), plaque on the crown, tome 852x846 single column with pages zoom 1.85 (deck-open: tome at y 112, zoom 1.6, spread at y 736), active chapter ribbon hidden, decor hidden, .hall-corner is a bottom bar; hallFit reserves it at the bottom (B) on portrait and at the top (R) otherwise.
