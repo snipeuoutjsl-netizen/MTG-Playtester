@@ -15,8 +15,8 @@ function b4RunSentence(s, obj, src) {
   let os = []; try { os = effectOptions(s, Object.assign({}, obj, { _tgtAsked: true, _noRemCheck: true })).filter(o => o && !o.hidden && !/^Remember/.test(o.label || '')); } catch (e) { os = []; }
   if (os.length === 1) { os[0].fn(); return; }
   if (!os.length) { snap(); addFx({ kind: 'note', until: /until your next turn/i.test(s) ? 'yourNextTurn' : 'eot', turn: state.turn, srcName: src, text: s.replace(/\.$/, '') }); log(`${src}: ${s.replace(/\.$/, '')}`); render(); return; }
-  const m = modal(src, { width: 460 }); m.body.append(h('div', { class: 'psub', text: s }), ...os.map(o => h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), h('button', { class: 'primary', text: 'Apply', onclick: ev => { o.fn(); ev.target.disabled = true; } }))));
-  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() }));
+  // v0.99.94 no Apply window: every effect the sentence names happens, in order
+  for (const o of os) { try { o.fn(); } catch (e) { console.error(e); } } log(`${src}: ${os.map(o => o.label).join('; ')}`);
 }
 function b4Vehicle(c, src) {
   const i = cardInfo(c.name); c.becomes = { pt: (i && i.pt) || '0/0', types: ['artifact', 'creature'], subs: (cardInfo(c.name) || {}).t && /Vehicle/.test(cardInfo(c.name).t) ? ['vehicle'] : [], kws: [] };
@@ -99,6 +99,7 @@ function batch4Options(t, sents, obj, src, out, drop) {
       remDrop(s); continue;
     }
   }
+  batch5Options(t, sents, obj, src, out, drop);   // v0.99.94 src/98-rules-batch-5
 }
 // CR 402.2 the maximum hand size, with "no maximum hand size until your next turn" effects
 function fxNoMaxHand() { return !!state && (state.fx || []).some(e => e.kind === 'nomaxhand'); }

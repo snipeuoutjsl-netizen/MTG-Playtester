@@ -544,6 +544,7 @@ function splitSecondOn() { return !!state && state.stack.some(x => !x.ability &&
 function canCastNow(c) {
   if (!state || state.phase !== 'play' || holdForTriggers() || state.discarding) return false;
   if (splitSecondOn()) return false;
+  if (b5OneSpellHit()) return false;   // v0.99.94 High Noon, Archon of Emeria: one spell each turn
   if (c.fromGy && cageBlocksCast()) return false;   // "Players can't cast spells from graveyards or libraries"
   if (c.miracleNow) return true;   // v0.96.3 a miracle is cast as its trigger resolves, whatever the step
   // No player receives priority during untap or the normal cleanup step.
@@ -992,7 +993,7 @@ function runDelayed(when) {
       else if (e.fromGy) log(`${e.srcName}: ${nm} is no longer in your graveyard, so it does not return`);
       else log(`${e.srcName}: ${nm} is not in exile, so it cannot return`);
     } else if (e.draw && !teach('triggerPrompts')) { const n = drawCards(e.draw); log(`${e.srcName}: delayed trigger, drew ${n}`); }
-    else queueTrigger({ kind: 'ability', cardId: 0, cardName: e.srcName, text: e.text, effect: e.text, special: null, optional: false, why: `${e.srcName} created a delayed trigger earlier: it fires at the beginning of this ${where}.` });
+    else queueTrigger({ kind: 'ability', cardId: 0, cardName: e.srcName, text: e.text, effect: e.text, special: null, optional: false, delayed: true, why: `${e.srcName} created a delayed trigger earlier: it fires at the beginning of this ${where}.` });
   }
 }
 function addTempPT(id, p, t, extra) {
@@ -1541,7 +1542,7 @@ function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name,
 const legalSig = (specs, srcId) => specs.map(sp => legalTargets(sp, { srcId }).map(t => String(t.id)).sort().join(',')).join('|');   // the set of things an ability could target right now
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
+  const t = list.find(x => !x.delayed && !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
   state.ay[key] = { auto: false, sig: (() => { try { const sp = parseTargetSpecs(t._text || t.effect); return sp.length ? legalSig(sp, t.cardId) : null; } catch (e) { return null; } })(), id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
@@ -2142,19 +2143,20 @@ function resolveNoPanel(obj, tx, done) {
   const low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
   opts = opts.filter((o, i) => o.special || !opts.some((p, j) => j !== i && !p.special && low(p.label) !== low(o.label) && low(p.label).includes(low(o.label))));
   const run = async list => { for (const o of list) {
-      if (o.special === 'lookTop') { if (obj.target === 'opp') { toast(`${who}`, 'A goldfish opponent has no library: nothing to look at.'); continue; } const top = state.library[0]; if (top) { log(`${who}: looked at the top card of your library: ${top.name}`); toast(`${who}: top card`, `${top.name} (it stays on top)`); } continue; }
+      if (o.special === 'lookTop') { if (obj.target === 'opp') { toast(`${who}`, 'A goldfish opponent has no library: look at the real one.'); log(`${who}: look at the top card of your opponent's library at the real table`); continue; } await peekTopCard(who); continue; }
       if (o.special === 'payLifeDraw') { const n = await appAskNumber('Pay how much life?', `${who}: you draw that many cards.`, 0); const k = Math.max(0, Math.min(+n || 0, state.life)); if (k) { snap(); state.life -= k; const d = drawCards(k); log(`${who}: paid ${k} life, drew ${d}`); } continue; }
       if (typeof o.fn !== 'function') continue;
       if (typeof o.then === 'function') { await new Promise(r => { try { o.then(() => { render(); r(); }); } catch (e) { r(); } }); continue; }
       try { o.fn(); } catch (e) { console.error(e); } render(); } };
   const plain = String(tx || '').replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target');
-  const choice = opts.length > 1 && (/\bchoose one\b|\bchoose\b/i.test(plain) || opts.some(o => o.final) || (/\bor\b/i.test(plain) && !/\band\b|\bthen\b/i.test(plain)));
+  const choice = opts.length > 1 && (/\bchoose (?:one|two|up to)\b/i.test(plain) || opts.some(o => o.final) || opts.some(o => /^Decline\b/i.test(o.label || '')));   // v0.99.94 a plain "or" ("mana value 2 or less") is no choice
   (async () => {
     if (!opts.length) { finish(); return; }
     if (choice) { const i = await appChoose(who, tx, opts.map(o => o.label)); if (i !== null && opts[i] && !/^Decline\b/i.test(opts[i].label || '')) { log(`${who}: ${opts[i].label}`); await run([opts[i]]); } else log(`${who}: declined`); finish(); return; }
-    if (/\byou may\b/i.test(plain) && !opts.some(o => o.def)) { const all = opts.map(o => o.label).join('; ');
+    const mayPlain = plain.replace(/(?:^|\.\s+)(?:until (?:the )?end of (?:your next )?turn, )?you may (?:cast|play|look at)\b[^.]*\./gi, '. ').replace(/\byou may (?:cast|play) (?:it|that card|them|those cards)\b[^.]*\b(?:this turn|until\b[^.]*)\./gi, '');   // a permission to cast later is no question now
+    if (/\byou may\b/i.test(mayPlain) && !opts.some(o => o.def)) { const all = opts.map(o => o.label).join('; ');
       if (!(await appAsk(who, `${tx}`, all.length < 60 ? all : 'Do it'))) { log(`${who}: you chose not to`); gaps = []; finish(); return; } }
-    log(`${who}: applied automatically \u2014 ${opts.map(o => o.label).join('; ')}`); toast(`${who} resolves`, opts.map(o => o.label).join('; '));
+    { const labs = opts.map(o => o.label || o.summary).filter(Boolean).join('; '); if (labs) { log(`${who}: applied automatically \u2014 ${labs}`); toast(`${who} resolves`, labs); } }
     await run(opts); finish(); })();
 }
 function openCascade(obj, done) {
@@ -2192,6 +2194,19 @@ function gapCovered(clause, opts) {
   const norm = t => String(t || '').toLowerCase().replace(/[~.,;:()]/g, ' ').replace(/\b(a|an|one|two|three|four|five|six|seven)\b/g, w => N[w]).replace(/\bcards\b/g, 'card').replace(/\s+/g, ' ').trim();
   const c = norm(clause).replace(/^(?:then|you) /, '').split(' ').slice(0, 3).join(' ');
   return !!c && (opts || []).some(o => o && o.label && norm(o.label).includes(c));
+}
+
+// v0.99.94 "Look at the top card of your library" (Mishra's Bauble, Sensei's Divining Top's peers): the card is shown, picture and all,
+// in one small window; it stays on top. A toast was too easy to miss.
+function peekTopCard(src) {
+  return new Promise(res => { const top = state.library[0]; if (!top) { toast('Library empty', 'There is no card to look at.'); res(); return; }
+    log(`${src}: looked at the top card of your library: ${top.name}`);
+    const ti = cardInfo(top.name), ty = ((ti && ti.t) || '').split(' // ')[0];
+    const m = modal(`${src}: the top card of your library`, { width: 420 }); let pic = null; try { pic = spotCardEl(top); pic.classList.add('peek-card'); } catch (e) { pic = h('div', { class: 'peek-card', text: top.name }); }
+    m.body.append(h('div', { class: 'peek-wrap' }, pic, h('div', { class: 'peek-txt' }, h('b', { text: top.name }), h('div', { class: 'muted small', text: ty || 'card' }), h('div', { class: 'small', style: 'margin-top:8px', text: 'Only you see it. It stays on top of your library.' }))));
+    let d = false; const end = () => { if (d) return; d = true; m.close(); res(); };
+    m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: end }));
+    const obs = new MutationObserver(() => { if (!document.body.contains(m.el || m.body)) { obs.disconnect(); end(); } }); try { obs.observe(document.body, { childList: true, subtree: true }); } catch (e) { /* no observer */ } });
 }
 // ---------------------------------------------------------------- static effects (Necrodominance, Rest in Peace, ...)
 function staticFx() {
@@ -3676,7 +3691,7 @@ function finishResolving() {   // the spell whose effect was just applied (or sk
 function resolveTopOfStack() {
   if (gameIsOver()) return;   // v0.99.71 the game is over: nothing more is put on the stack or resolved until you choose Keep playing
   if(!state||!state.stack.length) return; snap();
-  noteFlightFrom(state.stack[state.stack.length-1].id,`#stackStage .ss-card.top`);
+  // v0.99.94 no flight off the stack: the card dissolves from the top of the pile (src/91) and simply appears where it goes
   const c=state.stack.pop(); state.priority={active:false,passed:false};
   if(c.opp && practiceResolve(c)) return;   // v0.99.91 the practice opponent's own Counterspell
   if(c.opp){ log(`Opponent's ${c.name} resolves — apply its effects at the table`); toast(`Opponent's ${c.name} resolves`,'Its effects are not tracked here. Adjust your board, life or cards by hand.'); render(); return; }
@@ -4179,6 +4194,7 @@ function drawCards(n, silent) {
   // v0.99.45 CR 702.52a + 121.6: dredge replaces ANY draw (a spell, cycling, a trigger), not only the draw step. While a dredge card could
   // replace it, the draws are handed to the dredge prompt, which asks once per card drawn.
   if (!silent && n > 0 && !state.inDredge && state.phase !== 'mull' && teach('dredgePrompts') && dredgeOptions().length) { setTimeout(() => askDredge(n), 0); return n; }
+  n = b5Riddler(n);   // v0.99.94 Quantum Riddler
   let drawn = 0, skipped = 0;
   const skipOn = !!(state.gs && state.gs.skipDraw) && skipDrawSource();   // v0.90 Necrodominance: you may skip each draw (the Skip draws switch)
   for (let i = 0; i < n; i++) {
@@ -6372,7 +6388,7 @@ function dealCombatDamage(){
   const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn; try { if(total>0) recapNote('opp',-total); } catch(e) { /* recap only */ }   // v0.99.91 combat damage counts in the recap too
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
-  toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
+  if(!(fxHits.length && polishMotion() && state.oppLife>0)) toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
   if(state.oppLife<=0) log(`Goldfish kill on turn ${state.turn}`);
   if(lifeGain>0 && lifeGainBlocked()){ log(`Lifelink: no life gained (${lifeGainBlocked().g.name})`); lifeGain=0; }
   if(lifeGain>0){ state.life+=lifeGain; log(`Lifelink: gained ${lifeGain} life (${lifeParts.join(', ')}) → ${state.life}`); toast(`Lifelink: +${lifeGain} life`, `You are now at ${state.life}.`); fireTrigger('lifegain',{amount:lifeGain}); }
@@ -7059,8 +7075,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.93';
+const APP_VERSION = '0.99.94';
 const CHANGELOG = [
+  { v: '0.99.94', title: 'Rules from the 1.0 meta sample, and the desk objects removed', notes: ['RULES: the app now reads more of the cards played most in Standard, Pioneer, Modern and Commander (192 of 297 sample cards fully read, up from 171).', 'Beast Within, Generous Gift, Get Lost and similar: when the target is yours, you get the token; when it is your opponent\'s, the app says so for the real table and gives you nothing.', 'Day of Black Sun destroys your creatures with mana value X or less. Culling Ritual adds the {B}/{G} you count. Unholy Annex checks for a Demon. Boomerang Basics draws when the permanent was yours. Free the Fae (Picklock Prankster) lets you pick the instant, sorcery or Faerie from the milled cards. Feed the Swarm and Solitude handle life correctly.', 'Static rules: Sunspine Lynx stops life gain, High Noon and Archon of Emeria allow one spell a turn, Doorkeeper Thrull stops artifact and creature enter triggers, Quantum Riddler draws one more with one or fewer cards in hand, Elspeth, Storm Slayer doubles your tokens. Ward and opponent-only rules are recognised as nothing to do in a goldfish game.', 'FIX: a permission to cast a card later (Ragavan) is no longer asked as a question, and "mana value 2 or less" is no longer mistaken for a choice.', 'REMOVED: the small objects on the Library desk; they will come back redrawn properly in perspective.', 'FIX: Resolve top no longer flies the card off the stack (it grew on the way). The card dissolves where it lies on top of the pile and simply appears where it goes.', 'Combat, refined: each attacker leans in, a thin arrow with a soft trail lands on your opponent\'s life total, the life box flashes, and one running total (−2, then −4) pops out below it instead of separate numbers and a toast over your creatures.', 'FIX: Mishra\'s Bauble shows you the top card of your library (picture and name) in a small window instead of a toast that was easy to miss, and its draw at the next upkeep no longer stops to ask "Always yield?" (a delayed trigger only happens once), so the turn carries on to your draw step.'] },
   { v: '0.99.93', title: 'Phones always get the newest version', notes: ['FIX: the phone and web app could keep showing an older version (with the old Resolving window and Hand chip) for a while after an update. The app now checks for a new version when you open it, when you come back to it and every 20 minutes, and shows "Version … is ready. Update now": one tap reloads into it.', 'FIX: the web app no longer mixes an old app file with a new page: every app file is checked with the server instead of the browser\'s short-term cache.'] },
   { v: '0.99.92', title: 'No more Resolving screen, a new hand handle on phones, combat arrows and room sounds', notes: ['FIX: the Resolving screen is gone for good. When a spell or ability leaves the stack, what it does just happens (Kozilek\'s Command: the tokens appear, the scry window opens, then you draw and it goes to the graveyard). Only a real decision is asked, as one short question: a "you may", a choice between effects, or how much to pay. Anything the app cannot do is a "Do by hand" note.', 'FIX: a spell can no longer be left hanging half-resolved: with no window of its own open, it finishes by itself.', 'PHONES: the hand has a handle on top of the tray instead of the floating Hand chip that covered buttons. Tap it, or swipe it down or up, to hide or show the hand; hidden, only the handle stays at the bottom.', 'NEW: combat arrows fly from your attackers to your opponent with the damage numbers, and a win gets confetti and a short fanfare.', 'NEW: each Library room has its own quiet sound (torches crackling in the dungeon, birds in the grove, wind in the castle, chimes in the tower) and two things on the desk. Turn the sounds off in Settings, Sound: Library room sounds.', 'Cleanup: the old Resolving panel code and styles are removed.'] },
   { v: '0.99.91', title: 'Practice opponent', notes: ['NEW: Practice opponent (Game tools). The goldfish can fight back: choose Aggro, Midrange or Control (or keep the Goldfish) and Easy, Normal or Hard.', 'Its turn happens between yours: it attacks you with a clock that grows (Aggro hits hardest), and Midrange and Control destroy your biggest creature every few turns (not hexproof or indestructible ones). A note and the log say what it did.', 'On your turn a Control opponent may cast Counterspell at a spell you cast: it goes on the stack, so you can respond to it (or let it resolve and your spell is countered). Aggro and Midrange opponents may chump-block your biggest attacker (not fliers or menace; trample still gets through).', 'The opponent\u2019s life box shows who you are playing against. Undo takes back what it did. Puzzles always use the goldfish.', 'Combat damage now counts in the game recap too.'] },
@@ -8784,6 +8801,7 @@ function animApply() {
     const id = el.dataset.id; seen.add(id); const r = el.getBoundingClientRect(); if (!r.width) continue;
     let p = newGame || (mullReset && el.closest('#row-hand')) ? null : prev.cards.get(id); const ff = mullReset ? null : flightFrom.get(id); if (ff && performance.now() - ff.at < 4000) { p = ff; flightFrom.delete(id); }
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2, t = getComputedStyle(el).transform;
+    if (p && p.stage && !el.closest('#stackStage')) { jobs.push(() => wa(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' })); continue; }   // v0.99.94 leaving the stack: no flight, no growing; it fades in where it lands
     if (p) {
       const dx = p.cx - cx, dy = p.cy - cy; if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5 && p.t === t) continue;
       const dist = Math.hypot(dx, dy), staged = castFlightOn() && (p.stage || !!el.closest('#stackStage'));   // v0.90.1 to/from the centre stage
@@ -8810,6 +8828,7 @@ function animApply() {
   }
   for (const id of gone) {
     const p = prev.cards.get(id), node = prev.nodes.get(id); if (!node) continue;
+    if (p.stage && !newGame) { flightCounter.delete(+id); continue; }   // v0.99.94 the stack pile dissolves its own top card
     const f = findCard(+id); let dest = null;
     if (newGame || (mullReset && p.hand)) dest = centerOf('#libstack'); else if (f) dest = f.zone === 'graveyard' ? centerOf('#pile-graveyard .stack') : f.zone === 'exile' ? centerOf('#pile-exile .stack') : f.zone === 'library' ? centerOf('#libstack') : (f.zone === 'hand' ? null : null);
     if (!dest && state.stack.some(s => s.id === +id)) dest = centerOf('#stackBox');
@@ -11789,16 +11808,16 @@ const sbCantBlock = c => sbActive(c).some(s => s.cantBlock);
 // CR 614.1 + CR 111.1: "If an effect would create one or more [creature] tokens under your control, it creates twice that many of those tokens instead."  (Doubling Season, Parallel Lives, Anointed Procession)
 //                      "... it creates that many plus one/two of those tokens instead."
 // Read from the words of every permanent you control, so any card worded this way works. Several such effects are applied in the order that gives the most tokens (CR 616.1).
-const TOKEN_REPL_RE = /^If an effect would create one or more (creature |artifact |food |treasure )?tokens under your control, (?:it|they) creates? (twice that many|that many plus (one|two|three|\d+)) (?:of those tokens|[a-z ]*tokens?)(?: [^.]*)? instead\.?$/i;
+const TOKEN_REPL_RE = /^If (?:an effect would create one or more (creature |artifact |food |treasure )?tokens under your control, (?:it|they) creates? (twice that many|that many plus (one|two|three|\d+)) (?:of those tokens|[a-z ]*tokens?)(?: [^.]*)? instead|one or more (creature |artifact |food |treasure )?tokens would be created under your control, (twice that many|that many plus (one|two|three|\d+)) (?:of those tokens|[a-z ]*tokens?) (?:are|is) created instead)\.?$/i;   // v0.99.94 also the newer wording (Elspeth, Storm Slayer)
 function tokenReplLine(line) { return TOKEN_REPL_RE.test(String(line || '').trim()); }
 function adjustTokenCount(n, d, src) {
   if (!state || n <= 0) return n;
   const types = new Set((d && d.types || []).map(x => String(x).toLowerCase())), effects = [];
   for (const g of state.battlefield) {
     if (g.token) continue; const tx = String(cardText(g) || '').replace(/\([^)]*\)/g, '');
-    if (!/would create one or more/i.test(tx)) continue;
+    if (!/would create one or more|tokens would be created under your control/i.test(tx)) continue;
     for (const ln of tx.split('\n')) {
-      const m = ln.trim().match(TOKEN_REPL_RE); if (!m) continue;
+      const m0 = ln.trim().match(TOKEN_REPL_RE); if (!m0) continue; const m = [m0[0], m0[1] || m0[4], m0[2] || m0[5], m0[3] || m0[6]];   // the second wording's groups line up with the first's
       const kind = (m[1] || '').trim().toLowerCase(); if (kind && kind !== 'creature' && !types.has(kind) && !(d && String(d.name || '').toLowerCase() === kind)) continue;
       if (kind === 'creature' && !types.has('creature')) continue;
       if (/^twice/i.test(m[2])) effects.push({ src: g, label: '×2', f: v => v * 2 }); else { const add = wordN(m[3]); effects.push({ src: g, label: '+' + add, f: v => v + add }); }
@@ -11863,7 +11882,7 @@ function globalAttackBlock(c) {
   }
   return '';
 }
-const torporOrbOn = c => !!c && /\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i);
+const torporOrbOn = c => !!c && ((/\bCreature\b/.test(frontType(c) || '') && !!globalHas(/^Creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i)) || (/\b(?:Creature|Artifact)\b/.test(frontType(c) || '') && !!globalHas(/^Artifacts and creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i)));   // v0.99.94 Doorkeeper Thrull
 const cageBlocksEnter = (c, from) => (from === 'graveyard' || from === 'library') && !!c && /\bCreature\b/.test(frontType(c) || '') && globalHas(/^Creature cards in graveyards and libraries can't enter the battlefield\.?$/i);
 const cageBlocksCast = () => !!globalHas(/^Players can't cast spells from graveyards or libraries\.?$/i);
 const omnathColorless = () => !!globalHas(/^If you would lose unspent mana, that mana becomes colorless instead\.?$/i);
@@ -13288,7 +13307,7 @@ function untapWithLimits(pend, held) {
   for (const c of free) { c.tapped = false; delete c.mt; }
 }
 const fxNoGain = who => state && state.fx ? state.fx.find(e => e.kind === 'nolifegain' && (e.who === 'all' || e.who === who)) : null;   // v0.99.79 Skullcrack: "Players can't gain life this turn" (CR 119.7)
-const lifeGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i) || (fxNoGain('you') ? { g: { name: fxNoGain('you').srcName || 'An effect' } } : null);
+const lifeGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i) || b5NoGain() || (fxNoGain('you') ? { g: { name: fxNoGain('you').srcName || 'An effect' } } : null);
 const oppGainBlocked = () => globalHas(/^If a player would gain life, that player gains no life instead\.?$/i) || (fxNoGain('opp') ? { g: { name: fxNoGain('opp').srcName || 'An effect' } } : null);
 function priestExiles(c, from) {
   if (!c || c.token || from === 'stack' || !/\bCreature\b/.test(frontType(c) || '')) return null;
@@ -14408,7 +14427,6 @@ function drawHall() {
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
     h('button', { text: '›', title: 'More shelves', disabled: hallPage >= pages - 1, onclick: () => { hallPage++; drawHall(); } })) : null;
   world.append(
-    deskObjectsEl(hallRoom()),   // v0.99.92 things on the desk (src/98)
     roomDecorEl(hallRoom()),   // v0.99.87 banners, torches, candles or vines on the wall (src/93)
     h('div', { class: 'hall-plaque' }, h('div', { class: 'hall-plaque-row' }, (() => { const x = h('span', { class: 'hall-logo' }); x.innerHTML = HALL_LOGO; return x; })(), h('div', { class: 'hall-plaque-t' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }))), pager),
     shelf,
@@ -14969,8 +14987,8 @@ function b4RunSentence(s, obj, src) {
   let os = []; try { os = effectOptions(s, Object.assign({}, obj, { _tgtAsked: true, _noRemCheck: true })).filter(o => o && !o.hidden && !/^Remember/.test(o.label || '')); } catch (e) { os = []; }
   if (os.length === 1) { os[0].fn(); return; }
   if (!os.length) { snap(); addFx({ kind: 'note', until: /until your next turn/i.test(s) ? 'yourNextTurn' : 'eot', turn: state.turn, srcName: src, text: s.replace(/\.$/, '') }); log(`${src}: ${s.replace(/\.$/, '')}`); render(); return; }
-  const m = modal(src, { width: 460 }); m.body.append(h('div', { class: 'psub', text: s }), ...os.map(o => h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), h('button', { class: 'primary', text: 'Apply', onclick: ev => { o.fn(); ev.target.disabled = true; } }))));
-  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() }));
+  // v0.99.94 no Apply window: every effect the sentence names happens, in order
+  for (const o of os) { try { o.fn(); } catch (e) { console.error(e); } } log(`${src}: ${os.map(o => o.label).join('; ')}`);
 }
 function b4Vehicle(c, src) {
   const i = cardInfo(c.name); c.becomes = { pt: (i && i.pt) || '0/0', types: ['artifact', 'creature'], subs: (cardInfo(c.name) || {}).t && /Vehicle/.test(cardInfo(c.name).t) ? ['vehicle'] : [], kws: [] };
@@ -15053,6 +15071,7 @@ function batch4Options(t, sents, obj, src, out, drop) {
       remDrop(s); continue;
     }
   }
+  batch5Options(t, sents, obj, src, out, drop);   // v0.99.94 src/98-rules-batch-5
 }
 // CR 402.2 the maximum hand size, with "no maximum hand size until your next turn" effects
 function fxNoMaxHand() { return !!state && (state.fx || []).some(e => e.kind === 'nomaxhand'); }
@@ -15220,7 +15239,7 @@ function hallRoom() { const v = lsGet('mtgpt.hallLook', null) || {}; return HALL
 function setHallRoom(k) {
   const r = HALL_ROOMS.find(x => x[0] === k); if (!r) return;
   const v = lsGet('mtgpt.hallLook', null) || {}; v.room = k; v.wall = r[2].wall; v.desk = r[2].desk; lsSet('mtgpt.hallLook', v);
-  applyHallLook(); const w = document.querySelector('#hall .hall-world'); if (w) { const old = w.querySelector(':scope > .hall-decor'); const d = roomDecorEl(k); if (old) old.replaceWith(d); else w.prepend(d); } if (w) { const o2 = w.querySelector(':scope > .desk-objs'); if (o2) o2.replaceWith(deskObjectsEl(k)); } try { if (hallOpen()) ambStart(); } catch (e) {}
+  applyHallLook(); const w = document.querySelector('#hall .hall-world'); if (w) { const old = w.querySelector(':scope > .hall-decor'); const d = roomDecorEl(k); if (old) old.replaceWith(d); else w.prepend(d); } try { if (hallOpen()) ambStart(); } catch (e) {}
 }
 const DC_BANNER = '<svg viewBox="0 0 64 360" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="dcBn" x1="0" x2="1"><stop offset="0" stop-color="#4a0d0d"/><stop offset=".18" stop-color="#8f1d1a"/><stop offset=".5" stop-color="#b22a22"/><stop offset=".82" stop-color="#8a1b18"/><stop offset="1" stop-color="#3f0b0b"/></linearGradient><linearGradient id="dcRod" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6dc8c"/><stop offset="1" stop-color="#8f6420"/></linearGradient></defs>'
   + '<path d="M8 14 H56 V318 L32 290 L8 318 Z" fill="url(#dcBn)" stroke="#d9b45a" stroke-width="2.5"/>'
@@ -15577,25 +15596,36 @@ function practiceHud() { const l = document.querySelector('#oppBox .hudlabel'); 
 // and a few things on the desk in each room. All of it is drawn and synthesised by the app (no images, no audio files) and all of
 // it steps aside when motion is reduced or sound is off.
 function polishMotion() { try { return !(reducedMotion() || document.body.classList.contains('a11y-calm') || animOn('ui') === false); } catch (e) { return true; } }
-// combat: an arrow from each creature that dealt damage to your opponent's life box, then the number
+// combat (v0.99.94 refined): each attacker lunges toward your opponent, a thin arrow with a soft trail runs to their life total,
+// and as it lands the life box flashes and the damage number pops out of it (one after another, not on top of the cards)
 function combatFx(hits) {
   if (!polishMotion() || !hits || !hits.length) return;
-  const tgt = document.querySelector('#oppBox'), tr = tgt && tgt.getBoundingClientRect(); if (!tr || !tr.width) return;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'cbfx'); svg.setAttribute('width', innerWidth); svg.setAttribute('height', innerHeight);
-  svg.innerHTML = '<defs><marker id="cbHead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#ff6a3d"/></marker><filter id="cbGlow"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+  const box = document.querySelector('#oppBox'), num = document.querySelector('#oppNum'), tgt = num || box, tr = tgt && tgt.getBoundingClientRect(), br = box ? box.getBoundingClientRect() : tr; if (!tr || !tr.width) return;
+  const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'cbfx'); svg.setAttribute('width', innerWidth); svg.setAttribute('height', innerHeight);
+  svg.innerHTML = '<defs><marker id="cbHead" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 1 L10 5 L0 9 z" fill="#ff5a36"/></marker></defs>';
   document.body.append(svg);
-  const tx = tr.left + tr.width / 2, ty = tr.top + tr.height / 2; let i = 0;
+  const tx = tr.left + tr.width / 2, ty = tr.top + tr.height / 2, step = 140; let i = 0;
   for (const { id, dmg } of hits) {
     const el = document.querySelector(`#mat .card[data-id="${id}"]`); if (!el) continue; const r = el.getBoundingClientRect();
-    const sx = r.left + r.width / 2, sy = r.top + r.height * .3, mx = (sx + tx) / 2 + (sx < tx ? -60 : 60), my = Math.min(sy, ty) - 80;
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', `M${sx} ${sy} Q${mx} ${my} ${tx} ${ty + 8}`); p.setAttribute('class', 'cb-arrow'); p.setAttribute('marker-end', 'url(#cbHead)'); p.setAttribute('filter', 'url(#cbGlow)');
-    p.style.animationDelay = (i * 0.12) + 's'; svg.append(p);
-    const len = p.getTotalLength(); p.style.strokeDasharray = len; p.style.strokeDashoffset = len;
-    const n = h('div', { class: 'cb-num', text: '−' + dmg, style: `left:${sx}px;top:${r.top}px;animation-delay:${i * 0.12}s` }); document.body.append(n); setTimeout(() => n.remove(), 1600);
+    const sx = r.left + r.width / 2, sy = r.top + r.height * .25, ex = tx + (i % 3 - 1) * 6, ey = tr.bottom + 2, mx = (sx + ex) / 2 + (sx < ex ? -40 : 40), my = Math.min(sy, ey) - 50, delay = i * step;
+    const d = `M${sx} ${sy} Q${mx} ${my} ${ex} ${ey}`;
+    const g = document.createElementNS(NS, 'linearGradient'); g.id = 'cbGrad' + i; g.setAttribute('gradientUnits', 'userSpaceOnUse'); g.setAttribute('x1', sx); g.setAttribute('y1', sy); g.setAttribute('x2', ex); g.setAttribute('y2', ey);
+    g.innerHTML = '<stop offset="0" stop-color="#ffd27a" stop-opacity=".35"/><stop offset=".5" stop-color="#ffb04a"/><stop offset="1" stop-color="#ff4b2b"/>'; svg.querySelector('defs').append(g);
+    const trail = document.createElementNS(NS, 'path'), p = document.createElementNS(NS, 'path'); trail.setAttribute('d', d); p.setAttribute('d', d);
+    trail.setAttribute('class', 'cb-trail'); trail.setAttribute('stroke', `url(#cbGrad${i})`); p.setAttribute('class', 'cb-arrow'); p.setAttribute('stroke', `url(#cbGrad${i})`); p.setAttribute('marker-end', 'url(#cbHead)');
+    svg.append(trail, p); const len = p.getTotalLength();
+    for (const x of [p, trail]) { x.style.strokeDasharray = len; x.style.strokeDashoffset = len; x.style.setProperty('--len', len); x.style.animationDelay = `${delay}ms, ${delay + 750}ms`; }
+    // the attacker leans in toward the target
+    const dx = ex - sx, dy = ey - sy, dl = Math.hypot(dx, dy) || 1;
+    setTimeout(() => { el.style.setProperty('--lx', (dx / dl * 12).toFixed(1) + 'px'); el.style.setProperty('--ly', (dy / dl * 12).toFixed(1) + 'px'); el.classList.remove('cb-lunge'); void el.offsetWidth; el.classList.add('cb-lunge'); setTimeout(() => el.classList.remove('cb-lunge'), 420); }, delay);
+    // impact: the life box flashes and one running total pops below the life number (−2, then −4 …), never numbers on top of each other
+    const sub = hits.slice(0, i + 1).reduce((a, x) => a + x.dmg, 0);
+    setTimeout(() => { if (box) { box.classList.remove('cb-hit'); void box.offsetWidth; box.classList.add('cb-hit'); setTimeout(() => box.classList.remove('cb-hit'), 480); }
+      let n = document.getElementById('cbTotal'); if (n) n.remove(); n = h('div', { id: 'cbTotal', class: 'cb-num', text: '\u2212' + sub, style: `left:${tx}px;top:${br.bottom + 20}px` }); document.body.append(n); setTimeout(() => n.remove(), 1200);
+      try { sfx('hit'); } catch (e) {} }, delay + 400);
     i++;
   }
-  setTimeout(() => { try { sfx('hit'); } catch (e) {} }, 520);
-  setTimeout(() => svg.remove(), 1500 + i * 120);
+  setTimeout(() => svg.remove(), 1300 + i * step);
 }
 // a win: gold confetti over the lethal message
 function winConfetti() {
@@ -15622,19 +15652,132 @@ function ambStart() {
   else if (room === 'tower') { bed(3000, 2, .05); ambTimer = setInterval(() => { if (Math.random() < .25) { const base = [523, 659, 784, 988, 1175][Math.floor(Math.random() * 5)]; blip(base, base, 1.8, .12, 'triangle'); } }, 700); }
   else { bed(600, .6, .12); ambTimer = setInterval(() => { if (Math.random() < .3) crack(.18); }, 500); }   // the Library: a quiet room and a fire somewhere
 }
-// ---- on the desk: two things for each room, drawn in SVG, standing either side of the open book
-const DESK_OBJ = {
-  library: ['<svg viewBox="0 0 70 120"><ellipse cx="35" cy="112" rx="26" ry="6" fill="#000" opacity=".35"/><path d="M14 108 h42 l-4 -10 h-34z" fill="#b8892f"/><rect x="28" y="40" width="14" height="60" rx="3" fill="#f3ead3"/><path d="M28 50 q4 8 2 16" stroke="#fff" stroke-width="2" fill="none" opacity=".6"/><line x1="35" y1="40" x2="35" y2="33" stroke="#222" stroke-width="1.4"/></svg>', '<svg viewBox="0 0 90 120"><ellipse cx="40" cy="112" rx="30" ry="6" fill="#000" opacity=".35"/><path d="M20 112 q-4 -30 8 -36 h24 q12 6 8 36z" fill="#1d2a3a"/><rect x="28" y="70" width="24" height="8" rx="2" fill="#0f1720"/><path d="M42 72 L74 8 q6 6 0 14 L46 74z" fill="#efe6cf"/><path d="M44 72 L72 14" stroke="#9a8a6a" stroke-width="1"/></svg>'],
-  castle: ['<svg viewBox="0 0 70 120"><ellipse cx="35" cy="112" rx="22" ry="5" fill="#000" opacity=".35"/><path d="M20 110 h30 l-6 -6 h-18z" fill="#c9a24a"/><rect x="32" y="66" width="6" height="40" fill="#c9a24a"/><path d="M14 30 h42 q0 34 -21 38 q-21 -4 -21 -38z" fill="#d8b456"/><path d="M18 34 h34 q-2 22 -17 26 q-15 -4 -17 -26z" fill="#6e1414"/></svg>', '<svg viewBox="0 0 110 80"><ellipse cx="55" cy="72" rx="46" ry="6" fill="#000" opacity=".35"/><rect x="12" y="40" width="86" height="26" rx="13" fill="#e8dcbc"/><ellipse cx="12" cy="53" rx="8" ry="13" fill="#d9caa4"/><ellipse cx="98" cy="53" rx="8" ry="13" fill="#f2e9d2"/><circle cx="58" cy="54" r="9" fill="#9b1c1c"/><path d="M52 62 l-4 12 M64 62 l4 12" stroke="#9b1c1c" stroke-width="3"/></svg>'],
-  dungeon: ['<svg viewBox="0 0 90 120"><ellipse cx="45" cy="112" rx="32" ry="6" fill="#000" opacity=".4"/><path d="M18 76 q0 -40 27 -40 q27 0 27 40 q0 14 -10 18 v12 h-34 v-12 q-10 -4 -10 -18z" fill="#d9d0bb"/><ellipse cx="34" cy="74" rx="8" ry="10" fill="#1b1612"/><ellipse cx="56" cy="74" rx="8" ry="10" fill="#1b1612"/><path d="M45 84 l-4 9 h8z" fill="#2a221b"/><path d="M33 100 v8 M39 100 v8 M45 100 v8 M51 100 v8 M57 100 v8" stroke="#8a8070" stroke-width="1.5"/><rect x="40" y="16" width="10" height="22" rx="2" fill="#efe4c4"/><path d="M38 38 q7 -6 14 0" fill="#e6d8b0"/></svg>', '<svg viewBox="0 0 90 80"><ellipse cx="45" cy="72" rx="36" ry="6" fill="#000" opacity=".4"/><path d="M8 60 q20 -14 40 0 q20 14 36 0" stroke="#5a5a60" stroke-width="6" fill="none" stroke-dasharray="10 4"/><circle cx="16" cy="58" r="7" fill="none" stroke="#6c6c74" stroke-width="3"/></svg>'],
-  tower: ['<svg viewBox="0 0 90 120"><ellipse cx="45" cy="112" rx="28" ry="6" fill="#000" opacity=".4"/><path d="M24 110 l6 -18 h30 l6 18z" fill="#3a2a5a"/><circle cx="45" cy="62" r="30" fill="url(#crys)"/><defs><radialGradient id="crys" cx=".4" cy=".35"><stop offset="0" stop-color="#e8f0ff"/><stop offset=".45" stop-color="#8fa8ff"/><stop offset="1" stop-color="#3a2f8a"/></radialGradient></defs><ellipse cx="36" cy="50" rx="8" ry="5" fill="#fff" opacity=".6"/></svg>', '<svg viewBox="0 0 60 120"><ellipse cx="30" cy="112" rx="20" ry="5" fill="#000" opacity=".4"/><path d="M22 36 h16 v18 q16 10 16 30 q0 26 -24 26 q-24 0 -24 -26 q0 -20 16 -30z" fill="#7a3fd1" opacity=".85"/><path d="M8 84 q22 8 44 0 v4 q0 22 -22 22 q-22 0 -22 -22z" fill="#c06bff" opacity=".9"/><rect x="21" y="26" width="18" height="12" rx="2" fill="#8a5a2a"/></svg>'],
-  grove: ['<svg viewBox="0 0 90 120"><ellipse cx="45" cy="112" rx="28" ry="6" fill="#000" opacity=".35"/><path d="M26 112 l-4 -30 h46 l-4 30z" fill="#9a5a34"/><rect x="20" y="78" width="50" height="8" rx="2" fill="#b56d40"/>' + Array.from({ length: 9 }, (_, i) => `<path d="M45 80 q${(i - 4) * 9} -${36 + (i % 3) * 10} ${(i - 4) * 14} -${44 + (i % 3) * 12}" stroke="#3f7a2c" stroke-width="3" fill="none"/>`).join('') + '</svg>', '<svg viewBox="0 0 80 90"><ellipse cx="40" cy="84" rx="28" ry="5" fill="#000" opacity=".35"/><path d="M30 84 v-20 h8 v20z" fill="#efe6d0"/><path d="M14 64 q20 -34 44 0z" fill="#c23b2a"/><circle cx="26" cy="56" r="3" fill="#fff"/><circle cx="40" cy="50" r="3" fill="#fff"/><circle cx="50" cy="58" r="2.5" fill="#fff"/><path d="M52 84 v-12 h5 v12z" fill="#efe6d0"/><path d="M46 72 q8 -16 18 0z" fill="#d44c37"/></svg>'] };
-function deskObjectsEl(room) {
-  const o = DESK_OBJ[room] || DESK_OBJ.library, box = h('div', { class: 'desk-objs', 'aria-hidden': 'true' });
-  ['l', 'r'].forEach((side, i) => { const e = h('div', { class: 'desk-obj ' + side }); e.innerHTML = o[i]; box.append(e); });
-  return box;
-}
 function ambPlaying() { return ambNodes.length > 0 && !!ambTimer; }
+// ---- v0.99.94 Rules batch 5, from the 1.0 meta deck sample (tests/meta/sample-2026-11.txt, read by tests/meta-audit.js).
+// Each piece is read from the card's words, so every card worded the same way works, not only the card that showed the gap.
+//  1. "Its controller creates …" / "Its controller gains N life" / "That creature's controller gains life equal to its power"
+//     after a destroy or exile (Get Lost, Beast Within, Generous Gift, Nature's Claim, Solitude): done for you when the target was
+//     yours; a note for the real table when it was your opponent's.
+//  2. "Destroy those creatures." after "Each creature with mana value N or less …" (Day of Black Sun): your creatures are destroyed.
+//  3. "Add {B} or {G} for each permanent destroyed this way." (Culling Ritual): the mana, counted from what the wipe destroyed.
+//  4. "If you control a Demon, … Otherwise, …" (Unholy Annex): the app checks and does the right half.
+//  5. "If you controlled that permanent, draw a card." (Boomerang Basics).
+//  6. "Then put an instant, sorcery, or Faerie card from among the milled cards into your hand." (Picklock Prankster).
+//  7. "create a Treasure token and exile the top card of that player's library" (Ragavan): your Treasure, and a note for their card.
+//  8. "You lose life equal to that permanent's mana value." (Feed the Swarm).
+//  9. Static rules: "Players can't gain life." (Sunspine Lynx), "Each player can't cast more than one spell each turn." (High Noon,
+//     Archon of Emeria), "Artifacts and creatures entering don't cause abilities to trigger." (Doorkeeper Thrull),
+//     "As long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead."
+//     (Quantum Riddler), and the opponent-only statics a goldfish game has nothing to do for (ward, "Creatures your opponents control
+//     enter tapped", "Your opponents can't cast spells during your turn", …).
+function b5Mine(obj) { return (obj.targets || []).filter(x => !x.gone && x.kind === 'perm'); }
+function b5Card(id) { const f = id != null ? findCard(id) : null; return f ? f.card : null; }
+function b5YouVersion(rest) {   // "creates two Map tokens" -> "Create two Map tokens."   "gains 4 life" -> "You gain 4 life."
+  const r = rest.replace(/\.$/, '');
+  if (/^creates? /i.test(r)) return 'Create ' + r.replace(/^creates? /i, '') + '.';
+  if (/^gains? /i.test(r)) return 'You gain ' + r.replace(/^gains? /i, '') + '.';
+  if (/^draws? /i.test(r)) return 'Draw ' + r.replace(/^draws? /i, '') + '.';
+  return null;
+}
+function batch5Options(t, sents, obj, src, out, drop) {
+  if (!state) return;
+  const n0 = out.length; try { b5Read(t, sents, obj, src, out, drop); } finally { for (const o of out.slice(n0)) if (typeof o.then === 'function') { const th = o.then; o.fn = () => th(() => {}); } }
+}
+function b5Read(t, sents, obj, src, out, drop) {
+  const esc = x => x.slice(0, 24).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const remDrop = s => drop.push(new RegExp('^Remember \\([^)]*\\): ' + esc(s), 'i'));
+  const tgtWasMine = () => b5Mine(obj).length > 0;
+  const oppTarget = () => (obj.targets || []).some(x => x.kind === 'opp' || x.kind === 'player' && x.id === 'opp') || (!tgtWasMine() && (obj.targets || []).length > 0);
+  for (let i = 0; i < sents.length; i++) {
+    const s = sents[i], prev = sents[i - 1] || ''; let m;
+    // 1. its controller …
+    if ((m = /^its controller ((?:creates?|gains?) [^.]+)\.?$/i.exec(s)) && i > 0) {
+      if (Array.isArray(obj.targets)) { remDrop(s); continue; }   // with the target chosen (or none chosen), the destroy/exile reader does it with the target (src/09 targetedOptions)
+      const you = b5YouVersion(m[1]);
+      out.push({ covers: [s], label: tgtWasMine() || !oppTarget() && !(obj.targets || []).length ? `You (its controller): ${you ? you.replace(/\.$/, '') : m[1]}` : `Its controller (your opponent) ${m[1]}: at the real table`, fn: () => {
+        if (tgtWasMine() && you) { log(`${src}: the target was yours, so you ${m[1].replace(/^(\w+?)s\b/, '$1')}`); b4RunSentence(you, obj, src); }
+        else log(`${src}: its controller (your opponent) ${m[1]} — do this at the real table`); render(); } });
+      remDrop(s); if (/^creates? /i.test(m[1])) drop.push(/^Create (?:\d+|an?) [^]*tokens?$/i);   // the plain token reader would make it yours whoever the target was
+      continue;
+    }
+    if (/^that creature's controller gains life equal to its power\.?$/i.test(s) && i > 0) {
+      out.push({ covers: [s], label: tgtWasMine() ? 'You gain life equal to its power' : "That creature's controller (your opponent) gains life equal to its power: at the real table", fn: () => {
+        const tg = b5Mine(obj)[0], c = tg && b5Card(tg.id);
+        if (c) { const n = Math.max(0, (() => { try { return powerOf(c).n; } catch (e) { const i2 = cardInfo(c.name); return parseInt(String(i2 && i2.pt || '0'), 10) || 0; } })()); if (n) { if (lifeGainBlocked()) { log(`${src}: no life gained (${lifeGainBlocked().g.name})`); } else { state.life += n; log(`${src}: you gain ${n} life → ${state.life}`); fireTrigger('lifegain', { amount: n }); } } }
+        else log(`${src}: your opponent gains life equal to that creature's power — do this at the real table`); render(); } });
+      remDrop(s); continue;
+    }
+    // 2. Day of Black Sun
+    if (/^destroy those creatures\.?$/i.test(s) && (m = /^(?:each|all) creatures? with mana value (\d+|X) or less\b/i.exec(prev))) {
+      const n = m[1] === 'X' ? (obj.xValue != null ? +obj.xValue : 0) : +m[1];
+      out.push({ covers: [s], label: `Destroy each creature with mana value ${m[1] === 'X' && obj.xValue == null ? 'X' : n} or less (yours here; your opponent's at the real table)`, fn: () => { snap();
+        const hit = state.battlefield.filter(c => permZone(c) === 'creatures' && mvOf(cardInfo(c.name)) <= n); for (const c of hit) destroyPerm(c, src);
+        log(`${src}: destroyed ${hit.length ? hit.map(c => c.name).join(', ') : 'none of your creatures'}`); render(); } });
+      remDrop(s); continue;
+    }
+    // 3. Culling Ritual
+    if ((m = /^add \{([WUBRGC])\} or \{([WUBRGC])\} for each permanent destroyed this way\.?$/i.exec(s))) {
+      const a = m[1].toUpperCase(), b = m[2].toUpperCase();
+      out.push({ covers: [s], label: `Add {${a}} or {${b}} for each permanent destroyed this way`, then: done => {
+        appAskNumber(`${src}: how many permanents were destroyed?`, 'Count both sides of the table (your opponent\'s permanents are not tracked here).', 0).then(n => {
+          n = Math.max(0, +n || 0); if (!n) { done(); return; }
+          appChoose(src, `Add ${n} mana: each one {${a}} or {${b}}. Choose how many are {${a}}.`, Array.from({ length: n + 1 }, (_, k) => `${k} {${a}}, ${n - k} {${b}}`)).then(k => {
+            if (k === null) k = n; addFloatingMana(a, k); if (n - k) addFloatingMana(b, n - k); log(`${src}: added ${k ? k + ' {' + a + '}' : ''}${k && n - k ? ' and ' : ''}${n - k ? (n - k) + ' {' + b + '}' : ''}`); render(); done(); }); }); }
+        });
+      remDrop(s); continue;
+    }
+    // 4. If you control a <type>, X. Otherwise, Y.
+    if ((m = /^if you control an? ([A-Za-z]+), (.+)$/i.exec(s)) && /^otherwise, /i.test(sents[i + 1] || '')) {
+      const typ = m[1], yes = m[2].replace(/^./, ch => ch.toUpperCase()), no = sents[i + 1].replace(/^otherwise, /i, '').replace(/^./, ch => ch.toUpperCase());
+      out.push({ covers: [s, sents[i + 1]], label: `If you control a ${typ}: ${yes.replace(/\.$/, '')} — otherwise: ${no.replace(/\.$/, '')}`, fn: () => {
+        const have = state.battlefield.some(c => new RegExp('\\b' + typ + '\\b', 'i').test(frontType(c) || '') || (c.becomes && (c.becomes.subs || []).some(x => x.toLowerCase() === typ.toLowerCase())));
+        log(`${src}: you ${have ? 'control' : "don't control"} a ${typ}`); b4RunSentence(have ? yes : no, obj, src); } });
+      remDrop(s); remDrop(sents[i + 1]); i++; continue;
+    }
+    // 5. Boomerang Basics
+    if (/^if you controlled that permanent, draw a card\.?$/i.test(s)) {
+      drop.push(/^Draw (?:1|a) card$/i);
+      out.push({ covers: [s], label: tgtWasMine() ? 'You controlled it: draw a card' : 'It was your opponent\'s: no card', fn: () => { if (tgtWasMine()) { const d = drawCards(1); log(`${src}: you controlled it, drew ${d}`); } else log(`${src}: the permanent was your opponent's, so no card`); render(); } });
+      remDrop(s); continue;
+    }
+    // 6. Picklock Prankster
+    if ((m = /^then put an? ([a-z, ]+?) card from among the milled cards into your hand\.?$/i.exec(s)) && (m = [m[0], m[1]]) && /\bmill (\w+) cards?\b/i.test(prev)) {
+      const kinds = m[1].split(/,\s*|\s+or\s+/).map(x => x.trim()).filter(x => x && x !== 'or'), n = wordN((/\bmill (\w+) cards?\b/i.exec(prev) || [])[1]) || 0;
+      out.push({ covers: [s], label: `Put ${/^[aeiou]/i.test(kinds[0]) ? 'an' : 'a'} ${m[1]} card from among the milled cards into your hand`, then: done => {
+        const milled = state.graveyard.slice(-n), okC = milled.filter(c => kinds.some(k => new RegExp('\\b' + k + '\\b', 'i').test(frontType(c) || '') || new RegExp('\\b' + k + '\\b', 'i').test((cardInfo(c.name) || {}).t || '')));
+        if (!okC.length) { log(`${src}: no ${m[1]} card among the milled cards`); toast(src, `No ${m[1]} card was milled.`); done(); return; }
+        appChoose(src, `Put one of these into your hand (milled: ${milled.map(c => c.name).join(', ')}).`, okC.map(c => c.name)).then(k => { if (k !== null && okC[k]) { snap(); moveCard(okC[k].id, 'hand'); log(`${src}: put ${okC[k].name} into your hand`); } render(); done(); }); }
+        });
+      remDrop(s); continue;
+    }
+    // 7. Ragavan
+    if (/^create a treasure token and exile the top card of that player's library\.?$/i.test(s)) {
+      drop.push(/^Create (?:1|a) Treasure tokens?$/i);
+      out.push({ covers: [s], label: 'Create a Treasure token (and exile the top card of their library at the real table)', fn: () => { b4RunSentence('Create a Treasure token.', obj, src); log(`${src}: exile the top card of your opponent's library at the real table (until end of turn you may cast it)`); } });
+      remDrop(s); continue;
+    }
+    // 8. Feed the Swarm
+    if (/^you lose life equal to that permanent's mana value\.?$/i.test(s)) {
+      out.push({ covers: [s], label: 'You lose life equal to that permanent\'s mana value', then: done => {
+        const tg = b5Mine(obj)[0], c = tg && b5Card(tg.id), mv = c ? mvOf(cardInfo(c.name)) : null;
+        const go = n => { n = Math.max(0, +n || 0); if (n) { snap(); state.life -= n; log(`${src}: you lose ${n} life → ${state.life}`); } render(); done(); };
+        if (mv !== null) go(mv); else appAskNumber(`${src}: its mana value?`, 'The permanent was your opponent\'s: enter its mana value.', 0).then(go); } });
+      remDrop(s); continue;
+    }
+  }
+}
+// ---- 9. static rules
+GLOBAL_STATIC_RES.push(/^(?:Players|You) can't gain life\.?$/i, /^Each player can't cast more than one spell each turn\.?$/i, /^Artifacts and creatures entering(?: the battlefield)? don't cause abilities to trigger\.?$/i,
+  /^As long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead\.?$/i);
+OPP_STATIC_RES.push(/^Ward(?:\s*[—-]|\s+\{)/i, /^(?:Creatures|Nonbasic lands|Artifacts|Lands|Permanents) your opponents control enter tapped\.?$/i, /^Your opponents can't cast spells during your turn\.?$/i,
+  /^Each opponent can cast spells only any time they could cast a sorcery\.?$/i, /^Spells and abilities your opponents control can't cause their controller to search their library\.?$/i,
+  /^(?:[A-Z][^—]* — )?Creatures your opponents control get -\d+\/-\d+\.?$/i, /^If a source you control would deal noncombat damage to a creature an opponent controls, put that many -1\/-1 counters on that creature instead\.?$/i);
+function b5NoGain() { const g = globalHas(/^(?:Players|You) can't gain life\.?$/i); return g ? { g: g.g } : null; }
+function b5OneSpellHit() { if (!state) return null; const g = globalHas(/^Each player can't cast more than one spell each turn\.?$/i); const sc = state.spellsCast; return g && sc && sc.turn === state.turn && sc.n >= 1 ? g : null; }
+function b5Riddler(n) {
+  if (!state || n <= 0 || state.phase === 'mull') return n; const g = globalHas(/^As long as you have one or fewer cards in hand, if you would draw one or more cards, you draw that many cards plus one instead\.?$/i);
+  if (!g || state.hand.length > 1) return n; log(`${g.g.name}: you have ${state.hand.length} card${state.hand.length === 1 ? '' : 's'} in hand, so you draw ${n + 1} instead of ${n} (rule 614)`); return n + 1;
+}
 // ---- v0.99.93 the web app (and the phone home-screen app) says when a newer version is out, and reloads into it in one tap.
 // A home-screen app on a phone can stay open for days, so "it appears on the next launch" was not enough: v0.99.92 had been
 // out for ten minutes and a phone still showed the old Resolving screen. GitHub Pages publishes version.json with every release.

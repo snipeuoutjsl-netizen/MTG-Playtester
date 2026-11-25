@@ -117,6 +117,7 @@ function drawCards(n, silent) {
   // v0.99.45 CR 702.52a + 121.6: dredge replaces ANY draw (a spell, cycling, a trigger), not only the draw step. While a dredge card could
   // replace it, the draws are handed to the dredge prompt, which asks once per card drawn.
   if (!silent && n > 0 && !state.inDredge && state.phase !== 'mull' && teach('dredgePrompts') && dredgeOptions().length) { setTimeout(() => askDredge(n), 0); return n; }
+  n = b5Riddler(n);   // v0.99.94 Quantum Riddler
   let drawn = 0, skipped = 0;
   const skipOn = !!(state.gs && state.gs.skipDraw) && skipDrawSource();   // v0.90 Necrodominance: you may skip each draw (the Skip draws switch)
   for (let i = 0; i < n; i++) {

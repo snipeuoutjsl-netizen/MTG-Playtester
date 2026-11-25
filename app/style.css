@@ -2616,7 +2616,7 @@ html.portrait-ui #gamebar .hud > #gstates.hudbox.gs-trim { flex-wrap: nowrap; mi
 .skp-card.skp-enter { animation: skpDrop .42s cubic-bezier(.2,1.5,.4,1) both; }
 @keyframes skpDrop { from { opacity: 0; transform: translateX(var(--dx, 0)) translateY(-46px) rotate(calc(var(--rot, 0deg) - 14deg)) scale(1.12); } }
 .skp-card.skp-leave { position: fixed; border-radius: 7px; overflow: hidden; transform: var(--t0, none); animation: skpLift .5s ease-out forwards; box-shadow: 0 6px 14px rgba(0,0,0,.45); }
-@keyframes skpLift { from { opacity: 1; transform: var(--t0, none); } to { opacity: 0; transform: var(--t0, none) translateY(-18px); } }   /* v0.99.86 a plain fade up off the pile, no growing */
+@keyframes skpLift { from { opacity: 1; transform: var(--t0, none); filter: none; } to { opacity: 0; transform: var(--t0, none); filter: blur(3px) brightness(1.25); } }   /* v0.99.94 it dissolves where it lies: no growing, no moving */
 .skp-card.skp-leave .skp-slip { position: absolute; left: -2px; right: -2px; top: 47%; padding: 5px 7px 6px; transform: rotate(-3deg); background: linear-gradient(180deg, #f6ecd2, #e6d6ae); color: #2b1a0c; font: 600 9.5px/1.25 Georgia, serif; max-height: 46%; overflow: hidden; display: flex; gap: 5px; }
 .skp-card.skp-leave .skp-n { display: none; }
 .skp-card.skp-leave img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -2745,22 +2745,23 @@ html.portrait-ui .pr-grid { grid-template-columns: 1fr; }
 .pr-lvl { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 /* v0.99.92 polish: combat arrows and damage numbers, confetti on a win, things on the Library desk */
 .cbfx { position: fixed; inset: 0; z-index: 9300; pointer-events: none; overflow: visible; }
-.cb-arrow { fill: none; stroke: #ff6a3d; stroke-width: 5; stroke-linecap: round; opacity: .95; animation: cbDraw .55s cubic-bezier(.3,.7,.3,1) forwards, cbFade .5s ease-in .95s forwards; }
+.cb-arrow { fill: none; stroke-width: 3; stroke-linecap: round; opacity: .95; animation: cbDraw .42s cubic-bezier(.4,0,.2,1) forwards, cbFade .45s ease-in .75s forwards; }
+.cb-trail { fill: none; stroke-width: 9; stroke-linecap: round; opacity: 0; animation: cbTrail .42s cubic-bezier(.4,0,.2,1) forwards, cbFade .45s ease-in .75s forwards; }
 @keyframes cbDraw { to { stroke-dashoffset: 0; } }
+@keyframes cbTrail { 0% { stroke-dashoffset: var(--len); opacity: .0; } 40% { opacity: .22; } 100% { stroke-dashoffset: 0; opacity: .14; } }
 @keyframes cbFade { to { opacity: 0; } }
-.cb-num { position: fixed; z-index: 9310; pointer-events: none; transform: translate(-50%, 0); font: 900 34px/1 Georgia, 'Palatino Linotype', serif; color: #ffefe0; -webkit-text-stroke: 1.5px #8a1a0a; text-shadow: 0 3px 10px rgba(0,0,0,.7), 0 0 16px rgba(255,90,40,.7); opacity: 0; animation: cbNum 1.4s cubic-bezier(.2,.8,.3,1) forwards; }
-@keyframes cbNum { 0% { opacity: 0; transform: translate(-50%, 10px) scale(.6); } 18% { opacity: 1; transform: translate(-50%, -18px) scale(1.25); } 35% { transform: translate(-50%, -26px) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -70px) scale(.95); } }
+.cb-num { position: fixed; z-index: 9310; pointer-events: none; transform: translate(-50%, -50%); font: 800 30px/1 Georgia, 'Palatino Linotype', serif; color: #fff4e6; text-shadow: 0 2px 0 #7a1608, 0 0 14px rgba(255,80,40,.75), 0 4px 12px rgba(0,0,0,.6); opacity: 0; animation: cbNum 1.1s cubic-bezier(.2,.8,.3,1) forwards; }
+@keyframes cbNum { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.5); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 30% { transform: translate(-50%, -50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -110%) scale(1); } }
+.cb-lunge { animation: cbLunge .36s cubic-bezier(.3,0,.3,1); }
+@keyframes cbLunge { 0% { translate: 0 0; } 45% { translate: var(--lx, 0) var(--ly, -14px); } 100% { translate: 0 0; } }
+.cb-hit { animation: cbHit .45s ease-out; }
+@keyframes cbHit { 0% { box-shadow: 0 0 0 0 rgba(255,70,40,.0); } 20% { box-shadow: 0 0 0 3px rgba(255,90,50,.85), 0 0 22px rgba(255,60,30,.6); translate: -3px 0; } 40% { translate: 3px 0; } 60% { translate: -2px 0; } 100% { box-shadow: 0 0 0 0 rgba(255,70,40,0); translate: 0 0; } }
 .confetti { position: fixed; inset: 0; z-index: 9450; pointer-events: none; overflow: hidden; }
 .confetti i { position: absolute; top: -20px; border-radius: 2px; opacity: .95; animation: cfFall var(--d) cubic-bezier(.25,.6,.45,1) var(--w) forwards; }
 @keyframes cfFall { 0% { transform: translate(0, 0) rotate(0); } 100% { transform: translate(var(--dx), 105vh) rotate(var(--r)); opacity: .7; } }
 .lethal.opp .lethal-t { font-family: Georgia, 'Palatino Linotype', serif; font-size: 58px; color: #ffe9a8; text-shadow: 0 0 30px rgba(255,200,80,.8), 0 4px 24px #000; animation: lethalPop .7s cubic-bezier(.2,1.6,.4,1); }
 @keyframes lethalPop { 0% { transform: scale(.4); opacity: 0; } 100% { transform: none; opacity: 1; } }
-#hall .desk-objs { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-#hall .desk-obj { position: absolute; top: 432px; width: 108px; height: 142px; transform: translateZ(70px); filter: drop-shadow(0 6px 6px rgba(0,0,0,.45)) brightness(.92); }
-#hall .desk-obj svg { width: 100%; height: 100%; display: block; overflow: visible; }
-#hall .desk-obj.l { left: 282px; } #hall .desk-obj.r { left: 1212px; }
-#hall.portrait .desk-objs { display: none; }   /* the open book fills the desk on an upright phone */
-@media (prefers-reduced-motion: reduce) { .cb-arrow, .cb-num, .confetti i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cb-arrow, .cb-trail, .cb-num, .cb-lunge, .cb-hit, .confetti i { animation: none; } }
 /* v0.99.92 upright phones, whatever width the phone really lays the page out at (390 to 520 px): the top bar is always two rows
    (Library, new game, on the play, settings / the game buttons, tools, stack & log), the stack panel sits above the hand and the pile
    counts, and the hand tab never covers a window */

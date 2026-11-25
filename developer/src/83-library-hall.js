@@ -286,7 +286,6 @@ function drawHall() {
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
     h('button', { text: '›', title: 'More shelves', disabled: hallPage >= pages - 1, onclick: () => { hallPage++; drawHall(); } })) : null;
   world.append(
-    deskObjectsEl(hallRoom()),   // v0.99.92 things on the desk (src/98)
     roomDecorEl(hallRoom()),   // v0.99.87 banners, torches, candles or vines on the wall (src/93)
     h('div', { class: 'hall-plaque' }, h('div', { class: 'hall-plaque-row' }, (() => { const x = h('span', { class: 'hall-logo' }); x.innerHTML = HALL_LOGO; return x; })(), h('div', { class: 'hall-plaque-t' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }))), pager),
     shelf,

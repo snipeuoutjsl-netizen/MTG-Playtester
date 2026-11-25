@@ -79,7 +79,7 @@ function runDelayed(when) {
       else if (e.fromGy) log(`${e.srcName}: ${nm} is no longer in your graveyard, so it does not return`);
       else log(`${e.srcName}: ${nm} is not in exile, so it cannot return`);
     } else if (e.draw && !teach('triggerPrompts')) { const n = drawCards(e.draw); log(`${e.srcName}: delayed trigger, drew ${n}`); }
-    else queueTrigger({ kind: 'ability', cardId: 0, cardName: e.srcName, text: e.text, effect: e.text, special: null, optional: false, why: `${e.srcName} created a delayed trigger earlier: it fires at the beginning of this ${where}.` });
+    else queueTrigger({ kind: 'ability', cardId: 0, cardName: e.srcName, text: e.text, effect: e.text, special: null, optional: false, delayed: true, why: `${e.srcName} created a delayed trigger earlier: it fires at the beginning of this ${where}.` });
   }
 }
 function addTempPT(id, p, t, extra) {

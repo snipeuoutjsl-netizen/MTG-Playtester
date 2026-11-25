@@ -12,7 +12,7 @@ function hallRoom() { const v = lsGet('mtgpt.hallLook', null) || {}; return HALL
 function setHallRoom(k) {
   const r = HALL_ROOMS.find(x => x[0] === k); if (!r) return;
   const v = lsGet('mtgpt.hallLook', null) || {}; v.room = k; v.wall = r[2].wall; v.desk = r[2].desk; lsSet('mtgpt.hallLook', v);
-  applyHallLook(); const w = document.querySelector('#hall .hall-world'); if (w) { const old = w.querySelector(':scope > .hall-decor'); const d = roomDecorEl(k); if (old) old.replaceWith(d); else w.prepend(d); } if (w) { const o2 = w.querySelector(':scope > .desk-objs'); if (o2) o2.replaceWith(deskObjectsEl(k)); } try { if (hallOpen()) ambStart(); } catch (e) {}
+  applyHallLook(); const w = document.querySelector('#hall .hall-world'); if (w) { const old = w.querySelector(':scope > .hall-decor'); const d = roomDecorEl(k); if (old) old.replaceWith(d); else w.prepend(d); } try { if (hallOpen()) ambStart(); } catch (e) {}
 }
 const DC_BANNER = '<svg viewBox="0 0 64 360" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="dcBn" x1="0" x2="1"><stop offset="0" stop-color="#4a0d0d"/><stop offset=".18" stop-color="#8f1d1a"/><stop offset=".5" stop-color="#b22a22"/><stop offset=".82" stop-color="#8a1b18"/><stop offset="1" stop-color="#3f0b0b"/></linearGradient><linearGradient id="dcRod" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6dc8c"/><stop offset="1" stop-color="#8f6420"/></linearGradient></defs>'
   + '<path d="M8 14 H56 V318 L32 290 L8 318 Z" fill="url(#dcBn)" stroke="#d9b45a" stroke-width="2.5"/>'
