@@ -3700,6 +3700,7 @@ function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();
   noteFlightFrom(state.stack[state.stack.length-1].id,`#stackStage .ss-card.top`);
   const c=state.stack.pop(); state.priority={active:false,passed:false};
+  if(c.opp && practiceResolve(c)) return;   // v0.99.91 the practice opponent's own Counterspell
   if(c.opp){ log(`Opponent's ${c.name} resolves — apply its effects at the table`); toast(`Opponent's ${c.name} resolves`,'Its effects are not tracked here. Adjust your board, life or cards by hand.'); render(); return; }
   if(c.targets&&c.targets.length){
     const alive=c.targets.filter(targetStillLegal);
@@ -4488,6 +4489,7 @@ function nextTurn() {
   beginNextTurn();
 }
 function beginNextTurn() {
+  try { if (state && !state.puzzle) practiceOppTurn(); } catch (e) { /* practice opponent only */ }   // v0.99.91 (src/97)
   if (state.puzzle && !state.puzzle.over) { puzzleResult(false, `${state.puzzle.title}: the turn ended and your opponent is at ${state.oppLife} life.`); return; }   // v0.99.90 a puzzle is one turn
   state.turn++;
   if (state.extraTurns > 0) { state.extraTurns--; log('Extra turn begins'); }
@@ -6178,7 +6180,7 @@ function renderManaPool() {
 // (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
 let renderCache = null, layoutQueued = false;
 function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
-function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } try { autoResumeTurn(); } catch (e) { /* turn flow only */ } try { drawPuzzleBar(); } catch (e) { /* puzzle bar only */ } }
+function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } try { autoResumeTurn(); } catch (e) { /* turn flow only */ } try { drawPuzzleBar(); } catch (e) { /* puzzle bar only */ } try { practiceHud(); } catch (e) { /* label only */ } }
 function layoutPass() {
   layoutQueued = false;
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
@@ -6374,9 +6376,10 @@ function openCombatHelper(){
 // Goldfish combat damage: the opponent has no blockers, so every attacker connects.
 function dealCombatDamage(){
   const cb=state.combat; if(!cb||cb.dealt||!cb.attackers||!cb.attackers.length) return;
-  let total=0; const parts=[]; const dealers=[];
+  let total=0; const parts=[]; const dealers=[]; let blk=null; try { blk=practiceBlock(cb.attackers); } catch(e) { blk=null; }   // v0.99.91 a practice opponent may chump-block
   for(const id of cb.attackers){
     const f=findCard(id); if(!f||f.zone!=='battlefield') continue;
+    if(id===blk){ const tr=hasKw(f.card,'trample'), over=tr?Math.max(0,powerOf(f.card).n-1)*(hasKw(f.card,'double strike')?2:1):0; parts.push(`${f.card.name} blocked by a 1/1${over?`, ${over} tramples over`:''}`); log(`Practice opponent: chump-blocks ${f.card.name} with a 1/1`); total+=over; continue; }
     const pw=powerOf(f.card), mult=hasKw(f.card,'double strike')?2:1;
     if(pw.n>0) dealers.push(f.card);
     total+=pw.n*mult; parts.push(`${f.card.name} ${pw.n*mult}${mult===2?' (double strike)':''}${pw.star?' (* power counted as 0: adjust the opponent life by hand)':''}`);
@@ -6386,7 +6389,7 @@ function dealCombatDamage(){
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
-  const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn;
+  const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn; try { if(total>0) recapNote('opp',-total); } catch(e) { /* recap only */ }   // v0.99.91 combat damage counts in the recap too
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
@@ -7078,8 +7081,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.90';
+const APP_VERSION = '0.99.91';
 const CHANGELOG = [
+  { v: '0.99.91', title: 'Practice opponent', notes: ['NEW: Practice opponent (Game tools). The goldfish can fight back: choose Aggro, Midrange or Control (or keep the Goldfish) and Easy, Normal or Hard.', 'Its turn happens between yours: it attacks you with a clock that grows (Aggro hits hardest), and Midrange and Control destroy your biggest creature every few turns (not hexproof or indestructible ones). A note and the log say what it did.', 'On your turn a Control opponent may cast Counterspell at a spell you cast: it goes on the stack, so you can respond to it (or let it resolve and your spell is countered). Aggro and Midrange opponents may chump-block your biggest attacker (not fliers or menace; trample still gets through).', 'The opponent\u2019s life box shows who you are playing against. Undo takes back what it did. Puzzles always use the goldfish.', 'Combat damage now counts in the game recap too.'] },
   { v: '0.99.90', title: 'Puzzles', notes: ['NEW: Puzzles (Library contents, or Game tools). Win-this-turn puzzles with real cards: each starts in your main phase with your hand, lands and creatures set out and your opponent at a set life total; find the line that wins before the turn ends. Five to start, from one star to three (Two bolts, Haste makes waste, Spike and spear, Pump and prowess, Everything at once), each with a hint.', 'A bar over the table shows the puzzle, the life to beat, Hint and Restart. Win and it is marked solved (with Next puzzle); end the turn without winning and you can try again.', 'Save this moment as a puzzle (Game tools): freezes any position of your own games (hand, battlefield with tokens and counters, graveyard, exile, the top of your library and both life totals) so you can replay it and look for a better line.'] },
   { v: '0.99.89', title: 'Game recaps', notes: ['NEW: every game is written down as you play: the land you played, the spells you cast and the damage you dealt each turn. When the game ends, the Victory / Defeat window shows it as an inked page: the turn you won (or lost), a chart of the damage dealt each turn with your best turn marked, and a turn-by-turn list.', 'Each deck keeps its last 20 recaps in its Librarian\u2019s notes in the Library book (Recent games: W T5, W T6 …); click one to reopen it. Undo takes back what it undoes from the recap too.'] },
   { v: '0.99.88', title: 'Opening-hand lab', notes: ['NEW: Opening-hand lab (Library contents). Pick a deck and it draws 10,000 opening hands: how many lands the first seven hold, how often you keep 7, 6 or 5 with the London mulligan (you set the land range you keep), and how often you make every land drop through turn 5.', 'Pick a card to see, turn by turn on the play or on the draw, how often it is in your hand and how often you can cast it (lands played one a turn must make its colors; mana rocks like Mind Stone and Signets can be counted too). The on-curve turn is highlighted.', 'Sample hand shows one kept hand with its pictures, so you can get a feel for the deck.'] },
@@ -9250,7 +9254,7 @@ function graveReturnEffect(tx, src) {
 // Static pictures in the top bar that light up while a game state applies: things the app can see for itself (spells cast this turn, delirium,
 // threshold, metalcraft, revolt, morbid, landfall, the city's blessing) and things only you know (monarch, initiative, day/night, counters), which you set by clicking.
 function noteCast(c) {
-  if (!state) return; try { recapNote('cast', c && c.name); } catch (e) { /* recap only */ } const sc = state.spellsCast; state.spellsCast = { turn: state.turn, n: (sc && sc.turn === state.turn ? sc.n : 0) + 1 };
+  if (!state) return; try { recapNote('cast', c && c.name); } catch (e) { /* recap only */ } try { if (c && c.id) practiceOnCast(c); } catch (e) { /* practice opponent only */ } const sc = state.spellsCast; state.spellsCast = { turn: state.turn, n: (sc && sc.turn === state.turn ? sc.n : 0) + 1 };
   // v0.94.4 remember each spell's type line this turn, for "the second creature spell you cast this turn" (Vengevine)
   const tl = state.castTypes && state.castTypes.turn === state.turn ? state.castTypes.list : [];
   state.castTypes = { turn: state.turn, list: tl.concat([{ id: c.id, t: frontType(c) || '' }]) };
@@ -15500,6 +15504,72 @@ function drawPuzzleBar() {
 }
 
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#btnSavePuzzle, #btnPuzzles'); if (!b) return; try { document.getElementById('gameMenu').hidden = true; } catch (er) {} if (b.id === 'btnSavePuzzle') savePuzzleFromGame(); else openPuzzles(); });
+// ---- v0.99.91 Practice opponent: the goldfish can fight back. Off by default ("Goldfish").
+// Between your turns the opponent takes a turn of its own: it attacks you (a clock that grows), and sometimes destroys your best creature.
+// On your turn a Control opponent may counter a spell you cast (its Counterspell goes on the stack, so you can respond to it), and an
+// Aggro or Midrange opponent may chump-block your biggest attacker. Everything it does is logged and shown; Undo takes it back.
+// Kept in 'mtgpt.practice' = { style: 'off'|'aggro'|'midrange'|'control', level: 1|2|3 }.
+const PRACTICE_STYLES = [
+  ['off', 'Goldfish', 'The opponent does nothing: the classic goldfish.'],
+  ['aggro', 'Aggro', 'Attacks every turn and hits harder each turn; chump-blocks now and then.'],
+  ['midrange', 'Midrange', 'A steadier clock, blocks your biggest attacker, and kills a creature every other turn.'],
+  ['control', 'Control', 'Counters some of your spells (you can respond), removes threats, and attacks only late.']];
+function practice() { const v = lsGet('mtgpt.practice', null) || {}; return { style: PRACTICE_STYLES.some(s => s[0] === v.style) ? v.style : 'off', level: [1, 2, 3].includes(v.level) ? v.level : 2 }; }
+const practiceOn = () => !!state && !state.puzzle && practice().style !== 'off';
+function pRand() { return Math.random(); }
+// the opponent's turn, played between two of yours. k = how many turns the opponent has had (1 after your first turn)
+function practiceOppTurn() {
+  if (!practiceOn()) return;
+  const P = practice(), k = (state.oppTurns = (state.oppTurns || 0) + 1), mult = [0, .6, 1, 1.4][P.level], done = [];
+  const clock = { aggro: [0, 0, 2, 3, 5, 6, 7], midrange: [0, 0, 0, 2, 3, 4, 5], control: [0, 0, 0, 0, 0, 2, 3] }[P.style] || [];
+  const dmg = Math.round((clock[Math.min(k, clock.length - 1)] || 0) * mult);
+  state.pOpp = { counters: P.style === 'control' && k >= 2 ? (P.level === 3 ? 2 : 1) : 0, blocks: (P.style === 'aggro' || P.style === 'midrange') && k >= 2 ? 1 : 0 };
+  if (dmg > 0) { const d = preventDamage('you', dmg, 'Opponent'); if (d > 0) { changeLife(-d, true); done.push(`attacks you for ${d}`); } else done.push(`attacks you, but the damage is prevented`); }
+  const every = { midrange: P.level === 3 ? 2 : 2, control: P.level === 3 ? 2 : 3, aggro: P.level === 3 ? 4 : 0 }[P.style] || 0, from = P.style === 'control' ? 3 : 3;
+  if (every && k >= from && (k - from) % every === 0) {
+    const tgt = state.battlefield.filter(c => permZone(c) === 'creatures' && !c.opp && !hasKw(c, 'hexproof') && !hasKw(c, 'shroud') && !hasKw(c, 'indestructible')).sort((a, b) => ptCalc(b).p - ptCalc(a).p || ((cardInfo(b.name) || {}).cmc || 0) - ((cardInfo(a.name) || {}).cmc || 0))[0];
+    if (tgt) { try { destroyPerm(tgt, 'Opponent\u2019s removal'); } catch (e) { moveCard(tgt.id, 'graveyard'); } done.push(`destroys your ${tgt.name}`); }
+  }
+  const msg = done.length ? `Opponent's turn ${k}: it ${done.join(' and ')}.` : `Opponent's turn ${k}: it does nothing you can see.`;
+  log(msg); toast(`Opponent (${PRACTICE_STYLES.find(s => s[0] === P.style)[1]})`, msg.replace(/^Opponent's turn \d+: it /, '').replace(/^./, c => c.toUpperCase()));
+}
+// a spell you cast: a Control opponent may answer it with a Counterspell on the stack (you get priority to respond)
+function practiceOnCast(c) {
+  if (!practiceOn() || !c || c.opp || c.ability || c.copy) return;
+  const P = practice(), po = state.pOpp || {}; if (!(po.counters > 0)) return;
+  const mv = (cardInfo(c.name) || {}).cmc || 0, minMv = [0, 3, 2, 1][P.level], chance = [0, .45, .65, .85][P.level];
+  if (mv < minMv || pRand() > chance) return;
+  po.counters--; state.pOpp = po;
+  setTimeout(() => { if (!state || !state.stack.some(x => x.id === c.id)) return;
+    castOppSpell('Counterspell', 'Instant'); const top = state.stack[state.stack.length - 1]; if (top && top.opp) { top.oppFx = { kind: 'counter', targetId: c.id, targetName: c.name }; top.text = `Counter target spell (${c.name}).`; }
+    log(`Practice opponent: casts Counterspell targeting your ${c.name}. You may respond.`); render(); }, 250);
+}
+// resolving the practice opponent's own spells (the ones it chose itself)
+function practiceResolve(c) {
+  if (!c || !c.oppFx) return false;
+  if (c.oppFx.kind === 'counter') { const t = state.stack.find(x => x.id === c.oppFx.targetId);
+    if (t) { counterStackObject(t.id, 'Opponent’s Counterspell'); log(`Opponent's Counterspell counters your ${c.oppFx.targetName}`); }
+    else log(`Opponent's Counterspell has no target left and does nothing`); render(); return true; }
+  return false;
+}
+// combat: an Aggro or Midrange opponent chump-blocks your biggest attacker it is able to block (not flying, not menace)
+function practiceBlock(attackers) {
+  if (!practiceOn()) return null; const P = practice(), po = state.pOpp || {}; if (!(po.blocks > 0)) return null;
+  const chance = (P.style === 'midrange' ? .6 : .4) + (P.level - 2) * .2; if (pRand() > chance) return null;
+  const cands = attackers.map(id => (findCard(id) || {}).card).filter(c => c && !hasKw(c, 'flying') && !hasKw(c, 'menace') && !hasKw(c, "can't be blocked") && !hasKw(c, 'shadow')).sort((a, b) => ptCalc(b).p - ptCalc(a).p);
+  if (!cands.length) return null; po.blocks--; state.pOpp = po; return cands[0].id;
+}
+function openPractice() {
+  const m = modal('Practice opponent', { width: 560 }); const box = h('div', { class: 'pr-grid' });
+  const draw = () => { const P = practice();
+    box.replaceChildren(...PRACTICE_STYLES.map(([k, l, d]) => h('button', { class: 'pr-card' + (P.style === k ? ' on' : ''), onclick: () => { lsSet('mtgpt.practice', { style: k, level: P.level }); draw(); render(); } }, h('b', { text: l }), h('span', { class: 'small muted', text: d }))),
+      h('div', { class: 'pr-lvl' }, h('span', { class: 'small', text: 'How hard: ' }), ...[[1, 'Easy'], [2, 'Normal'], [3, 'Hard']].map(([v, l]) => h('button', { class: P.level === v ? 'primary' : '', text: l, onclick: () => { lsSet('mtgpt.practice', { style: P.style, level: v }); draw(); } })))); };
+  m.body.append(h('p', { class: 'small muted', text: 'Practise against an opponent that fights back. Its turn happens between yours (you see what it did in a note and the log); on your turn it may counter a spell or block. Undo works as usual. Puzzles always use the goldfish.' }), box);
+  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() })); draw();
+}
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#btnPractice'); if (!b) return; try { document.getElementById('gameMenu').hidden = true; } catch (er) {} openPractice(); });
+// the opponent's life box says who you are playing against
+function practiceHud() { const l = document.querySelector('#oppBox .hudlabel'); if (!l) return; const P = practice(), on = practiceOn(); const t = on ? `Opp · ${PRACTICE_STYLES.find(s => s[0] === P.style)[1]}` : 'Opp'; if (l.textContent !== t) { l.textContent = t; l.title = on ? 'Practice opponent: Game tools → Practice opponent' : ''; } }
 init();
 
 })();

@@ -308,6 +308,7 @@ function resolveTopOfStack() {
   if(!state||!state.stack.length) return; snap();
   noteFlightFrom(state.stack[state.stack.length-1].id,`#stackStage .ss-card.top`);
   const c=state.stack.pop(); state.priority={active:false,passed:false};
+  if(c.opp && practiceResolve(c)) return;   // v0.99.91 the practice opponent's own Counterspell
   if(c.opp){ log(`Opponent's ${c.name} resolves — apply its effects at the table`); toast(`Opponent's ${c.name} resolves`,'Its effects are not tracked here. Adjust your board, life or cards by hand.'); render(); return; }
   if(c.targets&&c.targets.length){
     const alive=c.targets.filter(targetStillLegal);
