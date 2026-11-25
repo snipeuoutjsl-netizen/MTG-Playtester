@@ -1,5 +1,10 @@
 
 
+## v0.99.101
+- src/99-library-box.js: libBoxEl (3D box: faces .lbx-f front/back/left/right/bottom/inner, lid .lbx-lid hinged at the back top edge, --lid 16deg on hover, 118deg open; tiltWith for the pointer) placed in .lib-head between .lib-head-t and .lib-head-go.
+- libOpenBox: .lbx-ov fixed overlay in #hall; a clone of the box (.lbx-ghost) sits at the same screen spot above the backdrop and opens; the cards deal out after 560ms with the same keyframes as the game's opening-hand deal (scale .4, rotate -10deg, 560ms, cubic-bezier(.2,.8,.2,1), 170ms apart for the first 7, then the rest within ~1.6s) and sfx('draw'); closing flies them back and shuts the lid. Fit: biggest --cw (150 down to 66, phones 58) with no scrolling.
+- Escape: the overlay's capture listener handles it first (zoom, then box); the hall's Escape skips while .lbx-ov is open.
+
 ## v0.99.100
 - Ships the Library redesign described under v0.99.99 below: the v0.99.99 merge landed only the branch's first commit (the 3D room work), so the release had the old Library. Release check from now on: the release's app.js must contain the newest feature before telling anyone it shipped.
 

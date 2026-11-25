@@ -313,4 +313,4 @@ function drawHall() {
   requestAnimationFrame(() => fitBookPages(world)); setTimeout(() => fitBookPages(world), 400);
   restoreDeskDeck(world);   // v0.99.71 a deck you were editing stays on the desk after the redraw
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull')) { e.preventDefault(); closeHall(true); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && hallOpen() && state && state.deckName && !document.querySelector('#modalRoot .backdrop') && !document.querySelector('#hall .dbx-pull') && !document.querySelector('#hall .lbx-ov')) { e.preventDefault(); closeHall(true); } });
