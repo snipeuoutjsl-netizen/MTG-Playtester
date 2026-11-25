@@ -15,8 +15,8 @@ function preventDamage(key, n, src) {
   }
   return left;
 }
-function addShield(where, n, src, text, once) {
-  const o = { kind: 'shield', n, once: !!once, until: 'eot', srcName: src, text };
+function addShield(where, n, src, text, once, until) {
+  const o = { kind: 'shield', n, once: !!once, until: until || 'eot', turn: state.turn, srcName: src, text };
   if (where === 'you') o.who = 'you'; else o.targetId = where;
   return addFx(o);
 }

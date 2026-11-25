@@ -55,7 +55,7 @@ function skPile(list, busy) {
 // called just before the stack window is redrawn: remember where each card sits, and keep a copy of any that are about to go
 function skBeforeDraw() {
   const st = $('#stackStage'); if (!st) return null;
-  const old = new Map(); for (const el of st.querySelectorAll('.skp-card[data-id]')) old.set(el.dataset.id, { el, r: el.getBoundingClientRect() });
+  const old = new Map(); for (const el of st.querySelectorAll('.skp-card[data-id]')) old.set(el.dataset.id, { el, r: el.getBoundingClientRect(), w: el.offsetWidth, h: el.offsetHeight, tf: getComputedStyle(el).transform });
   return old;
 }
 // … and just after: a card no longer on the stack lifts off the pile and fades out where it was
@@ -66,8 +66,11 @@ function skAfterDraw(old) {
   if (!skMotion()) return;
   for (const [id, o] of old) {
     if (now.has(id) || !o.r.width) continue;
+    // v0.99.86 it simply fades up off the top of the pile at its own size and angle (it used to grow for a moment first)
     const g = o.el.cloneNode(true); g.classList.remove('skp-enter', 'ss-card'); g.classList.add('skp-leave'); g.removeAttribute('data-id');
-    Object.assign(g.style, { position: 'fixed', left: o.r.left + 'px', top: o.r.top + 'px', width: o.r.width + 'px', height: o.r.height + 'px', margin: '0', zIndex: 400, pointerEvents: 'none' });
+    const cx = o.r.left + o.r.width / 2, cy = o.r.top + o.r.height / 2;
+    Object.assign(g.style, { position: 'fixed', left: (cx - o.w / 2) + 'px', top: (cy - o.h / 2) + 'px', width: o.w + 'px', height: o.h + 'px', margin: '0', zIndex: 400, pointerEvents: 'none' });
+    g.style.setProperty('--t0', o.tf && o.tf !== 'none' ? o.tf : 'none');
     document.body.append(g); setTimeout(() => g.remove(), 700);
   }
 }

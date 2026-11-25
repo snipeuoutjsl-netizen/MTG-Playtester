@@ -353,8 +353,8 @@ function startTurn() {
     // v0.99.44 CR 503.1 + 117.3: an upkeep (or draw-step) trigger is put on the stack and resolves in that step, so the turn stops there
     // instead of running on to the draw and Main 1 (Summoner's Pact's "pay or lose" used to wait until after the draw).
     const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding;
-    enterStep(1, true); if (busy()) { toast(`Turn ${state.turn}`, 'Upkeep: a triggered ability needs you first.'); }
-    else { enterStep(2, true); if (busy()) toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); else { enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.'); } }
+    enterStep(1, true); if (busy()) { state.autoRun = state.turn; toast(`Turn ${state.turn}`, 'Upkeep: a triggered ability needs you first. The turn carries on to your draw and Main 1 once it has resolved.'); }
+    else { enterStep(2, true); if (busy()) { state.autoRun = state.turn; toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); } else { enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.'); } }
   } else toast(`Turn ${state.turn}`, 'Untap step. Press Next phase to continue.');
   render(); turnBanner();
   flushTriggers();
@@ -363,7 +363,7 @@ function startTurn() {
 // v0.99.36 CR 508.1d: a creature that "attacks each combat if able" must be among the attackers you declare. You still declare (the Declare attackers window,
 // with it already chosen and locked, and you may add others); no way of moving on (Next, clicking a later step, Next turn) may pass the declare-attackers step without it.
 function requiredAttackGate(target) {
-  if (!state || state.phase !== 'play' || state.combat.declared) return false;
+  if (!state || state.phase !== 'play' || (state.combat && state.combat.declared)) return false;
   const atk = STEPS.findIndex(s => s.id === 'attack'); if (atk < 0 || state.step > atk || target <= atk && state.step !== atk) return false;
   if (!mandatoryAttackers().length) return false;
   if (state.step < atk) { snap(); for (let j = state.step + 1; j <= atk && !state.discarding && !state.pendingTriggers.length; j++) enterStep(j, j !== atk); render(); flushTriggers(); if (state.step !== atk) return true; }
@@ -385,7 +385,7 @@ function nextPhase() {
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
   if (requiredAttackGate(state.step + 1)) return;
-  if (STEPS[state.step].id === 'attack' && !state.combat.declared && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
+  if (STEPS[state.step].id === 'attack' && !(state.combat && state.combat.declared) && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
   if (state.step >= CLEANUP) { nextTurn(); return; }
   jumpToStep(state.step + 1);
 }
@@ -562,4 +562,21 @@ function consumePoolR() {
   const u = POOL_RUSE; POOL_RUSE = null; if (!u || !state || !state.poolR) { normPoolR(); return; }
   for (const col of Object.keys(u)) { let k = u[col]; state.poolR = state.poolR.filter(e => { if (k > 0 && e.col === col && spendOnlyOk(e.only, u._ctx)) { k--; return false; } return true; }); }
   normPoolR();
+}
+
+// v0.99.86 CR 503.1 / 504.1: an upkeep trigger (The One Ring's burden, Phyrexian Arena, Pact payments, Bitterblossom…) resolves IN the upkeep;
+// once it and anything it caused have resolved, the beginning phase carries on by itself (draw, then Main 1), as it did before the trigger.
+// Every upkeep is checked: enterStep(1) fires the 'step' event each turn, so every "At the beginning of your upkeep" ability triggers again.
+let autoRunBusy = false;
+function autoResumeTurn() {
+  if (!state || state.phase !== 'play' || state.autoRun !== state.turn || autoRunBusy) return;
+  if (state.step >= MAIN1) { state.autoRun = 0; return; }
+  const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding || state.resolving || state.resolvingAb || state.phasePause || document.querySelector('#modalRoot .backdrop:not(.dock), #stackStage .res-panel');
+  if (busy()) return;
+  autoRunBusy = true;
+  setTimeout(() => { autoRunBusy = false;
+    if (!state || state.autoRun !== state.turn || busy() || state.step >= MAIN1) return;
+    if (state.step < 2) { enterStep(2, true); if (busy()) { toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); render(); flushTriggers(); return; } }
+    state.autoRun = 0; enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Upkeep and draw done. Main phase 1.'); render(); flushTriggers();
+  }, 450);
 }

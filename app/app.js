@@ -2095,7 +2095,11 @@ function openAbilityEffect(obj, done) {
   if (teach('autoResolve') && !obj.special) {
     let pre = []; try { pre = visibleOptions(effectOptions(tx, obj)); } catch (e) { pre = []; }
     const one = pre.length === 1 && !pre[0].special && typeof pre[0].fn === 'function' ? pre[0] : null;
-    let clean = !!one && (one.full || !uncoveredClauses(tx).length);
+    // v0.99.86 an understood effect resolves by itself even if a clause beside it is not read: that clause is named in the log and a note,
+    // never held in a window with a checklist (Territorial Kavu's "Discard a card. If you do, draw a card." was stopped by its own first clause)
+    let gaps0 = []; try { gaps0 = uncoveredClauses(tx); } catch (e) { gaps0 = []; }
+    const gapNote = () => { const g = gaps0.filter(x => !gapCovered(x, pre)); if (!g.length) return; log(`${obj.sourceName || 'Ability'}: do by hand (the app does not apply this): ${g.join(' ')}`); toast('Do by hand', g.join(' ')); };
+    let clean = !!one;
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
     if (one && /\bpay\b/i.test(one.label || '')) clean = false;   // paying is your decision
     // v0.99.81 an effect that opens its own window (surveil, scry, look at, search ...) is no longer held in the Resolving panel: the window it opens is where you decide, so it opens at once
@@ -2103,16 +2107,18 @@ function openAbilityEffect(obj, done) {
     // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
     if (!one && pre.length > 1 && pre.length <= 4) {
       const plain = tx.replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target'), labs = pre.map(o => String(o.label || '').toLowerCase());   // v0.99.79 "target player or planeswalker" is the target, chosen already: its "or" is not a choice left (Skullcrack)
-      const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain) && !uncoveredClauses(tx).length
+      const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain)
         && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
         && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));
-      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
     }
     if (clean) {
       const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
       log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
-      one.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
+      one.fn(); gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
     }
+    // v0.99.86 nothing the app can apply: say what to do by hand and finish, instead of a window that only says so
+    if (!pre.length) { const t0 = String(tx || '').trim(); log(`${obj.sourceName || 'Ability'}: do by hand (the app does not apply this): ${t0 || 'no text'}`); if (t0) toast(`${obj.sourceName || 'Ability'}: do by hand`, t0); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
   }
   const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 520, sticky: true, noClose: true, resolve: true });
   let opts = visibleOptions(effectOptions(tx, obj));   // v0.99.25 an understood multi-step ability is one ordered button
@@ -2126,7 +2132,7 @@ function openAbilityEffect(obj, done) {
   const applyBtns = [], low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
   const lockOverlaps = o => { const a = low(o.label); for (const r of applyBtns) if (r.o !== o && !r.b.disabled) { const b2 = low(r.o.label); if (b2 && (a.includes(b2) || b2.includes(a))) { r.b.disabled = true; r.b.title = 'Already done as part of: ' + o.label; } } };
   let finished = false; const finishNow = () => { if (finished) return; finished = true; m.close(); log(`Resolved: ${obj.name}`); if (done) done(); };
-  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return; if (m.body.querySelector('.gapbox')) return;
+  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return;   // v0.99.86 a clause left to do by hand no longer holds the window open
     const wait = () => { if (finished) return; if ([...document.querySelectorAll('.modal')].some(x => x !== m.el && !x.classList.contains('res-panel'))) { setTimeout(wait, 300); return; } setTimeout(finishNow, 350); }; wait(); };
   const box = h('div', { class: 'prelist' });
   for (const o of opts) {
@@ -2170,7 +2176,7 @@ function openAbilityEffect(obj, done) {
     delayed ? h('div', { class: 'psub', text: 'A delayed triggered ability was created. In a real game the next turn is your opponent’s, so you draw during THEIR upkeep. In this goldfish game there is no opponent turn, so you draw at the start of your own next upkeep, before your draw step.' }) : null,
     opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
     box,
-    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'The app does NOT apply these lines. Do them by hand, then tick them off:' }), ...miss.map(x => h('label', { class: 'chk' }, h('input', { type: 'checkbox' }), ' ', x))) : null; })());
+    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} miss = miss.filter(x => !gapCovered(x, opts)); return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'Do these by hand (the app does not apply them):' }), ...miss.map(x => h('div', { class: 'small', text: '\u2022 ' + x }))) : null; })());
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => finishNow() }));
 }
 function openCascade(obj, done) {
@@ -2201,6 +2207,14 @@ function openCascade(obj, done) {
   else { toast(`Cascade: nothing found`, `${seen.length} card${seen.length === 1 ? '' : 's'} went to the bottom of your library.`); finish(false); }   // v0.99.82 nothing to decide: no window to dismiss
 }
 
+
+// v0.99.86 is a clause the reader flagged already carried out by one of the options? ("Discard a card." by "Discard 1 card, then draw 1 card")
+function gapCovered(clause, opts) {
+  const N = { a: '1', an: '1', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7' };
+  const norm = t => String(t || '').toLowerCase().replace(/[~.,;:()]/g, ' ').replace(/\b(a|an|one|two|three|four|five|six|seven)\b/g, w => N[w]).replace(/\bcards\b/g, 'card').replace(/\s+/g, ' ').trim();
+  const c = norm(clause).replace(/^(?:then|you) /, '').split(' ').slice(0, 3).join(' ');
+  return !!c && (opts || []).some(o => o && o.label && norm(o.label).includes(c));
+}
 // ---------------------------------------------------------------- static effects (Necrodominance, Rest in Peace, ...)
 function staticFx() {
   const fx = { skipDraw: null, maxHand: 7, gyExile: null };
@@ -4422,8 +4436,8 @@ function startTurn() {
     // v0.99.44 CR 503.1 + 117.3: an upkeep (or draw-step) trigger is put on the stack and resolves in that step, so the turn stops there
     // instead of running on to the draw and Main 1 (Summoner's Pact's "pay or lose" used to wait until after the draw).
     const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding;
-    enterStep(1, true); if (busy()) { toast(`Turn ${state.turn}`, 'Upkeep: a triggered ability needs you first.'); }
-    else { enterStep(2, true); if (busy()) toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); else { enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.'); } }
+    enterStep(1, true); if (busy()) { state.autoRun = state.turn; toast(`Turn ${state.turn}`, 'Upkeep: a triggered ability needs you first. The turn carries on to your draw and Main 1 once it has resolved.'); }
+    else { enterStep(2, true); if (busy()) { state.autoRun = state.turn; toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); } else { enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Untap, upkeep and draw done. Main phase 1.'); } }
   } else toast(`Turn ${state.turn}`, 'Untap step. Press Next phase to continue.');
   render(); turnBanner();
   flushTriggers();
@@ -4432,7 +4446,7 @@ function startTurn() {
 // v0.99.36 CR 508.1d: a creature that "attacks each combat if able" must be among the attackers you declare. You still declare (the Declare attackers window,
 // with it already chosen and locked, and you may add others); no way of moving on (Next, clicking a later step, Next turn) may pass the declare-attackers step without it.
 function requiredAttackGate(target) {
-  if (!state || state.phase !== 'play' || state.combat.declared) return false;
+  if (!state || state.phase !== 'play' || (state.combat && state.combat.declared)) return false;
   const atk = STEPS.findIndex(s => s.id === 'attack'); if (atk < 0 || state.step > atk || target <= atk && state.step !== atk) return false;
   if (!mandatoryAttackers().length) return false;
   if (state.step < atk) { snap(); for (let j = state.step + 1; j <= atk && !state.discarding && !state.pendingTriggers.length; j++) enterStep(j, j !== atk); render(); flushTriggers(); if (state.step !== atk) return true; }
@@ -4454,7 +4468,7 @@ function nextPhase() {
   if (stackLocked()) { stackToast(); return; }
   if (isBlocked()) return;
   if (requiredAttackGate(state.step + 1)) return;
-  if (STEPS[state.step].id === 'attack' && !state.combat.declared && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
+  if (STEPS[state.step].id === 'attack' && !(state.combat && state.combat.declared) && teach('combatHelper') && eligibleAttackers().length) { promptSkipAttack(); return; }
   if (state.step >= CLEANUP) { nextTurn(); return; }
   jumpToStep(state.step + 1);
 }
@@ -4631,6 +4645,23 @@ function consumePoolR() {
   const u = POOL_RUSE; POOL_RUSE = null; if (!u || !state || !state.poolR) { normPoolR(); return; }
   for (const col of Object.keys(u)) { let k = u[col]; state.poolR = state.poolR.filter(e => { if (k > 0 && e.col === col && spendOnlyOk(e.only, u._ctx)) { k--; return false; } return true; }); }
   normPoolR();
+}
+
+// v0.99.86 CR 503.1 / 504.1: an upkeep trigger (The One Ring's burden, Phyrexian Arena, Pact payments, Bitterblossom…) resolves IN the upkeep;
+// once it and anything it caused have resolved, the beginning phase carries on by itself (draw, then Main 1), as it did before the trigger.
+// Every upkeep is checked: enterStep(1) fires the 'step' event each turn, so every "At the beginning of your upkeep" ability triggers again.
+let autoRunBusy = false;
+function autoResumeTurn() {
+  if (!state || state.phase !== 'play' || state.autoRun !== state.turn || autoRunBusy) return;
+  if (state.step >= MAIN1) { state.autoRun = 0; return; }
+  const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding || state.resolving || state.resolvingAb || state.phasePause || document.querySelector('#modalRoot .backdrop:not(.dock), #stackStage .res-panel');
+  if (busy()) return;
+  autoRunBusy = true;
+  setTimeout(() => { autoRunBusy = false;
+    if (!state || state.autoRun !== state.turn || busy() || state.step >= MAIN1) return;
+    if (state.step < 2) { enterStep(2, true); if (busy()) { toast(`Turn ${state.turn}`, 'Draw step: a triggered ability needs you first.'); render(); flushTriggers(); return; } }
+    state.autoRun = 0; enterStep(MAIN1, true); toast(`Turn ${state.turn}`, 'Upkeep and draw done. Main phase 1.'); render(); flushTriggers();
+  }, 450);
 }
 // ---------------------------------------------------------------- mana rocks + soft static-ability checks
 // A mana rock is a nonland permanent with a plain "{T}: Add ..." line. Supported: Add {C}. / Add {C}{C}. / Add {R} or {G}.
@@ -6145,7 +6176,7 @@ function renderManaPool() {
 // (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
 let renderCache = null, layoutQueued = false;
 function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
-function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } }
+function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } try { autoResumeTurn(); } catch (e) { /* turn flow only */ } }
 function layoutPass() {
   layoutQueued = false;
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
@@ -6173,7 +6204,7 @@ function renderInner() {
   lifeFx('you', $('#lifeNum'), has ? state.life : 20);
   lifeFx('opp', $('#oppNum'), has ? (state.oppLife ?? 20) : 20);
   $('#oppBox').title = has && state.dmgHistory && state.dmgHistory.length ? 'Combat damage dealt so far: ' + state.dmgHistory.map(d => `turn ${d.turn}: ${d.dmg}`).join(', ') : 'Goldfish opponent life. Combat damage from your attackers is subtracted automatically.';
-  const cbt = $('#btnCombat'); if (cbt) cbt.hidden = !(has && state.phase === 'play' && STEPS[state.step].id === 'attack' && !state.phasePause && !state.combat.declared);
+  const cbt = $('#btnCombat'); if (cbt) cbt.hidden = !(has && state.phase === 'play' && STEPS[state.step].id === 'attack' && !state.phasePause && !(state.combat && state.combat.declared));
   renderManaPool(); drawStateIcons();
   for (const z of ['library', 'graveyard', 'exile', 'command']) { const n = has ? (state[z] || []).length : 0; const pc = $('#pcnt-' + z); if (!pc) continue; pc.textContent = n; pc.classList.toggle('zero', !n); }
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
@@ -7045,8 +7076,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.85';
+const APP_VERSION = '0.99.86';
 const CHANGELOG = [
+  { v: '0.99.86', title: 'No more Resolving window for understood abilities, The One Ring, and a gentler stack fade', notes: ['RESOLVING: an ability the app understands now always resolves by itself once it leaves the stack (and its target is chosen). A line beside it that the app cannot read no longer holds the window open with a checklist: it is named in the log and in a short note to do by hand. Territorial Kavu\u2019s "Discard a card. If you do, draw a card." goes straight to choosing the card to discard. An ability the app cannot apply at all is a note too, not a window. A window only appears for a real decision ("you may", modes, choose).', 'THE ONE RING: "if you cast it" is read, so casting it gives you protection from everything until your next turn: damage that would be dealt to you is prevented (put onto the battlefield without casting, it does not trigger). Its burden upkeep trigger is checked at the beginning of every upkeep, and the burden ability draws one card per counter.', 'UPKEEP: every "At the beginning of your upkeep" ability is checked each turn, and once it has resolved the turn carries on by itself to the draw and Main 1 (it used to stop in the upkeep, and Next turn from there skipped the rest of the turn).', 'RULES: "You gain protection from everything / hexproof until your next turn" (CR 702.16) for you as a player.', 'STACK: a resolved card just fades up off the top of the pile at its own size (it grew for a moment first).'] },
   { v: '0.99.85', title: 'The stack as a pile of cards, a card wishlist, and one-click "you may"', notes: ['STACK: the stack is now a pile of real cards on the table, the newest on top and in front, each a little askew. An ability is its card with a paper slip across it carrying the ability\u2019s own words, so you see which part of the card is on the stack. The caption beside the pile reads the top object; point at any card in the pile to read that one. A new spell or ability drops onto the pile, and each one lifts off and fades as it resolves or is countered. Buttons, responding, Resolve all and every rule are unchanged.', 'STACK: old leftovers removed: the "N on the stack \u00b7 top: \u2026" summary in the side panel (the panel keeps your opponent\u2019s tools), the code for the old floating stack window, and the "stack N" chip on the phase strip (it also sat over Cleanup). The "green outlines can respond" hint moved to the pile.', 'RESOLVING: "You may do X. If you do, Y and Z" is one choice: do it, or decline. Creeping Chill no longer shows three separate buttons and a line to tick off; one click and it finishes by itself.', 'LIBRARY: the first chapter of the book is titled "Deck Selection" (it said "The Standard Game", which read like the Standard format).', 'NEW: Card wishlist (Library contents, or "Add to card wishlist" on any card\u2019s menu). Add cards by name, set how many, choose the exact printing (art) you want, then Buy on TCGplayer opens their Mass Entry with the list filled in, or Copy list for any other store.'] },
   { v: '0.99.84', title: 'Rules batch 4', notes: ['RULES (CR 105.1): "of your choice" asks as it resolves. Gods Willing asks for a color and the creature gets protection from it; "becomes the basic land type of your choice" and "the color or colors of your choice" ask too.', 'RULES: protection from a color (and from creatures, artifacts, everything), infect, wither, shadow, fear and intimidate can now be given until end of turn.', 'RULES: "unless <condition>" is read from the turn record. Chart a Course does not ask you to discard after you attacked.', 'RULES (CR 402.2): "You have no maximum hand size until your next turn" (Enter the Infinite) really lifts the limit at cleanup. (CR 702.8) "You may cast spells this turn as though they had flash" (Alchemist\u2019s Refuge, Emergence Zone) lets you cast them at instant speed.', 'RULES: "Vehicles you control become artifact creatures until end of turn" (Armed and Armored) and "it becomes an artifact creature until end of turn" work like crewing. "Equipped creature gets +2/+2 until end of turn" (Adventuring Gear) pumps the equipped creature. "~ gets +N/+N" read with the card\u2019s own name works everywhere.', 'RULES: "Those creatures gain vigilance until end of turn" after "Put a +1/+1 counter on each creature you control" (Ajani Goldmane) or "Creatures you control get …" applies to those creatures.', 'RULES: -X/-X and +X/+X with no X paid (Sickening Shoal) ask for X.', 'RULES: "Activate only if this land entered this turn" (Gathering Place and the other Desert lands) and "if two or more nonland permanents entered under your control this turn" are read.', 'RULES: lure and combat requirements ("blocks this turn if able", "attacks this turn if able", "can\u2019t attack or block this turn") are kept in Active effects on your creature, or noted for the real table when they are on your opponent\u2019s.', '157 fewer sentences are left as Remember notes; 171 more cards are read in full (12,052).'] },
   { v: '0.99.83', title: 'Creatures first on upright phones', notes: ['PHONE (upright): the battlefield puts creatures first. Their row gets about twice the height it had, the lands-and-permanents row a little less, and the deck / graveyard / exile row is lower, so creature cards are drawn much larger (about 40% wider with three creatures out).', 'PHONE (upright): the game-state icons share the first row with Turn and Mana, showing only the lit ones and \u22ef (tap it for all of them). The battlefield gets that row back.'] },
@@ -14700,8 +14732,8 @@ function preventDamage(key, n, src) {
   }
   return left;
 }
-function addShield(where, n, src, text, once) {
-  const o = { kind: 'shield', n, once: !!once, until: 'eot', srcName: src, text };
+function addShield(where, n, src, text, once, until) {
+  const o = { kind: 'shield', n, once: !!once, until: until || 'eot', turn: state.turn, srcName: src, text };
   if (where === 'you') o.who = 'you'; else o.targetId = where;
   return addFx(o);
 }
@@ -14841,6 +14873,7 @@ function turnCond(t, g) {
   if (!state) return null;
   let m;
   if (/^you attacked (?:with (?:a|one or more) creatures? )?this turn$/.test(t)) return memCount('attacked') > 0;   // raid
+  if (/^you cast (?:it|~|this (?:creature|artifact|enchantment|permanent|card))$/.test(t)) return g && g.enteredFrom ? g.enteredFrom === 'stack' : null;   // v0.99.86 The One Ring, Wildfire Eternal: "if you cast it" (CR 603.4)
   if ((m = t.match(/^you attacked with (\w+) or more creatures this turn$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : memCount('attacked') >= k; }
   if (/^you(?:'ve| have)? not attacked this turn$|^you didn'?t attack this turn$/.test(t)) return memCount('attacked') === 0;
   if (/^a permanent (?:you controlled )?left the battlefield (?:under your control )?this turn$/.test(t)) return memThisTurn('left').length > 0;   // revolt
@@ -14938,6 +14971,15 @@ function batch4Options(t, sents, obj, src, out, drop) {
       const land = /land type/i.test(m[1]), list = land ? B4_BASICS : B4_COLORS;
       out.push({ covers: [s], full: sents.length === 1, label: `Choose ${land ? 'a basic land type' : 'a color'}: ${s.replace(/\.$/, '')}`, fn: () => b4Choose(`${src}: choose ${land ? 'a basic land type' : 'a color'}`, s, list, v => {
         const s2 = s.replace(m[1], land ? v : /colors/.test(m[1]) ? v : v); log(`${src}: chose ${v}`); b4RunSentence(s2, obj, src); }) });
+      remDrop(s); continue;
+    }
+    // 1b. CR 702.16b/e a player with protection from everything: damage that would be dealt to you is prevented (The One Ring)
+    if ((m = /^you gain (protection from everything|protection from [a-z ]+|hexproof|shroud) (until your next turn|until end of turn|this turn)\.?$/i.exec(s))) {
+      const u = /next turn/i.test(m[2]) ? 'yourNextTurn' : 'eot', every = /everything/i.test(m[1]), uw = u === 'eot' ? 'until end of turn' : 'until your next turn';
+      out.push({ covers: [s], full: sents.length === 1, label: `You gain ${m[1]} ${uw}${every ? ' (all damage to you is prevented)' : ''}`, fn: () => { snap();
+        if (every) addShield('you', Infinity, src, `Protection from everything ${uw}: damage to you is prevented`, false, u);
+        else addFx({ kind: 'note', until: u, turn: state.turn, srcName: src, text: `You have ${m[1]} ${uw}` });
+        log(`${src}: you gain ${m[1]} ${uw}${every ? ': damage that would be dealt to you is prevented, and you can\'t be targeted, enchanted or blocked by anything (CR 702.16)' : ''}`); render(); } });
       remDrop(s); continue;
     }
     // 2. "You have no maximum hand size until your next turn / this turn / for the rest of the game"
@@ -15055,7 +15097,7 @@ function skPile(list, busy) {
 // called just before the stack window is redrawn: remember where each card sits, and keep a copy of any that are about to go
 function skBeforeDraw() {
   const st = $('#stackStage'); if (!st) return null;
-  const old = new Map(); for (const el of st.querySelectorAll('.skp-card[data-id]')) old.set(el.dataset.id, { el, r: el.getBoundingClientRect() });
+  const old = new Map(); for (const el of st.querySelectorAll('.skp-card[data-id]')) old.set(el.dataset.id, { el, r: el.getBoundingClientRect(), w: el.offsetWidth, h: el.offsetHeight, tf: getComputedStyle(el).transform });
   return old;
 }
 // … and just after: a card no longer on the stack lifts off the pile and fades out where it was
@@ -15066,8 +15108,11 @@ function skAfterDraw(old) {
   if (!skMotion()) return;
   for (const [id, o] of old) {
     if (now.has(id) || !o.r.width) continue;
+    // v0.99.86 it simply fades up off the top of the pile at its own size and angle (it used to grow for a moment first)
     const g = o.el.cloneNode(true); g.classList.remove('skp-enter', 'ss-card'); g.classList.add('skp-leave'); g.removeAttribute('data-id');
-    Object.assign(g.style, { position: 'fixed', left: o.r.left + 'px', top: o.r.top + 'px', width: o.r.width + 'px', height: o.r.height + 'px', margin: '0', zIndex: 400, pointerEvents: 'none' });
+    const cx = o.r.left + o.r.width / 2, cy = o.r.top + o.r.height / 2;
+    Object.assign(g.style, { position: 'fixed', left: (cx - o.w / 2) + 'px', top: (cy - o.h / 2) + 'px', width: o.w + 'px', height: o.h + 'px', margin: '0', zIndex: 400, pointerEvents: 'none' });
+    g.style.setProperty('--t0', o.tf && o.tf !== 'none' ? o.tf : 'none');
     document.body.append(g); setTimeout(() => g.remove(), 700);
   }
 }

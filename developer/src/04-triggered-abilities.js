@@ -926,7 +926,11 @@ function openAbilityEffect(obj, done) {
   if (teach('autoResolve') && !obj.special) {
     let pre = []; try { pre = visibleOptions(effectOptions(tx, obj)); } catch (e) { pre = []; }
     const one = pre.length === 1 && !pre[0].special && typeof pre[0].fn === 'function' ? pre[0] : null;
-    let clean = !!one && (one.full || !uncoveredClauses(tx).length);
+    // v0.99.86 an understood effect resolves by itself even if a clause beside it is not read: that clause is named in the log and a note,
+    // never held in a window with a checklist (Territorial Kavu's "Discard a card. If you do, draw a card." was stopped by its own first clause)
+    let gaps0 = []; try { gaps0 = uncoveredClauses(tx); } catch (e) { gaps0 = []; }
+    const gapNote = () => { const g = gaps0.filter(x => !gapCovered(x, pre)); if (!g.length) return; log(`${obj.sourceName || 'Ability'}: do by hand (the app does not apply this): ${g.join(' ')}`); toast('Do by hand', g.join(' ')); };
+    let clean = !!one;
     if (one && /\byou may\b|\bchoose\b|\bup to\b|\bX\b/i.test(tx.replace(/\([^)]*\)/g, ' ')) && !one.def) clean = false;
     if (one && /\bpay\b/i.test(one.label || '')) clean = false;   // paying is your decision
     // v0.99.81 an effect that opens its own window (surveil, scry, look at, search ...) is no longer held in the Resolving panel: the window it opens is where you decide, so it opens at once
@@ -934,16 +938,18 @@ function openAbilityEffect(obj, done) {
     // no effect repeating part of another, none opening its own window: apply them all, in order (CR 608.2c), instead of offering them as buttons
     if (!one && pre.length > 1 && pre.length <= 4) {
       const plain = tx.replace(/\([^)]*\)/g, ' ').replace(/\btarget [^.,;]*/gi, 'target'), labs = pre.map(o => String(o.label || '').toLowerCase());   // v0.99.79 "target player or planeswalker" is the target, chosen already: its "or" is not a choice left (Skullcrack)
-      const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain) && !uncoveredClauses(tx).length
+      const ok = !/\byou may\b|\bchoose\b|\bup to\b|\bX\b|\bany number\b|\bunless\b|\bif you do\b|\bor\b/i.test(plain)
         && pre.every(o => typeof o.fn === 'function' && !o.special && !o.def && o.label && !/^remember\b|\b(?:look at|sort|surveil|scry|choose|search|amass|pick|transform|cascade|pay|target)\b/i.test(o.label))
         && labs.every((a, i) => labs.every((b2, j) => i === j || !b2.includes(a)));
-      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
+      if (ok) { const all = pre.map(o => o.label).join('; '); log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${all}`); toast(`${obj.sourceName || 'Ability'} resolves`, all); for (const o of pre) o.fn(); gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
     }
     if (clean) {
       const lbl = one.label || 'its effect'; { const e = obj.sourceName ? ayGet(obj.sourceName, tx, obj.sourceId) : null; if (e && e.auto && !e.label && one.label) e.label = one.label; }
       log(`${obj.sourceName || 'Ability'}: applied automatically \u2014 ${lbl}`); toast(`${obj.sourceName || 'Ability'} resolves`, lbl);
-      one.fn(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
+      one.fn(); gapNote(); log(`Resolved: ${obj.name}`); render(); if (done) done(); return;
     }
+    // v0.99.86 nothing the app can apply: say what to do by hand and finish, instead of a window that only says so
+    if (!pre.length) { const t0 = String(tx || '').trim(); log(`${obj.sourceName || 'Ability'}: do by hand (the app does not apply this): ${t0 || 'no text'}`); if (t0) toast(`${obj.sourceName || 'Ability'}: do by hand`, t0); log(`Resolved: ${obj.name}`); render(); if (done) done(); return; }
   }
   const m = modal(obj.sourceName ? `Resolving: ${obj.sourceName}` : 'Ability resolves', { width: 520, sticky: true, noClose: true, resolve: true });
   let opts = visibleOptions(effectOptions(tx, obj));   // v0.99.25 an understood multi-step ability is one ordered button
@@ -957,7 +963,7 @@ function openAbilityEffect(obj, done) {
   const applyBtns = [], low = x => String(x || '').toLowerCase().replace(/^mode \d+: /, '');
   const lockOverlaps = o => { const a = low(o.label); for (const r of applyBtns) if (r.o !== o && !r.b.disabled) { const b2 = low(r.o.label); if (b2 && (a.includes(b2) || b2.includes(a))) { r.b.disabled = true; r.b.title = 'Already done as part of: ' + o.label; } } };
   let finished = false; const finishNow = () => { if (finished) return; finished = true; m.close(); log(`Resolved: ${obj.name}`); if (done) done(); };
-  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return; if (m.body.querySelector('.gapbox')) return;
+  const maybeFinish = () => { if (!applyBtns.length || applyBtns.some(r => !r.b.disabled)) return;   // v0.99.86 a clause left to do by hand no longer holds the window open
     const wait = () => { if (finished) return; if ([...document.querySelectorAll('.modal')].some(x => x !== m.el && !x.classList.contains('res-panel'))) { setTimeout(wait, 300); return; } setTimeout(finishNow, 350); }; wait(); };
   const box = h('div', { class: 'prelist' });
   for (const o of opts) {
@@ -1001,7 +1007,7 @@ function openAbilityEffect(obj, done) {
     delayed ? h('div', { class: 'psub', text: 'A delayed triggered ability was created. In a real game the next turn is your opponent’s, so you draw during THEIR upkeep. In this goldfish game there is no opponent turn, so you draw at the start of your own next upkeep, before your draw step.' }) : null,
     opts.length ? h('div', { class: 'muted small', text: 'Suggested effects. You decide: click to apply them, or do them by hand with the card menus (targets and choices are up to you).' }) : h('div', { class: 'muted small', text: 'I do not recognise an effect I can apply automatically. Carry it out by hand using the card menus, then press Done.' }),
     box,
-    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'The app does NOT apply these lines. Do them by hand, then tick them off:' }), ...miss.map(x => h('label', { class: 'chk' }, h('input', { type: 'checkbox' }), ' ', x))) : null; })());
+    (() => { let miss = []; try { miss = opts.some(o => o.full) ? [] : uncoveredClauses(tx); } catch (e) {} miss = miss.filter(x => !gapCovered(x, opts)); return miss.length ? h('div', { class: 'gapbox' }, h('div', { class: 'muted small', text: 'Do these by hand (the app does not apply them):' }), ...miss.map(x => h('div', { class: 'small', text: '\u2022 ' + x }))) : null; })());
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => finishNow() }));
 }
 function openCascade(obj, done) {
@@ -1032,3 +1038,11 @@ function openCascade(obj, done) {
   else { toast(`Cascade: nothing found`, `${seen.length} card${seen.length === 1 ? '' : 's'} went to the bottom of your library.`); finish(false); }   // v0.99.82 nothing to decide: no window to dismiss
 }
 
+
+// v0.99.86 is a clause the reader flagged already carried out by one of the options? ("Discard a card." by "Discard 1 card, then draw 1 card")
+function gapCovered(clause, opts) {
+  const N = { a: '1', an: '1', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7' };
+  const norm = t => String(t || '').toLowerCase().replace(/[~.,;:()]/g, ' ').replace(/\b(a|an|one|two|three|four|five|six|seven)\b/g, w => N[w]).replace(/\bcards\b/g, 'card').replace(/\s+/g, ' ').trim();
+  const c = norm(clause).replace(/^(?:then|you) /, '').split(' ').slice(0, 3).join(' ');
+  return !!c && (opts || []).some(o => o && o.label && norm(o.label).includes(c));
+}
