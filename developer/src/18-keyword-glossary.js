@@ -261,8 +261,11 @@ function fitBattlefieldCards() {
     const n = { creatures: 0, noncreature: 0, lands: 0 }; for (const c of state.battlefield) { const z = permZone(c); if (z in n) n[z]++; }
     // v0.99.78 an empty zone shrinks to its label, so the zones with cards get the height (and their cards grow into it)
     const w = k => Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(n[k]) * 0.42)).toFixed(2), row = k => n[k] ? `minmax(0, ${w(k)}fr)` : 'minmax(34px, 0.12fr)';
-    const nb = n.noncreature + n.lands, bot = nb ? `minmax(0, ${Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(nb) * 0.42)).toFixed(2)}fr)` : 'minmax(34px, 0.12fr)';   // v0.99.81 lands and the other permanents share one row
-    mat.style.setProperty('grid-template-rows', `92px ${row('creatures')} auto ${bot}`, 'important');
+    // v0.99.83 creatures come first: their row gets about twice the share it used to, the lands-and-permanents row a little less, and the
+    // deck/graveyard/exile row is lower, so creatures are drawn large on an upright phone
+    const nb = n.noncreature + n.lands, bot = nb ? `minmax(0, ${(Math.max(0.55, Math.min(3, 0.45 + Math.sqrt(nb) * 0.42)) * 0.8).toFixed(2)}fr)` : 'minmax(34px, 0.12fr)';   // v0.99.81 lands and the other permanents share one row
+    const cre = n.creatures ? `minmax(0, ${(Math.max(1, Math.min(3, 0.45 + Math.sqrt(n.creatures) * 0.42)) * 1.9).toFixed(2)}fr)` : row('creatures');
+    mat.style.setProperty('grid-template-rows', `74px ${cre} auto ${bot}`, 'important');
   } else if (mat) mat.style.removeProperty('grid-template-rows'); } catch (e) { /* layout only */ }
   // v0.99.78 side by side (desktop, tablets, sideways phones): lands and artifacts/enchantments share the row by how many cards each holds,
   // so a big mana base gets the width and an empty zone shrinks to its label (and the other way round)

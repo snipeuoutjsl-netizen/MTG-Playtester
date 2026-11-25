@@ -1,5 +1,7 @@
 
 
+**v0.99.83** Portrait mat rows: `74px <creatures ×1.9> auto <bottom ×0.8>` (fitBattlefieldCards). Portrait HUD: #gstates flexes into row 1 (gs-trim nowrap, min 86px).
+
 **v0.99.82** src/89-in-app-dialogs.js: appAsk(title,text,ok,danger)->Promise<bool>, appNotice, appAskNumber. Never use alert/confirm/prompt. Untracked-opponent resolution: no modal (log + resLines). Cascade/discover no-hit: toast, no OK. hallFit reserves the corner buttons' height in portrait. `.bk-tile.out .bk-ribbon` hidden. `#gstates[hidden]` display none. Portrait mullpick hand not height-capped; same large hand as mullhand.
 
 **v0.99.81** src/88-turn-memory-and-conditions.js: one turn record (state.mem via memCur/memBump/memCount; fireTrigger calls memOnEvent). evalCond asks turnCond first. interveningIf() used by fireTrigger's add (skip when false) and effectOptions (strip when true; 'Does nothing' for a trigger when false). etbCounterCondOk (Raid counters), condCostCut (effectiveCost), restriction kind 'cond' (any 'if …' evalCond reads; unknown -> soft warning). Table: lands+noncreature one zone (areas 'lands noncreature', column-gap 0, portrait 2 columns); fitBattlefieldCards normalises the fr weights to sum 2 (sum < 1 left the row partly empty). Auto-resolve no longer holds window-opening effects (only 'pay').
