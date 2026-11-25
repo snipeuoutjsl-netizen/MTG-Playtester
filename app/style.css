@@ -2748,3 +2748,9 @@ html.portrait-ui .hl-cols { grid-template-columns: 1fr; }
 .pz-list { display: flex; flex-direction: column; gap: 6px; }
 .pz-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03); }
 .pz-row.done { border-color: rgba(120,200,130,.45); } .pz-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; } .pz-ok { color: #8fdc9a; font-size: 12.5px; }
+/* v0.99.91 practice opponent */
+.pr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+html.portrait-ui .pr-grid { grid-template-columns: 1fr; }
+.pr-card { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.03); }
+.pr-card.on { border-color: #e3b95c; box-shadow: 0 0 0 2px rgba(227,185,92,.45); background: rgba(227,185,92,.08); }
+.pr-lvl { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; margin-top: 4px; }

@@ -1,5 +1,7 @@
 
 
+**v0.99.91** src/97-practice-opponent.js: practice() setting, practiceOppTurn (called first in beginNextTurn), practiceOnCast (from noteCast: opp Counterspell with oppFx on the stack, resolved by practiceResolve in resolveTopOfStack), practiceBlock (dealCombatDamage), practiceHud. dealCombatDamage now records recap damage.
+
 **v0.99.90** src/96-puzzles.js: PUZZLES (real cards), startPuzzle (fresh state, Main 1, state.puzzle), puzzleResult (showGameEnd and beginNextTurn defer to it; drawPuzzleBar also ends it when a life total reaches 0), savePuzzleFromGame ('mtgpt.puzzles'), openPuzzles; #puzzleBar.
 
 **v0.99.89** src/95-game-recap.js: state.recap via recapNote (hooks: noteCast, changeOppLife, playLand, changeLife), recapFinish in showGameEnd saves to deck notes .recaps (20), recapEl inked page with SVG chart, recapListEl in libraryNotesEl.

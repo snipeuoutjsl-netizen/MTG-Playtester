@@ -415,7 +415,7 @@ function renderManaPool() {
 // (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
 let renderCache = null, layoutQueued = false;
 function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
-function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } try { autoResumeTurn(); } catch (e) { /* turn flow only */ } try { drawPuzzleBar(); } catch (e) { /* puzzle bar only */ } }
+function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } try { autoResumeTurn(); } catch (e) { /* turn flow only */ } try { drawPuzzleBar(); } catch (e) { /* puzzle bar only */ } try { practiceHud(); } catch (e) { /* label only */ } }
 function layoutPass() {
   layoutQueued = false;
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
@@ -611,9 +611,10 @@ function openCombatHelper(){
 // Goldfish combat damage: the opponent has no blockers, so every attacker connects.
 function dealCombatDamage(){
   const cb=state.combat; if(!cb||cb.dealt||!cb.attackers||!cb.attackers.length) return;
-  let total=0; const parts=[]; const dealers=[];
+  let total=0; const parts=[]; const dealers=[]; let blk=null; try { blk=practiceBlock(cb.attackers); } catch(e) { blk=null; }   // v0.99.91 a practice opponent may chump-block
   for(const id of cb.attackers){
     const f=findCard(id); if(!f||f.zone!=='battlefield') continue;
+    if(id===blk){ const tr=hasKw(f.card,'trample'), over=tr?Math.max(0,powerOf(f.card).n-1)*(hasKw(f.card,'double strike')?2:1):0; parts.push(`${f.card.name} blocked by a 1/1${over?`, ${over} tramples over`:''}`); log(`Practice opponent: chump-blocks ${f.card.name} with a 1/1`); total+=over; continue; }
     const pw=powerOf(f.card), mult=hasKw(f.card,'double strike')?2:1;
     if(pw.n>0) dealers.push(f.card);
     total+=pw.n*mult; parts.push(`${f.card.name} ${pw.n*mult}${mult===2?' (double strike)':''}${pw.star?' (* power counted as 0: adjust the opponent life by hand)':''}`);
@@ -623,7 +624,7 @@ function dealCombatDamage(){
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
-  const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn;
+  const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn; try { if(total>0) recapNote('opp',-total); } catch(e) { /* recap only */ }   // v0.99.91 combat damage counts in the recap too
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);
   toast(`Combat damage: ${total}`, state.oppLife<=0?`Opponent is at ${state.oppLife}: goldfish kill on turn ${state.turn}!`:`Opponent life ${before} → ${state.oppLife}`);
