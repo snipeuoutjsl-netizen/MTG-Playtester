@@ -163,11 +163,11 @@ function tomeCard(tome, c, deckName) {
   ready.catch(() => {}).then(() => { if (tome._card === c) turn(() => put(pre.naturalWidth ? pre : null), false, { back: pre.naturalWidth ? pre.cloneNode(true) : h('div', { class: 'tc-noimg', text: c.name }) }); });
 }
 // v0.99.53 Library look: the wall and the desk top, kept in 'mtgpt.hallLook'
-const HALL_WALLS = [['plaster', 'Warm plaster', ''], ['sage', 'Sage plaster', 'hue-rotate(58deg) saturate(.75) brightness(.95)'], ['midnight', 'Midnight', 'hue-rotate(190deg) saturate(.85) brightness(.78)'], ['oxblood', 'Oxblood', 'hue-rotate(-22deg) saturate(1.7) brightness(.8)'], ['ash', 'Ash grey', 'saturate(.15) brightness(1.05)'], ['boards', 'Wood boards', '']];
-const HALL_DESKS = [['walnut', 'Walnut', ''], ['oak', 'Oak', 'brightness(1.28) saturate(.85) sepia(.12)'], ['mahogany', 'Mahogany', 'hue-rotate(-14deg) saturate(1.45) brightness(.8)'], ['ebony', 'Ebony', 'brightness(.42) saturate(.7)'], ['baize', 'Green baize', '']];
+const HALL_WALLS = [['plaster', 'Warm plaster', ''], ['sage', 'Sage plaster', 'hue-rotate(58deg) saturate(.75) brightness(.95)'], ['midnight', 'Midnight', 'hue-rotate(190deg) saturate(.85) brightness(.78)'], ['oxblood', 'Oxblood', 'hue-rotate(-22deg) saturate(1.7) brightness(.8)'], ['ash', 'Ash grey', 'saturate(.15) brightness(1.05)'], ['boards', 'Wood boards', ''], ['castle', 'Castle stone', ''], ['dungeon', 'Dungeon stone', ''], ['night', 'Night sky', ''], ['moss', 'Mossy stone', '']];
+const HALL_DESKS = [['walnut', 'Walnut', ''], ['oak', 'Oak', 'brightness(1.28) saturate(.85) sepia(.12)'], ['mahogany', 'Mahogany', 'hue-rotate(-14deg) saturate(1.45) brightness(.8)'], ['ebony', 'Ebony', 'brightness(.42) saturate(.7)'], ['birch', 'Birch', 'brightness(1.5) saturate(.45) sepia(.08)'], ['baize', 'Green baize', '']];
 function hallLook() { const v = lsGet('mtgpt.hallLook', null) || {}; return { wall: HALL_WALLS.some(w => w[0] === v.wall) ? v.wall : 'plaster', desk: HALL_DESKS.some(w => w[0] === v.desk) ? v.desk : 'walnut' }; }
 function applyHallLook() { const el = document.getElementById('hall'); if (!el) return; const L = hallLook();
-  [...el.classList].filter(c => /^(wall|desk)-/.test(c)).forEach(c => el.classList.remove(c)); el.classList.add('wall-' + L.wall, 'desk-' + L.desk); }
+  [...el.classList].filter(c => /^(wall|desk|room)-/.test(c)).forEach(c => el.classList.remove(c)); el.classList.add('wall-' + L.wall, 'desk-' + L.desk, 'room-' + hallRoom()); }
 function openHallLook() {
   const m = modal('Library look', { width: 560 });
   const sw = (kind, [k, label, f]) => { const L = hallLook(), on = L[kind] === k;
@@ -182,11 +182,13 @@ function openHallLook() {
 function buildHallLook() {
   const box = h('div', { class: 'hall-look' });
   const sw = (kind, [k, label, f]) => { const L = hallLook(), on = L[kind] === k;
-    const prev = kind === 'wall' ? (k === 'boards' ? 'repeating-linear-gradient(90deg, rgba(0,0,0,.5) 0 2px, transparent 2px 40px), var(--wood-panel) 0 0 / 200px 200px' : 'var(--wall-plaster) 0 0 / 128px 128px')
+    const prev = kind === 'wall' ? (k === 'boards' ? 'repeating-linear-gradient(90deg, rgba(0,0,0,.5) 0 2px, transparent 2px 40px), var(--wood-panel) 0 0 / 200px 200px' : ['castle', 'dungeon', 'night', 'moss'].includes(k) ? `var(--wall-${k}) 0 0 / 128px 128px` : 'var(--wall-plaster) 0 0 / 128px 128px')
       : (k === 'baize' ? '#1f5a3a' : 'var(--wood-desk) 0 0 / 260px 130px');
     return h('button', { class: 'look-sw' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: () => { const v = hallLook(); v[kind] = k; lsSet('mtgpt.hallLook', v); applyHallLook(); draw(); } },
       h('i', { style: `background:${prev};filter:${f || 'none'}` }), h('span', { text: label })); };
+  const room = ([k, label, , ti]) => h('button', { class: 'look-sw look-room room-' + k + (hallRoom() === k ? ' on' : ''), 'aria-pressed': String(hallRoom() === k), title: ti, onclick: () => { setHallRoom(k); draw(); } }, h('i', { class: 'rm-prev' }), h('span', { text: label }));   // v0.99.87
   const draw = () => box.replaceChildren(
+    h('div', { class: 'fhead', text: 'Room' }), h('div', { class: 'look-grid rooms' }, HALL_ROOMS.map(room)),
     h('div', { class: 'fhead', text: 'Wall' }), h('div', { class: 'look-grid' }, HALL_WALLS.map(w => sw('wall', w))),
     h('div', { class: 'fhead', text: 'Desk' }), h('div', { class: 'look-grid' }, HALL_DESKS.map(w => sw('desk', w))));
   draw(); return box;
@@ -281,6 +283,7 @@ function drawHall() {
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
     h('button', { text: '›', title: 'More shelves', disabled: hallPage >= pages - 1, onclick: () => { hallPage++; drawHall(); } })) : null;
   world.append(
+    roomDecorEl(hallRoom()),   // v0.99.87 banners, torches, candles or vines on the wall (src/93)
     h('div', { class: 'hall-plaque' }, h('div', { class: 'hall-plaque-row' }, (() => { const x = h('span', { class: 'hall-logo' }); x.innerHTML = HALL_LOGO; return x; })(), h('div', { class: 'hall-plaque-t' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }))), pager),
     shelf,
     h('div', { class: 'hall-desktop', 'aria-hidden': 'true' }), h('div', { class: 'hall-deskfront', 'aria-hidden': 'true' }),
