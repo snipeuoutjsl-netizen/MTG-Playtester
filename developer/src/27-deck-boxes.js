@@ -25,7 +25,7 @@ function bookModel(deckName, deck, cols, im, big) {
   const q = big ? 1 : BOOK_SCALE, T = Math.round(q * (big ? 70 : 44 + hs % 11)), H = Math.round(q * (big ? 330 : 198 + (hs >> 4) % 26)), D = Math.round(q * (big ? 236 : 146));
   const pips = cols.map(c => h('i', { class: 'dbx-pip', style: `background:${WUBRG_COL['WUBRG'.indexOf(c)]}` }));
   return h('div', { class: 'bk' + (big ? ' big' : ''), 'data-col': cols[0] || 'C', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]};--T:${T}px;--H:${H}px;--D:${D}px` },
-    h('div', { class: 'bk-face spine' }, h('i', { class: 'bk-band' }), h('span', { class: 'bk-title', text: deckName }), h('span', { class: 'bk-pips' }, ...pips.map(x => x.cloneNode())), h('i', { class: 'bk-band low' })),
+    h('div', { class: 'bk-face spine' }, h('i', { class: 'bk-band' }), h('span', { class: 'bk-title' + (!big && deckName.length > 24 ? ' xlong' : !big && deckName.length > 10 ? ' long' : ''), text: deckName }), h('span', { class: 'bk-pips' }, ...pips.map(x => x.cloneNode())), h('i', { class: 'bk-band low' })),
     h('div', { class: 'bk-face cover' },
       h('div', { class: 'dbx-art' + (im ? '' : ' none'), style: artStyle(im) }, im ? null : h('span', { text: (deckName.trim()[0] || '?').toUpperCase() })),
       h('div', { class: 'dbx-gloss' }),
