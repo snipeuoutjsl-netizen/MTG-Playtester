@@ -7154,8 +7154,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.107';
+const APP_VERSION = '0.99.108';
 const CHANGELOG = [
+  { v: '0.99.108', title: 'Your decks on the shelf, and accessibility on the Library', notes: ['THE SHELF: with no deck picked, All decks shows every deck as its floating 3D deck box, the decks you played most recently first. The boxes get smaller the more decks you have, and the page scrolls when they don\'t fit. Pick a box to open that deck\'s page; All decks, or the ← Decks link at the top of the page, brings you back. Favorites shows your favorite decks the same way. The Recently opened list is gone: the shelf does its job.', 'ACCESSIBILITY on the new Library, the Archive, packs, the deck box and the dungeon map: High contrast gives solid dark panels, white text, bright secondary text and gold borders (the mana curve stays readable); Calm motion stops the boxes floating; Larger click targets enlarge the sidebar rows, chips and tabs; Strong keyboard focus outlines every Library button and deck box.', 'Settings: the Library tab is removed. Its room looks belonged to the shelved 3D Library, and "Open the Library when the app starts" is in the Library sidebar.', 'PACKS FIX: puzzles you solved before packs existed (before v0.99.106) never paid their pack, so the Pack screen had nothing to open. Each built-in puzzle you had already solved now pays one pack, once. If a pack can\'t be opened (no internet, Scryfall busy), the pack screen now says why, and the pack is kept.', 'PACKS: a loading bar shows what is happening while a pack opens, with a line on why it takes a moment: the first pack from a set downloads that set\'s card list from Scryfall (a few seconds); it is kept on this device, so later packs from that set open at once.', 'GOD PACKS: about 1 pack in 100 is a God Pack: fifteen foils, in the set\'s full-art, borderless, showcase and extended-art printings where it has them, always with a rare or mythic.'] },
   { v: '0.99.107', title: 'Eight new puzzles', notes: ['NEW PUZZLES, each about a different part of the game: Double trouble (double strike), Every land counts twice (a fetch land is two landfalls), Cascade order (a spell cast by cascade is still cast), Back from the graveyard (Snapcaster Mage), The trap is set (a dungeon: pick the room that hurts), Storm warning (Grapeshot and storm), Burn the boats (Fireblast for free by sacrificing Mountains) and Feed the fiend (Kiln Fiend and Manamorphose). Each one\'s solution is played through by the tests, so every one can be solved.', 'FIX: Snapcaster Mage (and any "target instant or sorcery card in your graveyard") found no card to target. Graveyard targets listing kinds with "or" now match any of them.', 'A puzzle (and a moment you save as one) can start inside a dungeon.'] },
   { v: '0.99.106', title: 'Packs and the Archive', notes: ['PACKS: winning a game earns a pack (the Victory screen offers to tear it open), and so does solving each built-in puzzle the first time. Packs you have not opened are kept: the Packs button in the Library shows how many.', 'Opening one: choose a set (or Random set), tear the pack open, then turn the cards over one at a time, or Reveal all. A pack is 15 cards from a real set laid out like a booster: a basic land, 10 commons, 3 uncommons and a rare, which is a mythic about 1 time in 8. About 1 pack in 3 has a foil in place of a common. The cards come from Scryfall, so opening needs the internet; a set\'s cards are kept after the first pack from it.', 'THE ARCHIVE (Library sidebar): every card you have. Everything shows all cards; In your decks lists every card across all your decks, with how many decks use it and the most copies one deck needs; From packs shows each printing you opened, with how many you have, foils and rarity (cards from your latest pack are marked New). Filter by deck, card type, set or rarity, and search.', 'The pack wrapper and the card backs are the Library of Alexandria logo (no Magic logos or set symbols).'] },
   { v: '0.99.105', title: 'Puzzle bar fix', notes: ['FIX: the puzzle bar (Hint, Restart, Puzzles) stayed on screen after a puzzle was over. It now goes away as soon as the puzzle is solved or failed, and it stays hidden while the Library is open.'] },
@@ -9856,7 +9857,7 @@ async function loadSleeve() {
 let settingsTab = 'gfx';
 // v0.99.70 merged: Board layout + Playmat & frame = Table; Animations + Sound = Motion & sound; the Library look window and the card-data / update
 // windows have their own tabs. ('mat' and 'snd' panes are still built, then folded into their merged tab.)
-const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['lib', 'Library'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
+const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
 const SET_TAB_ALIAS = { mat: 'board', snd: 'anim' };
 const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'Board effects (piles, combat lane, turn strip and more), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
@@ -10070,9 +10071,7 @@ function openSettings() {
   // v0.99.70 fold the merged panes in, and fill the two new tabs
   P.board.append(h('div', { class: 'fhead', text: 'Playmat & frame' }), ...[...P.mat.childNodes].filter(n => !(n.classList && n.classList.contains('fhead') && n.textContent === 'Playmat'))); delete P.mat;
   P.anim.append(h('div', { class: 'fhead', text: 'Sound' }), ...P.snd.childNodes); delete P.snd;
-  P.lib.append(buildHallLook(), h('div', { class: 'fhead', text: 'Start-up' }),
-    (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = libClassic(); cb.addEventListener('change', () => { lsSet('mtgpt.libClassic', cb.checked); try { if (hallOpen()) drawHall(); } catch (e) {} }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Classic 3D Library' }), h('span', { class: 'muted small', text: 'The old room with bookcases, rooms and the open book (shelved for now). Off: the clean Library screen.' }))); })(),
-    (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = lsGet(HALL_KEY, true) !== false; cb.addEventListener('change', () => lsSet(HALL_KEY, cb.checked)); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Open the Library when the app starts' }), h('span', { class: 'muted small', text: ' \u2014 otherwise the app opens straight at the table' }))); })());
+  // v0.99.108 the Library tab is gone: its looks belonged to the shelved 3D room, and "Open the Library when the app starts" is in the Library's own sidebar
   { const go = (t, d, f) => h('div', { class: 'setrow' }, h('label', { text: t }), h('button', { text: 'Open\u2026', onclick: () => { m.close(); f(); } }), h('span', { class: 'muted small', text: d }));
     const upd = (k, t) => { const cb = h('input', { type: 'checkbox' }); cb.checked = settings[k] !== false; cb.addEventListener('change', () => { settings[k] = cb.checked; saveSettings(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: t }))); };
     P.data.append(h('div', { class: 'fhead', text: 'Card data' }), go('Card data', `Names, costs and rules text (${cardCount ? cardCount.toLocaleString() + ' cards loaded' : 'not loaded yet'})`, openCardData), go('Card pictures', 'Download pictures, or play with text cards', openImages),
@@ -15619,7 +15618,7 @@ function startPuzzle0(p) {
 function puzzleResult(won, why) {
   const pz = state && state.puzzle; if (!pz || pz.over) return; pz.over = true;
   let packNow = false;
-  if (won) { const s = pzSolved(); packNow = !s[pz.id] && !pz.saved; s[pz.id] = Date.now(); lsSet(PZ_SOLVED, s); if (packNow) earnPack(`you solved the puzzle "${pz.title}"`); }   // v0.99.106 the first solve of each puzzle earns a pack
+  if (won) { const s = pzSolved(); packNow = !s[pz.id] && !pz.saved; s[pz.id] = Date.now(); lsSet(PZ_SOLVED, s); if (packNow) earnPack(`you solved the puzzle "${pz.title}"`, pz.id); }   // v0.99.106 the first solve of each puzzle earns a pack
   const m = modal(won ? 'Puzzle solved' : 'Not this time', { width: 460, sticky: true }); m.el.classList.add(won ? 'ge-win' : 'ge-loss');
   m.body.append(h('div', { class: 'ge-big', text: won ? 'Solved!' : 'Try again' }), h('div', { class: 'ge-sub', text: won ? `${pz.title}: your opponent is at ${state.oppLife} life.` : (why || `${pz.title}: your opponent survived the turn.`) }));
   if (packNow) m.body.append(h('button', { class: 'ge-pack', title: 'Tear open the pack this puzzle earned (it is kept if you open it later)', onclick: () => { m.close(); openPackScreen(); } }, h('span', { class: 'ge-pack-i', 'aria-hidden': 'true' }), h('b', { text: 'First solve: you earned a pack' }), h('span', { text: 'Tear it open' })));
@@ -16259,7 +16258,7 @@ function dungeonCond(t) {
 // of the box onto the screen, grouped by card type in mana-value order (one stack per card, its copies fanned down).
 // Clicking a card shows it large. Close, Escape or a click on the backdrop sends the cards back into the box and shuts the lid.
 const LBX_GROUPS = [['Creatures', ['Creature']], ['Planeswalkers & Battles', ['Planeswalker', 'Battle']], ['Instants & Sorceries', ['Instant', 'Sorcery']], ['Artifacts', ['Artifact']], ['Enchantments', ['Enchantment']], ['Other', ['Other', 'Unknown']], ['Lands', ['Land']]];
-function libBoxEl(deckName, deck, cols) {
+function libBoxEl(deckName, deck, cols, opts = {}) {   // opts.onPick: the click picks the deck (the shelf) instead of opening the box; opts.label: shown under the box
   const a = DECKBOX_COL[cols[0] || ''], b = DECKBOX_COL[cols[1] || cols[0] || ''], im = imgFor(deckArtName(deckName, deck), deckName);
   const face = (cls, ...kids) => h('div', { class: 'lbx-f ' + cls }, ...kids);
   const box = h('div', { class: 'lbx', style: `--ca:${a[1]};--cad:${a[0]};--cb:${b[1]};--cbd:${b[0]}` },
@@ -16271,8 +16270,10 @@ function libBoxEl(deckName, deck, cols) {
     h('div', { class: 'lbx-lid' }, face('ltop'), face('lfront'), face('lleft'), face('lright')));
   const zone = h('button', { class: 'lib-box', type: 'button', title: 'Open the box to lay out every card', 'aria-label': `Deck box for ${deckName}. Open it to see every card.` },
     h('div', { class: 'lbx-float' }, box), h('i', { class: 'lbx-shadow', 'aria-hidden': 'true' }));
+  if (opts.label) zone.append(opts.label);
+  if (opts.onPick) { zone.title = `${deckName}: open its page`; zone.setAttribute('aria-label', `${deckName}. Open its page.`); }
   tiltWith(zone, box);
-  zone.addEventListener('click', () => libOpenBox(zone, deckName, deck));
+  zone.addEventListener('click', () => opts.onPick ? opts.onPick() : libOpenBox(zone, deckName, deck));
   return zone;
 }
 function libBoxCards(deck) {
@@ -16393,8 +16394,9 @@ function libColorName(cols) { if (!cols.length) return 'Colorless'; if (cols.len
 function libPips(cols, cls) { return h('span', { class: 'lib-pips ' + (cls || '') }, (cols.length ? cols : ['C']).map(c => h('i', { class: 'lib-pip', style: `background:${c === 'C' ? '#b9b0a0' : WUBRG_COL['WUBRG'.indexOf(c)]}`, title: LIB_COLN[c] || 'Colorless' }))); }
 function libAgo(t) { if (!t) return null; const d = Math.max(0, Math.round((Date.now() - t) / 86400000)); return d === 0 ? 'Today' : d === 1 ? 'Yesterday' : `${d} days ago`; }
 function drawLibraryScreen(el) {
+  try { const n = packBackPay(); if (n) setTimeout(() => toast('Packs for your solved puzzles', `You had solved ${n} puzzle${n === 1 ? '' : 's'} before packs existed: ${n} pack${n === 1 ? ' was' : 's were'} added. Open them from Packs.`), 600); } catch (e) {}   // v0.99.108
   const decks = loadDecks(), mode = gameMode(), inMode = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), favs = libFavs(), cur = currentDeckName();
-  if (!libSel || !decks[libSel] || !inMode.includes(libSel)) libSel = inMode.includes(cur) ? cur : inMode[0] || null;
+  if (libSel && (!decks[libSel] || !inMode.includes(libSel))) libSel = null;   // v0.99.108 no deck picked = the shelf of deck boxes
   const shown = inMode.filter(n => (libFilter !== 'fav' || favs.includes(n)) && (!libQuery || n.toLowerCase().includes(libQuery.toLowerCase())));
   const inGame = !!(state && state.deckName), redraw = () => drawLibraryScreen(el);
   el.classList.remove('v2', 'v3', 'portrait'); el.classList.add('lib2');
@@ -16426,20 +16428,19 @@ function drawLibraryScreen(el) {
   const side = h('aside', { class: 'lib-side', 'aria-label': 'Your collection' },
     h('div', { class: 'lib-cap', text: 'Your collection' }),
     btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'add', 'Paste a list or load a file'),
-    h('button', { class: 'lib-side-row' + (libFilter === 'all' ? ' on' : ''), onclick: () => { libFilter = 'all'; redraw(); } }, h('span', { text: '◈  All decks' }), h('em', { text: String(inMode.length) })),
-    h('button', { class: 'lib-side-row' + (libFilter === 'fav' ? ' on' : ''), onclick: () => { libFilter = 'fav'; redraw(); } }, h('span', { text: '★  Favorites' }), h('em', { text: String(inMode.filter(n => favs.includes(n)).length) })),
+    h('button', { class: 'lib-side-row' + (libFilter === 'all' ? ' on' : ''), onclick: () => { libFilter = 'all'; libSel = null; redraw(); } }, h('span', { text: '◈  All decks' }), h('em', { text: String(inMode.length) })),
+    h('button', { class: 'lib-side-row' + (libFilter === 'fav' ? ' on' : ''), onclick: () => { libFilter = 'fav'; libSel = null; redraw(); } }, h('span', { text: '★  Favorites' }), h('em', { text: String(inMode.filter(n => favs.includes(n)).length) })),
     h('button', { class: 'lib-side-row lib-coll-row' + (libFilter === 'collection' ? ' on' : ''), onclick: () => { libFilter = 'collection'; redraw(); } }, h('span', { text: '▣  Archive' }), h('em', { text: String(new Set([...deckCardIndex().keys(), ...Object.values(collState().cards).map(e => e.n)]).size) })),   // v0.99.106 every card in your decks and from packs
     FEATURES.commander ? h('div', { class: 'lib-cap', text: 'Formats' }) : null,
     FEATURES.commander ? modeTab('standard', '◌  Decks', decksInMode(decks, 'standard').length) : null,
     FEATURES.commander ? modeTab('commander', '◌  Commander', decksInMode(decks, 'commander').length) : null,
-    recent.length ? h('div', { class: 'lib-cap', text: 'Recently opened' }) : null,
-    ...recent.map(deckRow).map(x => { x.classList.add('recent'); return x; }),
     h('div', { class: 'lib-cap', text: libFilter === 'fav' ? 'Favorites' : 'Decks' }), search,
     h('div', { class: 'lib-decklist' }, ...(shown.length ? shown.map(deckRow) : [h('div', { class: 'lib-empty-s', text: inMode.length ? (libFilter === 'fav' ? 'No favorites yet: star a deck on its page.' : 'No deck matches.') : 'No decks yet.' })])),
     h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk));
   // main: the selected deck
   const main = h('main', { class: 'lib-main' });
   if (libFilter === 'collection') main.append(...collectionPage(redraw).filter(Boolean));   // v0.99.106
+  else if (!libSel && inMode.length) main.append(...libShelf(libFilter === 'fav' ? inMode.filter(n => favs.includes(n)) : inMode, { cur, favs, decks, mode, inGame, fav: libFilter === 'fav', pick: n => { libSel = n; redraw(); } }));   // v0.99.108
   else if (!libSel) {
     main.append(h('div', { class: 'lib-emptystate' }, h('div', { class: 'lib-crumb', text: mode === 'commander' ? 'Commander' : 'Decks' }),
       h('h1', { class: 'lib-h1', text: 'Your library is empty' }), h('p', { class: 'lib-tag', text: mode === 'commander' ? 'Import a Commander deck: put your commander under a “Commander” heading.' : 'Import a deck list to start goldfishing.' }),
@@ -16456,7 +16457,7 @@ function drawLibraryScreen(el) {
     main.append(
       h('div', { class: 'lib-head' },
         h('div', { class: 'lib-head-t' },
-          h('div', { class: 'lib-crumb', text: `${mode === 'commander' ? 'Commander' : 'Decks'}  /  Deck ${String(idx).padStart(2, '0')} of ${inMode.length}${isCur ? '  ·  in use' : ''}` }),
+          h('div', { class: 'lib-crumb' }, h('button', { class: 'lib-crumb-back', type: 'button', title: 'Back to all your decks', onclick: () => { libSel = null; redraw(); } }, `← ${libFilter === 'fav' ? 'Favorites' : mode === 'commander' ? 'Commander' : 'Decks'}`), `  /  Deck ${String(idx).padStart(2, '0')} of ${inMode.length}${isCur ? '  ·  in use' : ''}`),
           h('h1', { class: 'lib-h1' }, h('span', { text: libSel }), h('button', { class: 'lib-fav' + (fav ? ' on' : ''), text: fav ? '★' : '☆', title: fav ? 'Remove from favorites' : 'Add to favorites', 'aria-pressed': String(fav), onclick: () => { libToggleFav(libSel); redraw(); } })),
           h('p', { class: 'lib-tag', text: `${libColorName(cols)}${typeLine ? ' · ' + typeLine : ''}.` })),
         libBoxEl(libSel, deck, cols),   // v0.99.101 the deck in its 3D box: click to open it and lay the cards out
@@ -16495,6 +16496,27 @@ function drawLibraryScreen(el) {
   el.replaceChildren(h('div', { class: 'lib-app' }, top, h('div', { class: 'lib-body' }, side, main)));
   try { const on = el.querySelector('.lib-decklist .lib-deck-row.on'); if (on) on.scrollIntoView({ block: 'nearest' }); } catch (e) { /* scrolling only */ }
 }
+
+// v0.99.108 The shelf: with no deck picked, All decks (or Favorites) shows every deck as its floating 3D deck box, the decks you played
+// most recently first. The boxes get smaller as there are more of them, and the page scrolls when they don't fit. Clicking a box opens
+// that deck's page; All decks (or the ← Decks link on the page) comes back here.
+function libShelf(names, o) {
+  const rec = libRecent(), order = [...rec.filter(n => names.includes(n)), ...names.filter(n => !rec.includes(n))];
+  const size = order.length <= 4 ? 'lg' : order.length <= 10 ? 'md' : 'sm';
+  const items = order.map((n, i) => { let deck, cols = []; try { deck = parseDeck(o.decks[n].text); cols = deckColorsOf(deck); } catch (e) { deck = { main: [], side: [] }; }
+    const notes = deckNotes(n) || {}, recent = rec.indexOf(n);
+    const label = h('span', { class: 'lib-shelf-lab' }, h('b', { text: n }), h('span', { class: 'lib-shelf-sub' }, libPips(cols, 'sm'), h('span', { text: [n === o.cur ? 'in use' : '', recent >= 0 && recent < 4 ? (notes.last ? `played ${libAgo(notes.last).toLowerCase()}` : 'recent') : '', o.favs.includes(n) ? '★' : ''].filter(Boolean).join(' · ') })));
+    const el = libBoxEl(n, deck, cols, { onPick: () => o.pick(n), label }); el.classList.add('lib-shelf-box'); el.style.setProperty('--d', `${(i % 7) * -0.6}s`); return el; });
+  const nDecks = order.length;
+  return [
+    h('div', { class: 'lib-head' },
+      h('div', { class: 'lib-head-t' },
+        h('div', { class: 'lib-crumb', text: o.fav ? 'Favorites' : o.mode === 'commander' ? 'Commander' : 'Decks' }),
+        h('h1', { class: 'lib-h1', text: o.fav ? 'Your favorites' : 'Your decks' }),
+        h('p', { class: 'lib-tag', text: nDecks ? `${nDecks} deck${nDecks === 1 ? '' : 's'}, most recently played first. Pick a box to see the deck.` : 'No favorites yet: star a deck on its page.' })),
+      o.inGame ? h('div', { class: 'lib-head-go' }, h('button', { class: 'lib-btn ghost', text: `Continue: ${state.deckName}`, title: 'Back to the game in progress (Esc)', onclick: () => closeHall(true) })) : null),
+    nDecks ? h('div', { class: 'lib-shelf ' + size }, items) : null];
+}
 // ---- v0.99.106 Opening a pack. A screen over everything: the pack (the app's own wrapper: no Magic logos or set symbols), a set to
 // choose (Random set by default), then tear it: the top strip comes off, the cards spill out face down, and you flip them one at a
 // time (the rare is last, as in a real pack) or Reveal all. Rares, mythics and foils light up as they turn. The cards were already
@@ -16506,6 +16528,7 @@ const pkImg = x => { const im = h('img', { src: x.img, alt: x.n, draggable: 'fal
 const pkSvg = (cls, html) => { const d = h('div', { class: cls }); d.innerHTML = html; return d; };
 function openPackScreen() {
   if (document.querySelector('.pk-ov')) return;
+  try { const n = packBackPay(); if (n) toast('Packs for your solved puzzles', `You had solved ${n} puzzle${n === 1 ? '' : 's'} before packs existed: ${n} pack${n === 1 ? ' was' : 's were'} added.`); } catch (e) {}
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
   const ov = h('div', { class: 'pk-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Open a pack' });
   const close = () => { document.removeEventListener('keydown', onKey, true); ov.classList.add('leaving'); setTimeout(() => ov.remove(), motion ? 260 : 0); pkOpenNow = null; try { if (typeof hallOpen === 'function' && hallOpen()) drawHall(); } catch (e) {} };
@@ -16535,11 +16558,19 @@ function openPackScreen() {
   };
   let busy = false;
   const tear = async pack => {
-    if (busy) return; busy = true; pack.classList.add('shaking'); pack.disabled = true;
-    const hint = stage.querySelector('.pk-hint'); if (hint) hint.textContent = 'Looking up the cards…';
-    let res = null; try { res = await openPack(setSel.value); } catch (e) { console.error(e); res = null; }
-    busy = false; if (!ov.isConnected) return;
-    if (!res) { pack.classList.remove('shaking'); pack.disabled = false; if (hint) hint.textContent = 'Click the pack to tear it open'; return; }
+    if (busy) return; busy = true; pack.classList.add('shaking'); pack.disabled = true; const tb = foot.querySelector('.lib-btn.gold'); if (tb) tb.disabled = true;
+    const hint = stage.querySelector('.pk-hint'); if (hint) { hint.textContent = ''; hint.classList.remove('pk-err'); }
+    // v0.99.108 a loading bar: a pack's cards come from Scryfall, and the first pack of a set downloads that set's card list
+    const fill = h('i', { class: 'pk-load-fill' }), msg = h('div', { class: 'pk-load-msg', text: 'Starting…' });
+    const load = h('div', { class: 'pk-load', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0', 'aria-label': 'Opening the pack' },
+      h('div', { class: 'pk-load-bar' }, fill), msg,
+      h('div', { class: 'pk-load-why', text: 'Why this takes a moment: the cards in a pack come from Scryfall, the free online card database. The first pack from a set downloads that set\'s card list (often 300 or more cards, a few seconds). It is kept on this device, so later packs from the same set open at once.' }));
+    stage.querySelector('.pk-packwrap').append(load);
+    const prog = (f, text) => { const v = Math.round(Math.max(0, Math.min(1, f)) * 100); fill.style.width = v + '%'; load.setAttribute('aria-valuenow', String(v)); if (text) msg.textContent = text; };
+    let res = null; try { res = await openPack(setSel.value, prog); } catch (e) { console.error(e); res = null; }
+    load.remove();
+    busy = false; if (tb) tb.disabled = false; if (!ov.isConnected) return;
+    if (!res) { pack.classList.remove('shaking'); pack.disabled = false; if (hint) { hint.textContent = packLastError || 'The pack could not be opened. Try again.'; hint.classList.add('pk-err'); } return; }
     try { sfx('shuffle'); } catch (e) {}
     pack.classList.remove('shaking'); pack.classList.add('torn');
     setTimeout(() => reveal(res), motion ? 700 : 0);
@@ -16549,7 +16580,7 @@ function openPackScreen() {
       pkSvg('pk-back', HALL_LOGO),
       h('div', { class: 'pk-front' + (x.img ? ' img' : '') }, x.img ? pkImg(x) : h('div', { class: 'pk-txt' }, h('b', { text: x.n }), h('span', { text: (x.rec && x.rec.mc) || '' }), h('i', { text: (x.rec && x.rec.t) || '' })), x.foil ? h('i', { class: 'pk-foil' }) : null));
     const el = h('button', { class: `pk-card r-${x.foil ? 'foil' : x.slot}`, type: 'button', style: `--i:${i}`, 'aria-label': `Card ${i + 1}, face down. Click to turn it over.` }, inner,
-      h('div', { class: 'pk-tag' }, h('span', { text: x.foil ? `Foil ${(PK_RARITY[x.r] || x.r).toLowerCase()}` : PK_RARITY[x.slot] || PK_RARITY[x.r] || x.r }), x.isNew ? h('em', { text: 'New' }) : null));
+      h('div', { class: 'pk-tag' }, h('span', { text: x.foil ? `Foil ${(PK_RARITY[x.r] || x.r).toLowerCase()}${x.god && x.alt ? ' · full art' : ''}` : PK_RARITY[x.slot] || PK_RARITY[x.r] || x.r }), x.isNew ? h('em', { text: 'New' }) : null));
     el.addEventListener('click', () => { if (!el.classList.contains('up')) flip(el, x); else { zoom.replaceChildren(x.img ? h('img', { src: x.img, alt: x.n }) : h('div', { class: 'pk-txt big' }, h('b', { text: x.n }), h('i', { text: (x.rec && x.rec.t) || '' }), h('p', { text: (x.rec && x.rec.tx) || '' }))); zoom.classList.add('on'); } });
     return el;
   };
@@ -16562,8 +16593,9 @@ function openPackScreen() {
       more ? h('button', { class: 'lib-btn gold', text: `Open another (${more} left)`, onclick: () => choose() }) : null,
       h('button', { class: 'lib-btn ghost', text: 'View the Archive', onclick: () => { close(); openCollection(); } }), h('button', { class: 'lib-btn ghost', text: 'Close', onclick: close })); };
   const reveal = res => {
-    resNow = res; left = res.cards.length; ov.classList.add('revealing');
-    head.replaceChildren(h('div', { class: 'lib-cap', text: res.setName }), h('h2', { text: 'Your pack' }), h('p', { class: 'pk-sub', text: 'Click a card to turn it over. The rare is last.' }));
+    resNow = res; left = res.cards.length; ov.classList.add('revealing'); ov.classList.toggle('god', !!res.god);
+    head.replaceChildren(h('div', { class: 'lib-cap', text: res.setName }), h('h2', { text: res.god ? '✦ A God Pack ✦' : 'Your pack' }), h('p', { class: 'pk-sub', text: res.god ? 'About 1 pack in 100: every card is a foil, in the set\'s full-art, borderless and showcase printings where it has them.' : 'Click a card to turn it over. The rare is last.' }));
+    if (res.god) { try { sfx('win'); } catch (e) {} }
     const grid = h('div', { class: 'pk-grid' }, res.cards.map(cardEl)); stage.replaceChildren(grid);
     const all = h('button', { class: 'lib-btn gold', text: 'Reveal all', onclick: () => { all.disabled = true; [...grid.children].forEach((el, i) => setTimeout(() => flip(el, res.cards[i]), motion ? i * 110 : 0)); } });
     foot.replaceChildren(all);
@@ -16585,11 +16617,21 @@ function pkFit(grid) {
 // (src/99-collection.js). Packs you have not opened yet are kept and can be opened any time from the Library.
 const PACK_KEY = 'mtgpt.packs', COLL_KEY = 'mtgpt.collection';
 const PACK_SRC = { fetchJson: url => netFetch(url).then(r => r.ok ? r.json() : null) };   // the tests serve real card objects through this
+// v0.99.108 puzzles solved before packs existed (v0.99.106) never paid their pack: each built-in puzzle already solved pays one, once
+function packBackPay() {
+  if (lsGet('mtgpt.packsBackPaid', false)) return 0; lsSet('mtgpt.packsBackPaid', true);
+  let n = 0; try { const solved = lsGet('mtgpt.puzzlesSolved', {}) || {}, opened = lsGet(PACK_KEY, null); const builtIn = new Set((typeof PUZZLES !== 'undefined' ? PUZZLES : []).map(p => p.id));
+    const earned = (opened && opened.earned) || [], earnedFor = new Set(earned.map(e => e.puzzle).filter(Boolean));
+    const cutoff = earned.length ? Math.min(...earned.map(e => +e.at || Infinity)) : Infinity;   // a puzzle solved after packs began paid its own pack
+    n = Object.entries(solved).filter(([id, at]) => builtIn.has(id) && !earnedFor.has(id) && (+at || 0) < cutoff).length;
+    if (n) { const v = lsGet(PACK_KEY, null) || {}; v.bank = Math.max(0, +v.bank || 0) + n; v.earned = (Array.isArray(v.earned) ? v.earned : []).concat([{ why: `${n} puzzle${n === 1 ? '' : 's'} solved before packs existed`, at: Date.now() }]); lsSet(PACK_KEY, v); } } catch (e) { n = 0; }
+  return n;
+}
 function packState() { const v = lsGet(PACK_KEY, null) || {}; return { bank: Math.max(0, +v.bank || 0), opened: +v.opened || 0, earned: Array.isArray(v.earned) ? v.earned.slice(-30) : [], lastSet: v.lastSet || 'random' }; }
 function packSave(p) { lsSet(PACK_KEY, p); }
 function packsToOpen() { return packState().bank; }
-function earnPack(why) {
-  const p = packState(); p.bank++; p.earned.push({ why, at: Date.now() }); packSave(p);
+function earnPack(why, puzzle) {
+  const p = packState(); p.bank++; p.earned.push(puzzle ? { why, at: Date.now(), puzzle } : { why, at: Date.now() }); packSave(p);
   try { log(`You earned a pack: ${why}`); } catch (e) {}
   try { if (typeof hallOpen === 'function' && hallOpen()) drawHall(); } catch (e) {}
   return p.bank;
@@ -16608,27 +16650,41 @@ function packEntry(o) {
   const f = o.card_faces || [], img = o.image_uris ? (o.image_uris.normal || o.image_uris.large) : (f[0] && f[0].image_uris && f[0].image_uris.normal) || '';
   const back = !o.image_uris && f[1] && f[1].image_uris ? f[1].image_uris.normal : '';
   let rec = null; try { rec = compact(o); } catch (e) { rec = null; }
-  return { n: o.name, cn: o.collector_number, r: o.rarity, set: o.set, sn: o.set_name, img, back, basic: /\bBasic\b.*\bLand\b/.test(o.type_line || ''), rec };
+  const alt = !!(o.full_art || o.border_color === 'borderless' || (o.frame_effects || []).some(f => /showcase|extendedart|inverted/.test(f)));   // full art, borderless, showcase, extended art
+  return { n: o.name, cn: o.collector_number, r: o.rarity, set: o.set, sn: o.set_name, img, back, basic: /\bBasic\b.*\bLand\b/.test(o.type_line || ''), alt, rec };
 }
-async function packSearchAll(q) {
-  let url = 'https://api.scryfall.com/cards/search?unique=prints&q=' + encodeURIComponent(q), out = [];
-  for (let page = 0; url && page < 8; page++) { const j = await PACK_SRC.fetchJson(url); if (!j || !Array.isArray(j.data)) break; out = out.concat(j.data); url = j.has_more ? j.next_page : null; if (url) await sleep(110); }
+async function packSearchAll(q, onPage) {
+  let url = 'https://api.scryfall.com/cards/search?unique=prints&q=' + encodeURIComponent(q), out = [], pages = 1;
+  for (let page = 0; url && page < 8; page++) { const j = await PACK_SRC.fetchJson(url); if (!j || !Array.isArray(j.data)) break; out = out.concat(j.data); if (j.total_cards) pages = Math.max(1, Math.ceil(j.total_cards / 175)); onPage && onPage(page + 1, pages, out.length, j.total_cards || out.length); url = j.has_more ? j.next_page : null; if (url) await sleep(110); }
   return out;
 }
-async function packPool(code) {
+async function packPool(code, prog) {
   let pool = null; try { pool = await idbGet('pool:' + code); } catch (e) { pool = null; }
-  if (pool && pool.v === 1 && pool.common && pool.common.length >= 10) return pool;
-  const cards = (await packSearchAll(`set:${code} is:booster`)).map(packEntry);
+  if (pool && pool.v === 2 && pool.common && pool.common.length >= 10) { prog && prog(0.9, `${pool.name}: its cards are already on this device`); return pool; }
+  prog && prog(0.15, `Downloading the cards of this set from Scryfall…`);
+  const cards = (await packSearchAll(`set:${code} is:booster`, (pg, pages, got, total) => prog && prog(0.15 + 0.7 * Math.min(1, pg / pages), `Downloading the set's cards from Scryfall: page ${pg} of ${pages} (${got} of ${total} cards)`))).map(packEntry);
   let lands = cards.filter(c => c.basic);
-  if (!lands.length) { await sleep(110); lands = (await packSearchAll(`set:${code} type:basic`)).map(packEntry); }
-  pool = { v: 1, code, name: (cards[0] || {}).sn || code, common: [], uncommon: [], rare: [], mythic: [], land: lands };
+  if (!lands.length) { prog && prog(0.87, 'Looking up the basic lands…'); await sleep(110); lands = (await packSearchAll(`set:${code} type:basic`)).map(packEntry); }
+  pool = { v: 2, code, name: (cards[0] || {}).sn || code, common: [], uncommon: [], rare: [], mythic: [], land: lands };
   for (const c of cards) if (!c.basic && pool[c.r]) pool[c.r].push(c);
   if (pool.common.length < 10 || pool.uncommon.length < 3 || !pool.rare.length) return null;
   try { await idbSet('pool:' + code, pool); const keep = lsGet('mtgpt.packPools', []).filter(x => x !== code); keep.unshift(code); for (const old of keep.slice(6)) idbDelete(['pool:' + old]).catch(() => {}); lsSet('mtgpt.packPools', keep.slice(0, 6)); } catch (e) { /* kept in memory only */ }
   return pool;
 }
 // ---- what is in one pack (rng = Math.random unless the tests pass their own)
+const GOD_PACK_ODDS = 1 / 100;
+// v0.99.108 a God Pack (about 1 in 100): fifteen foils, the set's full-art / borderless / showcase / extended-art printings where it has them,
+// with at least one rare or mythic. Where the set has too few special printings, foils of its rares and uncommons fill the pack.
+function godPackFromPool(pool, rng = Math.random) {
+  const all = [...pool.common, ...pool.uncommon, ...pool.rare, ...pool.mythic, ...pool.land], alts = all.filter(c => c.alt), seen = new Set(), out = [];
+  const take = (list, n) => { for (let g = 0; out.length < n && g < 600 && list.length; g++) { const c = list[Math.floor(rng() * list.length)]; if (seen.has(c.set + c.cn) || out.some(x => x.n === c.n)) continue; seen.add(c.set + c.cn); out.push(c); } };
+  take([...pool.mythic, ...pool.rare].filter(c => c.alt).length ? [...pool.mythic, ...pool.rare].filter(c => c.alt) : [...pool.mythic, ...pool.rare], 1);
+  take(alts, 15); take([...pool.rare, ...pool.mythic, ...pool.uncommon], 15); take(all, 15);
+  const order = { common: 0, land: 0, uncommon: 1, rare: 2, mythic: 3 };
+  return out.sort((a, b) => (order[a.r] ?? 0) - (order[b.r] ?? 0)).map(c => ({ ...c, slot: 'foil', foil: true, god: true }));
+}
 function packFromPool(pool, rng = Math.random) {
+  if (rng() < GOD_PACK_ODDS) return godPackFromPool(pool, rng);
   const pick = (list, n, avoid) => { const out = [], seen = new Set(avoid || []); for (let g = 0; out.length < n && g < 400; g++) { const c = list[Math.floor(rng() * list.length)]; if (!c || seen.has(c.n)) continue; seen.add(c.n); out.push(c); } return out; };
   const commons = pick(pool.common, 10), uncommons = pick(pool.uncommon, 3);
   const rareSlot = pool.mythic.length && rng() < 1 / 8 ? pick(pool.mythic, 1) : pick(pool.rare, 1);
@@ -16651,18 +16707,24 @@ function collAdd(cards) {
   try { const recs = cards.filter(x => x.rec && !cardInfo(x.n)); if (recs.length) { for (const x of recs) META.set(norm(x.n), normFaces(Object.assign({}, x.rec))); saveMeta(); } } catch (e) { /* card data: the rules engine can read the cards you opened */ }
 }
 // ---- opening one: choose the set, look it up, make the pack, take it from the bank, add the cards, then show the opening
-async function openPack(setCode) {
-  const p = packState(); if (p.bank < 1) { toast('No packs to open', 'Win a game or solve a puzzle for the first time to earn a pack.'); return null; }
-  if (navigator.onLine === false) { toast('Packs need the internet', 'The cards in a pack come from Scryfall. Connect and try again; your packs are kept.'); return null; }
-  let sets = []; try { sets = await packSets(); } catch (e) { sets = []; }
-  if (!sets.length) { toast('Could not reach Scryfall', (typeof lastNetReason !== 'undefined' && lastNetReason) || 'The set list could not be loaded. Your packs are kept; try again later.'); return null; }
+let packLastError = '';
+function packFail(msg) { packLastError = msg; try { log(`Packs: ${msg}`); } catch (e) {} try { console.warn('Packs:', msg); } catch (e) {} }
+async function openPack(setCode, prog) {
+  packLastError = '';
+  prog && prog(0.04, 'Getting the list of sets from Scryfall…');
+  const p = packState(); if (p.bank < 1) { packFail('You have no packs to open. Win a game, or solve a puzzle for the first time, to earn one.'); return null; }
+  if (navigator.onLine === false) { packFail('This device is offline. The cards in a pack come from Scryfall: connect and try again. Your packs are kept.'); return null; }
+  let sets = [], why = ''; try { sets = await packSets(); } catch (e) { sets = []; why = (e && (e.reason || e.message)) || ''; }
+  if (!sets.length) { packFail(`Scryfall's list of sets could not be loaded${why ? ` (${why})` : (typeof lastNetReason !== 'undefined' && lastNetReason ? ` (${lastNetReason})` : '')}. Your packs are kept; try again in a moment.`); return null; }
   const tryCodes = setCode && setCode !== 'random' ? [setCode] : sets.map(s => s.code).sort(() => Math.random() - 0.5).slice(0, 4);
-  let pool = null; for (const code of tryCodes) { try { pool = await packPool(code); } catch (e) { pool = null; } if (pool) break; }
-  if (!pool) { toast('Could not open the pack', 'The set\'s cards could not be loaded. Your pack is kept; try again or choose another set.'); return null; }
+  let pool = null, perr = ''; for (const code of tryCodes) { try { pool = await packPool(code, prog); } catch (e) { pool = null; perr = (e && (e.reason || e.message)) || perr; } if (pool) break; }
+  if (!pool) { packFail(`The set's cards could not be loaded from Scryfall${perr ? ` (${perr})` : ''}. Your pack is kept: try again, or choose another set.`); return null; }
+  prog && prog(0.95, 'Shuffling the pack…');
   const cards = packFromPool(pool); { const have = collState().cards; for (const x of cards) x.isNew = !have[x.set + '#' + x.cn]; }
   const q = packState(); q.bank = Math.max(0, q.bank - 1); q.opened++; q.lastSet = setCode || 'random'; packSave(q);
   collAdd(cards);
-  return { set: pool.code, setName: pool.name, cards };
+  prog && prog(1, 'Ready');
+  return { set: pool.code, setName: pool.name, cards, god: cards.some(c => c.god) };
 }
 // ---- v0.99.103 Room cards (Duskmourn), CR 709.5. A Room is a split card whose halves (doors) are enchantments.
 //  - Casting: you choose one door and cast it (the half chooser); when it resolves the Room enters with THAT door unlocked (709.5b), and its

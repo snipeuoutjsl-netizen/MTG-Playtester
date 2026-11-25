@@ -1,5 +1,11 @@
 
 
+## v0.99.108
+- Packs: packBackPay (one time, mtgpt.packsBackPaid) pays built-in puzzles solved before the first pack earned; earnPack(why, puzzle) records the puzzle. openPack(setCode, prog) reports progress (sets 4%, pool pages 15-85% from total_cards, lands 87%, shuffle 95%) and packFail() keeps the reason for the pack screen. Pools are v 2 (entries carry alt = full_art / borderless / showcase / extendedart / inverted). GOD_PACK_ODDS 1/100 -> godPackFromPool.
+- Library: libSel starts empty (no auto-pick); All decks / Favorites clear it; main = libShelf(...) (libBoxEl with opts.onPick and opts.label; sizes lg <= 4, md <= 10, sm otherwise; order = libRecent first). The Recently opened block is removed. Deck page crumb has a back link (.lib-crumb-back).
+- Accessibility CSS for #hall.lib2, .pk-ov, .lbx-ov and .dg-room under body.a11y-contrast / a11y-targets / a11y-focus / a11y-calm (the general rules didn't reach the Library's own colours).
+- Settings: SET_TABS without 'lib'; the P.lib content is removed (buildHallLook stays in 83-library-hall.js for the classic room). tests/mobile.js picks a shelf box before checking the deck page.
+
 ## v0.99.107
 - 8 puzzles in PUZZLES; startPuzzle0 applies p.dungeon and p.gs (savePuzzleFromGame stores them). tests/puzzle-solutions.js plays every new puzzle's intended line through the engine (cr-rules 'UI puzzles 2').
 - matchesGraveSpec: words joined by 'or' / 'and/or' are alternatives (Snapcaster Mage's 'instant or sorcery card in your graveyard' matched nothing).

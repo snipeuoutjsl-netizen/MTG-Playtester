@@ -67,7 +67,7 @@ function startPuzzle0(p) {
 function puzzleResult(won, why) {
   const pz = state && state.puzzle; if (!pz || pz.over) return; pz.over = true;
   let packNow = false;
-  if (won) { const s = pzSolved(); packNow = !s[pz.id] && !pz.saved; s[pz.id] = Date.now(); lsSet(PZ_SOLVED, s); if (packNow) earnPack(`you solved the puzzle "${pz.title}"`); }   // v0.99.106 the first solve of each puzzle earns a pack
+  if (won) { const s = pzSolved(); packNow = !s[pz.id] && !pz.saved; s[pz.id] = Date.now(); lsSet(PZ_SOLVED, s); if (packNow) earnPack(`you solved the puzzle "${pz.title}"`, pz.id); }   // v0.99.106 the first solve of each puzzle earns a pack
   const m = modal(won ? 'Puzzle solved' : 'Not this time', { width: 460, sticky: true }); m.el.classList.add(won ? 'ge-win' : 'ge-loss');
   m.body.append(h('div', { class: 'ge-big', text: won ? 'Solved!' : 'Try again' }), h('div', { class: 'ge-sub', text: won ? `${pz.title}: your opponent is at ${state.oppLife} life.` : (why || `${pz.title}: your opponent survived the turn.`) }));
   if (packNow) m.body.append(h('button', { class: 'ge-pack', title: 'Tear open the pack this puzzle earned (it is kept if you open it later)', onclick: () => { m.close(); openPackScreen(); } }, h('span', { class: 'ge-pack-i', 'aria-hidden': 'true' }), h('b', { text: 'First solve: you earned a pack' }), h('span', { text: 'Tear it open' })));

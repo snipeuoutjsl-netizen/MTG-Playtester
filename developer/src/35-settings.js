@@ -124,7 +124,7 @@ async function loadSleeve() {
 let settingsTab = 'gfx';
 // v0.99.70 merged: Board layout + Playmat & frame = Table; Animations + Sound = Motion & sound; the Library look window and the card-data / update
 // windows have their own tabs. ('mat' and 'snd' panes are still built, then folded into their merged tab.)
-const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['lib', 'Library'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
+const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
 const SET_TAB_ALIAS = { mat: 'board', snd: 'anim' };
 const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'Board effects (piles, combat lane, turn strip and more), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
@@ -338,9 +338,7 @@ function openSettings() {
   // v0.99.70 fold the merged panes in, and fill the two new tabs
   P.board.append(h('div', { class: 'fhead', text: 'Playmat & frame' }), ...[...P.mat.childNodes].filter(n => !(n.classList && n.classList.contains('fhead') && n.textContent === 'Playmat'))); delete P.mat;
   P.anim.append(h('div', { class: 'fhead', text: 'Sound' }), ...P.snd.childNodes); delete P.snd;
-  P.lib.append(buildHallLook(), h('div', { class: 'fhead', text: 'Start-up' }),
-    (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = libClassic(); cb.addEventListener('change', () => { lsSet('mtgpt.libClassic', cb.checked); try { if (hallOpen()) drawHall(); } catch (e) {} }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Classic 3D Library' }), h('span', { class: 'muted small', text: 'The old room with bookcases, rooms and the open book (shelved for now). Off: the clean Library screen.' }))); })(),
-    (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = lsGet(HALL_KEY, true) !== false; cb.addEventListener('change', () => lsSet(HALL_KEY, cb.checked)); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Open the Library when the app starts' }), h('span', { class: 'muted small', text: ' \u2014 otherwise the app opens straight at the table' }))); })());
+  // v0.99.108 the Library tab is gone: its looks belonged to the shelved 3D room, and "Open the Library when the app starts" is in the Library's own sidebar
   { const go = (t, d, f) => h('div', { class: 'setrow' }, h('label', { text: t }), h('button', { text: 'Open\u2026', onclick: () => { m.close(); f(); } }), h('span', { class: 'muted small', text: d }));
     const upd = (k, t) => { const cb = h('input', { type: 'checkbox' }); cb.checked = settings[k] !== false; cb.addEventListener('change', () => { settings[k] = cb.checked; saveSettings(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: t }))); };
     P.data.append(h('div', { class: 'fhead', text: 'Card data' }), go('Card data', `Names, costs and rules text (${cardCount ? cardCount.toLocaleString() + ' cards loaded' : 'not loaded yet'})`, openCardData), go('Card pictures', 'Download pictures, or play with text cards', openImages),

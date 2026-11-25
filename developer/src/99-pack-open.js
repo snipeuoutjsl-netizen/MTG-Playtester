@@ -9,6 +9,7 @@ const pkImg = x => { const im = h('img', { src: x.img, alt: x.n, draggable: 'fal
 const pkSvg = (cls, html) => { const d = h('div', { class: cls }); d.innerHTML = html; return d; };
 function openPackScreen() {
   if (document.querySelector('.pk-ov')) return;
+  try { const n = packBackPay(); if (n) toast('Packs for your solved puzzles', `You had solved ${n} puzzle${n === 1 ? '' : 's'} before packs existed: ${n} pack${n === 1 ? ' was' : 's were'} added.`); } catch (e) {}
   const motion = animOn('ui') !== false && !document.body.classList.contains('a11y-calm') && !reducedMotion();
   const ov = h('div', { class: 'pk-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Open a pack' });
   const close = () => { document.removeEventListener('keydown', onKey, true); ov.classList.add('leaving'); setTimeout(() => ov.remove(), motion ? 260 : 0); pkOpenNow = null; try { if (typeof hallOpen === 'function' && hallOpen()) drawHall(); } catch (e) {} };
@@ -38,11 +39,19 @@ function openPackScreen() {
   };
   let busy = false;
   const tear = async pack => {
-    if (busy) return; busy = true; pack.classList.add('shaking'); pack.disabled = true;
-    const hint = stage.querySelector('.pk-hint'); if (hint) hint.textContent = 'Looking up the cards…';
-    let res = null; try { res = await openPack(setSel.value); } catch (e) { console.error(e); res = null; }
-    busy = false; if (!ov.isConnected) return;
-    if (!res) { pack.classList.remove('shaking'); pack.disabled = false; if (hint) hint.textContent = 'Click the pack to tear it open'; return; }
+    if (busy) return; busy = true; pack.classList.add('shaking'); pack.disabled = true; const tb = foot.querySelector('.lib-btn.gold'); if (tb) tb.disabled = true;
+    const hint = stage.querySelector('.pk-hint'); if (hint) { hint.textContent = ''; hint.classList.remove('pk-err'); }
+    // v0.99.108 a loading bar: a pack's cards come from Scryfall, and the first pack of a set downloads that set's card list
+    const fill = h('i', { class: 'pk-load-fill' }), msg = h('div', { class: 'pk-load-msg', text: 'Starting…' });
+    const load = h('div', { class: 'pk-load', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0', 'aria-label': 'Opening the pack' },
+      h('div', { class: 'pk-load-bar' }, fill), msg,
+      h('div', { class: 'pk-load-why', text: 'Why this takes a moment: the cards in a pack come from Scryfall, the free online card database. The first pack from a set downloads that set\'s card list (often 300 or more cards, a few seconds). It is kept on this device, so later packs from the same set open at once.' }));
+    stage.querySelector('.pk-packwrap').append(load);
+    const prog = (f, text) => { const v = Math.round(Math.max(0, Math.min(1, f)) * 100); fill.style.width = v + '%'; load.setAttribute('aria-valuenow', String(v)); if (text) msg.textContent = text; };
+    let res = null; try { res = await openPack(setSel.value, prog); } catch (e) { console.error(e); res = null; }
+    load.remove();
+    busy = false; if (tb) tb.disabled = false; if (!ov.isConnected) return;
+    if (!res) { pack.classList.remove('shaking'); pack.disabled = false; if (hint) { hint.textContent = packLastError || 'The pack could not be opened. Try again.'; hint.classList.add('pk-err'); } return; }
     try { sfx('shuffle'); } catch (e) {}
     pack.classList.remove('shaking'); pack.classList.add('torn');
     setTimeout(() => reveal(res), motion ? 700 : 0);
@@ -52,7 +61,7 @@ function openPackScreen() {
       pkSvg('pk-back', HALL_LOGO),
       h('div', { class: 'pk-front' + (x.img ? ' img' : '') }, x.img ? pkImg(x) : h('div', { class: 'pk-txt' }, h('b', { text: x.n }), h('span', { text: (x.rec && x.rec.mc) || '' }), h('i', { text: (x.rec && x.rec.t) || '' })), x.foil ? h('i', { class: 'pk-foil' }) : null));
     const el = h('button', { class: `pk-card r-${x.foil ? 'foil' : x.slot}`, type: 'button', style: `--i:${i}`, 'aria-label': `Card ${i + 1}, face down. Click to turn it over.` }, inner,
-      h('div', { class: 'pk-tag' }, h('span', { text: x.foil ? `Foil ${(PK_RARITY[x.r] || x.r).toLowerCase()}` : PK_RARITY[x.slot] || PK_RARITY[x.r] || x.r }), x.isNew ? h('em', { text: 'New' }) : null));
+      h('div', { class: 'pk-tag' }, h('span', { text: x.foil ? `Foil ${(PK_RARITY[x.r] || x.r).toLowerCase()}${x.god && x.alt ? ' · full art' : ''}` : PK_RARITY[x.slot] || PK_RARITY[x.r] || x.r }), x.isNew ? h('em', { text: 'New' }) : null));
     el.addEventListener('click', () => { if (!el.classList.contains('up')) flip(el, x); else { zoom.replaceChildren(x.img ? h('img', { src: x.img, alt: x.n }) : h('div', { class: 'pk-txt big' }, h('b', { text: x.n }), h('i', { text: (x.rec && x.rec.t) || '' }), h('p', { text: (x.rec && x.rec.tx) || '' }))); zoom.classList.add('on'); } });
     return el;
   };
@@ -65,8 +74,9 @@ function openPackScreen() {
       more ? h('button', { class: 'lib-btn gold', text: `Open another (${more} left)`, onclick: () => choose() }) : null,
       h('button', { class: 'lib-btn ghost', text: 'View the Archive', onclick: () => { close(); openCollection(); } }), h('button', { class: 'lib-btn ghost', text: 'Close', onclick: close })); };
   const reveal = res => {
-    resNow = res; left = res.cards.length; ov.classList.add('revealing');
-    head.replaceChildren(h('div', { class: 'lib-cap', text: res.setName }), h('h2', { text: 'Your pack' }), h('p', { class: 'pk-sub', text: 'Click a card to turn it over. The rare is last.' }));
+    resNow = res; left = res.cards.length; ov.classList.add('revealing'); ov.classList.toggle('god', !!res.god);
+    head.replaceChildren(h('div', { class: 'lib-cap', text: res.setName }), h('h2', { text: res.god ? '✦ A God Pack ✦' : 'Your pack' }), h('p', { class: 'pk-sub', text: res.god ? 'About 1 pack in 100: every card is a foil, in the set\'s full-art, borderless and showcase printings where it has them.' : 'Click a card to turn it over. The rare is last.' }));
+    if (res.god) { try { sfx('win'); } catch (e) {} }
     const grid = h('div', { class: 'pk-grid' }, res.cards.map(cardEl)); stage.replaceChildren(grid);
     const all = h('button', { class: 'lib-btn gold', text: 'Reveal all', onclick: () => { all.disabled = true; [...grid.children].forEach((el, i) => setTimeout(() => flip(el, res.cards[i]), motion ? i * 110 : 0)); } });
     foot.replaceChildren(all);
