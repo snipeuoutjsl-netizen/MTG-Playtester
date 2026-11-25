@@ -61,7 +61,8 @@ function drawLibraryScreen(el) {
     FEATURES.commander ? modeTab('commander', '◌  Commander', decksInMode(decks, 'commander').length) : null,
     h('div', { class: 'lib-cap', text: libFilter === 'fav' ? 'Favorites' : 'Decks' }), search,
     h('div', { class: 'lib-decklist' }, ...(shown.length ? shown.map(deckRow) : [h('div', { class: 'lib-empty-s', text: inMode.length ? (libFilter === 'fav' ? 'No favorites yet: star a deck on its page.' : 'No deck matches.') : 'No decks yet.' })])),
-    h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk));
+    h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk,
+      h('button', { class: 'lib-btn link small lib-backup', type: 'button', text: lsGet('mtgpt.lastBackup', 0) ? 'Backup and restore' : 'Back up your library', title: 'Save your decks, Archive, packs and settings to one file, or restore them', onclick: () => openBackupWindow() })));   // v0.99.109
   // main: the selected deck
   const main = h('main', { class: 'lib-main' });
   if (libFilter === 'collection') main.append(...collectionPage(redraw).filter(Boolean));   // v0.99.106

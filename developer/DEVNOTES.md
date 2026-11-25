@@ -1,5 +1,11 @@
 
 
+## v0.99.109
+- Upright phone safe areas: the 760px .lib-top rule had dropped the safe-area top padding; body pinned (position fixed) in html.portrait-ui so iOS standalone doesn't leave a blank strip; .pk-ov / .lbx-ov / .lib-main keep the insets.
+- 99-backup.js: makeBackup / applyBackup (localStorage mtgpt.* minus caches, plus IDB card art / playmat / sleeves).
+- lifeFx / lethalFx: the delayed showGameEnd checks the game is still the same state object.
+- mobile.js ready() clears pregame, stack and pending triggers before each gesture.
+
 ## v0.99.108
 - Packs: packBackPay (one time, mtgpt.packsBackPaid) pays built-in puzzles solved before the first pack earned; earnPack(why, puzzle) records the puzzle. openPack(setCode, prog) reports progress (sets 4%, pool pages 15-85% from total_cards, lands 87%, shuffle 95%) and packFail() keeps the reason for the pack screen. Pools are v 2 (entries carry alt = full_art / borderless / showcase / extendedart / inverted). GOD_PACK_ODDS 1/100 -> godPackFromPool.
 - Library: libSel starts empty (no auto-pick); All decks / Favorites clear it; main = libShelf(...) (libBoxEl with opts.onPick and opts.label; sizes lg <= 4, md <= 10, sm otherwise; order = libRecent first). The Recently opened block is removed. Deck page crumb has a back link (.lib-crumb-back).
