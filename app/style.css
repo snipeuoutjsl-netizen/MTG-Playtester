@@ -2626,8 +2626,10 @@ html.portrait-ui #gamebar .hud > #gstates.hudbox.gs-trim { flex-wrap: nowrap; mi
 /* arriving and leaving */
 .skp-card.skp-enter { animation: skpDrop .42s cubic-bezier(.2,1.5,.4,1) both; }
 @keyframes skpDrop { from { opacity: 0; transform: translateX(var(--dx, 0)) translateY(-46px) rotate(calc(var(--rot, 0deg) - 14deg)) scale(1.12); } }
-.skp-card.skp-leave { position: fixed; border-radius: 7px; overflow: hidden; animation: skpLift .62s ease-in forwards; box-shadow: 0 0 0 2px rgba(227,185,92,.9), 0 0 30px rgba(255,214,120,.8); }
-@keyframes skpLift { 0% { opacity: 1; } 35% { opacity: 1; transform: translateY(-22px) rotate(-4deg) scale(1.08); filter: brightness(1.35); } 100% { opacity: 0; transform: translateY(-70px) rotate(6deg) scale(.7); filter: brightness(2) blur(2px); } }
+.skp-card.skp-leave { position: fixed; border-radius: 7px; overflow: hidden; transform: var(--t0, none); animation: skpLift .5s ease-out forwards; box-shadow: 0 6px 14px rgba(0,0,0,.45); }
+@keyframes skpLift { from { opacity: 1; transform: var(--t0, none); } to { opacity: 0; transform: var(--t0, none) translateY(-18px); } }   /* v0.99.86 a plain fade up off the pile, no growing */
+.skp-card.skp-leave .skp-slip { position: absolute; left: -2px; right: -2px; top: 47%; padding: 5px 7px 6px; transform: rotate(-3deg); background: linear-gradient(180deg, #f6ecd2, #e6d6ae); color: #2b1a0c; font: 600 9.5px/1.25 Georgia, serif; max-height: 46%; overflow: hidden; display: flex; gap: 5px; }
+.skp-card.skp-leave .skp-n { display: none; }
 .skp-card.skp-leave img { width: 100%; height: 100%; object-fit: cover; display: block; }
 @media (prefers-reduced-motion: reduce) { .skp-card.skp-enter, .skp-card.skp-leave, #stackStage .skp-card.busy { animation: none; } }
 html.portrait-ui #stackStage .skp { gap: 10px; }

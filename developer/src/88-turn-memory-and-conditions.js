@@ -29,6 +29,7 @@ function turnCond(t, g) {
   if (!state) return null;
   let m;
   if (/^you attacked (?:with (?:a|one or more) creatures? )?this turn$/.test(t)) return memCount('attacked') > 0;   // raid
+  if (/^you cast (?:it|~|this (?:creature|artifact|enchantment|permanent|card))$/.test(t)) return g && g.enteredFrom ? g.enteredFrom === 'stack' : null;   // v0.99.86 The One Ring, Wildfire Eternal: "if you cast it" (CR 603.4)
   if ((m = t.match(/^you attacked with (\w+) or more creatures this turn$/))) { const k = CS_NUM(m[1]); return isNaN(k) ? null : memCount('attacked') >= k; }
   if (/^you(?:'ve| have)? not attacked this turn$|^you didn'?t attack this turn$/.test(t)) return memCount('attacked') === 0;
   if (/^a permanent (?:you controlled )?left the battlefield (?:under your control )?this turn$/.test(t)) return memThisTurn('left').length > 0;   // revolt

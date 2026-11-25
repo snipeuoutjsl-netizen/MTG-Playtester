@@ -40,6 +40,15 @@ function batch4Options(t, sents, obj, src, out, drop) {
         const s2 = s.replace(m[1], land ? v : /colors/.test(m[1]) ? v : v); log(`${src}: chose ${v}`); b4RunSentence(s2, obj, src); }) });
       remDrop(s); continue;
     }
+    // 1b. CR 702.16b/e a player with protection from everything: damage that would be dealt to you is prevented (The One Ring)
+    if ((m = /^you gain (protection from everything|protection from [a-z ]+|hexproof|shroud) (until your next turn|until end of turn|this turn)\.?$/i.exec(s))) {
+      const u = /next turn/i.test(m[2]) ? 'yourNextTurn' : 'eot', every = /everything/i.test(m[1]), uw = u === 'eot' ? 'until end of turn' : 'until your next turn';
+      out.push({ covers: [s], full: sents.length === 1, label: `You gain ${m[1]} ${uw}${every ? ' (all damage to you is prevented)' : ''}`, fn: () => { snap();
+        if (every) addShield('you', Infinity, src, `Protection from everything ${uw}: damage to you is prevented`, false, u);
+        else addFx({ kind: 'note', until: u, turn: state.turn, srcName: src, text: `You have ${m[1]} ${uw}` });
+        log(`${src}: you gain ${m[1]} ${uw}${every ? ': damage that would be dealt to you is prevented, and you can\'t be targeted, enchanted or blocked by anything (CR 702.16)' : ''}`); render(); } });
+      remDrop(s); continue;
+    }
     // 2. "You have no maximum hand size until your next turn / this turn / for the rest of the game"
     if ((m = /^you have no maximum hand size(?: (until your next turn|until end of turn|this turn|for the rest of the game))?\.?$/i.exec(s))) {
       const u = !m[1] || /rest of the game/i.test(m[1]) ? 'permanent' : /next turn/i.test(m[1]) ? 'yourNextTurn' : 'eot';
