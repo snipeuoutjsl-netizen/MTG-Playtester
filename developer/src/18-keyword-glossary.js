@@ -415,7 +415,7 @@ function renderManaPool() {
 // (2) the layout steps that force the browser to re-measure the page (fit cards to zones, spread the hand, place the strip) run ONCE per frame instead of once per redraw.
 let renderCache = null, layoutQueued = false;
 function renderMemo(key, fn) { if (!renderCache) return fn(); if (renderCache.has(key)) return renderCache.get(key); const v = fn(); renderCache.set(key, v); return v; }
-function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } try { autoResumeTurn(); } catch (e) { /* turn flow only */ } }
+function render() { try { newGameCue(); libraryNotesTick(); } catch (e) {} const prev = renderCache; renderCache = new Map(); try { renderInner(); } finally { renderCache = prev; } try { mpQueueSnap(); } catch (e) { /* multiplayer sync only */ } try { autoResumeTurn(); } catch (e) { /* turn flow only */ } try { drawPuzzleBar(); } catch (e) { /* puzzle bar only */ } }
 function layoutPass() {
   layoutQueued = false;
   try { const sb = $('#stackBox'); stackBoxShown = !!(sb && sb.offsetParent); } catch (e) { /* layout only */ }
