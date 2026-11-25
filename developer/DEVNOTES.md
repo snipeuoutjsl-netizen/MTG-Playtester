@@ -1,5 +1,9 @@
 
 
+## v0.99.99
+- v3 perspective 1300 (table re-rendered with desk-gen3.py P=1300); lighter plank top faces.
+- Levitation: hallLevitate (translate property, so it composes with the 3D transform) on .hall-tome and .dbx-turn > .bk.big; .hall-tome-shadow is an ellipse on the table (hidden while a deck is open). Deck book at 212,236 (left case) or 1188 when the pulled tile is on shelves 5-8 (:has); spread 476..1124 from y 548; deck-open tome scale .86 at y 112.
+
 ## v0.99.98
 - developer/desk-gen3.py renders the table (720x340 at 440,540; perspective 2200, origin 800,40; back edge 590..1010 at y 540, front edge at y 836, apron to 876) as a transparent webp embedded as --desk-v3.
 - v3: tome bottom at y 540 with translateZ(150) rotateX(14deg) (stands on the table); bk-stage translateZ(36) (books set back from the shelf front at 128); plank fronts 26px; deck box at 505,466; spread 720..1130 from y 600.
