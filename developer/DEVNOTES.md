@@ -1,5 +1,8 @@
 
 
+## v0.99.105
+- Puzzles: the bar is removed once pz.over (solved or failed), besides body.hall-on hiding it (v0.99.103).
+
 ## v0.99.104
 - Original board layout removed: layMode() and layV() always true (body always gets lay-new and every lay-* class); the Board layout chooser and part switches removed from Settings (P.layout is now empty). The one original-only rule (body.lay-new:not(.lay-lanes) #mat) deleted. The base CSS the updated layout overrides is still there; it is the foundation of both and was not taken apart.
 

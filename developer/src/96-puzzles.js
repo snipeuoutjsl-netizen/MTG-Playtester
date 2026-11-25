@@ -92,7 +92,7 @@ function drawPuzzleBar() {
   let bar = document.getElementById('puzzleBar'); const pz = state && state.puzzle;
   // the puzzle ends the moment a life total reaches 0, however it got there (spells, combat, triggers)
   if (pz && !pz.over && !pz.ending && state.phase === 'play' && (state.oppLife <= 0 || state.life <= 0)) { pz.ending = true; const won = state.oppLife <= 0; setTimeout(() => { if (state && state.puzzle === pz && !pz.over) puzzleResult(won); }, 1200); }
-  if (!pz || state.phase !== 'play') { if (bar) bar.remove(); return; }
+  if (!pz || pz.over || state.phase !== 'play') { if (bar) bar.remove(); return; }   // v0.99.105 a finished puzzle (solved or not) has no bar
   if (!bar) { bar = h('div', { id: 'puzzleBar' }); document.body.append(bar); }
   const p = pzFind(pz.id);
   bar.replaceChildren(h('b', { text: `Puzzle: ${pz.title}` }), h('span', { text: `Win this turn — opponent at ${state.oppLife}` }),
