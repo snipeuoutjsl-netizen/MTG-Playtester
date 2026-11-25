@@ -17,7 +17,7 @@ const pct = x => (x * 100).toFixed(1) + '%';
 
 function openStats() {
   const deck = getCurrentDeck();
-  if (!deck || !deck.main.length) { alert('Import a deck first.'); return; }
+  if (!deck || !deck.main.length) { appNotice('No deck', 'Import a deck first.'); return; }
   const m = modal(`Deck view: ${deck.name}`, { width: 1240 });
   m.el.classList.add('deckview');
   const N = sum(deck.main);

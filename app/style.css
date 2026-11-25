@@ -2225,7 +2225,7 @@ html.portrait-ui #btnDecks.libret b { font-size: 12px; }
 /* the hand fanned from one point below the screen */
 html.portrait-ui #row-hand.pfan { justify-content: center; }
 html.portrait-ui #row-hand.pfan .card { transform-origin: 50% 260%; }
-html.portrait-ui body:not(.mullhand) #handWrap { height: calc(var(--ch) + 70px); }   /* v0.99.61 not during the opening hand: that sizes itself (a fixed height squeezed the hand to nothing and pushed it over the prompt) */
+html.portrait-ui body:not(.mullhand):not(.mullpick) #handWrap { height: calc(var(--ch) + 70px); }   /* v0.99.61 not during the opening hand: that sizes itself (a fixed height squeezed the hand to nothing and pushed it over the prompt) */
 /* the Library's gear (settings), top right, beside "Back to the table" */
 #hall .hall-corner { position: absolute; top: calc(12px + calc(env(safe-area-inset-top) * var(--vpk, 1))); right: calc(14px + calc(env(safe-area-inset-right) * var(--vpk, 1))); z-index: 6; display: flex; gap: 8px; align-items: center; }
 #hall .hall-corner .hall-close { position: static; }
@@ -2574,3 +2574,11 @@ html.portrait-ui #piles { margin-left: 0; }
 #zone-noncreature .zlabel { white-space: nowrap; overflow: visible; text-overflow: clip; right: auto; }
 #zone-noncreature .zl-short { display: none; }
 @container ncz (max-width: 400px) { #zone-noncreature .zl-long { display: none; } #zone-noncreature .zl-short { display: inline; } }
+
+/* v0.99.82 a deck taken off the shelf takes its "in use" ribbon with it */
+.bk-tile.out .bk-ribbon { visibility: hidden; }
+/* v0.99.82 the game-state box is hidden when there is nothing to show (a display rule for the top bar had kept an empty box on phones) */
+#gstates[hidden] { display: none !important; }
+/* v0.99.82 choosing the cards to put on the bottom uses the same large hand as the Keep / Mulligan decision (on phones it was squeezed under the prompt) */
+body.mullpick #handWrap { --cw: 176px; --ch: 138px; gap: 34px; }
+body.imgmode.mullpick #handWrap { --cw: 176px; --ch: 246px; }

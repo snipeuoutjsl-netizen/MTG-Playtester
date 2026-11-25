@@ -174,7 +174,7 @@ function openSettings() {
       if (matUrl) URL.revokeObjectURL(matUrl);
       matUrl = URL.createObjectURL(f);
       settings.custom = true; saveSettings();
-      try { await idbSet('playmat', f); } catch (e) { alert('Playmat applied, but your browser would not save it. You will need to pick it again next time.'); }
+      try { await idbSet('playmat', f); } catch (e) { appNotice('Playmat', 'Applied, but it could not be saved. You will need to pick it again next time.'); }
       drawMat();
     });
     const fit = h('select');

@@ -374,7 +374,7 @@ function openCustomArt(deckName, after) {
   m.body.append(
     h('p', { class: 'small muted', text: 'Pick your own picture for any card in this deck. The picture is used on the table, in your hand and in the card preview. Choose one card at a time, or import many at once if the files are named after the cards (for example “Lightning Bolt.png”). Pictures stay on this computer and only apply to this deck.' }),
     h('div', { class: 'cart-bar' }, h('button', { class: 'primary', text: 'Import several images…', title: 'Files are matched to cards by file name', onclick: batch }), count,
-      h('button', { class: 'danger', text: 'Reset all', onclick: () => { if (!customCount() || !confirm(`Remove all custom art from "${deckName}"?`)) return; clearDeckArt(deckName); note.textContent = 'All custom art removed.'; draw(); render(); } })),
+      h('button', { class: 'danger', text: 'Reset all', onclick: async () => { if (!customCount() || !(await appAsk('Reset art', `Remove all custom art from "${deckName}"?`, 'Remove', true))) return; clearDeckArt(deckName); note.textContent = 'All custom art removed.'; draw(); render(); } })),
     note, grid);
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() }));
   draw();

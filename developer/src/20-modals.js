@@ -83,17 +83,17 @@ function openDeckEditor(opts) {
     fileBtn,
     h('button', { text: 'New deck', onclick: () => { nameIn.value = ''; ta.value = ''; updateInfo(); nameIn.focus(); } }),
     h('button', { text: 'Load sample', onclick: () => { ta.value = SAMPLE; if (!nameIn.value.trim()) nameIn.value = 'Green Domain Stirrings (sample)'; updateInfo(); } }),
-    curName && decks[curName] ? h('button', { class: 'danger', text: 'Delete deck', onclick: () => {
-      if (!confirm(`Delete "${curName}"?`)) return;
+    curName && decks[curName] ? h('button', { class: 'danger', text: 'Delete deck', onclick: async () => {
+      if (!(await appAsk('Delete deck', `Delete "${curName}"? This cannot be undone.`, 'Delete', true))) return;
       delete decks[curName]; saveDecks(decks); clearDeckArt(curName); lsSet('mtgpt.current', null);
       refreshDeckSelect(); m.close(); render();
     } }) : null,
     h('button', { text: 'Cancel', onclick: () => m.close() }),
     h('button', { class: 'primary', text: 'Save', onclick: () => {
       const name = nameIn.value.trim();
-      if (!name) { alert('Give the deck a name.'); return; }
+      if (!name) { appNotice('No name', 'Give the deck a name.'); nameIn.focus(); return; }
       const d = parseDeck(ta.value);
-      if (!d.main.length) { alert('The decklist is empty.'); return; }
+      if (!d.main.length) { appNotice('Empty decklist', 'The decklist is empty.'); return; }
       const all = loadDecks();
       const keepSb = all[name] && all[name].text === ta.value ? all[name].sb : undefined;   // editing the list itself discards any sideboard changes
       all[name] = Object.assign({}, all[name] || {}, { text: ta.value, updated: Date.now() }); if (keepSb) all[name].sb = keepSb; else delete all[name].sb;
@@ -253,7 +253,7 @@ function openImages() {
   const bAll = h('button', { text: 'Download for all saved decks', onclick: () => { imgMissing.clear(); downloadImages(allDeckNames()); } });
   const bStop = h('button', { text: 'Stop', onclick: () => { imgJob.cancel = true; } });
   const bClear = h('button', { class: 'danger', text: 'Delete saved images', onclick: async () => {
-    if (!confirm('Delete all saved card images from this browser? You can download them again later.')) return;
+    if (!(await appAsk('Delete saved images', 'Delete all saved card images from this computer? You can download them again later.', 'Delete', true))) return;
     try { await idbDelete(await idbKeys('img:')); } catch (e) { /* ignore */ }
     for (const e of IMG.values()) for (const u of [e.front, e.back]) if (u && u.startsWith('blob:')) URL.revokeObjectURL(u);
     IMG.clear(); imgMissing.clear(); render(); setImgStatus();

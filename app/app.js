@@ -216,20 +216,20 @@ async function importCardData(file) {
     if (head[0] === 0x1f && head[1] === 0x8b && typeof DecompressionStream !== 'undefined') {   // gzip-compressed copy
       text = await new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text();
     } else if (head[0] === 0x50 && head[1] === 0x4b) {
-      alert('That is a .zip file. Extract it first, or use the "Download from Scryfall" button instead.'); updateDbStatus(); return;
+      appNotice('Card data', 'That is a .zip file. Extract it first, or use the "Download from Scryfall" button instead.'); updateDbStatus(); return;
     } else text = await file.text();
     updateDbStatus('Parsing…');
     await new Promise(r => setTimeout(r, 30));
     let raw;
     try { raw = JSON.parse(text.replace(/^\uFEFF/, '')); } catch (e) {
-      alert('That file is not valid JSON (it starts with: "' + text.slice(0, 40).replace(/\s+/g, ' ') + '"). Try the "Download from Scryfall" button instead.'); updateDbStatus(); return;
+      appNotice('Card data', 'That file is not valid JSON (it starts with: "' + text.slice(0, 40).replace(/\s+/g, ' ') + '"). Try the "Download from Scryfall" button instead.'); updateDbStatus(); return;
     }
     if (raw && !Array.isArray(raw) && raw.data && raw.meta && typeof raw.data === 'object') {   // MTGJSON AtomicCards / ModernAtomic …
       const first = Object.values(raw.data)[0];
-      if (!Array.isArray(first)) { alert('That looks like an MTGJSON “AllPrintings” file, which is organised by set. Please use “AtomicCards” (or ModernAtomic, LegacyAtomic…) instead.'); updateDbStatus(); return; }
+      if (!Array.isArray(first)) { appNotice('Card data', 'That looks like an MTGJSON “AllPrintings” file, which is organised by set. Please use “AtomicCards” (or ModernAtomic, LegacyAtomic…) instead.'); updateDbStatus(); return; }
       raw = mtgjsonToCards(raw);
     }
-    if (!Array.isArray(raw)) { alert('Unexpected format. Use the "Oracle Cards" bulk file from Scryfall or an "AtomicCards" file from MTGJSON.'); updateDbStatus(); return; }
+    if (!Array.isArray(raw)) { appNotice('Card data', 'Unexpected format. Use the "Oracle Cards" bulk file from Scryfall or an "AtomicCards" file from MTGJSON.'); updateDbStatus(); return; }
     updateDbStatus('Indexing cards…');
     await new Promise(r => setTimeout(r, 30));
     const out = []; const seen = new Set(); const toks = [];
@@ -242,18 +242,18 @@ async function importCardData(file) {
       seen.add(k);
       out.push(compact(o));
     }
-    if (!out.length) { alert('No cards found in that file.'); updateDbStatus(); return; }
+    if (!out.length) { appNotice('Card data', 'No cards found in that file.'); updateDbStatus(); return; }
     installCards(out); mergeTokens(toks);
     let saved = true;
     try { await idbSet('cards', out); await idbSet('tokens', (() => { const a = []; TOKENDB.forEach(x => x.forEach(r => a.push(r))); return a; })()); } catch (e) { saved = false; }
     updateDbStatus();
     syncTokens(true);
-    if (!saved) alert('Cards loaded, but your browser would not save them. You will need to load the file again next time.');
+    if (!saved) appNotice('Card data', 'Cards loaded, but your browser would not save them. You will need to load the file again next time.');
     render();
     prepareImages();
   } catch (e) {
     console.error(e);
-    alert('Could not load card data: ' + e.message);
+    appNotice('Card data', 'Could not load card data: ' + e.message);
     updateDbStatus();
   }
 }
@@ -2002,7 +2002,7 @@ function effectOptionsBase(tx, obj) {
       const lbl = (n) => `Create ${n === 'X' ? 'X' : n} ${d.pt ? d.pt + ' ' : ''}${d.name} token${n === 1 ? '' : 's'}`;
       const ix = sp0.findIndex(sp => sp.kind === 'player'), tgt = ix >= 0 && /\btarget (?:player|opponent) creates?\b/i.test(tx) ? (obj.targets || []).find(t => t.spec === ix) : null;
       if (tgt && tgt.id === 'opp') { opts.push({ label: `Opponent creates ${d.count} ${d.pt ? d.pt + ' ' : ''}${d.name} token${d.count === 1 ? '' : 's'} (their side is not tracked: log only)`, fn: () => log(`${src}: opponent creates ${d.count} ${d.name} token${d.count === 1 ? '' : 's'}`) }); continue; }
-      opts.push({ label: lbl(d.count), fn: () => { let n = d.count; if (n === 'X') { n = parseInt(prompt(`How many ${d.name} tokens (X)?`, '1'), 10) || 0; } if (n > 0) makeTokensFromDef(d, n, src); } });
+      opts.push({ label: lbl(d.count), fn: async () => { let n = d.count; if (n === 'X') { n = (await appAskNumber(`${src}: X`, `How many ${d.name} tokens (X)?`, 1)) || 0; } if (n > 0) makeTokensFromDef(d, n, src); } });
     } }
   const txNq = tx.replace(/"[^"]*"/g, ' ');
   // v0.99.77 CR 106.6 "Spend this mana only to …" after an Add: the mana floats with that restriction (Lord of the Forsaken, Titans' Nest)
@@ -2077,10 +2077,7 @@ function openAbilityEffect(obj, done) {
       const sents = tx.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().split(/(?<=\.)\s+/), keep = []; let lastT = false;
       for (const se of sents) { const t = /\btarget\b/i.test(se) || (lastT && /^(?:it|that \w+|they|those \w+|its)\b/i.test(se)); lastT = t; if (!t) keep.push(se); }
       if (!keep.length) { const said = sents.join(' ').replace(/^(?:it|this \w+)\b/i, obj.sourceName || 'It').replace(/\btarget ([^.,;]+?) (?:an opponent controls|you don't control|your opponent controls)\b/gi, "the $1 you chose on your opponent's side").replace(/\btarget ([a-z ]+?)(?=[.,;]| and\b)/gi, 'the $1 you chose'); const msg = untracked ? `${said} Your opponent's permanents are not on this table, so apply it to the real card (mark the damage or remove it there).` : 'No target was chosen, so it does nothing.'; log(`${obj.sourceName || obj.name}: ${untracked ? msg : 'no target was chosen, so it does nothing'}`); log(`Resolved: ${obj.name}`);
-        if (untracked) {   // v0.99.76 something you must do on the real table is shown in the stack window until you press Done (a toast was easy to miss)
-          const m = modal(`Resolving: ${obj.sourceName || obj.name}`, { width: 520, sticky: true, noClose: true, resolve: true });
-          m.body.append(h('div', { class: 'psub', text: said }), h('div', { class: 'muted small', text: "Your opponent's permanents are not on this table: apply it to the real card (mark the damage, or remove the permanent if it dies)." }));
-          m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => { m.close(); render(); if (done) done(); } })); render(); return; }
+        // v0.99.82 no window for it any more: the stack panel's "What the app did" and the log already say what to do on the real table
         toast(`${obj.sourceName || 'Ability'} resolves`, msg); render(); if (done) done(); return; }
       if (keep.length < sents.length) { if (untracked) log(`${obj.sourceName || obj.name}: the part about ${what} is applied on the real table (the opponent's permanents are not tracked)`); const o2 = Object.assign({}, obj, { text: keep.join(' '), targets: undefined, _tgtAsked: true }); openAbilityEffect(o2, done); return; }
     }
@@ -2146,10 +2143,10 @@ function openAbilityEffect(obj, done) {
     } else if (o.special === 'payLifeDraw') {
       const inp = h('input', { type: 'number', min: 0, max: Math.max(0, state.life), value: 0, style: 'width:70px' });
       const go = h('button', { class: 'primary', text: 'Pay life and draw' });
-      go.addEventListener('click', () => {
+      go.addEventListener('click', async () => {
         const n = Math.max(0, Math.min(parseInt(inp.value, 10) || 0, state.life));
         if (!n) { toast('Nothing paid', 'You chose to pay 0 life, so you draw nothing.'); return; }
-        if (n >= state.life && !confirm(`Paying ${n} life would put you at ${state.life - n}. Continue?`)) return;
+        if (n >= state.life && !(await appAsk('Pay life', `Paying ${n} life would put you at ${state.life - n}. Continue?`, 'Pay', true))) return;
         snap(); state.life -= n; const d = drawCards(n); log(`${obj.sourceName}: paid ${n} life, drew ${d}`);
         go.disabled = true; inp.disabled = true; render();
       });
@@ -2197,7 +2194,7 @@ function openCascade(obj, done) {
     if (cast && hit) { if (state.pendingTriggers.length) resolvePendingTrigger(); else openStack(); }
   };
   if (hit) m.foot.append(h('button', { text: 'Do not cast', onclick: () => finish(false) }), h('button', { class: 'primary', text: `Cast ${hit.name} free`, onclick: () => finish(true) }));
-  else m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: () => finish(false) }));
+  else { toast(`Cascade: nothing found`, `${seen.length} card${seen.length === 1 ? '' : 's'} went to the bottom of your library.`); finish(false); }   // v0.99.82 nothing to decide: no window to dismiss
 }
 
 // ---------------------------------------------------------------- static effects (Necrodominance, Rest in Peace, ...)
@@ -4205,7 +4202,7 @@ function startGame() {
   dealingStart();
   lifePrev = { you: null, opp: null }; lastStepShown = null;
   const deck = getCurrentDeck();
-  if (!deck || !deck.main.length) { alert('Import a deck first (Import / edit deck).'); return; }
+  if (!deck || !deck.main.length) { appNotice('No deck', 'Import a deck first (Import / edit deck).'); return; }
   state = freshState();
   state.newGameReset = true;   // v0.99.44 on screen every card of the old game goes back into the library before the new seven are dealt (card ids start again, so an old card must never be mistaken for a new one)
   undoStack = []; selected = null; bottomSel.clear();
@@ -6719,17 +6716,17 @@ function openDeckEditor(opts) {
     fileBtn,
     h('button', { text: 'New deck', onclick: () => { nameIn.value = ''; ta.value = ''; updateInfo(); nameIn.focus(); } }),
     h('button', { text: 'Load sample', onclick: () => { ta.value = SAMPLE; if (!nameIn.value.trim()) nameIn.value = 'Green Domain Stirrings (sample)'; updateInfo(); } }),
-    curName && decks[curName] ? h('button', { class: 'danger', text: 'Delete deck', onclick: () => {
-      if (!confirm(`Delete "${curName}"?`)) return;
+    curName && decks[curName] ? h('button', { class: 'danger', text: 'Delete deck', onclick: async () => {
+      if (!(await appAsk('Delete deck', `Delete "${curName}"? This cannot be undone.`, 'Delete', true))) return;
       delete decks[curName]; saveDecks(decks); clearDeckArt(curName); lsSet('mtgpt.current', null);
       refreshDeckSelect(); m.close(); render();
     } }) : null,
     h('button', { text: 'Cancel', onclick: () => m.close() }),
     h('button', { class: 'primary', text: 'Save', onclick: () => {
       const name = nameIn.value.trim();
-      if (!name) { alert('Give the deck a name.'); return; }
+      if (!name) { appNotice('No name', 'Give the deck a name.'); nameIn.focus(); return; }
       const d = parseDeck(ta.value);
-      if (!d.main.length) { alert('The decklist is empty.'); return; }
+      if (!d.main.length) { appNotice('Empty decklist', 'The decklist is empty.'); return; }
       const all = loadDecks();
       const keepSb = all[name] && all[name].text === ta.value ? all[name].sb : undefined;   // editing the list itself discards any sideboard changes
       all[name] = Object.assign({}, all[name] || {}, { text: ta.value, updated: Date.now() }); if (keepSb) all[name].sb = keepSb; else delete all[name].sb;
@@ -6889,7 +6886,7 @@ function openImages() {
   const bAll = h('button', { text: 'Download for all saved decks', onclick: () => { imgMissing.clear(); downloadImages(allDeckNames()); } });
   const bStop = h('button', { text: 'Stop', onclick: () => { imgJob.cancel = true; } });
   const bClear = h('button', { class: 'danger', text: 'Delete saved images', onclick: async () => {
-    if (!confirm('Delete all saved card images from this browser? You can download them again later.')) return;
+    if (!(await appAsk('Delete saved images', 'Delete all saved card images from this computer? You can download them again later.', 'Delete', true))) return;
     try { await idbDelete(await idbKeys('img:')); } catch (e) { /* ignore */ }
     for (const e of IMG.values()) for (const u of [e.front, e.back]) if (u && u.startsWith('blob:')) URL.revokeObjectURL(u);
     IMG.clear(); imgMissing.clear(); render(); setImgStatus();
@@ -7048,8 +7045,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.81';
+const APP_VERSION = '0.99.82';
 const CHANGELOG = [
+  { v: '0.99.82', title: 'Fewer leftover pop-ups, and fixes for upright phones', notes: ['RESOLVING: an ability aimed at your opponent\u2019s permanent (Ugin, Devourer of Destiny, Skysovereign) no longer opens a window you have to dismiss. It finishes by itself; the stack panel\u2019s "What the app did" and the log say what to do at the real table.', 'Cascade and Discover that find nothing no longer stop on an OK window: a short note says the cards went to the bottom.', 'The last of the browser\u2019s own alert / confirm / prompt boxes from the first versions are gone (deleting a deck, deleting saved images, resetting art, paying life down to 0, X tokens, card data messages). They are the app\u2019s own windows and notes now, which also work on phones that block browser boxes.', 'PHONE (upright): a deck taken off the shelf takes its "in use" ribbon with it, instead of leaving the ribbon floating on the shelf.', 'PHONE (upright): the Library sign starts below the Back to the table and settings buttons, so they no longer cover it.', 'PHONE (upright): when you put cards on the bottom after a mulligan, the hand is large and sits below the prompt; the prompt no longer spills over its own frame or covers the cards.', 'PHONE (upright): the empty box next to Mana in the top bar is gone when no game state is showing.'] },
   { v: '0.99.81', title: 'One zone for lands and permanents, fewer Resolving windows, and a turn record for the rules', notes: ['TABLE: on wide windows the battlefield only filled part of the screen when the lower zones were empty. Fixed (their shares of the width could add up to less than the whole row).', 'TABLE: lands and artifacts / enchantments / planeswalkers are now one zone on every screen: lands on the left, the other permanents on the right, the split following how many cards each side holds. Upright phones too. A narrow right half reads "Other permanents" instead of a cut-off label.', 'RESOLVING: an effect that opens its own window (surveil, scry, look at the top cards, search) no longer waits in the Resolving panel for an Apply click. Kaito\u2019s 0 goes straight to the surveil window. Effects you might not want ("you may", paying a cost, a choice of modes) still ask.', 'RULES (CR 603.4): intervening "if". "When this creature enters, if you attacked this turn, …" (Raid), Revolt, Void, Coven, bloodthirst and the like only trigger when the condition is true, and the condition is checked again as the ability resolves.', 'RULES: the game now keeps one record of what happened this turn (attacks, life gained and lost, cards drawn, permanents that left, creatures that died, spells cast or warped). Every "this turn" condition reads from it: War-Name Aspirant enters with its counter only after you attacked, Undercity Scrounger and Caged Zombie can be activated only after a creature died (CR 602.5b), Bone Picker costs {3} less after a creature died and Focus the Mind {2} less after another spell (CR 601.2f).', 'LIBRARY: the lamplight is drawn more cheaply, so opening and closing the Library is smoother on slower machines.'] },
   { v: '0.99.80', title: 'A better-looking Library, and more rules', notes: ['LIBRARY: new, sharper textures, all drawn by our own generator (no outside images). The desk is six walnut boards with real growth rings, cathedral arches, pores and a soft lamp sheen in the varnish, drawn from a 4K source so the near boards stay crisp. The shelves, the name plate and the wall boards use the new wood; the plaster wall is finer. Books (the open menu book and every spine) are covered in pebble-grain leather.', 'LIBRARY: lamplight. The corners of the room fall into shadow and a warm pool of light sits over the open book; the shelf fronts catch the light on their top edge.', 'RULES (CR 615): prevention shields. "Prevent the next N damage that would be dealt to any target / you / this creature this turn" (Shieldmate\u2019s Blessing, Barrenton Medic), "Prevent all damage that would be dealt to him this turn" (Gideon) and "The next time a source of your choice would deal damage to you this turn, prevent that damage" (Haazda Shield Mate) now really stop the damage, from spells, sweepers and painlands alike. "Damage can\u2019t be prevented" (Skullcrack) still turns them off.', 'RULES (CR 613.4d): "Switch this creature\u2019s power and toughness until end of turn" (Aeromoeba, Merfolk Thaumaturgist) works, applied after every other change, as the rules say.', 'RULES: "Target creature gets -X/-X until end of turn" (Battle at the Bridge, Sickening Shoal) uses the X you paid; "+X/+X where X is its power" doubles it.', 'RULES (CR 614.1a): "If a creature dealt damage this way would die this turn, exile it instead" (Anger of the Gods, Yamabushi\u2019s Flame) and "If that creature or planeswalker would die this turn, exile it instead" (Fanged Flames) are put in place before the damage, so the creature really is exiled. Anger of the Gods now deals its damage too (the second sentence used to stop it being read).', 'RULES: "Choose one of them. You may play that card this turn." (Jaya, Fiery Negotiator, Party Thrasher) asks which exiled card it was and makes it playable from the exile pile.', 'RULES: "Gain control of target creature until end of turn" (Unwilling Recruit, Threaten effects) on your own creature changes nothing; on your opponent\u2019s it is noted for the real table. 182 fewer sentences are left as Remember notes; 104 more cards are read in full.'] },
   { v: '0.99.79', title: 'Skullcrack, and \u201cRemember\u201d effects carried out', notes: ['Skullcrack resolves in one go: 3 damage to its target, and \u201cPlayers can\u2019t gain life this turn\u201d is a real effect until end of turn (your life gain, lifelink and your opponent\u2019s life gain are stopped); \u201cDamage can\u2019t be prevented this turn\u201d is recorded too. The \u201cor\u201d in \u201ctarget player or planeswalker\u201d no longer stops a spell from resolving by itself.', 'Far fewer \u201cRemember (until end of turn)\u201d notes: a note is never shown next to an option that already does the same thing, and these are now carried out: group pumps and shrinks (\u201cAll creatures get -2/-2\u201d, \u201cAttacking creatures get +1/+0\u201d, any group the sentence names), an Aura\u2019s \u201cEnchanted creature gets \u2026\u201d, Fog (your combat damage is prevented that turn), mana that stays in your pool until end of turn (Grand Warlord Radha), \u201ccan attack this turn as though it didn\u2019t have defender\u201d. Blocking effects (\u201ccan\u2019t block\u201d, \u201ccan\u2019t be blocked\u201d, \u201cblocks if able\u201d) say plainly that blocking is up to your opponent. Across all cards, Remember notes went from 2,551 to about 1,700; most of the rest are for the opponent\u2019s permanents.', '289 rules tests pass, all with real cards.'] },
@@ -7595,7 +7593,7 @@ const pct = x => (x * 100).toFixed(1) + '%';
 
 function openStats() {
   const deck = getCurrentDeck();
-  if (!deck || !deck.main.length) { alert('Import a deck first.'); return; }
+  if (!deck || !deck.main.length) { appNotice('No deck', 'Import a deck first.'); return; }
   const m = modal(`Deck view: ${deck.name}`, { width: 1240 });
   m.el.classList.add('deckview');
   const N = sum(deck.main);
@@ -8655,7 +8653,7 @@ function openCustomArt(deckName, after) {
   m.body.append(
     h('p', { class: 'small muted', text: 'Pick your own picture for any card in this deck. The picture is used on the table, in your hand and in the card preview. Choose one card at a time, or import many at once if the files are named after the cards (for example “Lightning Bolt.png”). Pictures stay on this computer and only apply to this deck.' }),
     h('div', { class: 'cart-bar' }, h('button', { class: 'primary', text: 'Import several images…', title: 'Files are matched to cards by file name', onclick: batch }), count,
-      h('button', { class: 'danger', text: 'Reset all', onclick: () => { if (!customCount() || !confirm(`Remove all custom art from "${deckName}"?`)) return; clearDeckArt(deckName); note.textContent = 'All custom art removed.'; draw(); render(); } })),
+      h('button', { class: 'danger', text: 'Reset all', onclick: async () => { if (!customCount() || !(await appAsk('Reset art', `Remove all custom art from "${deckName}"?`, 'Remove', true))) return; clearDeckArt(deckName); note.textContent = 'All custom art removed.'; draw(); render(); } })),
     note, grid);
   m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() }));
   draw();
@@ -9757,7 +9755,7 @@ function openSettings() {
       if (matUrl) URL.revokeObjectURL(matUrl);
       matUrl = URL.createObjectURL(f);
       settings.custom = true; saveSettings();
-      try { await idbSet('playmat', f); } catch (e) { alert('Playmat applied, but your browser would not save it. You will need to pick it again next time.'); }
+      try { await idbSet('playmat', f); } catch (e) { appNotice('Playmat', 'Applied, but it could not be saved. You will need to pick it again next time.'); }
       drawMat();
     });
     const fit = h('select');
@@ -11099,7 +11097,7 @@ function openDiscover(n, srcName) {
     render(); if (how === 'cast') { if (state.pendingTriggers.length) resolvePendingTrigger(); else openStack(); }
   };
   if (hit) m.foot.append(h('button', { text: 'Put into hand', onclick: () => finish('hand') }), h('button', { class: 'primary', text: `Cast ${hit.name} free`, onclick: () => finish('cast') }));
-  else m.foot.append(h('button', { class: 'primary', text: 'OK', onclick: () => finish(null) }));
+  else { toast(`Discover: nothing found`, `${seen.length} card${seen.length === 1 ? '' : 's'} went to the bottom of your library.`); finish(null); }   // v0.99.82 nothing to decide: no window to dismiss
 }
 // ---------------------------------------------------------------- alternative-cost and other casting keywords (v0.96.2)
 // ALT_KW: "Keyword {cost}" / "Keyword - cost" lines that give an alternative way to cast a spell. `test(c)` returns '' when the condition
@@ -12383,7 +12381,7 @@ function openTokenGlossary() {
   const count = h('span', { class: 'small muted' });
   const prog = (st, done, total, ok, why) => { note.textContent = st === 'run' ? `Downloading token pictures\u2026 ${done}/${total}` : st === 'busy' ? 'A token picture download is already running (' + done + '/' + total + '). Try again when it finishes.' : st === 'offline' ? 'Offline: connect to the internet to download token pictures.' : st === 'error' ? `Stopped: ${why || 'could not reach Scryfall'}. ${ok} saved.` : st === 'stopped' ? `Stopped. ${ok} saved.` : total ? `Done: ${ok} of ${total} token pictures downloaded (the rest have none on Scryfall).` : 'Nothing new to download.'; if (st !== 'run') draw(); };
   const dlDeck = h('button', { text: 'Download art for my deck\u2019s tokens', title: 'Fetches the official token pictures from Scryfall, the same way card pictures are fetched', onclick: () => downloadTokenArt(all.filter(d => d.grp === 'In your deck'), prog) });
-  const dlAll = h('button', { text: 'Download art for all tokens', onclick: () => { if (all.length < 80 || confirm(`Download pictures for ${all.length} tokens from Scryfall? It takes a few minutes.`)) downloadTokenArt(all, prog); } });
+  const dlAll = h('button', { text: 'Download art for all tokens', onclick: async () => { if (all.length < 80 || await appAsk('Download token art', `Download pictures for ${all.length} tokens from Scryfall? It takes a few minutes.`, 'Download')) downloadTokenArt(all, prog); } });
   const dlStop = h('button', { text: 'Stop', onclick: () => { tokJob.cancel = true; } });
   search.addEventListener('input', () => { q = search.value.trim().toLowerCase(); shown = 60; draw(); });
   m.body.append(h('p', { class: 'small muted', text: 'Every token has generic art drawn by this app (the app ships no official art). Press a Download button to fetch the official token pictures from Scryfall, the same way card pictures are fetched, or add your own picture to any token your own picture; it always wins over the others. It is used wherever that token appears (on the table, in the preview, in stacks). The picture is stored on this computer only. Art is per token name, so one picture covers every Soldier you make.' }),
@@ -14287,7 +14285,10 @@ function hallWantsPortrait() { const el = document.getElementById('hall'); retur
 function hallFit() {   // scale the fixed stage to fit the window (letterboxed on the plastered wall)
   const vp = document.querySelector('#hall .hall-view'), st = vp && vp.querySelector('.hall-stage'); if (!st) return;
   const W = hallPortrait() ? 900 : HALL_W, H = hallPortrait() ? 1600 : HALL_H;
-  const k = Math.min(vp.clientWidth / W, vp.clientHeight / H) || 1; st.style.setProperty('--hs', String(Math.max(0.2, Math.min(1.6, k))));
+  // v0.99.82 upright phones: the sign is centred at the top and the corner buttons sit over it, so the room starts below the buttons
+  const cor = document.querySelector('#hall .hall-corner'), R = hallPortrait() && cor ? Math.max(0, cor.getBoundingClientRect().bottom - vp.getBoundingClientRect().top + 6) : 0;
+  const k = Math.max(0.2, Math.min(1.6, Math.min(vp.clientWidth / W, (vp.clientHeight - R) / H) || 1)); st.style.setProperty('--hs', String(k));
+  const top0 = (vp.clientHeight - H * k) / 2; st.style.top = R && top0 < R ? `calc(50% + ${Math.round(R - top0)}px)` : '';
   const sp = vp.querySelector('.hall-spread.dk'); if (sp && sp._fit) requestAnimationFrame(() => sp._fit());   // v0.99.63 refit the desk cards to the new window
 }
 window.addEventListener('resize', () => { if (!hallOpen()) return; if (hallWantsPortrait() !== hallPortrait()) drawHall(); else hallFit(); });
@@ -14864,6 +14865,17 @@ function condCostCut(c, tx) {
   let v = null; try { v = evalCond(m[2], c); } catch (e) { v = null; }
   return v ? { n, why: `{${n}} less: ${m[2]}` } : null;
 }
+// ---- v0.99.82 the app's own dialogs instead of the browser's alert() / confirm() / prompt() boxes, a leftover from the first versions:
+// those stop the whole page, look like the operating system rather than the app, and on phones can be blocked.
+// appAsk(title, text, okText, danger) -> Promise<boolean>   appNotice(title, text)   appAskNumber(title, note, def) -> Promise<number|null>
+function appAsk(title, text, okText, danger) {
+  return new Promise(res => { const m = modal(title, { width: 440 }); let done = false; const end = v => { if (done) return; done = true; m.close(); res(v); };
+    m.body.append(h('div', { class: 'psub', text }));
+    m.foot.append(h('button', { text: 'Cancel', onclick: () => end(false) }), h('button', { class: danger ? 'danger' : 'primary', text: okText || 'OK', onclick: () => end(true) }));
+    const obs = new MutationObserver(() => { if (!document.body.contains(m.el || m.body)) { obs.disconnect(); end(false); } }); try { obs.observe(document.body, { childList: true, subtree: true }); } catch (e) { /* no observer */ } });
+}
+function appNotice(title, text) { try { toast(title, text); } catch (e) { /* no table yet */ } try { log(`${title}: ${text}`); } catch (e) { /* no game */ } }
+function appAskNumber(title, note, def) { return new Promise(res => askNumber(title, note, def, v => res(v))); }
 init();
 
 })();
