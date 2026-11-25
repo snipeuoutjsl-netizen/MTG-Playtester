@@ -126,7 +126,7 @@ let settingsTab = 'gfx';
 // windows have their own tabs. ('mat' and 'snd' panes are still built, then folded into their merged tab.)
 const SET_TABS = [['gfx', 'Look & feel'], ['board', 'Table'], ['lib', 'Library'], ['anim', 'Motion & sound'], ['a11y', 'Accessibility'], ['tutor', 'Tutor mode'], ['data', 'Card data & updates'], ['legal', 'Legal notice']];
 const SET_TAB_ALIAS = { mat: 'board', snd: 'anim' };
-const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'How the table is arranged (lanes, zone rail, piles, board effects), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
+const TAB_INFO = { a11y: ['♿', 'Interface size, contrast, calm motion, larger targets, keyboard focus and screen-reader support'], gfx: ['🎨', 'Theme, card sizes, foil cards, sleeves and the mouse cursor'], board: ['🧩', 'Board effects (piles, combat lane, turn strip and more), the playmat and the frame around the board'], lib: ['📚', 'The Library: wall and desk, and whether the app opens there'], anim: ['✨', 'Motion and visual effects, sound effects and music'], data: ['🗂', 'Card data, card pictures and app updates'], tutor: ['🎓', 'Teaching aids and rules help: every one has its own switch'], legal: ['⚖', 'Fan-content notice, data sources, privacy and no-warranty statement'] };
 // v0.96.0 The legal notice. README.md carries the same text; keep them in step.
 const LEGAL_SECTIONS = [
   ['Fan content', ['Library of Alexandria (MTG Playtester) is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. \u00a9Wizards of the Coast LLC.', 'Magic: The Gathering, its card names, mana symbols and related marks are trademarks of Wizards of the Coast LLC. This project is free, is not sold, and is not affiliated with, sponsored or endorsed by Wizards of the Coast, Hasbro or Scryfall.']],
@@ -280,20 +280,7 @@ function openSettings() {
     return h('div',{class:'setrow'},h('label',{text:'One-click set'}),sel,go,h('label',{class:'muted small',style:'display:flex;gap:6px;align-items:center;white-space:nowrap'},mcb,'Matching music'),note); })());
   const P={}; for(const [k] of SET_TABS) P[k]=h('div',{class:'settab'}); P.mat=h('div',{class:'settab'}); P.snd=h('div',{class:'settab'}); P.layout=h('div');
   P.anim.append(animBox); P.a11y.append(buildA11yTab());
-  { const box = h('div'), draw = () => {
-      const mk = (v, label, desc) => { const r = h('input', { type: 'radio', name: 'laymode' }); r.checked = (settings.layoutMode || 'updated') === v; r.addEventListener('change', () => { settings.layoutMode = v; saveSettings(); applyLayout(); render(); draw(); });
-        return h('label', { class: 'teachopt' }, r, h('span', null, h('b', { text: label }), ' \u2014 ' + desc)); };
-      box.replaceChildren(
-        h('div', { class: 'fhead', text: 'Board layout' }),
-        mk('updated', 'Updated', 'two lanes, slim zone rail, slimmer right column, one pile per land name'),
-        mk('original', 'Original', 'the arrangement from before v0.74. Switch back any time; the table changes immediately'),
-        h('div', { class: 'fhead', text: 'Parts of the updated layout' }),
-        h('div', { class: 'small muted', style: 'margin:-2px 0 6px', text: layMode() ? 'Each part has its own switch.' : 'These apply only when Updated is selected.' }),
-        h('div', { class: 'setgrid' }, LAY_DEFS.map(([k, label, desc]) => { const cb = h('input', { type: 'checkbox' }); cb.checked = !(settings.lay && settings.lay[k] === false); cb.disabled = !layMode();
-          cb.addEventListener('change', () => { settings.lay = { ...(settings.lay || {}), [k]: cb.checked }; saveSettings(); applyLayout(); render(); });
-          return h('label', { class: 'teachopt' + (layMode() ? '' : ' dis'), style: layMode() ? '' : 'opacity:.5' }, cb, h('span', null, h('b', { text: label }), h('span', { class: 'muted small', text: desc }))); })),
-        h('div', { class: 'small muted', style: 'margin-top:8px', text: 'Card sizes are under Look & feel; the playmat and the frame are further down this tab.' }));
-    }; draw(); P.layout.append(box); }
+  // v0.99.104 the Board layout chooser (Updated / Original) and its part switches are removed: the updated layout is the only one
   const foilBox=h('div');
   const drawFoil=()=>{ const sel=h('select'); for(const [v,l] of [['off','Off'],['some','Some cards (about 1 in 5)'],['all','Every card']]) sel.append(h('option',{value:v,text:l})); sel.value=settings.foil||'off';
     sel.addEventListener('change',()=>{settings.foil=sel.value;saveSettings();render();});

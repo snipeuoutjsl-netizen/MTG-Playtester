@@ -1,5 +1,8 @@
 
 
+## v0.99.104
+- Original board layout removed: layMode() and layV() always true (body always gets lay-new and every lay-* class); the Board layout chooser and part switches removed from Settings (P.layout is now empty). The one original-only rule (body.lay-new:not(.lay-lanes) #mat) deleted. The base CSS the updated layout overrides is still there; it is the foundation of both and was not taken apart.
+
 ## v0.99.103
 - Rooms (src/99-rooms.js): normFaces gives Room cards kind 'room' (faceFix converts saved records); halves cast through halfOptions/castAsHalf; restoreHalf -> roomResolved sets c.doors [left, right] when the cast door lands; roomText limits rulesInfo/cardText to unlocked doors; roomUnlockAbilities adds 'Unlock <door>' abilities (ab.unlock) handled in activateAbility as a special action (no stack); roomUnlocked queues 'When you unlock this door', 'When you fully unlock this Room' and 'whenever you fully unlock a Room' (eerie) triggers; roomBadge draws the door chips in cardEl. c.doors is cleared on leaving the battlefield.
 - Dungeons (src/99-dungeons.js, 99-dungeon-ui.js): rooms parsed from the dungeon's Oracle text (cardInfo, else DUNGEON_TEXT copy of the four dungeons, Undercity is a token so it can't be looked up by name). state.dungeon {name, room, path, final, seen}; state.gs.dungeonsDone []. venture(kind, src) -> picker (dungeonPickNew) / branch (dungeonPickRoom); the room ability is queued as a trigger (noYield) with t.dungeon; dungeonSBA (called each render after runToughnessSBA) completes after the bottom room's ability has left the stack.
