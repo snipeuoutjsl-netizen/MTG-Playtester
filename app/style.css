@@ -2798,3 +2798,51 @@ html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bot
 .web-upd { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) * var(--vpk, 1) + 10px); transform: translateX(-50%); z-index: 9800; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 999px; background: rgba(20,18,14,.96); border: 1px solid #b08a45; color: #f0e2bd; font: 600 14px system-ui, sans-serif; box-shadow: 0 8px 26px rgba(0,0,0,.5); white-space: nowrap; }
 .web-upd button { min-height: 34px; border-radius: 999px; padding: 0 14px; }
 .web-upd .web-upd-x { padding: 0 10px; background: transparent; border: 0; color: #cdb98a; }
+/* ===== v0.99.95 Library overhaul, part 1 (landscape): one bookcase, one camera, nothing overlapping =====
+   The room is three bands: the buttons above (hallFit keeps the room below them), a full bookcase with two columns of thick shelves,
+   and the desk in front with the open book lying on it (tilted only toward you, so its text stays straight). The shelves are flat
+   2D boards with a top surface and a front lip, so a room's colour filter can no longer flatten them and let book bottoms show. */
+#hall.v2:not(.portrait) .hall-case { position: absolute; left: 110px; top: 20px; width: 1380px; height: 500px; pointer-events: none;
+  background: radial-gradient(ellipse 60% 55% at 50% 40%, rgba(255,200,130,.10), transparent 70%), linear-gradient(180deg, rgba(10,5,2,.72), rgba(10,5,2,.58) 55%, rgba(10,5,2,.78)), var(--wood-plank) 0 0 / 900px auto, #2a180c;
+  box-shadow: 0 30px 50px -10px rgba(0,0,0,.75), 0 0 0 1px rgba(0,0,0,.6); border-radius: 4px 4px 0 0; }
+#hall.v2:not(.portrait) .hall-case::after { content: ''; position: absolute; left: 30px; right: 30px; top: 62px; bottom: 52px; box-shadow: inset 0 18px 30px rgba(0,0,0,.7), inset 0 -6px 18px rgba(0,0,0,.5), inset 14px 0 24px rgba(0,0,0,.55), inset -14px 0 24px rgba(0,0,0,.55); }
+#hall.v2:not(.portrait) .hall-case > i { position: absolute; display: block; background: linear-gradient(90deg, rgba(0,0,0,.45), rgba(255,220,170,.10) 18%, rgba(0,0,0,0) 40%, rgba(0,0,0,.12) 75%, rgba(0,0,0,.5)), var(--wood-plank) 30% 0 / 900px auto, #5a361a; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+#hall.v2:not(.portrait) .hall-case .hc-side { top: 56px; bottom: 0; width: 30px; } #hall.v2:not(.portrait) .hall-case .hc-side.l { left: 0; } #hall.v2:not(.portrait) .hall-case .hc-side.r { right: 0; }
+#hall.v2:not(.portrait) .hall-case .hc-mid { top: 62px; bottom: 52px; left: 675px; width: 30px; }
+#hall.v2:not(.portrait) .hall-case .hc-crown { left: -16px; right: -16px; top: 0; height: 62px; border-radius: 3px;
+  background: linear-gradient(180deg, rgba(255,225,170,.22) 0 3px, rgba(0,0,0,.35) 3px 5px, rgba(255,215,160,.10) 5px 14px, rgba(0,0,0,.40) 14px 16px, rgba(0,0,0,0) 16px 44px, rgba(0,0,0,.25) 44px 46px, rgba(255,215,160,.12) 46px 52px, rgba(0,0,0,.55) 52px), var(--wood-plank) 0 40% / 900px auto, #5a361a; box-shadow: 0 8px 16px rgba(0,0,0,.6); }
+#hall.v2:not(.portrait) .hall-case .hc-base { left: -6px; right: -6px; bottom: 0; height: 54px; background: linear-gradient(180deg, rgba(255,215,160,.14) 0 3px, rgba(0,0,0,.45) 3px 6px, rgba(0,0,0,0) 6px, rgba(0,0,0,.35)), var(--wood-plank) 0 70% / 900px auto, #4a2c14; }
+/* the four shelves: two columns, two rows */
+#hall.v2:not(.portrait) .bk-shelf { width: 645px; height: 184px; transform: none; }
+#hall.v2:not(.portrait) .bk-shelf:nth-child(1) { left: 140px; top: 90px; }  #hall.v2:not(.portrait) .bk-shelf:nth-child(2) { left: 815px; top: 90px; }
+#hall.v2:not(.portrait) .bk-shelf:nth-child(3) { left: 140px; top: 278px; } #hall.v2:not(.portrait) .bk-shelf:nth-child(4) { left: 815px; top: 278px; }
+#hall.v2:not(.portrait) .bk-shelf:nth-child(n+5) { display: none; }
+#hall.v2:not(.portrait) .bk-shelf::after { left: 0; right: 0; top: 130px; height: 32px; border-radius: 0; background: linear-gradient(180deg, transparent, rgba(0,0,0,.45)); }
+#hall.v2:not(.portrait) .bk-row { bottom: auto; top: 0; height: 160px; padding: 0 24px; z-index: 1; }
+#hall.v2:not(.portrait) .bk-plank { top: 156px; height: 24px; transform: none; z-index: 3; border-radius: 1px;
+  background: linear-gradient(180deg, rgba(255,230,185,.30) 0, rgba(255,215,160,.12) 7px, rgba(0,0,0,.28) 8px, rgba(255,220,170,.16) 9px, rgba(0,0,0,0) 14px, rgba(0,0,0,.35) 100%), var(--wood-plank) 0 20% / 900px auto, #6a4020;
+  box-shadow: 0 7px 10px -2px rgba(0,0,0,.65), 0 1px 0 rgba(0,0,0,.5); }
+#hall.v2:not(.portrait) .bk-plank::before, #hall.v2:not(.portrait) .bk-plank::after { content: none; }
+/* the sign sits on the crown of the bookcase */
+#hall.v2:not(.portrait) .hall-plaque { left: 590px; top: -6px; width: 420px; height: 100px; transform: none; z-index: 4; }
+#hall.v2:not(.portrait) .hall-plaque b { font-size: 42px; } #hall.v2:not(.portrait) .hall-plaque span { font-size: 13px; }
+/* the desk and the open book */
+#hall.v2:not(.portrait) .hall-desktop { top: 516px; height: 480px; }
+#hall.v2:not(.portrait) .hall-stand, #hall.v2:not(.portrait) .hall-tome-shadow { display: none; }
+#hall.v2:not(.portrait) .hall-tome { left: 440px; top: 452px; width: 720px; height: 372px; transform: translateZ(40px) rotateX(9deg); transform-origin: 50% 100%;
+  filter: drop-shadow(0 18px 18px rgba(0,0,0,.55)); }
+#hall.v2:not(.portrait) .hall-hint { left: auto; right: 34px; bottom: 14px; width: 330px; text-align: right; font-size: 14px; opacity: .8; }
+/* the room's things on the walls beside the bookcase */
+#hall.v2:not(.portrait) .dc-banner { top: 110px; width: 64px; height: 380px; } #hall.v2:not(.portrait) .dc-banner.l { left: 24px; } #hall.v2:not(.portrait) .dc-banner.r { left: 1512px; }
+#hall.v2:not(.portrait) .dc-torch { top: 250px; } #hall.v2:not(.portrait) .dc-torch.l { left: 34px; } #hall.v2:not(.portrait) .dc-torch.r { left: 1522px; }
+#hall.v2:not(.portrait) .dc-candle.a { left: 44px; top: 200px; } #hall.v2:not(.portrait) .dc-candle.b { left: 1532px; top: 240px; } #hall.v2:not(.portrait) .dc-candle.c { left: 1530px; top: 440px; transform: none; }
+/* each room's bookcase wood (2D boards, so the filter is safe) */
+#hall.v2.room-castle .hall-case > i, #hall.v2.room-castle .bk-plank { filter: saturate(.15) brightness(1.15) contrast(1.05); }
+#hall.v2.room-castle .hall-case { filter: saturate(.35); }
+#hall.v2.room-dungeon .hall-case, #hall.v2.room-dungeon .bk-plank { filter: brightness(.55) saturate(.6); }
+#hall.v2.room-tower .hall-case, #hall.v2.room-tower .bk-plank { filter: hue-rotate(-30deg) saturate(1.1) brightness(.7); }
+#hall.v2.room-grove .hall-case, #hall.v2.room-grove .bk-plank { filter: brightness(1.35) saturate(.55) sepia(.1); }
+#hall.v2:not(.portrait) .bk-row .bk-face.bottom { display: none; }   /* we look at the shelves from the front: a book's underside never shows */
+/* with a deck taken down, its cards are laid out on the desk, so the open book stands up in front of the bookcase (like a lectern) */
+#hall.v2:not(.portrait) .hall-tome { transition: top .45s cubic-bezier(.22,1,.36,1), height .45s cubic-bezier(.22,1,.36,1), transform .45s cubic-bezier(.22,1,.36,1); }
+#hall.v2:not(.portrait) .hall-tome.deck-open { top: 150px; height: 410px; transform: translateZ(70px) rotateX(6deg); }

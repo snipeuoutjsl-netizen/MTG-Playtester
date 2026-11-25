@@ -206,7 +206,7 @@ function hallFit() {   // scale the fixed stage to fit the window (letterboxed o
   const vp = document.querySelector('#hall .hall-view'), st = vp && vp.querySelector('.hall-stage'); if (!st) return;
   const W = hallPortrait() ? 900 : HALL_W, H = hallPortrait() ? 1600 : HALL_H;
   // v0.99.82 upright phones: the sign is centred at the top and the corner buttons sit over it, so the room starts below the buttons
-  const cor = document.querySelector('#hall .hall-corner'), R = hallPortrait() && cor ? Math.max(0, cor.getBoundingClientRect().bottom - vp.getBoundingClientRect().top + 6) : 0;
+  const cor = document.querySelector('#hall .hall-corner'), R = cor ? Math.max(0, cor.getBoundingClientRect().bottom - vp.getBoundingClientRect().top + 6) : 0;
   const k = Math.max(0.2, Math.min(1.6, Math.min(vp.clientWidth / W, (vp.clientHeight - R) / H) || 1)); st.style.setProperty('--hs', String(k));
   const top0 = (vp.clientHeight - H * k) / 2; st.style.top = R && top0 < R ? `calc(50% + ${Math.round(R - top0)}px)` : '';
   const sp = vp.querySelector('.hall-spread.dk'); if (sp && sp._fit) requestAnimationFrame(() => sp._fit());   // v0.99.63 refit the desk cards to the new window
@@ -233,7 +233,7 @@ function hallTurnTo(k) {
 function drawHall() {
   const el = document.getElementById('hall'); if (!el) return;
   const decks = loadDecks(), mode = gameMode(), all = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
-  const portrait = hallWantsPortrait(); el.classList.toggle('portrait', portrait);
+  const portrait = hallWantsPortrait(); el.classList.toggle('portrait', portrait); el.classList.add('v2');
   const PER = portrait ? 30 : HALL_PER_PAGE;
   const pages = Math.max(1, Math.ceil(all.length / PER)); hallPage = Math.min(hallPage, pages - 1);
   const names = all.slice(hallPage * PER, (hallPage + 1) * PER);
@@ -280,13 +280,14 @@ function drawHall() {
     h('button', { class: 'tm-ribbon ' + k + (mode === k ? ' on' : ''), role: 'tab', 'aria-selected': String(mode === k), title: mode === k ? `You are in the ${lab} chapter` : `Turn to the ${lab} chapter`, onclick: () => hallTurnTo(k) }, h('span', { text: lab })))) : null;
   const tome = h('div', { class: 'hall-tome' + (mode === 'commander' ? ' ch-cmd' : '') }, left, h('div', { class: 'hall-spine' }), right, ribbons, h('i', { class: 'tm-edges', 'aria-hidden': 'true' }), (() => { const w = h('div'); w.innerHTML = TM_BLOCK_SVG; return w.firstChild; })(), (() => { const w = h('div'); w.innerHTML = TM_WARP_SVG; return w.firstChild; })());
   const hallScene = { tome, shelfZ: 62, deskZ: 200, spread: (deck, name) => deckSpreadEl(deck, name, c => tomeCard(tome, c, name)), layer: null };
-  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: portrait ? 3 : 4, scale: 0.8, scene: hallScene });
+  const shelf = bookcaseEl(names, cur, mode, { pick: n => beginWith(n), edit: n => { lsSet('mtgpt.current', n); refreshDeckSelect(); openDeckEditor(); }, redraw: drawHall, host: hallHost, beginLabel: 'Begin a game with this deck', minShelves: portrait ? 3 : 4, scale: portrait ? 0.8 : 0.74, scene: hallScene });
   const pager = pages > 1 ? h('div', { class: 'hall-pager' },
     h('button', { text: '‹', title: 'Previous shelves', disabled: hallPage === 0, onclick: () => { hallPage--; drawHall(); } }),
     h('span', { text: `Shelves ${hallPage + 1} of ${pages}` }),
     h('button', { text: '›', title: 'More shelves', disabled: hallPage >= pages - 1, onclick: () => { hallPage++; drawHall(); } })) : null;
   world.append(
-    roomDecorEl(hallRoom()),   // v0.99.87 banners, torches, candles or vines on the wall (src/93)
+    roomDecorEl(hallRoom()),   // v0.99.87
+    h('div', { class: 'hall-case', 'aria-hidden': 'true' }, h('i', { class: 'hc-crown' }), h('i', { class: 'hc-side l' }), h('i', { class: 'hc-side r' }), h('i', { class: 'hc-mid' }), h('i', { class: 'hc-base' })),   // v0.99.95 the bookcase itself banners, torches, candles or vines on the wall (src/93)
     h('div', { class: 'hall-plaque' }, h('div', { class: 'hall-plaque-row' }, (() => { const x = h('span', { class: 'hall-logo' }); x.innerHTML = HALL_LOGO; return x; })(), h('div', { class: 'hall-plaque-t' }, h('b', { text: 'Library' }), h('span', { text: 'of Alexandria' }))), pager),
     shelf,
     h('div', { class: 'hall-desktop', 'aria-hidden': 'true' }), h('div', { class: 'hall-deskfront', 'aria-hidden': 'true' }),

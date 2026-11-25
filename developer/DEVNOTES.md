@@ -1,5 +1,9 @@
 
 
+## v0.99.95
+- Library landscape layout v2 (#hall.v2:not(.portrait), class added in drawHall): .hall-case element (hc-crown, hc-side l/r, hc-mid, hc-base) before the shelves; shelves 645x184 in a 2x2 grid (no 3D planks: the old rotateX plank faces were flattened by the room filters, which showed the book bottoms); book bottoms hidden on the shelf; scale 0.74 in landscape; plaque on the crown; tome 720x372 at y 452 (rotateX 9deg only), standing at y 150 while deck-open so the spread has the desk; hallFit reserves the corner buttons in landscape too.
+- Part 2 (spines, light, menu, phone) next.
+
 ## v0.99.94
 - src/98-rules-batch-5.js: batch5Options (called at the end of batch4Options) + statics (GLOBAL_STATIC_RES, OPP_STATIC_RES, b5NoGain in lifeGainBlocked, b5OneSpellHit in canCastNow, b5Riddler in drawCards, torporOrbOn for artifacts). TOKEN_REPL_RE also reads the newer 'tokens would be created under your control' wording.
 - b4RunSentence applies every option in order (no Apply window). resolveNoPanel: choice only for 'choose one/two/up to' or a Decline option; a later cast permission is not asked.
