@@ -64,7 +64,7 @@ function playLand(id, fi) {
       'Lands can only be played during your main phase when the stack is empty.');
     return;
   }
-  snap(); const [c]=state.hand.splice(f.idx,1); state.landsPlayed=(state.landsPlayed||0)+1; state.landPlayedThisTurn=state.landsPlayed>=landDropsAllowed();
+  snap(); const [c]=state.hand.splice(f.idx,1); try { recapNote('land', c.name); } catch (e) { /* recap only */ } state.landsPlayed=(state.landsPlayed||0)+1; state.landPlayedThisTurn=state.landsPlayed>=landDropsAllowed();
   const front=c.name; if(fi) setFace(c,fi);
   enterBattlefield(c,{from:'hand',logMsg:fi?`Played land: ${c.name} (the back face of ${front})`:`Played land: ${c.name}`});
   render();

@@ -633,7 +633,7 @@ function dealCombatDamage(){
   noteCombatDealers(dealers); commanderDamage(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d, amount:powerOf(d).n});
 }
-function changeOppLife(d){ if(!state) return; if(d>0 && typeof oppGainBlocked==='function' && oppGainBlocked()){ log(`Opponent life gain prevented: ${oppGainBlocked().g.name}`); toast('No life gained',`${oppGainBlocked().g.name}: your opponent can't gain life this turn.`); return; } snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
+function changeOppLife(d){ if(!state) return; try { if (d < 0) recapNote('opp', d); } catch (e) { /* recap only */ } if(d>0 && typeof oppGainBlocked==='function' && oppGainBlocked()){ log(`Opponent life gain prevented: ${oppGainBlocked().g.name}`); toast('No life gained',`${oppGainBlocked().g.name}: your opponent can't gain life this turn.`); return; } snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
 function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});

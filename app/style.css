@@ -2728,3 +2728,16 @@ html.portrait-ui .hl-cols { grid-template-columns: 1fr; }
 .hl-hand { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .hl-hand img { width: 92px; border-radius: 5px; box-shadow: 0 3px 8px rgba(0,0,0,.45); }
 .hl-txtcard { width: 92px; height: 128px; border-radius: 5px; padding: 6px; font-size: 11px; background: #1c2130; border: 1px solid var(--line); }
+/* v0.99.89 game recap: an inked page */
+.recap-page { margin-top: 12px; padding: 16px 18px 14px; border-radius: 6px; color: #2b1a0c; font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+  background: radial-gradient(ellipse at 30% 20%, rgba(255,255,255,.35), transparent 60%), linear-gradient(180deg, #f3e6c6, #e6d3a8); box-shadow: inset 0 0 30px rgba(120,80,30,.25), 0 6px 18px rgba(0,0,0,.4); }
+.recap-page .rc-title { font-size: 22px; font-weight: 700; color: #8e1f0b; font-variant: small-caps; letter-spacing: .02em; }
+.recap-page .rc-sub { font-size: 13px; font-style: italic; opacity: .85; margin-bottom: 6px; }
+.recap-page .rc-h { margin-top: 10px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #8e1f0b; border-bottom: 1px solid rgba(142,31,11,.35); padding-bottom: 2px; }
+.recap-page .rc-chart { margin-top: 4px; }
+.recap-page .rc-best { font-style: italic; font-size: 13.5px; }
+.recap-page .rc-turns { display: grid; gap: 2px; margin-top: 4px; max-height: 190px; overflow-y: auto; }
+.recap-page .rc-turn { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; font-size: 13px; line-height: 1.3; }
+.recap-page .rc-turn b { color: #5a3c1c; } .recap-page .rc-turn i { color: #8e1f0b; font-size: 12px; }
+.rc-list { margin-top: 4px; font-size: 13px; } .rc-link { padding: 0 4px !important; font-size: 13px !important; } .rc-link.won { color: #2e5f2a !important; }
+.recap-page .rc-turn span { text-align: left; } .recap-page .rc-turn i { text-align: right; } .recap-page { text-align: left; } .recap-page .rc-title, .recap-page .rc-sub { text-align: center; }

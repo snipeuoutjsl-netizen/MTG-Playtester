@@ -87,11 +87,12 @@ function showGameEnd(which, title, sub) {
   if (!state || $("#gameEndBox") || window.__noGameEnd) return;
   clearPromptsForGameEnd();
   const won = which !== 'you'; won ? matchRecord.w++ : matchRecord.l++;
-  const name = currentDeckName();
-  const m = modal(won ? 'You won the game' : 'You lost the game', { width: 520, sticky: true });
+  const name = currentDeckName(); let rc = null; try { rc = recapFinish(won, title || ''); } catch (e) { rc = null; }   // v0.99.89 the game's recap page
+  const m = modal(won ? 'You won the game' : 'You lost the game', { width: 560, sticky: true });
   m.el.id = 'gameEndBox'; m.el.classList.add(won ? 'ge-win' : 'ge-loss');
   m.body.append(h('div', { class: 'ge-big', text: won ? 'Victory' : 'Defeat' }), h('div', { class: 'ge-sub', text: title ? title + (sub ? ': ' + sub : '') : (won ? 'The opponent is at 0 life.' : 'You are at 0 life.') }),
     h('div', { class: 'ge-rec', text: `This session: ${matchRecord.w} won, ${matchRecord.l} lost` }),
+    rc ? recapEl(rc) : null,
     h('div', { class: 'ge-btns' },
       h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
