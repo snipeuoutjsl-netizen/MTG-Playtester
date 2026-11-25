@@ -2711,3 +2711,20 @@ body.a11y-calm #hall .hall-decor *, #hall.calm .hall-decor * { animation: none !
 .look-room.room-tower .rm-prev { background: radial-gradient(circle at 30% 40%, rgba(255,230,160,.8), transparent 10%), radial-gradient(circle at 70% 30%, rgba(255,230,160,.8), transparent 10%), var(--wall-night) 0 0 / 128px 128px; }
 .look-room.room-grove .rm-prev { background: radial-gradient(circle at 25% 55%, rgba(230,255,140,.9), transparent 6%), radial-gradient(circle at 70% 35%, rgba(230,255,140,.9), transparent 6%), var(--wall-moss) 0 0 / 96px 96px; }
 .look-room.room-library .rm-prev::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 60%, rgba(255,210,150,.35), transparent 65%); }
+/* v0.99.88 opening-hand lab */
+.hl-ctrl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.hl-ctrl select { max-width: 100%; }
+.hl-head { font-weight: 700; margin: 10px 0 6px; }
+.hl-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+html.portrait-ui .hl-cols { grid-template-columns: 1fr; }
+.hl-bar { display: grid; grid-template-columns: 74px minmax(0, 1fr) 48px; gap: 8px; align-items: center; font-size: 12.5px; margin: 3px 0; }
+.hl-bt { height: 10px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+.hl-bt i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #6aa0ff, #8fd3ff); }
+.hl-bar b { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.hl-turns { display: grid; gap: 2px; margin: 4px 0 6px; font-size: 13px; }
+.hl-tr { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 8px; padding: 3px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.hl-th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; }
+.hl-tr.curve { background: rgba(227,185,92,.12); box-shadow: inset 3px 0 0 #e3b95c; }
+.hl-hand { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.hl-hand img { width: 92px; border-radius: 5px; box-shadow: 0 3px 8px rgba(0,0,0,.45); }
+.hl-txtcard { width: 92px; height: 128px; border-radius: 5px; padding: 6px; font-size: 11px; background: #1c2130; border: 1px solid var(--line); }

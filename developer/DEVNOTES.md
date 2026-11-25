@@ -1,5 +1,7 @@
 
 
+**v0.99.88** src/94-hand-lab.js: hlRun (pure simulation, London mulligan via hlOpen, hlCanPay colored matching, hlRock rocks), openHandLab UI; Library contents entry.
+
 **v0.99.87** src/93-library-rooms.js: HALL_ROOMS presets (wall, desk), hallRoom/setHallRoom, roomDecorEl (SVG banners/torches/candles/vines + fireflies), room-<k> class on #hall (light via --room-glow/--room-vig1/2, shelf/plaque filters). developer/room-gen.py makes the wall tiles (--wall-castle/dungeon/night/moss in style.css). Look dialog: Room row first.
 
 **v0.99.86** openAbilityEffect auto-resolve: one option -> applied unless choice words; several plain options -> all applied; uncovered clauses -> gapNote (log + toast), never a blocking gapbox (gapCovered normalises a/one/two). No options -> 'do by hand' note and finish. Panel maybeFinish ignores gaps. turnCond 'you cast it' (enteredFrom === 'stack'). batch4: player protection/hexproof until next turn (shield until yourNextTurn). state.autoRun + autoResumeTurn() (called from render) carries the beginning phase on to Main 1 after upkeep/draw triggers. Stack leave ghost fades at its own size (--t0).
