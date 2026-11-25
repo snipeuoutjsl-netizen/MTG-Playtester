@@ -7154,8 +7154,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.108';
+const APP_VERSION = '0.99.109';
 const CHANGELOG = [
+  { v: '0.99.109', title: 'Fits the iPhone screen, and backups', notes: ['UPRIGHT IPHONE: the Library\'s top bar now sits below the notch and status bar instead of under them, and the page fills the whole screen (no more empty strip at the bottom). The deck box and pack screens keep clear of the notch and the home bar too.', 'BACKUP AND RESTORE: Settings → Card data & updates → Backup (or Back up your library in the Library sidebar) saves your decks, settings, puzzles, packs, Archive and custom card art to one file. Restore it on any device to pick up where you left off.', 'FIX: starting a new puzzle right after solving one could show the old puzzle\'s "Solved!" pop-up over the new one.'] },
   { v: '0.99.108', title: 'Your decks on the shelf, and accessibility on the Library', notes: ['THE SHELF: with no deck picked, All decks shows every deck as its floating 3D deck box, the decks you played most recently first. The boxes get smaller the more decks you have, and the page scrolls when they don\'t fit. Pick a box to open that deck\'s page; All decks, or the ← Decks link at the top of the page, brings you back. Favorites shows your favorite decks the same way. The Recently opened list is gone: the shelf does its job.', 'ACCESSIBILITY on the new Library, the Archive, packs, the deck box and the dungeon map: High contrast gives solid dark panels, white text, bright secondary text and gold borders (the mana curve stays readable); Calm motion stops the boxes floating; Larger click targets enlarge the sidebar rows, chips and tabs; Strong keyboard focus outlines every Library button and deck box.', 'Settings: the Library tab is removed. Its room looks belonged to the shelved 3D Library, and "Open the Library when the app starts" is in the Library sidebar.', 'PACKS FIX: puzzles you solved before packs existed (before v0.99.106) never paid their pack, so the Pack screen had nothing to open. Each built-in puzzle you had already solved now pays one pack, once. If a pack can\'t be opened (no internet, Scryfall busy), the pack screen now says why, and the pack is kept.', 'PACKS: a loading bar shows what is happening while a pack opens, with a line on why it takes a moment: the first pack from a set downloads that set\'s card list from Scryfall (a few seconds); it is kept on this device, so later packs from that set open at once.', 'GOD PACKS: about 1 pack in 100 is a God Pack: fifteen foils, in the set\'s full-art, borderless, showcase and extended-art printings where it has them, always with a rare or mythic.'] },
   { v: '0.99.107', title: 'Eight new puzzles', notes: ['NEW PUZZLES, each about a different part of the game: Double trouble (double strike), Every land counts twice (a fetch land is two landfalls), Cascade order (a spell cast by cascade is still cast), Back from the graveyard (Snapcaster Mage), The trap is set (a dungeon: pick the room that hurts), Storm warning (Grapeshot and storm), Burn the boats (Fireblast for free by sacrificing Mountains) and Feed the fiend (Kiln Fiend and Manamorphose). Each one\'s solution is played through by the tests, so every one can be solved.', 'FIX: Snapcaster Mage (and any "target instant or sorcery card in your graveyard") found no card to target. Graveyard targets listing kinds with "or" now match any of them.', 'A puzzle (and a moment you save as one) can start inside a dungeon.'] },
   { v: '0.99.106', title: 'Packs and the Archive', notes: ['PACKS: winning a game earns a pack (the Victory screen offers to tear it open), and so does solving each built-in puzzle the first time. Packs you have not opened are kept: the Packs button in the Library shows how many.', 'Opening one: choose a set (or Random set), tear the pack open, then turn the cards over one at a time, or Reveal all. A pack is 15 cards from a real set laid out like a booster: a basic land, 10 commons, 3 uncommons and a rare, which is a mythic about 1 time in 8. About 1 pack in 3 has a foil in place of a common. The cards come from Scryfall, so opening needs the internet; a set\'s cards are kept after the first pack from it.', 'THE ARCHIVE (Library sidebar): every card you have. Everything shows all cards; In your decks lists every card across all your decks, with how many decks use it and the most copies one deck needs; From packs shows each printing you opened, with how many you have, foils and rarity (cards from your latest pack are marked New). Filter by deck, card type, set or rarity, and search.', 'The pack wrapper and the card backs are the Library of Alexandria logo (no Magic logos or set symbols).'] },
@@ -8984,7 +8985,7 @@ let lifePrev = { you: null, opp: null };
 function lifeFx(which, el, val) {
   const prev = lifePrev[which]; lifePrev[which] = val;
   // v0.99.67 reaching 0 life ends the game whether or not life animations run or the life box is on screen (with animations off, as on many phones, the Victory screen never came)
-  if (prev !== null && val <= 0 && prev > 0 && (!el || !animOn('life'))) { setTimeout(() => { try { showGameEnd(which); } catch (e) { /* convenience */ } }, 400); }
+  if (prev !== null && val <= 0 && prev > 0 && (!el || !animOn('life'))) { const g0 = state; setTimeout(() => { if (state !== g0) return; try { showGameEnd(which); } catch (e) { /* convenience */ } }, 400); }
   if (!el) return;
   if (prev === null || prev === val || !animOn('life')) { if (!el._rolling || prev === null || !animOn('life')) el.textContent = val; return; }
   const d = val - prev, up = d > 0, tok = (el._tok = (el._tok || 0) + 1);
@@ -9005,7 +9006,7 @@ function lethalFx(which, title, sub) {
   an.onfinish = () => o.remove(); setTimeout(() => o.remove(), (3200) * 3);
   sparks(innerWidth / 2, innerHeight / 2, you ? '#ff5a4f' : '#ffe27a', 40, 360, 1200);
   if (!you) { try { winConfetti(); sfx('win'); } catch (e) {} }   // v0.99.92 a celebration
-  setTimeout(() => { try { showGameEnd(which, title, sub); } catch (e) { /* the pop-up is a convenience */ } }, 2500);   // v0.96.21 the "Next round" screen
+  const g0 = state; setTimeout(() => { if (state !== g0) return; try { showGameEnd(which, title, sub); } catch (e) { /* the pop-up is a convenience */ } }, 2500);   // v0.99.109 not over a game started since (a new puzzle within 2.5s got the last one's 'Solved!')   // v0.96.21 the "Next round" screen
 }
 // ---- turn banner and phase flash
 function turnBanner() {
@@ -10074,7 +10075,8 @@ function openSettings() {
   // v0.99.108 the Library tab is gone: its looks belonged to the shelved 3D room, and "Open the Library when the app starts" is in the Library's own sidebar
   { const go = (t, d, f) => h('div', { class: 'setrow' }, h('label', { text: t }), h('button', { text: 'Open\u2026', onclick: () => { m.close(); f(); } }), h('span', { class: 'muted small', text: d }));
     const upd = (k, t) => { const cb = h('input', { type: 'checkbox' }); cb.checked = settings[k] !== false; cb.addEventListener('change', () => { settings[k] = cb.checked; saveSettings(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: t }))); };
-    P.data.append(h('div', { class: 'fhead', text: 'Card data' }), go('Card data', `Names, costs and rules text (${cardCount ? cardCount.toLocaleString() + ' cards loaded' : 'not loaded yet'})`, openCardData), go('Card pictures', 'Download pictures, or play with text cards', openImages),
+    P.data.append(h('div', { class: 'fhead', text: 'Backup' }), go('Backup and restore', 'Save everything that is yours to one file, or restore it on this or another device', openBackupWindow),   // v0.99.109
+      h('div', { class: 'fhead', text: 'Card data' }), go('Card data', `Names, costs and rules text (${cardCount ? cardCount.toLocaleString() + ' cards loaded' : 'not loaded yet'})`, openCardData), go('Card pictures', 'Download pictures, or play with text cards', openImages),
       h('div', { class: 'fhead', text: 'Updates' }), window.desktop ? go('Update app', 'Check GitHub for a new version and install it', () => openUpdate()) : h('div', { class: 'setrow' }, h('span', { class: 'muted small', text: 'The web app updates itself the next time it is opened.' })),
       ...(window.desktop ? [upd('autoUpdateCheck', 'Check for updates when the app starts'), upd('updatePrompt', 'Open the update window when an update is found (otherwise a small notice)')] : [])); }
   // v0.89: sidebar of tabs, a title for each tab, and a search box that filters every tab at once.
@@ -15959,6 +15961,74 @@ function libUpdateBtn() {
       if (!v) { toast('Could not check for updates', 'The version list could not be reached. Check your connection and try again; the app also checks by itself every 20 minutes.'); return; }
       toast("You're up to date", `Version ${APP_VERSION} is the newest version.`); }); } });
 }
+// ---- v0.99.109 Backup and restore (roadmap: "card data, decks, wishlist, puzzles and recaps survive updates, with backup and restore").
+// A backup is one JSON file with everything that is yours:
+//  - every saved setting and list (localStorage keys that start with "mtgpt."): decks, favourites, notes and recaps, wishlist, puzzles,
+//    the Archive and your packs, settings, the card data looked up for your decks;
+//  - the pictures you added yourself (IndexedDB): your card art and printings ("cart:"), token art ("tart:"), playmat and sleeve images.
+// Downloaded things are left out because the app fetches them again by itself: card pictures, the full card file, token pictures, the
+// sets and card lists behind packs. Restoring replaces what is saved now with the backup (after asking), then reloads the app.
+const BACKUP_SKIP_LS = /^mtgpt\.(packSets|packPools|updateUrl|tokensAt|tokensV)$/;
+const BACKUP_IDB = /^(cart:|tart:|playmat|sleeve)/;
+const blobToData = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
+const dataToBlob = async s => (await fetch(s)).blob();
+async function backupPack(v) {   // Blobs inside a stored value become { __blob: dataURL } so the file is plain JSON
+  if (v instanceof Blob) return { __blob: await blobToData(v) };
+  if (Array.isArray(v)) { const out = []; for (const x of v) out.push(await backupPack(x)); return out; }
+  if (v && typeof v === 'object') { const out = {}; for (const [k, x] of Object.entries(v)) out[k] = await backupPack(x); return out; }
+  return v;
+}
+async function backupUnpack(v) {
+  if (v && typeof v === 'object' && !Array.isArray(v) && typeof v.__blob === 'string' && Object.keys(v).length === 1) return dataToBlob(v.__blob);
+  if (Array.isArray(v)) { const out = []; for (const x of v) out.push(await backupUnpack(x)); return out; }
+  if (v && typeof v === 'object') { const out = {}; for (const [k, x] of Object.entries(v)) out[k] = await backupUnpack(x); return out; }
+  return v;
+}
+async function makeBackup() {
+  const local = {};
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('mtgpt.') && !BACKUP_SKIP_LS.test(k)) local[k] = localStorage.getItem(k); }
+  const idbData = {};
+  try { const keys = (await idbKeys('')).filter(k => BACKUP_IDB.test(k)); const got = keys.length ? await idbGetMany(keys) : {}; for (const k of keys) if (got[k] !== undefined) idbData[k] = await backupPack(got[k]); } catch (e) { console.error(e); }
+  const decks = (() => { try { return Object.keys(JSON.parse(local['mtgpt.decks'] || '{}')).length; } catch (e) { return 0; } })();
+  return { app: 'Library of Alexandria', kind: 'backup', v: 1, version: APP_VERSION, at: new Date().toISOString(), summary: { decks, saved: Object.keys(local).length, pictures: Object.keys(idbData).length }, local, idb: idbData };
+}
+function backupFileName() { const d = new Date(), p = n => String(n).padStart(2, '0'); return `library-of-alexandria-backup-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.json`; }
+async function saveBackup() {
+  try { const b = await makeBackup(), txt = JSON.stringify(b);
+    const a = h('a', { href: URL.createObjectURL(new Blob([txt], { type: 'application/json' })), download: backupFileName() }); document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    lsSet('mtgpt.lastBackup', Date.now());
+    toast('Backup saved', `${b.summary.decks} deck${b.summary.decks === 1 ? '' : 's'}, ${b.summary.saved} saved lists and settings${b.summary.pictures ? `, ${b.summary.pictures} of your own pictures` : ''} (${Math.max(1, Math.round(txt.length / 1024))} KB). Keep the file somewhere safe.`);
+    return b;
+  } catch (e) { console.error(e); toast('Backup failed', String(e && e.message || e)); return null; }
+}
+function readBackupText(txt) {
+  let b = null; try { b = JSON.parse(txt); } catch (e) { return { error: 'This file is not a backup (it is not readable JSON).' }; }
+  if (!b || b.kind !== 'backup' || !b.local || typeof b.local !== 'object') return { error: 'This file is not a Library of Alexandria backup.' };
+  return { backup: b };
+}
+// restore: replaces the saved data with the backup's (keys missing from the backup are removed, except the skipped caches)
+async function applyBackup(b) {
+  for (const k of Object.keys(localStorage)) if (k.startsWith('mtgpt.') && !BACKUP_SKIP_LS.test(k) && !(k in b.local)) localStorage.removeItem(k);
+  for (const [k, v] of Object.entries(b.local)) { if (!k.startsWith('mtgpt.')) continue; try { localStorage.setItem(k, v); } catch (e) { throw new Error(`There is not enough room to restore ${k}.`); } }
+  try { const old = (await idbKeys('')).filter(k => BACKUP_IDB.test(k) && !(k in (b.idb || {}))); if (old.length) await idbDelete(old); } catch (e) { /* nothing to remove */ }
+  for (const [k, v] of Object.entries(b.idb || {})) if (BACKUP_IDB.test(k)) await idbSet(k, await backupUnpack(v));
+  lsSet('mtgpt.restoredAt', Date.now());
+}
+function openBackupWindow() {
+  const m = modal('Backup and restore', { width: 560 });
+  const last = lsGet('mtgpt.lastBackup', 0), file = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+  const status = h('div', { class: 'psub', text: last ? `Your last backup was saved on ${new Date(last).toLocaleDateString()}.` : 'You have not saved a backup yet.' });
+  file.addEventListener('change', async () => { const f = file.files[0]; file.value = ''; if (!f) return;
+    const r = readBackupText(await f.text()); if (r.error) { toast('Cannot restore', r.error); return; }
+    const b = r.backup, s = b.summary || {};
+    const c = modal('Restore this backup?', { width: 500, sticky: true });
+    c.body.append(h('div', { class: 'psub', text: `Saved ${b.at ? new Date(b.at).toLocaleString() : 'at an unknown time'} by version ${b.version || '?'}: ${s.decks ?? '?'} decks, ${s.saved ?? Object.keys(b.local).length} saved lists and settings, ${s.pictures ?? Object.keys(b.idb || {}).length} of your own pictures.` }),
+      h('div', { class: 'psub', text: 'Restoring replaces your decks, Archive, packs, wishlist, puzzles, notes and settings with the ones in the backup. Anything saved since then is lost, so save a backup of the current state first if you might want it. The app restarts afterwards.' }));
+    c.foot.append(h('button', { text: 'Cancel', onclick: () => c.close() }), h('button', { text: 'Save a backup of now first', onclick: () => saveBackup() }),
+      h('button', { class: 'primary danger', text: 'Restore', onclick: async () => { try { await applyBackup(b); c.close(); m.close(); toast('Backup restored', 'Restarting with the restored data…'); setTimeout(() => location.reload(), 900); } catch (e) { console.error(e); toast('Restore failed', String(e && e.message || e)); } } })); });
+  m.body.append(h('div', { class: 'psub', text: 'A backup is one file with everything that is yours: decks, favourites, notes and game recaps, the wishlist, puzzles, the Archive and your packs, settings, and the pictures you added yourself (card art, token art, playmat and sleeves). Card pictures and card data are left out: the app downloads them again by itself.' }), status, file);
+  m.foot.append(h('button', { text: 'Restore from a backup…', onclick: () => file.click() }), h('button', { class: 'primary', text: 'Save a backup', onclick: async () => { const b = await saveBackup(); if (b) status.textContent = 'Saved just now.'; } }), h('button', { text: 'Close', onclick: () => m.close() }));
+}
 // ---- v0.99.106 The Archive: the cards you have. Three views:
 //  - Everything: every card from your decks and your packs, one tile per card name;
 //  - In your decks: every card across all your decks (both formats), with how many decks use it and the most copies one deck needs;
@@ -16436,7 +16506,8 @@ function drawLibraryScreen(el) {
     FEATURES.commander ? modeTab('commander', '◌  Commander', decksInMode(decks, 'commander').length) : null,
     h('div', { class: 'lib-cap', text: libFilter === 'fav' ? 'Favorites' : 'Decks' }), search,
     h('div', { class: 'lib-decklist' }, ...(shown.length ? shown.map(deckRow) : [h('div', { class: 'lib-empty-s', text: inMode.length ? (libFilter === 'fav' ? 'No favorites yet: star a deck on its page.' : 'No deck matches.') : 'No decks yet.' })])),
-    h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk));
+    h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk,
+      h('button', { class: 'lib-btn link small lib-backup', type: 'button', text: lsGet('mtgpt.lastBackup', 0) ? 'Backup and restore' : 'Back up your library', title: 'Save your decks, Archive, packs and settings to one file, or restore them', onclick: () => openBackupWindow() })));   // v0.99.109
   // main: the selected deck
   const main = h('main', { class: 'lib-main' });
   if (libFilter === 'collection') main.append(...collectionPage(redraw).filter(Boolean));   // v0.99.106

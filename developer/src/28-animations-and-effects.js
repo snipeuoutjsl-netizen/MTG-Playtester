@@ -161,7 +161,7 @@ let lifePrev = { you: null, opp: null };
 function lifeFx(which, el, val) {
   const prev = lifePrev[which]; lifePrev[which] = val;
   // v0.99.67 reaching 0 life ends the game whether or not life animations run or the life box is on screen (with animations off, as on many phones, the Victory screen never came)
-  if (prev !== null && val <= 0 && prev > 0 && (!el || !animOn('life'))) { setTimeout(() => { try { showGameEnd(which); } catch (e) { /* convenience */ } }, 400); }
+  if (prev !== null && val <= 0 && prev > 0 && (!el || !animOn('life'))) { const g0 = state; setTimeout(() => { if (state !== g0) return; try { showGameEnd(which); } catch (e) { /* convenience */ } }, 400); }
   if (!el) return;
   if (prev === null || prev === val || !animOn('life')) { if (!el._rolling || prev === null || !animOn('life')) el.textContent = val; return; }
   const d = val - prev, up = d > 0, tok = (el._tok = (el._tok || 0) + 1);
@@ -182,7 +182,7 @@ function lethalFx(which, title, sub) {
   an.onfinish = () => o.remove(); setTimeout(() => o.remove(), (3200) * 3);
   sparks(innerWidth / 2, innerHeight / 2, you ? '#ff5a4f' : '#ffe27a', 40, 360, 1200);
   if (!you) { try { winConfetti(); sfx('win'); } catch (e) {} }   // v0.99.92 a celebration
-  setTimeout(() => { try { showGameEnd(which, title, sub); } catch (e) { /* the pop-up is a convenience */ } }, 2500);   // v0.96.21 the "Next round" screen
+  const g0 = state; setTimeout(() => { if (state !== g0) return; try { showGameEnd(which, title, sub); } catch (e) { /* the pop-up is a convenience */ } }, 2500);   // v0.99.109 not over a game started since (a new puzzle within 2.5s got the last one's 'Solved!')   // v0.96.21 the "Next round" screen
 }
 // ---- turn banner and phase flash
 function turnBanner() {

@@ -3119,7 +3119,7 @@ body.a11y-calm #hall.v3 .hall-tome, body.a11y-calm #hall.v3 .dbx-turn > .bk.big,
 /* narrower windows and upright phones: the sidebar becomes a compact strip above the deck page */
 @media (max-width: 980px) { #hall.lib2 .lib-grid { grid-template-columns: 1fr; } #hall.lib2 .lib-stat.col { margin-left: 0; } }
 @media (max-width: 760px) {
-  #hall.lib2 .lib-top { flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+  #hall.lib2 .lib-top { flex-wrap: wrap; gap: 6px; padding: 8px max(12px, calc(env(safe-area-inset-right) * var(--vpk, 1))) 8px max(12px, calc(env(safe-area-inset-left) * var(--vpk, 1))); padding-top: max(8px, calc(env(safe-area-inset-top) * var(--vpk, 1) + 4px)); }
   #hall.lib2 .lib-sub { display: none; } #hall.lib2 .lib-title { font-size: 17px; }
   #hall.lib2 .lib-nav { width: 100%; justify-content: flex-start; margin-left: 0; }
   #hall.lib2 .lib-btn.link { padding: 6px 9px; font-size: 11.5px; }
@@ -3433,3 +3433,17 @@ body.a11y-contrast .pk-load-why { color: #e6e6ee; } body.a11y-calm .pk-load-fill
 .pk-ov.god .pk-head h2 { background: linear-gradient(90deg, #fff1bd, #e9c26a, #ff9ad5, #9ad8ff, #e9c26a); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .pk-ov.god .pk-back { box-shadow: inset 0 0 0 3px #fff1bd, inset 0 0 0 7px #2a1a35, 0 0 22px rgba(255,220,140,.55); }
 .pk-card.up.r-foil .pk-front { box-shadow: 0 0 0 2px #c9a0ff, 0 0 26px rgba(201,160,255,.5); }
+#hall.lib2 .lib-backup { align-self: flex-start; margin-top: 6px; padding: 0; }
+
+/* v0.99.109 upright iPhone (home-screen app): the Library top bar kept clear of the notch / status bar, and the page filling the whole
+   screen. iOS can leave html at 100% short of the real screen in a standalone app, which showed as an empty strip at the bottom; the
+   body is pinned to the screen edges instead, and the scrolling page keeps room for the home bar. */
+html.portrait-ui, html.portrait-ui body { background: #151525; }
+html.portrait-ui body { position: fixed; top: 0; left: 0; right: 0; bottom: 0; height: auto; width: auto; }
+@supports (height: 100lvh) { html.portrait-ui body { min-height: 100lvh; } }
+@media (max-width: 760px) {
+  #hall.lib2 .lib-main { padding-bottom: calc(28px + env(safe-area-inset-bottom) * var(--vpk, 1)); }
+  #hall.lib2 .lib-body { padding-bottom: 0; }
+}
+.pk-ov { padding-top: max(26px, calc(env(safe-area-inset-top, 0px) * var(--vpk, 1) + 10px)); padding-bottom: max(22px, calc(env(safe-area-inset-bottom, 0px) * var(--vpk, 1) + 10px)); }
+@media (max-width: 760px) { #hall.lib2 .lbx-ov { padding-top: max(12px, calc(env(safe-area-inset-top, 0px) * var(--vpk, 1) + 8px)); padding-bottom: max(14px, calc(env(safe-area-inset-bottom, 0px) * var(--vpk, 1) + 8px)); } }
