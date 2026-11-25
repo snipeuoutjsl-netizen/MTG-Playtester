@@ -122,11 +122,12 @@ function durationOptions(sentence, obj, targets) {
   if (!who) {
     // v0.99.79 any group the sentence names ("All creatures get -2/-2", "Attacking creatures get +1/+0", "Creatures you control get +1/+1"): read with the same subject rules as static abilities
     const gm = /^(?:\u2022\s*)?(.+?) (?:each )?(?:gets?|gains?|have|has) /i.exec(s);
-    if (gm && !/^(?:~|this \w+|it|target|that|those|they|enchanted|equipped)\b/i.test(gm[1])) {
+    if (gm && !/^(?:~(?=\s|'|$)|(?:this \w+|it|target|that|those|they|enchanted|equipped)\b)/i.test(gm[1])) {   // v0.99.84 "~" is the card itself (a \b never follows a ~)
       if (/\b(?:your opponents control|an opponent controls|you don'?t control)\b/i.test(gm[1])) group = { opp: true, label: gm[1] };
       else { let sub = null; const g0 = { id: obj.sourceId != null ? obj.sourceId : -1, name: src }; try { sub = parseSubject(gm[1], g0) || (/^(?:other )?(?:attacking|blocking|untapped|tapped) creatures$/i.test(gm[1]) ? parseSubject(gm[1] + ' you control', g0) : null); } catch (e) { sub = null; } if (sub && !sub.self) group = { test: sub.test, label: gm[1], other: /^other\b/i.test(gm[1]) }; }   // in a goldfish game the attackers are yours
     }
-    if (!group && obj.sourceId && /^(?:~|this \w+|it)\b/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    if (!group && obj.sourceId && /^(?:~(?=\s|')|(?:this \w+|it)\b)/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    if (!group && !who && obj.sourceId != null && /^equipped creature\b/i.test(s)) { const f = findCard(obj.sourceId), host = f && f.card.att != null ? findCard(f.card.att) : null; if (host) who = [{ id: host.card.id, name: host.card.name }]; }   // v0.99.84 Equipment: "Equipped creature gets +2/+2 until end of turn"
     if (!group && !who && obj.sourceId != null && /^enchanted creature\b/i.test(s)) { const f = findCard(obj.sourceId), host = f && f.card.att != null ? findCard(f.card.att) : null; if (host) who = [{ id: host.card.id, name: host.card.name }]; }   // v0.99.79 an Aura's "Enchanted creature gets +1/+0 until end of turn" (Firebreathing)
   }
   const apply = (mk) => () => {

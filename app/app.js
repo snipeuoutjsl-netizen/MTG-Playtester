@@ -766,7 +766,8 @@ function hasKw(c, kw) {
   if (sbKeywords(c).includes(kw) || pairedKeywords(c).includes(kw) || (c.becomes && (c.becomes.kws || []).includes(kw))) return true;   // "...he's a 3/4 Ninja creature and has hexproof"
   return !!kwGrant(c, kw);
 }
-const GRANTABLE = ['shroud', 'islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender'];
+const GRANTABLE = ['shroud', 'islandwalk', 'swampwalk', 'forestwalk', 'mountainwalk', 'plainswalk', 'prowess', 'flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'defender',
+  'infect', 'wither', 'shadow', 'horsemanship', 'fear', 'intimidate', 'protection from white', 'protection from blue', 'protection from black', 'protection from red', 'protection from green', 'protection from creatures', 'protection from artifacts', 'protection from everything', 'protection from multicolored', 'protection from colorless'];   // v0.99.84 more keywords a spell can give until end of turn
 // Keywords a creature has only because of other permanents' static abilities (shown in the preview).
 function grantedKeywords(c) {
   const out = [];
@@ -798,7 +799,7 @@ function staticNote(c) {
 function isInstantSpeed(c) {
   const i = c && cardInfo(c.name); if (!i || i.land) return false;
   const t=(i.t||'').split(' // ')[0];
-  return /\bInstant\b/.test(t) || kwLine(i.tx, 'flash');
+  return /\bInstant\b/.test(t) || kwLine(i.tx, 'flash') || fxFlashAll(c);   // v0.99.84 "… as though they had flash" this turn
 }
 // Summoning sickness: a creature that has not been under your control since your most recent turn began
 // cannot attack or use {T} abilities, unless it has haste. (Goldfish: only your own turns exist.)
@@ -1034,11 +1035,12 @@ function durationOptions(sentence, obj, targets) {
   if (!who) {
     // v0.99.79 any group the sentence names ("All creatures get -2/-2", "Attacking creatures get +1/+0", "Creatures you control get +1/+1"): read with the same subject rules as static abilities
     const gm = /^(?:\u2022\s*)?(.+?) (?:each )?(?:gets?|gains?|have|has) /i.exec(s);
-    if (gm && !/^(?:~|this \w+|it|target|that|those|they|enchanted|equipped)\b/i.test(gm[1])) {
+    if (gm && !/^(?:~(?=\s|'|$)|(?:this \w+|it|target|that|those|they|enchanted|equipped)\b)/i.test(gm[1])) {   // v0.99.84 "~" is the card itself (a \b never follows a ~)
       if (/\b(?:your opponents control|an opponent controls|you don'?t control)\b/i.test(gm[1])) group = { opp: true, label: gm[1] };
       else { let sub = null; const g0 = { id: obj.sourceId != null ? obj.sourceId : -1, name: src }; try { sub = parseSubject(gm[1], g0) || (/^(?:other )?(?:attacking|blocking|untapped|tapped) creatures$/i.test(gm[1]) ? parseSubject(gm[1] + ' you control', g0) : null); } catch (e) { sub = null; } if (sub && !sub.self) group = { test: sub.test, label: gm[1], other: /^other\b/i.test(gm[1]) }; }   // in a goldfish game the attackers are yours
     }
-    if (!group && obj.sourceId && /^(?:~|this \w+|it)\b/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    if (!group && obj.sourceId && /^(?:~(?=\s|')|(?:this \w+|it)\b)/i.test(s)) who = [{ id: obj.sourceId, name: src }];
+    if (!group && !who && obj.sourceId != null && /^equipped creature\b/i.test(s)) { const f = findCard(obj.sourceId), host = f && f.card.att != null ? findCard(f.card.att) : null; if (host) who = [{ id: host.card.id, name: host.card.name }]; }   // v0.99.84 Equipment: "Equipped creature gets +2/+2 until end of turn"
     if (!group && !who && obj.sourceId != null && /^enchanted creature\b/i.test(s)) { const f = findCard(obj.sourceId), host = f && f.card.att != null ? findCard(f.card.att) : null; if (host) who = [{ id: host.card.id, name: host.card.name }]; }   // v0.99.79 an Aura's "Enchanted creature gets +1/+0 until end of turn" (Firebreathing)
   }
   const apply = (mk) => () => {
@@ -1806,6 +1808,8 @@ function effectOptions(tx, obj) {
   tx = applyCondInstead(tx);   // "... deals 4 damage instead if you control three or more artifacts"
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   { const g0 = obj && obj.sourceId != null ? (findCard(obj.sourceId) || {}).card : null, ii = interveningIf(tx, g0 || null);   // v0.99.81 CR 603.4 / 608.2c a leading "if <condition>," read from what happened (src/88)
+    { const dropped = []; tx = String(tx).replace(/(^|\.\s+)([^.]*?) unless ([^.]+?)\./g, (all, pre, body, cond) => { let v = null; try { v = evalCond(cond, g0 || null); } catch (e) { v = null; } if (v === true) { dropped.push(`${body.replace(/^then /i, '')} (${cond})`); return pre; } if (v === false) return pre + body + '.'; return all; }).trim();   // v0.99.84 "Then discard a card unless you attacked this turn" (Chart a Course)
+      if (dropped.length) log(`${(obj && obj.sourceName) || 'Effect'}: not done: ${dropped.join('; ')}`); }
     if (ii && ii.value === true) tx = ii.rest;
     else if (ii && ii.value === false) { const trig = !!(obj && (obj.trigger || obj.ability || obj.kind === 'ability')), restS = String(tx).split(/(?<=\.)\s+/).slice(1).join(' ').trim();
       if (trig || !restS) return [{ full: true, covers: [String(tx)], label: `Does nothing: ${ii.cond} is not true now (CR 603.4)`, fn: () => log(`${(obj && obj.sourceName) || 'Ability'}: ${ii.cond} is not true, so it does nothing`) }];
@@ -2201,6 +2205,7 @@ function openCascade(obj, done) {
 function staticFx() {
   const fx = { skipDraw: null, maxHand: 7, gyExile: null };
   if (!state) return fx;
+  if (fxNoMaxHand()) fx.maxHand = Infinity;   // v0.99.84 "You have no maximum hand size until your next turn"
   const W = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
   for (const c of state.battlefield) {
     const tx = cardText(c);
@@ -7048,8 +7053,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.83';
+const APP_VERSION = '0.99.84';
 const CHANGELOG = [
+  { v: '0.99.84', title: 'Rules batch 4', notes: ['RULES (CR 105.1): "of your choice" asks as it resolves. Gods Willing asks for a color and the creature gets protection from it; "becomes the basic land type of your choice" and "the color or colors of your choice" ask too.', 'RULES: protection from a color (and from creatures, artifacts, everything), infect, wither, shadow, fear and intimidate can now be given until end of turn.', 'RULES: "unless <condition>" is read from the turn record. Chart a Course does not ask you to discard after you attacked.', 'RULES (CR 402.2): "You have no maximum hand size until your next turn" (Enter the Infinite) really lifts the limit at cleanup. (CR 702.8) "You may cast spells this turn as though they had flash" (Alchemist\u2019s Refuge, Emergence Zone) lets you cast them at instant speed.', 'RULES: "Vehicles you control become artifact creatures until end of turn" (Armed and Armored) and "it becomes an artifact creature until end of turn" work like crewing. "Equipped creature gets +2/+2 until end of turn" (Adventuring Gear) pumps the equipped creature. "~ gets +N/+N" read with the card\u2019s own name works everywhere.', 'RULES: "Those creatures gain vigilance until end of turn" after "Put a +1/+1 counter on each creature you control" (Ajani Goldmane) or "Creatures you control get …" applies to those creatures.', 'RULES: -X/-X and +X/+X with no X paid (Sickening Shoal) ask for X.', 'RULES: "Activate only if this land entered this turn" (Gathering Place and the other Desert lands) and "if two or more nonland permanents entered under your control this turn" are read.', 'RULES: lure and combat requirements ("blocks this turn if able", "attacks this turn if able", "can\u2019t attack or block this turn") are kept in Active effects on your creature, or noted for the real table when they are on your opponent\u2019s.', '157 fewer sentences are left as Remember notes; 171 more cards are read in full (12,052).'] },
   { v: '0.99.83', title: 'Creatures first on upright phones', notes: ['PHONE (upright): the battlefield puts creatures first. Their row gets about twice the height it had, the lands-and-permanents row a little less, and the deck / graveyard / exile row is lower, so creature cards are drawn much larger (about 40% wider with three creatures out).', 'PHONE (upright): the game-state icons share the first row with Turn and Mana, showing only the lit ones and \u22ef (tap it for all of them). The battlefield gets that row back.'] },
   { v: '0.99.82', title: 'Fewer leftover pop-ups, and fixes for upright phones', notes: ['RESOLVING: an ability aimed at your opponent\u2019s permanent (Ugin, Devourer of Destiny, Skysovereign) no longer opens a window you have to dismiss. It finishes by itself; the stack panel\u2019s "What the app did" and the log say what to do at the real table.', 'Cascade and Discover that find nothing no longer stop on an OK window: a short note says the cards went to the bottom.', 'The last of the browser\u2019s own alert / confirm / prompt boxes from the first versions are gone (deleting a deck, deleting saved images, resetting art, paying life down to 0, X tokens, card data messages). They are the app\u2019s own windows and notes now, which also work on phones that block browser boxes.', 'PHONE (upright): a deck taken off the shelf takes its "in use" ribbon with it, instead of leaving the ribbon floating on the shelf.', 'PHONE (upright): the Library sign starts below the Back to the table and settings buttons, so they no longer cover it.', 'PHONE (upright): when you put cards on the bottom after a mulligan, the hand is large and sits below the prompt; the prompt no longer spills over its own frame or covers the cards.', 'PHONE (upright): the empty box next to Mana in the top bar is gone when no game state is showing.'] },
   { v: '0.99.81', title: 'One zone for lands and permanents, fewer Resolving windows, and a turn record for the rules', notes: ['TABLE: on wide windows the battlefield only filled part of the screen when the lower zones were empty. Fixed (their shares of the width could add up to less than the whole row).', 'TABLE: lands and artifacts / enchantments / planeswalkers are now one zone on every screen: lands on the left, the other permanents on the right, the split following how many cards each side holds. Upright phones too. A narrow right half reads "Other permanents" instead of a cut-off label.', 'RESOLVING: an effect that opens its own window (surveil, scry, look at the top cards, search) no longer waits in the Resolving panel for an Apply click. Kaito\u2019s 0 goes straight to the surveil window. Effects you might not want ("you may", paying a cost, a choice of modes) still ask.', 'RULES (CR 603.4): intervening "if". "When this creature enters, if you attacked this turn, …" (Raid), Revolt, Void, Coven, bloodthirst and the like only trigger when the condition is true, and the condition is checked again as the ability resolves.', 'RULES: the game now keeps one record of what happened this turn (attacks, life gained and lost, cards drawn, permanents that left, creatures that died, spells cast or warped). Every "this turn" condition reads from it: War-Name Aspirant enters with its counter only after you attacked, Undercity Scrounger and Caged Zombie can be activated only after a creature died (CR 602.5b), Bone Picker costs {3} less after a creature died and Focus the Mind {2} less after another spell (CR 601.2f).', 'LIBRARY: the lamplight is drawn more cheaply, so opening and closing the Library is smoother on slower machines.'] },
@@ -14746,13 +14752,15 @@ function batch3Options(t, sents, obj, src, out, drop) {
     const m = /^(target creature(?: you control)?|~|this creature|it|that creature|enchanted creature|equipped creature) gets ([+-])(x|\d+)\/([+-])(x|\d+) until end of turn(?:, where x is (its power|[^.]+))?\.?$/i.exec(s);
     if (!m || !/x/i.test(m[3] + m[5])) continue;
     const ownPower = /^its power$/i.test(m[6] || ''); if (m[6] && !ownPower) continue;   // other "where X is …" are read by applyWhereX before this
-    if (!ownPower && obj.xValue == null) continue;
+    const askX = !ownPower && obj.xValue == null;   // v0.99.84 X not known (Sickening Shoal, Untamed Might cast without a paid X): ask for it
     const subj = m[1].toLowerCase();
     const who = () => /^target/.test(subj) ? perms().map(x => ({ id: x.id, name: x.name })) : /^(?:enchanted|equipped)/.test(subj) ? (() => { const g = srcPerm(), host = g && g.att != null ? findCard(g.att) : null; return host ? [{ id: host.card.id, name: host.card.name }] : []; })() : (srcPerm() ? [{ id: srcPerm().id, name: src }] : []);
     const val = (id, sign, part) => sign * (/x/i.test(part) ? (ownPower ? b3Power(id) : obj.xValue) : +part);
-    const sp = m[2] === '-' ? -1 : 1, st = m[4] === '-' ? -1 : 1, xs = ownPower ? 'X is its power' : 'X = ' + obj.xValue;
+    const sp = m[2] === '-' ? -1 : 1, st = m[4] === '-' ? -1 : 1, xs = ownPower ? 'X is its power' : askX ? 'choose X' : 'X = ' + obj.xValue;
     out.push({ covers: [s], full: sents.length === 1, label: `${who().map(x => x.name).join(', ') || m[1]} gets ${m[2]}${m[3].toUpperCase()}/${m[4]}${m[5].toUpperCase()} until end of turn (${xs})`, fn: () => {
-      const l = who(); if (!l.length) { toast('No creature', 'There is no creature to change.'); return; } snap();
+      const l = who(); if (!l.length) { toast('No creature', 'There is no creature to change.'); return; }
+      if (askX && obj.xValue == null) { askNumber(`${src}: X`, `What is X for "${s.replace(/\.$/, '')}"?`, 1, v => { if (v == null) return; obj.xValue = Math.max(0, +v || 0); batch3XApply(l, m, sp, st, ownPower, obj, src); }); return; }
+      snap();
       for (const x of l) { const p = val(x.id, sp, m[3]), tt = val(x.id, st, m[5]); addFx({ kind: 'pt', targetId: x.id, p, t: tt, until: 'eot', srcName: src, srcId: obj.sourceId || null }); log(`${src}: ${x.name} gets ${sgnN(p)}/${sgnN(tt)} until end of turn`); }
       runToughnessSBA(); render(); } });
     drop.push(/^Remember \(until end of turn\): .*gets [+-]X\//i);
@@ -14795,6 +14803,14 @@ function batch3Options(t, sents, obj, src, out, drop) {
       if (mine.length) log(`${src}: you already control ${mine.map(x => x.name).join(', ')}; nothing changes`);
       else { addFx({ kind: 'note', until: 'eot', srcName: src, text: 'You control the stolen creature until end of turn (opponent\'s creature, play it out at the table)' }); log(`${src}: gain control of your opponent's creature until end of turn (apply it at the real table)`); } render(); } });
       drop.push(/^Remember \(until end of turn\): (?:Until end of turn, )?gain control of /i); } }
+  batch4Options(t, sents, obj, src, out, drop);   // v0.99.84 src/90
+}
+
+// v0.99.84 the +X/+X / -X/-X pump once X has been chosen
+function batch3XApply(l, m, sp, st, ownPower, obj, src) {
+  const val = (id, sign, part) => sign * (/x/i.test(part) ? (ownPower ? b3Power(id) : obj.xValue) : +part);
+  snap(); for (const x of l) { const p = val(x.id, sp, m[3]), tt = val(x.id, st, m[5]); addFx({ kind: 'pt', targetId: x.id, p, t: tt, until: 'eot', srcName: src, srcId: obj.sourceId || null }); log(`${src}: ${x.name} gets ${sgnN(p)}/${sgnN(tt)} until end of turn (X = ${obj.xValue})`); }
+  runToughnessSBA(); render();
 }
 // ---- v0.99.81 What happened this turn, and the conditions that ask about it
 // One record per turn (state.mem, started by memNote in src/06) now also counts attacks, life gained and lost, cards drawn and spells warped.
@@ -14841,7 +14857,11 @@ function turnCond(t, g) {
   if ((m = t.match(/^you(?:'ve| have)? drawn (\w+) or more cards this turn$|^you drew (\w+) or more cards this turn$/))) { const k = CS_NUM(m[1] || m[2]); return isNaN(k) ? null : memCount('drawn') >= k; }
   if (/^you(?:'ve| have)? cast another spell this turn$/.test(t)) return spellsCastNow() >= 1 + (g && g._castCounted === state.turn ? 1 : 0);
   if (/^you(?:'ve| have)? cast (?:a|another) (?:noncreature|instant or sorcery|instant|sorcery|creature|artifact|enchantment) spell this turn$/.test(t)) return null;   // the kind of spell is not recorded yet
-  if (/^you(?:'ve| have)? played a land this turn$/.test(t)) return typeof landDropUsed === 'function' ? landDropUsed() > 0 : null;
+  if (/^you(?:'ve| have)? played a land this turn$/.test(t)) return (state.landsPlayed || 0) > 0;
+  if (/^(?:~|this (?:land|creature|permanent|artifact|enchantment)) entered (?:the battlefield )?this turn$/.test(t)) return !!g && g.enteredTurn === state.turn;   // "Activate only if this land entered this turn"
+  if ((m = t.match(/^(\w+) or more (nonland permanents|creatures|artifacts|lands|permanents) entered (?:the battlefield )?under your control this turn$/))) { const k = CS_NUM(m[1]); if (isNaN(k)) return null;
+    const ty = { 'nonland permanents': x => isNonlandMem(x), creatures: x => /\bCreature\b/.test(x.type || ''), artifacts: x => /\bArtifact\b/.test(x.type || ''), lands: x => /\bLand\b/.test(x.type || ''), permanents: () => true }[m[2]];
+    return memThisTurn('entered', ty).length >= k; }
   // coven: three or more creatures with different powers
   if (/^you control three or more creatures with different powers$/.test(t)) return new Set(state.battlefield.filter(c => permZone(c) === 'creatures').map(c => ptCalc(c).p)).size >= 3;
   return null;
@@ -14880,6 +14900,106 @@ function appAsk(title, text, okText, danger) {
 }
 function appNotice(title, text) { try { toast(title, text); } catch (e) { /* no table yet */ } try { log(`${title}: ${text}`); } catch (e) { /* no game */ } }
 function appAskNumber(title, note, def) { return new Promise(res => askNumber(title, note, def, v => res(v))); }
+// ---- v0.99.84 rules batch 4: what the Remember audit still found most often
+// "… of your choice" (CR 105.1 colours / 205.3 types): ask, then read the sentence with the answer in it.
+// "until your next turn" / "this turn" allowances: no maximum hand size (CR 402.2), cast as though it had flash (CR 702.8),
+// "… unless <condition>", Vehicles and "it" becoming artifact creatures, "Those creatures gain …" after a group,
+// and combat requirements on your opponent's creatures, which are kept as notes for the real table (CR 508.1d / 509.1c).
+const B4_COLORS = ['white', 'blue', 'black', 'red', 'green'];
+const B4_BASICS = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
+function b4Choose(title, note, list, cb) {
+  const m = modal(title, { width: 420 });
+  m.body.append(h('div', { class: 'psub', text: note }), h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;margin-top:8px' }, ...list.map(v => h('button', { text: v.charAt(0).toUpperCase() + v.slice(1), onclick: () => { m.close(); cb(v); } }))));
+  m.foot.append(h('button', { text: 'Cancel', onclick: () => m.close() }));
+}
+// run what a sentence offers once the choice is in it: one effect is applied, several are offered, none becomes a note in Active effects
+function b4RunSentence(s, obj, src) {
+  let os = []; try { os = effectOptions(s, Object.assign({}, obj, { _tgtAsked: true, _noRemCheck: true })).filter(o => o && !o.hidden && !/^Remember/.test(o.label || '')); } catch (e) { os = []; }
+  if (os.length === 1) { os[0].fn(); return; }
+  if (!os.length) { snap(); addFx({ kind: 'note', until: /until your next turn/i.test(s) ? 'yourNextTurn' : 'eot', turn: state.turn, srcName: src, text: s.replace(/\.$/, '') }); log(`${src}: ${s.replace(/\.$/, '')}`); render(); return; }
+  const m = modal(src, { width: 460 }); m.body.append(h('div', { class: 'psub', text: s }), ...os.map(o => h('div', { class: 'row' }, h('span', { class: 'nm', text: o.label }), h('button', { class: 'primary', text: 'Apply', onclick: ev => { o.fn(); ev.target.disabled = true; } }))));
+  m.foot.append(h('button', { class: 'primary', text: 'Done', onclick: () => m.close() }));
+}
+function b4Vehicle(c, src) {
+  const i = cardInfo(c.name); c.becomes = { pt: (i && i.pt) || '0/0', types: ['artifact', 'creature'], subs: (cardInfo(c.name) || {}).t && /Vehicle/.test(cardInfo(c.name).t) ? ['vehicle'] : [], kws: [] };
+  addFx({ kind: 'delayed', when: 'end', action: 'unbecome', targetId: c.id, targetName: c.name, text: `${c.name}: it stops being a creature.`, srcName: src });
+}
+
+function batch4Options(t, sents, obj, src, out, drop) {
+  if (!state) return;
+  const perms = () => (obj.targets || []).filter(x => !x.gone && x.kind === 'perm');
+  const srcPerm = () => { const f = obj.sourceId != null ? findCard(obj.sourceId) : null; return f && f.zone === 'battlefield' ? f.card : null; };
+  const esc = x => x.slice(0, 24).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const remDrop = s => drop.push(new RegExp('^Remember \\([^)]*\\): ' + esc(s), 'i'));
+
+  for (let i = 0; i < sents.length; i++) {
+    const s = sents[i], prev = sents[i - 1] || ''; let m;
+
+    // 1. "of your choice": a colour or a basic land type, asked as it resolves
+    if ((m = /\b(the color of your choice|a color of your choice|the color or colors of your choice|the basic land type of your choice)\b/i.exec(s))) {
+      const land = /land type/i.test(m[1]), list = land ? B4_BASICS : B4_COLORS;
+      out.push({ covers: [s], full: sents.length === 1, label: `Choose ${land ? 'a basic land type' : 'a color'}: ${s.replace(/\.$/, '')}`, fn: () => b4Choose(`${src}: choose ${land ? 'a basic land type' : 'a color'}`, s, list, v => {
+        const s2 = s.replace(m[1], land ? v : /colors/.test(m[1]) ? v : v); log(`${src}: chose ${v}`); b4RunSentence(s2, obj, src); }) });
+      remDrop(s); continue;
+    }
+    // 2. "You have no maximum hand size until your next turn / this turn / for the rest of the game"
+    if ((m = /^you have no maximum hand size(?: (until your next turn|until end of turn|this turn|for the rest of the game))?\.?$/i.exec(s))) {
+      const u = !m[1] || /rest of the game/i.test(m[1]) ? 'permanent' : /next turn/i.test(m[1]) ? 'yourNextTurn' : 'eot';
+      out.push({ covers: [s], full: sents.length === 1, label: `You have no maximum hand size ${u === 'permanent' ? 'for the rest of the game' : u === 'eot' ? 'this turn' : 'until your next turn'}`, fn: () => { snap(); addFx({ kind: 'nomaxhand', until: u, turn: state.turn, srcName: src, text: 'No maximum hand size' }); log(`${src}: you have no maximum hand size ${u === 'eot' ? 'this turn' : u === 'permanent' ? 'for the rest of the game' : 'until your next turn'}`); render(); } });
+      remDrop(s); continue;
+    }
+    // 3. "You may cast spells this turn as though they had flash." (also "creature spells", "noncreature spells")
+    if ((m = /^(?:until end of turn, )?you may cast (spells|creature spells|noncreature spells|artifact spells|instant and sorcery spells|sorcery spells) (?:this turn )?as though they had flash(?: this turn| until end of turn)?\.?$/i.exec(s))) {
+      const kind = m[1].toLowerCase();
+      out.push({ covers: [s], full: sents.length === 1, label: `You may cast ${kind} this turn as though they had flash`, fn: () => { snap(); addFx({ kind: 'flashall', what: kind, until: 'eot', srcName: src, text: `${kind} as though they had flash` }); log(`${src}: you may cast ${kind} this turn as though they had flash`); render(); } });
+      remDrop(s); continue;
+    }
+    // 4. "Then discard a card unless you attacked this turn." — the condition decides whether the sentence happens at all
+    if ((m = /^(?:then )?(.+?) unless (.+?)\.?$/i.exec(s)) && !/\bpays?\b|\bsacrifices?\b|\bdiscards?\b.*\bunless\b.*\b(?:pays?|discards?)\b/i.test(m[2])) {
+      let v = null; try { v = evalCond(m[2], srcPerm()); } catch (e) { v = null; }
+      if (v !== null) {
+        const rest = m[1].charAt(0).toUpperCase() + m[1].slice(1) + '.';
+        if (v) out.push({ covers: [s], label: `${rest.replace(/\.$/, '')}: not done (${m[2]})`, fn: () => log(`${src}: ${m[2]}, so ${m[1]} does not happen`) });
+        else { let os = []; try { os = effectOptions(rest, Object.assign({}, obj, { _noRemCheck: true })).filter(o => !/^Remember/.test(o.label || '')); } catch (e) { os = []; }
+          if (os.length) for (const o of os) out.push(Object.assign({}, o, { covers: [s], full: false })); else continue; }
+        remDrop(s); continue;
+      }
+    }
+    // 5. "Vehicles you control become artifact creatures until end of turn." / "it becomes an artifact creature until end of turn"
+    if (/^vehicles you control become artifact creatures until end of turn\.?$/i.test(s)) {
+      out.push({ covers: [s], full: sents.length === 1, label: 'Your Vehicles become artifact creatures until end of turn', fn: () => { const vs = state.battlefield.filter(c => /\bVehicle\b/.test((cardInfo(c.name) || {}).t || '')); if (!vs.length) { toast('No Vehicles', 'You control no Vehicles.'); return; } snap(); for (const c of vs) b4Vehicle(c, src); log(`${src}: ${vs.map(c => c.name).join(', ')} become artifact creatures until end of turn`); render(); } });
+      remDrop(s); continue;
+    }
+    if (/^(?:it|that vehicle|target vehicle|that artifact) becomes an artifact creature until end of turn\.?$/i.test(s)) {
+      const c0 = () => perms()[0] ? (findCard(perms()[0].id) || {}).card : /^it/i.test(s) && obj.lastTargetId ? (findCard(obj.lastTargetId) || {}).card : srcPerm();
+      out.push({ covers: [s], full: sents.length === 1, label: `${(c0() || { name: 'It' }).name} becomes an artifact creature until end of turn`, fn: () => { const c = c0(); if (!c) { toast('Not there', 'That permanent is not on the battlefield.'); return; } snap(); b4Vehicle(c, src); log(`${src}: ${c.name} becomes an artifact creature until end of turn`); render(); } });
+      remDrop(s); continue;
+    }
+    // 6. "Those creatures gain vigilance until end of turn." after "Creatures you control get +1/+1 until end of turn."
+    if ((m = /^those creatures gain ([a-z ,]+?) until end of turn\.?$/i.exec(s)) && /\b(?:creatures|each creature|creature) you control\b/i.test(prev)) {
+      const kws = kwsIn(m[1]); if (!kws.length) continue;
+      out.push({ covers: [s], label: `Creatures you control gain ${kws.join(', ')} until end of turn`, fn: () => { snap(); for (const c of state.battlefield.filter(c => permZone(c) === 'creatures')) for (const kw of kws) addFx({ kind: 'kw', kw, targetId: c.id, until: 'eot', srcName: src }); log(`${src}: creatures you control gain ${kws.join(', ')} until end of turn`); render(); } });
+      remDrop(s); continue;
+    }
+    // 7. combat requirements and restrictions this turn (CR 508.1d, 509.1c): on your opponent's creatures they are for the real table;
+    //    on yours they are kept in Active effects so you see them when you attack
+    if (/^(?:target creature|that creature|it|target creature an opponent controls|all creatures able to block target creature|target creature defending player controls) (?:blocks (?:~|this creature|it)? ?this turn if able|blocks this turn if able|attacks this turn if able|can't attack or block this turn|can't block this turn|can't attack this turn|this turn do so|must block this turn if able)\.?$/i.test(s) || /^all creatures able to block (?:target creature|~|this creature) this turn do so\.?$/i.test(s) || /^they gain haste until end of turn\.?$/i.test(s)) {
+      const mine = perms().filter(x => (findCard(x.id) || {}).zone === 'battlefield');
+      out.push({ covers: [s], full: sents.length === 1, label: mine.length ? `${mine.map(x => x.name).join(', ')}: ${s.replace(/^[^ ]+ [^ ]+ /, '').replace(/\.$/, '')}` : `For the real table: ${s.replace(/\.$/, '')}`, fn: () => {
+        snap(); if (mine.length) for (const x of mine) addFx({ kind: 'note', targetId: x.id, until: 'eot', srcName: src, text: s.replace(/\.$/, '') });
+        else addFx({ kind: 'note', until: 'eot', srcName: src, text: s.replace(/\.$/, '') + ' (your opponent\'s creatures)' });
+        log(`${src}: ${s.replace(/\.$/, '')}${mine.length ? '' : ' (your opponent\'s creatures: apply it at the real table)'}`); render(); } });
+      remDrop(s); continue;
+    }
+  }
+}
+// CR 402.2 the maximum hand size, with "no maximum hand size until your next turn" effects
+function fxNoMaxHand() { return !!state && (state.fx || []).some(e => e.kind === 'nomaxhand'); }
+// CR 702.8 "as though it had flash" for this turn
+function fxFlashAll(c) {
+  if (!state) return false; const i = c && cardInfo(c.name); if (!i || i.land) return false; const t = (i.t || '').split(' // ')[0];
+  return (state.fx || []).some(e => e.kind === 'flashall' && (e.what === 'spells' || (e.what === 'creature spells' && /\bCreature\b/.test(t)) || (e.what === 'noncreature spells' && !/\bCreature\b/.test(t)) || (e.what === 'artifact spells' && /\bArtifact\b/.test(t)) || (e.what === 'sorcery spells' && /\bSorcery\b/.test(t)) || (e.what === 'instant and sorcery spells' && /\b(?:Instant|Sorcery)\b/.test(t))));
+}
 init();
 
 })();

@@ -1,5 +1,7 @@
 
 
+**v0.99.84** src/90-rules-batch-4.js (called from batch3Options): b4Choose/b4RunSentence ("of your choice" -> substitute -> effectOptions), fx 'nomaxhand' (staticFx), fx 'flashall' (isInstantSpeed via fxFlashAll), Vehicles become creatures, Those creatures gain, combat-requirement notes. effectOptions strips/keeps "X unless <cond>" sentences via evalCond. durationOptions: '~' subject fixed (no \b after ~), equipped creature. GRANTABLE += protection from …, infect, wither, shadow, fear, intimidate. turnCond: this land entered this turn; N or more <type> entered; played a land (fixed). batch3 X pumps ask X when unknown. Audit /tmp/remaudit.js now strips ability words and skips Activate-only / costs / enters-with lines.
+
 **v0.99.83** Portrait mat rows: `74px <creatures ×1.9> auto <bottom ×0.8>` (fitBattlefieldCards). Portrait HUD: #gstates flexes into row 1 (gs-trim nowrap, min 86px).
 
 **v0.99.82** src/89-in-app-dialogs.js: appAsk(title,text,ok,danger)->Promise<bool>, appNotice, appAskNumber. Never use alert/confirm/prompt. Untracked-opponent resolution: no modal (log + resLines). Cascade/discover no-hit: toast, no OK. hallFit reserves the corner buttons' height in portrait. `.bk-tile.out .bk-ribbon` hidden. `#gstates[hidden]` display none. Portrait mullpick hand not height-capped; same large hand as mullhand.

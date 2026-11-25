@@ -2,6 +2,7 @@
 function staticFx() {
   const fx = { skipDraw: null, maxHand: 7, gyExile: null };
   if (!state) return fx;
+  if (fxNoMaxHand()) fx.maxHand = Infinity;   // v0.99.84 "You have no maximum hand size until your next turn"
   const W = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
   for (const c of state.battlefield) {
     const tx = cardText(c);

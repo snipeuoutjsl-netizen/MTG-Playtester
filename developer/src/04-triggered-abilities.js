@@ -639,6 +639,8 @@ function effectOptions(tx, obj) {
   tx = applyCondInstead(tx);   // "... deals 4 damage instead if you control three or more artifacts"
   tx = applyWhereX(tx, obj);   // "...where X is your devotion to blue" / "the number of Elves you control"
   { const g0 = obj && obj.sourceId != null ? (findCard(obj.sourceId) || {}).card : null, ii = interveningIf(tx, g0 || null);   // v0.99.81 CR 603.4 / 608.2c a leading "if <condition>," read from what happened (src/88)
+    { const dropped = []; tx = String(tx).replace(/(^|\.\s+)([^.]*?) unless ([^.]+?)\./g, (all, pre, body, cond) => { let v = null; try { v = evalCond(cond, g0 || null); } catch (e) { v = null; } if (v === true) { dropped.push(`${body.replace(/^then /i, '')} (${cond})`); return pre; } if (v === false) return pre + body + '.'; return all; }).trim();   // v0.99.84 "Then discard a card unless you attacked this turn" (Chart a Course)
+      if (dropped.length) log(`${(obj && obj.sourceName) || 'Effect'}: not done: ${dropped.join('; ')}`); }
     if (ii && ii.value === true) tx = ii.rest;
     else if (ii && ii.value === false) { const trig = !!(obj && (obj.trigger || obj.ability || obj.kind === 'ability')), restS = String(tx).split(/(?<=\.)\s+/).slice(1).join(' ').trim();
       if (trig || !restS) return [{ full: true, covers: [String(tx)], label: `Does nothing: ${ii.cond} is not true now (CR 603.4)`, fn: () => log(`${(obj && obj.sourceName) || 'Ability'}: ${ii.cond} is not true, so it does nothing`) }];
