@@ -1000,6 +1000,14 @@ const { setup } = require('./common.js');
       __d.bottomSel.add(s.hand[0].id); __d.confirmDiscard(); await W(500);
       return { panel, gap, picking, hand: s.hand.length - h0, gy: s.graveyard.length - gy0, log: s.log.slice(-6) }; });
     return { ok: !r.panel && !r.gap && r.picking === 1 && r.hand === 0 && r.log.some(l => /discarded/.test(l)) && r.log.some(l => /drew 1/.test(l)), why: JSON.stringify(r) }; });
+  await T('UI rooms', 'Library rooms: Castle hall, Dungeon, Wizard\'s tower and Elven grove each set their wall and desk, light and wall decor (banners, torches, floating candles, vines and fireflies), are offered in Library look, and the choice is kept; The Library brings back the plaster and walnut', async () => { await reset();
+    const r = await ev(async () => { const W = ms => new Promise(r => setTimeout(r, ms)), out = {}; __d.openHall(); await W(500);
+      for (const [k, sel] of [['castle', '.dc-banner'], ['dungeon', '.dc-torch'], ['tower', '.dc-candle'], ['grove', '.dc-vines']]) { __d.setHallRoom(k); await W(60); const hall = document.getElementById('hall'); out[k] = [hall.classList.contains('room-' + k), hall.classList.contains('wall-' + __d.HALL_ROOMS.find(x => x[0] === k)[2].wall), document.querySelectorAll('#hall .hall-decor ' + sel).length]; }
+      __d.drawHall(); await W(200); out.kept = __d.hallRoom() === 'grove' && !!document.querySelector('#hall .hall-decor .dc-vines');
+      __d.openHallLook(); await W(80); out.offered = [...document.querySelectorAll('#modalRoot .look-room span')].map(x => x.textContent); document.getElementById('modalRoot').innerHTML = '';
+      __d.setHallRoom('library'); const hall = document.getElementById('hall'); out.back = hall.classList.contains('wall-plaster') && hall.classList.contains('desk-walnut') && !document.querySelector('#hall .hall-decor > *');
+      __d.closeHall(true); await W(500); return out; });
+    return { ok: ['castle', 'dungeon', 'tower', 'grove'].every(k => r[k][0] && r[k][1] && r[k][2] >= 1) && r.kept && r.offered.length === 5 && r.back, why: JSON.stringify(r) }; });
   await T('702.108', 'prowess (CR 702.108a/c): each instance triggers on YOUR noncreature spells only, never on creature spells; a card that merely mentions prowess has none; prowess given by another effect works; the trigger is a plain "+1/+1 until end of turn" with no special case (so Always yield and auto-resolve work)', async () => { await reset();
     const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const out = {};
       const fire = sp => { s.pendingTriggers.length = 0; document.querySelectorAll('.backdrop').forEach(x => x.remove()); __d.fireTrigger('cast', { card: sp }); const n = s.pendingTriggers.length; s.pendingTriggers.length = 0; document.querySelectorAll('.backdrop').forEach(x => x.remove()); return n; };
