@@ -20,6 +20,7 @@ jobs:
           mkdir site
           cp app/index.html app/app.js app/style.css app/manifest.webmanifest app/sw.js site/
           cp -r app/icons site/icons
+          node -e "console.log(JSON.stringify({v:require('./app/package.json').version}))" > site/version.json
           touch site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

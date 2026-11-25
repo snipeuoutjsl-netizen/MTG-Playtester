@@ -7077,7 +7077,7 @@ function promptFirstBoot() {
 // ---------------------------------------------------------------- version + changelog
 const APP_VERSION = '0.99.99';
 const CHANGELOG = [
-  { v: '0.99.99', title: 'The Library: shelves you can see, and a floating deck book', notes: ['A closer camera: you now see the top of every shelf, not only its front edge, so the books stand on real shelves. The table is redrawn for the same camera.', 'The open book floats above the table instead of standing on it.', 'When you take a deck down, its book floats out in front of the bookcase it came from, the deck\'s cards take the whole table, and the open book floats above them with the deck\'s details.'] },
+  { v: '0.99.99', title: 'The Library, redesigned: clean and simple', notes: ['NEW LIBRARY SCREEN: a top bar (Puzzles, Hand lab, Wishlist, Help, Settings, Back to the table), a sidebar with your collection, and a page for the deck you choose.', 'The sidebar: Add a deck, All decks and Favorites (star a deck on its page), Decks and Commander, the decks you opened recently, a search box and every deck with its colours. On a phone it sits above the deck page as a row of decks you swipe through.', 'The deck page: Begin goldfish (with I go first), Continue the game in progress, the deck profile (cards, sideboard, average mana value, lands, colours, last played), the mana curve, its featured cards, the Librarian\'s notes and recaps, and Sideboard, Hand lab, Card art & printings, Box art, Buy this deck and Delete.', 'The 3D Library is shelved, not gone: turn on Settings → Library → Classic 3D Library to use it.'] },
   { v: '0.99.98', title: 'The Library: perspective checked', notes: ['The table in the middle is redrawn with the room\'s own camera: its boards run to the same vanishing point as the shelves (it was drawn for a camera at desk height). It has a front edge, and the open book stands on it.', 'The books stand back from the front edge of each shelf, so you see the shelf they stand on instead of books floating on a thin edge; the shelf fronts are a little thicker.', 'With a deck taken down, its box stands on the left of the table and its cards lie beside it, clear of the open book and of every shelf.'] },
   { v: '0.99.97', title: 'The Library: a bookcase on each side, in depth, and books with their pages', notes: ['NEW LAYOUT: a bookcase on each side of the room with the sign, the desk and the open book between them. Nothing stands in front of the books any more, including when you take a deck down: the book stands up in the middle and the deck and its cards sit on the desk between the cases.', 'ROOM FOR MORE: 8 shelves of 10 (80 decks) before the shelves turn a page; on an upright phone one tall case of 4 shelves of 16 (64 decks).', 'DEPTH: the bookcases are built in 3D (front frame, inner sides, shelves with a front edge and a top surface, a back panel set in), seen from slightly above like the desk, so every book shows the page block on top.', 'Each room tints all the wood the same way, so the shelves match the frame in the Castle, Dungeon, Tower and Grove.'] },
   { v: '0.99.96', title: 'The Library, rebuilt (part 2): spines, light, the menu and phones', notes: ['SPINES: titles in embossed gold that wrap onto two lines instead of being cut off ("Mono-Red Aggro", not "Mono-Red Ag…"), and the deck colours as small gold-set gems. A shelf that is not full gets brass bookends.', 'LIGHT: one warm lamp glow over the desk that falls off toward the corners of the room.', 'MENU: the open book\'s pages are flat now; the page-curl effect bent every line of text. The contents read straight and crisp, and an entry highlights when you point at it.', 'PHONES: a layout of their own. The bookcase fills the top, the menu is one large readable page below it (the contents in two columns), and Back to the table and Settings are a bar at the bottom within reach of your thumb. Taking a deck down stands the book up over the bookcase and lays the cards out on the desk.'] },
@@ -9992,6 +9992,7 @@ function openSettings() {
   P.board.append(h('div', { class: 'fhead', text: 'Playmat & frame' }), ...[...P.mat.childNodes].filter(n => !(n.classList && n.classList.contains('fhead') && n.textContent === 'Playmat'))); delete P.mat;
   P.anim.append(h('div', { class: 'fhead', text: 'Sound' }), ...P.snd.childNodes); delete P.snd;
   P.lib.append(buildHallLook(), h('div', { class: 'fhead', text: 'Start-up' }),
+    (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = libClassic(); cb.addEventListener('change', () => { lsSet('mtgpt.libClassic', cb.checked); try { if (hallOpen()) drawHall(); } catch (e) {} }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Classic 3D Library' }), h('span', { class: 'muted small', text: 'The old room with bookcases, rooms and the open book (shelved for now). Off: the clean Library screen.' }))); })(),
     (() => { const cb = h('input', { type: 'checkbox' }); cb.checked = lsGet(HALL_KEY, true) !== false; cb.addEventListener('change', () => lsSet(HALL_KEY, cb.checked)); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: 'Open the Library when the app starts' }), h('span', { class: 'muted small', text: ' \u2014 otherwise the app opens straight at the table' }))); })());
   { const go = (t, d, f) => h('div', { class: 'setrow' }, h('label', { text: t }), h('button', { text: 'Open\u2026', onclick: () => { m.close(); f(); } }), h('span', { class: 'muted small', text: d }));
     const upd = (k, t) => { const cb = h('input', { type: 'checkbox' }); cb.checked = settings[k] !== false; cb.addEventListener('change', () => { settings[k] = cb.checked; saveSettings(); }); return h('label', { class: 'teachopt' }, cb, h('span', null, h('b', { text: t }))); };
@@ -14201,6 +14202,7 @@ function closeHall(anim) {
   else done();
 }
 function beginWith(name) {
+  try { libTouch(name); } catch (e) { /* recent list only */ }
   lsSet('mtgpt.current', name); refreshDeckSelect(); prepareImages(); closeHall(true);
   // v0.99.51 a new game from the Library while one is in progress: windows left open by the old game (a trigger, the stack, a search)
   // belong to it, so they are cleared before the new game is dealt; if starting fails, the table is shown with a message, not a blank screen.
@@ -14381,6 +14383,8 @@ function hallTurnTo(k) {
 }
 function drawHall() {
   const el = document.getElementById('hall'); if (!el) return;
+  if (!libClassic()) { drawLibraryScreen(el); return; }   // v0.99.99 the clean Library screen (src/99-library-screen.js); the 3D room below is kept, switched off
+  el.classList.remove('lib2');
   const decks = loadDecks(), mode = gameMode(), all = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), cur = currentDeckName();
   const portrait = hallWantsPortrait(); el.classList.toggle('portrait', portrait); el.classList.add('v2', 'v3');
   // v0.99.97 a bookcase on each side of the room (landscape: 2 x 4 shelves of 10) or one tall case (upright phone: 4 shelves of 16)
@@ -15651,7 +15655,7 @@ function winConfetti() {
 let ambTimer = null, ambNodes = [];
 function ambStop() { clearInterval(ambTimer); ambTimer = null; for (const n of ambNodes) { try { n.stop ? n.stop() : n.disconnect(); } catch (e) {} } ambNodes = []; }
 function ambStart() {
-  ambStop(); const so = settings.sound; if (!so || !so.on || so.ambience === false) return;
+  ambStop(); const so = settings.sound; if (!so || !so.on || so.ambience === false || !libClassic()) return;   // v0.99.99 room sounds belong to the 3D room
   const ac = audio(); if (!ac) return; if (ac.state === 'suspended') document.addEventListener('pointerdown', () => { try { ac.resume(); } catch (e) {} }, { once: true });
   const room = typeof hallRoom === 'function' ? hallRoom() : 'library', vol = Math.max(0, Math.min(1, so.vol === undefined ? .5 : so.vol)) * .22;
   const out = ac.createGain(); out.gain.value = vol; out.connect(ac.destination); ambNodes.push(out);
@@ -15815,6 +15819,125 @@ async function webUpdReload() {
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   setTimeout(webUpdCheck, 4000); setInterval(webUpdCheck, 20 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') webUpdCheck(); });
+}
+// ---- v0.99.99 The Library, redesigned: a clean screen instead of the 3D room.
+// A top bar (title, tools, settings), a sidebar with your collection (add a deck, all decks / favourites, Standard / Commander,
+// recently opened, every deck with its colours) and the selected deck's page: its profile, mana curve, featured cards, the
+// librarian's notes and everything you can do with it. The 3D room is kept in the code (drawHall) but switched off; set
+// localStorage 'mtgpt.libClassic' to true to see it again.
+const LIB_FAV_KEY = 'mtgpt.favDecks', LIB_RECENT_KEY = 'mtgpt.recentDecks';
+let libSel = null, libFilter = 'all', libQuery = '';
+function libClassic() { return lsGet('mtgpt.libClassic', false) === true; }
+function libFavs() { return lsGet(LIB_FAV_KEY, []) || []; }
+function libToggleFav(n) { const f = libFavs(), i = f.indexOf(n); if (i >= 0) f.splice(i, 1); else f.push(n); lsSet(LIB_FAV_KEY, f); }
+function libRecent() { return (lsGet(LIB_RECENT_KEY, []) || []).filter(n => loadDecks()[n]); }
+function libTouch(n) { if (!n) return; const r = (lsGet(LIB_RECENT_KEY, []) || []).filter(x => x !== n); r.unshift(n); lsSet(LIB_RECENT_KEY, r.slice(0, 8)); }
+const LIB_COLN = { W: 'White', U: 'Blue', B: 'Black', R: 'Red', G: 'Green' };
+function libColorName(cols) { if (!cols.length) return 'Colorless'; if (cols.length === 1) return 'Mono ' + LIB_COLN[cols[0]]; if (cols.length >= 4) return cols.length === 5 ? 'Five color' : 'Four color';
+  const g = { 'WU': 'Azorius', 'UB': 'Dimir', 'BR': 'Rakdos', 'RG': 'Gruul', 'WG': 'Selesnya', 'WB': 'Orzhov', 'UR': 'Izzet', 'BG': 'Golgari', 'WR': 'Boros', 'UG': 'Simic',
+    'WUB': 'Esper', 'UBR': 'Grixis', 'BRG': 'Jund', 'WRG': 'Naya', 'WUG': 'Bant', 'WBG': 'Abzan', 'WUR': 'Jeskai', 'UBG': 'Sultai', 'WBR': 'Mardu', 'URG': 'Temur' };
+  const k = 'WUBRG'.split('').filter(c => cols.includes(c)).join(''); return g[k] || cols.join('');
+}
+function libPips(cols, cls) { return h('span', { class: 'lib-pips ' + (cls || '') }, (cols.length ? cols : ['C']).map(c => h('i', { class: 'lib-pip', style: `background:${c === 'C' ? '#b9b0a0' : WUBRG_COL['WUBRG'.indexOf(c)]}`, title: LIB_COLN[c] || 'Colorless' }))); }
+function libAgo(t) { if (!t) return null; const d = Math.max(0, Math.round((Date.now() - t) / 86400000)); return d === 0 ? 'Today' : d === 1 ? 'Yesterday' : `${d} days ago`; }
+function drawLibraryScreen(el) {
+  const decks = loadDecks(), mode = gameMode(), inMode = decksInMode(decks, mode).sort((x, y) => x.localeCompare(y)), favs = libFavs(), cur = currentDeckName();
+  if (!libSel || !decks[libSel] || !inMode.includes(libSel)) libSel = inMode.includes(cur) ? cur : inMode[0] || null;
+  const shown = inMode.filter(n => (libFilter !== 'fav' || favs.includes(n)) && (!libQuery || n.toLowerCase().includes(libQuery.toLowerCase())));
+  const inGame = !!(state && state.deckName), redraw = () => drawLibraryScreen(el);
+  el.classList.remove('v2', 'v3', 'portrait'); el.classList.add('lib2');
+  const btn = (text, fn, cls, title) => h('button', { class: 'lib-btn ' + (cls || ''), text, title: title || '', onclick: fn });
+  // top bar
+  const helpMenu = () => { const m = modal('Help', { width: 380 }); m.el.classList.add('lib-menu');
+    for (const [t, fn] of [['Rules & help', () => openWelcome()], ['How cards are read', () => { try { $('#btnReading').click(); } catch (e) {} }], [`What’s new (v${APP_VERSION})`, () => { try { $('#btnVersion').click(); } catch (e) {} }], ['Accessibility', () => { openSettings(); setTimeout(() => { const b = document.querySelector('.settabbtn[data-k=a11y]'); if (b) b.click(); }, 30); }], ['Scan all decks (report)', () => saveDeckScanReport()]])
+      m.body.append(h('button', { class: 'lib-menu-row', text: t, onclick: () => { m.close(); fn(); } })); };
+  const top = h('header', { class: 'lib-top' },
+    h('div', { class: 'lib-brand' }, (() => { const x = h('span', { class: 'lib-logo', 'aria-hidden': 'true' }); x.innerHTML = '<svg viewBox="0 0 40 38" width="34" height="32"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M2 13 20 2l18 11M7 14h26M10 16v17m8-17v17m8-17v17m8-17v17M5 35h30"/></g></svg>'; return x; })(),
+      h('span', { class: 'lib-title', text: 'Library of Alexandria' }), h('span', { class: 'lib-sub', text: 'Goldfishing archive' })),
+    h('nav', { class: 'lib-nav', 'aria-label': 'Library tools' },
+      btn('Puzzles', () => openPuzzles(), 'link', 'Win-this-turn puzzles, and moments saved from your games'),
+      btn('Hand lab', () => openHandLab(libSel || cur), 'link', 'Draw thousands of opening hands for a deck'),
+      btn('Wishlist', () => openWishlist(), 'link', 'Cards you want, with the art you want'),
+      btn('Help', helpMenu, 'link'),
+      btn('Settings', () => openSettings(), 'link'),
+      window.desktop && window.__updAvail ? btn(`Update to v${window.__updAvail.latest}`, () => openUpdate(window.__updAvail), 'gold small lib-upd', 'Read what changed and install it') : null,
+      inGame ? btn('Back to the table', () => closeHall(true), 'ghost lib-close', 'Return to the game in progress (Esc)') : null));
+  // sidebar
+  const modeTab = (k, lab, n) => h('button', { class: 'lib-side-row' + (mode === k ? ' on' : ''), onclick: () => { if (mode === k) return; setGameMode(k); libSel = null; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); redraw(); } }, h('span', { text: lab }), h('em', { text: String(n) }));
+  const deckRow = n => { let cols = []; try { cols = deckColorsOf(parseDeck(decks[n].text)); } catch (e) { cols = []; }
+    return h('button', { class: 'lib-deck-row' + (n === libSel ? ' on' : '') + (n === cur ? ' cur' : ''), title: n, onclick: () => { libSel = n; redraw(); } }, libPips(cols, 'sm'), h('span', { class: 'lib-deck-nm', text: n }), favs.includes(n) ? h('i', { class: 'lib-star', text: '★' }) : null); };
+  const recent = libRecent().filter(n => inMode.includes(n)).slice(0, 3);
+  const search = h('input', { class: 'lib-search', type: 'search', placeholder: `Search ${inMode.length} deck${inMode.length === 1 ? '' : 's'}`, value: libQuery, 'aria-label': 'Search your decks' });
+  search.addEventListener('input', () => { libQuery = search.value; const list = el.querySelector('.lib-decklist'); if (list) { const sh = inMode.filter(n => (libFilter !== 'fav' || favs.includes(n)) && (!libQuery || n.toLowerCase().includes(libQuery.toLowerCase()))); list.replaceChildren(...(sh.length ? sh.map(deckRow) : [h('div', { class: 'lib-empty-s', text: 'No deck matches.' })])); } });
+  const startChk = h('label', { class: 'lib-chk' }, h('input', { type: 'checkbox', checked: lsGet(HALL_KEY, true) !== false, onchange: e => lsSet(HALL_KEY, e.target.checked) }), h('span', { text: 'Open the Library when the app starts' }));
+  const side = h('aside', { class: 'lib-side', 'aria-label': 'Your collection' },
+    h('div', { class: 'lib-cap', text: 'Your collection' }),
+    btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'add', 'Paste a list or load a file'),
+    h('button', { class: 'lib-side-row' + (libFilter === 'all' ? ' on' : ''), onclick: () => { libFilter = 'all'; redraw(); } }, h('span', { text: '◈  All decks' }), h('em', { text: String(inMode.length) })),
+    h('button', { class: 'lib-side-row' + (libFilter === 'fav' ? ' on' : ''), onclick: () => { libFilter = 'fav'; redraw(); } }, h('span', { text: '★  Favorites' }), h('em', { text: String(inMode.filter(n => favs.includes(n)).length) })),
+    FEATURES.commander ? h('div', { class: 'lib-cap', text: 'Formats' }) : null,
+    FEATURES.commander ? modeTab('standard', '◌  Decks', decksInMode(decks, 'standard').length) : null,
+    FEATURES.commander ? modeTab('commander', '◌  Commander', decksInMode(decks, 'commander').length) : null,
+    recent.length ? h('div', { class: 'lib-cap', text: 'Recently opened' }) : null,
+    ...recent.map(deckRow).map(x => { x.classList.add('recent'); return x; }),
+    h('div', { class: 'lib-cap', text: libFilter === 'fav' ? 'Favorites' : 'Decks' }), search,
+    h('div', { class: 'lib-decklist' }, ...(shown.length ? shown.map(deckRow) : [h('div', { class: 'lib-empty-s', text: inMode.length ? (libFilter === 'fav' ? 'No favorites yet: star a deck on its page.' : 'No deck matches.') : 'No decks yet.' })])),
+    h('div', { class: 'lib-local' }, h('b', { text: 'Local library' }), h('span', { text: `${Object.keys(decks).length} deck${Object.keys(decks).length === 1 ? '' : 's'} · ${archiveLine().replace(/^The Archive holds /, 'card data: ').replace(/\.$/, '')}` }), startChk));
+  // main: the selected deck
+  const main = h('main', { class: 'lib-main' });
+  if (!libSel) {
+    main.append(h('div', { class: 'lib-emptystate' }, h('div', { class: 'lib-crumb', text: mode === 'commander' ? 'Commander' : 'Decks' }),
+      h('h1', { class: 'lib-h1', text: 'Your library is empty' }), h('p', { class: 'lib-tag', text: mode === 'commander' ? 'Import a Commander deck: put your commander under a “Commander” heading.' : 'Import a deck list to start goldfishing.' }),
+      btn('＋  Add a deck', () => openDeckEditor(mode === 'commander' ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'gold big')));
+  } else {
+    const dk = decks[libSel], deck = parseDeck(dk.text), cols = deckColorsOf(deck), sm = deckSummary(deck), notes = deckNotes(libSel) || {};
+    const mainN = sum(deck.main), sideN = sum(deck.side), lands = sm.types.Land || 0, nonland = deck.main.filter(x => !isLandName(x.name));
+    const mvSum = nonland.reduce((a, x) => { const i = cardInfo(x.name); return a + (i ? mvOf(i) : 0) * x.qty; }, 0), mvN = nonland.reduce((a, x) => a + x.qty, 0);
+    const avg = mvN ? (mvSum / mvN).toFixed(2) : '–', idx = inMode.indexOf(libSel) + 1;
+    const peak = sm.curve.indexOf(Math.max(...sm.curve)), curveNote = mvN ? `Most spells cost ${peak === 6 ? '6 or more' : peak} mana.` : 'No spells with a mana cost yet.';
+    const typeLine = Object.entries(sm.types).filter(e => e[1] && e[0] !== 'Land').map(([k, n]) => `${n} ${n === 1 ? k.toLowerCase() : k === 'Sorcery' ? 'sorceries' : k.toLowerCase() + 's'}`).join(', ');
+    const fav = favs.includes(libSel), isCur = libSel === cur;
+    const playChk = document.getElementById('chkPlay'), onPlay = playChk ? playChk.checked : true;
+    main.append(
+      h('div', { class: 'lib-head' },
+        h('div', { class: 'lib-head-t' },
+          h('div', { class: 'lib-crumb', text: `${mode === 'commander' ? 'Commander' : 'Decks'}  /  Deck ${String(idx).padStart(2, '0')} of ${inMode.length}${isCur ? '  ·  in use' : ''}` }),
+          h('h1', { class: 'lib-h1' }, h('span', { text: libSel }), h('button', { class: 'lib-fav' + (fav ? ' on' : ''), text: fav ? '★' : '☆', title: fav ? 'Remove from favorites' : 'Add to favorites', 'aria-pressed': String(fav), onclick: () => { libToggleFav(libSel); redraw(); } })),
+          h('p', { class: 'lib-tag', text: `${libColorName(cols)}${typeLine ? ' · ' + typeLine : ''}.` })),
+        h('div', { class: 'lib-head-go' },
+          btn('▶  Begin goldfish', () => { libTouch(libSel); beginWith(libSel); }, 'gold big', 'Shuffle up and draw an opening hand with this deck'),
+          h('label', { class: 'lib-chk small' }, h('input', { type: 'checkbox', checked: onPlay, onchange: e => { if (playChk) { playChk.checked = e.target.checked; playChk.dispatchEvent(new Event('change')); } } }), h('span', { text: 'I go first (on the play)' })),
+          inGame ? btn(`Continue: ${state.deckName}`, () => closeHall(true), 'ghost', 'Back to the game in progress (Esc)') : null)),
+      h('section', { class: 'lib-panel lib-profile', 'aria-label': 'Deck profile' },
+        h('div', { class: 'lib-cap', text: 'Deck profile' }),
+        h('div', { class: 'lib-stats' },
+          h('div', { class: 'lib-stat' }, h('b', { text: `${mainN} cards` }), h('span', { text: 'Main' })),
+          h('div', { class: 'lib-stat' }, h('b', { text: String(sideN) }), h('span', { text: dk.sb ? 'Sideboard (swapped in)' : 'Sideboard' })),
+          h('div', { class: 'lib-stat' }, h('b', { text: avg }), h('span', { text: 'Avg. mana value' })),
+          h('div', { class: 'lib-stat' }, h('b', { text: String(lands) }), h('span', { text: 'Lands' })),
+          h('div', { class: 'lib-stat col' }, h('div', { class: 'lib-stat-c' }, libPips(cols), h('span', { text: libColorName(cols).toUpperCase() })), h('span', { class: 'lib-muted', text: notes.last ? `Last played · ${libAgo(notes.last)}` : 'Not played yet' })))),
+      h('div', { class: 'lib-row-h' }, h('div', { class: 'lib-cap', text: 'Deck at a glance' }), btn('Edit deck list  ↗', () => { lsSet('mtgpt.current', libSel); refreshDeckSelect(); openDeckEditor(); }, 'link small')),
+      h('div', { class: 'lib-grid' },
+        h('section', { class: 'lib-panel lib-curve' }, h('div', { class: 'lib-ph' }, h('h2', { text: 'Mana curve' }), h('span', { class: 'lib-muted small', text: `${mainN} CARDS` })),
+          h('div', { class: 'lib-bars', role: 'img', 'aria-label': 'Mana curve: ' + sm.curve.map((n, i) => `${n} at ${i === 6 ? '6+' : i}`).join(', ') },
+            ...sm.curve.map((n, i) => h('div', { class: 'lib-bar' }, h('b', { text: n ? String(n) : '' }), h('i', { style: `height:${Math.round(100 * n / Math.max(1, ...sm.curve))}%` }), h('span', { text: i === 6 ? '6+' : String(i) })))),
+          h('p', { class: 'lib-note-i', text: curveNote })),
+        h('section', { class: 'lib-panel lib-feat' }, h('div', { class: 'lib-ph' }, h('h2', { text: 'Featured entries' })), h('div', { class: 'lib-cap sub', text: 'The cards that shape the plan' }),
+          sm.top.length ? h('div', { class: 'lib-feat-list' }, ...sm.top.slice(0, 5).map(x => { const i = cardInfo(x.name), ty = ((i && i.t) || '').split(' // ')[0].replace(/ —.*$/, '');
+            return h('div', { class: 'lib-feat-row' }, h('i', { class: 'lib-feat-ic', text: '✦' }), h('span', { class: 'lib-feat-nm' }, h('b', { text: x.name }), ty ? h('em', { text: ty }) : null), h('span', { class: 'lib-feat-q', text: x.qty + '×' })); }))
+            : h('p', { class: 'lib-muted', text: 'No spells in this list yet.' }))),
+      h('section', { class: 'lib-callout' }, h('div', { class: 'lib-callout-t' }, h('div', { class: 'lib-cap', text: 'Librarian’s note' }), libraryNotesEl(libSel)),
+        h('div', { class: 'lib-actions' },
+          btn('Sideboard' + (sideN ? ` (${sideN})` : ''), () => openSideboarding(libSel, redraw), 'ghost small', 'Swap cards between your main deck and sideboard'),
+          btn('Hand lab', () => openHandLab(libSel), 'ghost small', 'Opening hands for this deck'),
+          btn('Card art & printings', () => openCustomArt(libSel, redraw), 'ghost small'),
+          btn('Box art', () => openDeckArtPicker(libSel, redraw), 'ghost small'),
+          btn('Buy this deck', () => openBuyDeck(Object.assign({}, deck, { name: libSel })), 'ghost small', 'Open TCGplayer with this list ready'),
+          btn('Delete', () => confirmDeleteDeck(libSel, () => { libSel = null; redraw(); }), 'ghost small danger', 'Remove this deck from your library')))
+    );
+  }
+  el.replaceChildren(h('div', { class: 'lib-app' }, top, h('div', { class: 'lib-body' }, side, main)));
+  try { const on = el.querySelector('.lib-decklist .lib-deck-row.on'); if (on) on.scrollIntoView({ block: 'nearest' }); } catch (e) { /* scrolling only */ }
 }
 init();
 
