@@ -2846,3 +2846,69 @@ html.portrait-ui body.hand-tuck:not(.mullhand):not(.mullpick) #mat { padding-bot
 /* with a deck taken down, its cards are laid out on the desk, so the open book stands up in front of the bookcase (like a lectern) */
 #hall.v2:not(.portrait) .hall-tome { transition: top .45s cubic-bezier(.22,1,.36,1), height .45s cubic-bezier(.22,1,.36,1), transform .45s cubic-bezier(.22,1,.36,1); }
 #hall.v2:not(.portrait) .hall-tome.deck-open { top: 150px; height: 410px; transform: translateZ(70px) rotateX(6deg); }
+/* ===== v0.99.96 Library overhaul, part 2: spines, light, the menu, and the upright phone ===== */
+/* spines: titles that wrap instead of being cut off, embossed gold lettering, mana gems instead of flat dots */
+#hall.v2 .bk:not(.big) .bk-title { color: #f6e2ae; text-shadow: 0 1px 0 rgba(0,0,0,.85), 0 -1px 0 rgba(255,236,190,.18); letter-spacing: .05em; }
+#hall.v2 .bk:not(.big) .bk-title.long { white-space: normal; font-size: 10px; line-height: 1.02; text-overflow: clip; text-align: center; }
+#hall.v2 .bk:not(.big) .bk-title.xlong { white-space: normal; font-size: 8.8px; line-height: 1; text-overflow: clip; text-align: center; }
+#hall.v2 .bk[data-col=W]:not(.big) .bk-title { color: #3a2a10; text-shadow: 0 1px 0 rgba(255,255,255,.45); }
+#hall.v2 .bk:not(.big) .bk-pips { gap: 4px; margin-bottom: 9px; }
+#hall.v2 .bk:not(.big) .bk-pips .dbx-pip { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px #c9a04e, 0 0 0 2.5px rgba(0,0,0,.55), inset 0 -2px 2px rgba(0,0,0,.35), inset 0 1px 2px rgba(255,255,255,.55); }
+/* bookends hold the books together on a shelf that is not full */
+#hall.v2 .bk-end { flex: none; align-self: flex-end; width: 16px; height: 96px; margin: 0 4px; border-radius: 3px 3px 0 0; position: relative;
+  background: linear-gradient(90deg, #5a3a14, #c79a4a 30%, #f0cf86 45%, #a7772f 70%, #4a2e0e); box-shadow: 0 0 0 1px rgba(0,0,0,.55), 4px 0 8px rgba(0,0,0,.45); }
+#hall.v2 .bk-end::before { content: ''; position: absolute; left: -10px; right: -10px; bottom: 0; height: 9px; border-radius: 2px; background: linear-gradient(180deg, #e8c47a, #8a5f22); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+#hall.v2 .bk-end::after { content: ''; position: absolute; left: 4px; right: 4px; top: 10px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffe7a8, #b88634 60%, #6a4512); box-shadow: 0 1px 2px rgba(0,0,0,.6); }
+/* light: one warm lamp above the desk, falling off toward the corners of the room */
+#hall.v2 .hall-light { display: none; position: absolute; inset: -40px; pointer-events: none; z-index: 5;
+  background: radial-gradient(ellipse 46% 52% at 50% 58%, rgba(255,196,120,.10), rgba(255,196,120,0) 70%), radial-gradient(ellipse 75% 70% at 50% 52%, rgba(0,0,0,0) 55%, rgba(0,0,0,.42) 100%); }
+#hall.v2.room-dungeon .hall-light { background: radial-gradient(ellipse 46% 52% at 50% 58%, rgba(255,150,70,.10), rgba(255,150,70,0) 70%), radial-gradient(ellipse 75% 70% at 50% 52%, rgba(0,0,0,0) 45%, rgba(0,0,0,.6) 100%); }
+#hall.v2.room-tower .hall-light { background: radial-gradient(ellipse 46% 52% at 50% 58%, rgba(190,170,255,.09), rgba(190,170,255,0) 70%), radial-gradient(ellipse 75% 70% at 50% 52%, rgba(0,0,0,0) 50%, rgba(0,0,0,.5) 100%); }
+/* the menu book: flat pages, so every line of text is straight; entries read as links you can press */
+#hall.v2 .hall-tome:not(.deck-open) > .hall-page.left, #hall.v2 .hall-tome:not(.deck-open) > .hall-page.right { transform: none; }
+#hall.v2 .hall-tome .hall-page.left, #hall.v2 .hall-tome .hall-page.right { filter: drop-shadow(0 1px 0 rgba(90,60,25,.3)); }   /* no page-curl warp: it bent every line of text */
+#hall.v2 .hall-tome .tm-toc .hall-link { border-radius: 4px; transition: background .15s, color .15s; }
+#hall.v2 .hall-tome .tm-toc .hall-link:hover, #hall.v2 .hall-tome .tm-toc .hall-link:focus-visible { background: rgba(142,31,11,.10); color: var(--rubric, #8e1f0b); }
+/* ---- the upright phone: the bookcase on top, the menu as one big readable page below, the buttons in a bar at the bottom ---- */
+#hall.v2.portrait .hall-case { position: absolute; left: 30px; top: 40px; width: 840px; height: 664px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(10,5,2,.72), rgba(10,5,2,.58) 55%, rgba(10,5,2,.78)), var(--wood-plank) 0 0 / 900px auto, #2a180c; box-shadow: 0 30px 50px -10px rgba(0,0,0,.75), 0 0 0 1px rgba(0,0,0,.6); }
+#hall.v2.portrait .hall-case::after { content: ''; position: absolute; left: 30px; right: 30px; top: 62px; bottom: 52px; box-shadow: inset 0 18px 30px rgba(0,0,0,.7), inset 14px 0 24px rgba(0,0,0,.55), inset -14px 0 24px rgba(0,0,0,.55); }
+#hall.v2.portrait .hall-case > i { position: absolute; display: block; background: linear-gradient(90deg, rgba(0,0,0,.45), rgba(255,220,170,.10) 18%, rgba(0,0,0,0) 40%, rgba(0,0,0,.12) 75%, rgba(0,0,0,.5)), var(--wood-plank) 30% 0 / 900px auto, #5a361a; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+#hall.v2.portrait .hall-case .hc-side { top: 56px; bottom: 0; width: 30px; } #hall.v2.portrait .hall-case .hc-side.l { left: 0; } #hall.v2.portrait .hall-case .hc-side.r { right: 0; }
+#hall.v2.portrait .hall-case .hc-mid { display: none; }
+#hall.v2.portrait .hall-case .hc-crown { left: -14px; right: -14px; top: 0; height: 62px; background: linear-gradient(180deg, rgba(255,225,170,.22) 0 3px, rgba(0,0,0,.35) 3px 5px, rgba(255,215,160,.10) 5px 14px, rgba(0,0,0,.40) 14px 16px, rgba(0,0,0,0) 16px 44px, rgba(0,0,0,.25) 44px 46px, rgba(255,215,160,.12) 46px 52px, rgba(0,0,0,.55) 52px), var(--wood-plank) 0 40% / 900px auto, #5a361a; box-shadow: 0 8px 16px rgba(0,0,0,.6); }
+#hall.v2.portrait .hall-case .hc-base { left: -6px; right: -6px; bottom: 0; height: 54px; background: linear-gradient(180deg, rgba(255,215,160,.14) 0 3px, rgba(0,0,0,.45) 3px 6px, rgba(0,0,0,0) 6px, rgba(0,0,0,.35)), var(--wood-plank) 0 70% / 900px auto, #4a2c14; }
+#hall.v2.portrait .hall-plaque { left: 240px; top: 14px; width: 420px; height: 96px; z-index: 4; }
+#hall.v2.portrait .bk-shelf { width: 780px; height: 184px; transform: none; left: 60px; }
+#hall.v2.portrait .bk-shelf:nth-child(1) { top: 110px; } #hall.v2.portrait .bk-shelf:nth-child(2) { top: 296px; } #hall.v2.portrait .bk-shelf:nth-child(3) { top: 482px; }
+#hall.v2.portrait .bk-shelf:nth-child(n+4) { display: none; }
+#hall.v2.portrait .bk-shelf::after { left: 0; right: 0; top: 130px; height: 32px; border-radius: 0; background: linear-gradient(180deg, transparent, rgba(0,0,0,.45)); }
+#hall.v2.portrait .bk-row { bottom: auto; top: 0; height: 160px; padding: 0 24px; z-index: 1; }
+#hall.v2.portrait .bk-plank { top: 156px; height: 24px; transform: none; z-index: 3; background: linear-gradient(180deg, rgba(255,230,185,.30) 0, rgba(255,215,160,.12) 7px, rgba(0,0,0,.28) 8px, rgba(255,220,170,.16) 9px, rgba(0,0,0,0) 14px, rgba(0,0,0,.35) 100%), var(--wood-plank) 0 20% / 900px auto, #6a4020; box-shadow: 0 7px 10px -2px rgba(0,0,0,.65); }
+#hall.v2.portrait .bk-plank::before, #hall.v2.portrait .bk-plank::after { content: none; }
+#hall.v2.portrait .bk-row .bk-face.bottom { display: none; }
+#hall.v2.portrait .hall-desktop { left: 0; width: 900px; top: 700px; height: 900px; }
+#hall.v2.portrait .hall-stand, #hall.v2.portrait .hall-tome-shadow, #hall.v2.portrait .dc-banner, #hall.v2.portrait .dc-torch, #hall.v2.portrait .dc-candle { display: none; }
+#hall.v2.portrait .hall-tome { left: 24px; top: 734px; width: 852px; height: 846px; transform: none; grid-template-columns: 1fr; grid-template-rows: auto 1fr; filter: drop-shadow(0 14px 16px rgba(0,0,0,.55)); }
+#hall.v2.portrait .hall-tome > .hall-spine, #hall.v2.portrait .hall-tome > .tm-edges { display: none; }
+#hall.v2.portrait .hall-tome:not(.deck-open) > .hall-page { zoom: 1.85; transform: none; padding: 14px 18px 12px; }
+#hall.v2.portrait .hall-tome:not(.deck-open) > .hall-page.left { border-bottom: 1px solid rgba(90,60,25,.25); }
+#hall.v2.portrait .hall-tome:not(.deck-open) .tm-toc { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; }
+#hall.v2.portrait .hall-tome:not(.deck-open) .tm-toc .tm-dots, #hall.v2.portrait .hall-tome:not(.deck-open) .tm-toc .tm-pg { display: none; }
+#hall.v2.portrait .hall-hint { display: none; }
+#hall.v2.portrait .hall-light { background: radial-gradient(ellipse 60% 40% at 50% 70%, rgba(255,196,120,.08), rgba(255,196,120,0) 70%), radial-gradient(ellipse 80% 75% at 50% 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,.4) 100%); }
+#hall.v2.portrait .hall-corner { top: auto; left: calc(10px + env(safe-area-inset-left) * var(--vpk, 1)); right: calc(10px + env(safe-area-inset-right) * var(--vpk, 1)); bottom: calc(10px + env(safe-area-inset-bottom) * var(--vpk, 1)); justify-content: center; padding: 8px; border-radius: 14px; background: linear-gradient(180deg, rgba(43,28,16,.94), rgba(26,17,10,.96)); box-shadow: 0 -6px 18px rgba(0,0,0,.45), 0 0 0 1px rgba(176,138,69,.5); }
+#hall.v2.portrait .hall-corner .hall-close { flex: 1 1 auto; }
+#hall.v2 .hall-view::after { background: radial-gradient(ellipse 42% 46% at 50% 62%, rgba(255,196,120,.12), rgba(255,196,120,0) 70%), radial-gradient(ellipse 80% 90% at 50% 46%, rgba(0,0,0,0) 50%, var(--room-vig1, rgba(0,0,0,.35)) 82%, var(--room-vig2, rgba(0,0,0,.6))); z-index: 2; }
+#hall.v2.portrait .hall-tome .tm-ribbon.on { display: none; }   /* the chapter in use needs no ribbon down the middle of the page */
+#hall.v2.portrait .hall-plaque { top: 10px; }
+#hall.v2.portrait .hall-case { top: 36px; }
+#hall.v2.portrait .bk-shelf:nth-child(1) { top: 116px; } #hall.v2.portrait .bk-shelf:nth-child(2) { top: 300px; } #hall.v2.portrait .bk-shelf:nth-child(3) { top: 484px; }
+#hall.v2.portrait .hall-tome:not(.deck-open) .tm-toc { grid-auto-flow: column; grid-template-rows: repeat(6, auto); }
+/* upright phone with a deck taken down: the book stands up over the bookcase and the cards are laid out on the desk below it */
+#hall.v2.portrait .hall-tome { transition: top .45s cubic-bezier(.22,1,.36,1), height .45s cubic-bezier(.22,1,.36,1); }
+#hall.v2.portrait .hall-tome.deck-open { top: 112px; height: 610px; }
+#hall.v2.portrait .hall-tome.deck-open > .hall-page { zoom: 1.6; }
+#hall.v2.portrait .hall-spread.dk { top: 736px; left: 20px; right: 20px; }
+#hall.v2 .bk-end { transform: translateZ(40px); }   /* in front of the books' 3D sides, so the right-hand bookend is never hidden */
+#hall.v2 .bk-end.r { margin-left: 20px; }

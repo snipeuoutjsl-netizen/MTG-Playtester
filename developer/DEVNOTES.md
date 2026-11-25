@@ -1,5 +1,9 @@
 
 
+## v0.99.96
+- Library part 2: .bk-title.long/.xlong (by name length, wraps in vertical text), gem pips, .bk-end bookends added in drawHall to rows with 1..9 books, warm lamp + vignette on .hall-view::after (v2), no pgWarp filter on pages, flat pages.
+- Portrait v2 (#hall.v2.portrait): .hall-case full width with three shelves (780 wide), plaque on the crown, tome 852x846 single column with pages zoom 1.85 (deck-open: tome at y 112, zoom 1.6, spread at y 736), active chapter ribbon hidden, decor hidden, .hall-corner is a bottom bar; hallFit reserves it at the bottom (B) on portrait and at the top (R) otherwise.
+
 ## v0.99.95
 - Library landscape layout v2 (#hall.v2:not(.portrait), class added in drawHall): .hall-case element (hc-crown, hc-side l/r, hc-mid, hc-base) before the shelves; shelves 645x184 in a 2x2 grid (no 3D planks: the old rotateX plank faces were flattened by the room filters, which showed the book bottoms); book bottoms hidden on the shelf; scale 0.74 in landscape; plaque on the crown; tome 720x372 at y 452 (rotateX 9deg only), standing at y 150 while deck-open so the spread has the desk; hallFit reserves the corner buttons in landscape too.
 - Part 2 (spines, light, menu, phone) next.
