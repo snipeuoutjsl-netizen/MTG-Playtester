@@ -1,5 +1,11 @@
 
 
+## v0.99.106
+- Packs (src/99-packs.js): PACK_SRC.fetchJson (tests serve tests/packset.json, real Wilds of Eldraine card objects, through it); packSets (Scryfall /sets: expansion + core, released, >= 150 cards, newest 40, kept a week); packPool(code) (search 'set:<code> is:booster', basics from the same search or 'type:basic'; kept in IndexedDB as pool:<code>, six sets); packFromPool(pool, rng) = land, 10 commons, 3 uncommons, rare/mythic (1/8) last, foil (1/3) replaces a common; packState in mtgpt.packs {bank, opened, earned, lastSet}; collState in mtgpt.collection {cards: set#cn -> {n,set,sn,cn,r,img,back,c,f,t,last}, seen}; opened cards also go into META so the rules engine can read them.
+- Earning: showGameEnd (a win) and puzzleResult (first solve of a built-in puzzle, never a saved one) call earnPack and show the .ge-pack button.
+- Opening (src/99-pack-open.js): .pk-ov screen; the wrapper is HALL_LOGO + the set; cards fly in face down (logo backs), flip on click, Reveal all; pictures that can't load fall back to the card's words.
+- The Archive (src/99-collection.js): libFilter 'collection' in the Library; views Everything / In your decks (deckCardIndex over every deck, both formats, main + side + commander) / From packs; filters deck + type, or set + rarity; search.
+
 ## v0.99.105
 - Puzzles: the bar is removed once pz.over (solved or failed), besides body.hall-on hiding it (v0.99.103).
 
