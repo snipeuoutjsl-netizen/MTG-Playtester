@@ -1,5 +1,10 @@
 
 
+## v0.99.93
+- src/98-web-update.js: webUpdCheck fetches version.json (no-store) 4 s after load, on visibilitychange and every 20 min; verNewer compares versions; webUpdBanner shows #webUpd with Update now (webUpdReload: sw update, clear caches, reload). Desktop (window.desktop) is skipped.
+- pages.yml writes site/version.json from app/package.json. sw.js: CACHE loa-shell-v2; requests use cache: 'no-cache' (navigations rebuilt from the URL), version.json is no-store.
+- Test 'UI no-resolve' (Thought-Knot Seer with no window, the banner).
+
 ## v0.99.92
 - openAbilityEffect no longer opens a Resolving window: resolveNoPanel (src/04) applies every understood effect in order (an option with .then waits for its own window, e.g. scry), asks only real choices with appChoose (src/89) or appAsk, and notes uncovered clauses as Do by hand. The res-panel modal option, its CSS and the stage docking code are removed.
 - drawStackStage0: a spell/ability still marked resolving with no window open is finished after 900ms; the Resolving stage is never drawn (hand picks still use the stage).
