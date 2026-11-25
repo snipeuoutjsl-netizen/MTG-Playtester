@@ -163,6 +163,7 @@ function faceProd(tx, whole) {
 const faceCostCols = mc => [...new Set([...String(mc || '').matchAll(/\{([^}]+)\}/g)].flatMap(m => m[1].split('/').filter(x => FACE_ANY.includes(x))))].sort((a, b) => FACE_ANY.indexOf(a) - FACE_ANY.indexOf(b));
 function faceFix(c) {
   if (!c || !c.fc || c.fc.length < 2 || c.__ff) return;
+  if (!c.kind && c.fc.every(f => /\bRoom\b/.test(f.t || ''))) { c.kind = 'room'; c.mdfc = false; for (const r of c.fc) { r.kind = 'room'; r.half = true; r.land = false; } }   // v0.99.103 Room cards saved by an older version (read then as a two-faced card)
   for (const r of c.fc) {
     const pr = faceProd(r.tx, c.prod); if (pr) r.prod = pr; else delete r.prod;
     if (c.mdfc && r.fi >= 1 && typeof symCmc === 'function') { try { r.cmc = symCmc(r.mc || '') || 0; } catch (e) { /* keep */ } }
@@ -179,9 +180,9 @@ function normFaces(c) {
   const txs = c.tx.split('\n//\n'), ts = String(c.t || '').split(' // ');
   if (txs.length !== c.faces.length || ts.length !== c.faces.length) return c;
   const mls = c.fml && c.fml.length === c.faces.length ? c.fml : null, mp = String(c.mc || '').split(' // ');
-  const adv = ts.some(t => /\bAdventure\b/.test(t)), spl = !adv && ts.every(t => /^(?:Instant|Sorcery)\b/.test(t.replace(/^(?:Legendary|Snow|Tribal)\s+/, '')));
-  if (adv || spl) {   // v0.77: the halves of an adventure / split / aftermath card are spells you cast one at a time
-    c.kind = adv ? 'adventure' : (/\baftermath\b/i.test(txs[1] || '') ? 'aftermath' : 'split');
+  const adv = ts.some(t => /\bAdventure\b/.test(t)), spl = !adv && ts.every(t => /^(?:Instant|Sorcery)\b/.test(t.replace(/^(?:Legendary|Snow|Tribal)\s+/, ''))), room = !adv && !spl && ts.every(t => /\bRoom\b/.test(t));
+  if (adv || spl || room) {   // v0.77: the halves of an adventure / split / aftermath card are spells you cast one at a time (v0.99.103: and the doors of a Room, CR 709.5)
+    c.kind = room ? 'room' : adv ? 'adventure' : (/\baftermath\b/i.test(txs[1] || '') ? 'aftermath' : 'split');
     c.fc = c.faces.map((n, i) => {
       const mc = mls ? mls[i] : (mp.length === c.faces.length ? mp[i] : (i === 0 ? mp[0] : ''));
       const r = { name: n, t: ts[i], tx: txs[i], mc, cmc: 0, land: false, bf: c.name, fi: i, kind: c.kind, col: (c.fcl && c.fcl[i]) || (i === 0 ? c.col : []) };
@@ -314,9 +315,9 @@ const AW_CACHE = new WeakMap();
 function awInfo(base) { if (!base || !base.tx || !AW_RE.test(base.tx)) { AW_RE.lastIndex = 0; return base; } AW_RE.lastIndex = 0; let r = AW_CACHE.get(base); if (!r || r.__src !== base.tx) { r = Object.assign({}, base, { tx: stripAW(base.tx), __src: base.tx }); AW_CACHE.set(base, r); } return r; }
 // v0.99.40 the rules a permanent has now: a Class (CR 716.2b) or Spacecraft (CR 721.2) only has the level/station sections it has reached,
 // so its triggers and statics are read from that text (marked ovr so the trigger cache keys on the text).
-function rulesInfo(c) { const r = rulesInfo0(c); if (!r || !r.tx || !c || c.token || !state) return r; let tx = r.tx; try { tx = classText(c, stationText(c, r.tx)); } catch (e) { return r; } return tx === r.tx ? r : Object.assign({}, r, { tx, ovr: true }); }
+function rulesInfo(c) { const r = rulesInfo0(c); if (!r || !r.tx || !c || c.token || !state) return r; let tx = r.tx; try { tx = classText(c, stationText(c, roomText(c, r.tx))); } catch (e) { return r; } return tx === r.tx ? r : Object.assign({}, r, { tx, ovr: true }); }
 function rulesInfo0(c) { if (!c) return null; if (c.token) return c.tk && c.tk.tx ? { name: c.name, tx: c.tk.tx, t: c.tk.type || '', pt: c.tk.pt || '' } : null; const base = cardInfo(c.name); if (base && state) { const ov = ovrOf(c); if (ov && ov.lose) return Object.assign({}, base, { tx: stripAW(ov.grant.concat(c.gained || []).join('\n')), ovr: true }); } return awInfo(base); }
-function cardText(c) { return classText(c, stationText(c, stripAW(cardTextRaw(c)))); }
+function cardText(c) { return classText(c, stationText(c, roomText(c, stripAW(cardTextRaw(c))))); }
 function cardTextRaw(c) { { const ov = c && ovrOf(c); if (ov && ov.lose) return ov.grant.concat(c.gained || []).join('\n'); } if (c && c.token) return (c.tk && c.tk.tx) || ''; const i = c && cardInfo(c.name); let b = i && i.tx ? i.tx : ''; if (c && c.mutParts) { const mx = mutExtraText(c); if (mx) b += '\n' + mx; } if (c && c.splicedTx) b += '\n' + c.splicedTx; return c && c.gained && c.gained.length ? b + '\n' + c.gained.join('\n') : b; }
 // ---- v0.73 faces of a card in play
 function faceParent(c) { return c && !c.token ? cardInfo(c.faceOf || c.name) : null; }
@@ -352,7 +353,7 @@ function halfOptions(c) {   // the ways this card in your hand can be cast: fi n
   return p.fc.map((r, i) => ({ fi: i, rec: r, label: r.name }));
 }
 function castAsHalf(c, fi) { const p = halfParent(c) || mdfcParent(c); if (!p) return; if (!c.faceOf) c.faceOf = c.name; c.name = p.fc[fi].name; c.face = fi; c.half = true; }
-function restoreHalf(c) { if (c && c.half) { if (state && mdfcParent(c) && state.battlefield.includes(c)) { delete c.half; return; }   /* v0.99.102 CR 712.12: a modal face cast as the spell is the permanent it becomes; it is the whole card again when it leaves (rule 712.14) */ c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
+function restoreHalf(c) { if (c && c.half) { if (state && mdfcParent(c) && state.battlefield.includes(c)) { delete c.half; return; } if (state && roomParent(c) && state.battlefield.includes(c)) { roomResolved(c); return; }   /* v0.99.102 CR 712.12: a modal face cast as the spell is the permanent it becomes; it is the whole card again when it leaves (rule 712.14) */ c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half; } }
 function withHalf(c, fi, fn) {
   if (fi === null || fi === undefined) return fn();
   const was = { n: c.name, f: c.faceOf, fc: c.face, h: c.half }; castAsHalf(c, fi);
@@ -522,9 +523,9 @@ function parseLookDistribute(tx, inner) {
   return { n, slots, full: ok, alt, covers };
 }
 function openHalfChooser(c, opts, pick) {
-  const md = !!mdfcParent(c);
-  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which ${md ? 'face' : 'half'}?`, { width: 560, sticky: true, onCancel: () => {} });
-  m.body.append(h('div', { class: 'psub', text: md ? 'A modal double-faced card is cast as one face or the other (rule 712.12). The face you choose is the spell, and the permanent it becomes.' : 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
+  const md = !!mdfcParent(c), rm = !!roomParent(c);
+  const m = modal(`Cast ${String(c.name).split(' // ').join(' / ')}: which ${rm ? 'door' : md ? 'face' : 'half'}?`, { width: 560, sticky: true, onCancel: () => {} });
+  m.body.append(h('div', { class: 'psub', text: rm ? 'Choose a door to cast (rule 709.5). The Room enters with that door unlocked; you can unlock the other door later by paying its cost as a sorcery.' : md ? 'A modal double-faced card is cast as one face or the other (rule 712.12). The face you choose is the spell, and the permanent it becomes.' : 'You cast one half at a time (rule 709 for split cards, 715 for adventures). The other half is ignored while this one is on the stack.' }));
   const list = h('div', { class: 'prelist' });
   for (const o of opts) {
     const st = withHalf(c, o.fi, () => { if (!canCastNow(c)) return { ok: false, why: state.stack.length ? 'only instants can be cast now' : 'wrong timing' }; const pm = canPayMana(c); return pm && !pm.ok ? { ok: false, why: pm.reason === 'color' ? 'not the right colours' : 'not enough mana' } : { ok: true }; });
@@ -730,6 +731,12 @@ function parseStaticCard(g) {
           continue;
         } }
       { const cs = parseCondStatic(raw.trim(), g); if (cs) { list.push(cs); continue; } }   // v0.98.5 conditional / scaling statics
+      { // v0.99.103 a bonus for a group with a condition after it: "Other creatures you control get +1/+1 as long as you've completed a dungeon." (Nadaar)
+        const am2 = raw.trim().replace(/\.$/, '').match(/^(.+?) (gets? [+-]\d+\/[+-]\d+|(?:has|have) [a-z ,]+?) as long as (.+)$/i);
+        if (am2 && !/^(?:~|it|this \w+)$/i.test(am2[1].trim())) { const subj0 = parseSubject(am2[1], g), cnd = am2[3];
+          if (subj0 && !subj0.self) { const subj = Object.assign({}, subj0, { test: c => subj0.test(c) && condStaticOn(cnd, g) });
+            let q; if ((q = am2[2].match(/^gets? ([+-]\d+)\/([+-]\d+)$/i))) { list.push({ line: raw.trim().replace(/\.$/, ''), kind: 'pt', g, subj, p: +q[1], t: +q[2], perFn: null, perText: '', cond: cnd }); continue; }
+            if ((q = am2[2].match(/^(?:has|have) (.+)$/i))) { const kws = q[1].toLowerCase().split(/\s*(?:,|\band\b)\s*/).map(k => k.trim()).filter(k => GRANTABLE.includes(k)); if (kws.length) { list.push({ line: raw.trim().replace(/\.$/, ''), kind: 'kw', g, subj, items: [{ kws, cond: null }], cond: cnd }); continue; } } } } }
       const line = raw.trim().replace(/\.$/, ''); if (!line || /"/.test(line) || /^(as long as|if|when|whenever|at |until)/i.test(line) || /\bas long as\b|\buntil\b/i.test(line)) continue;
       let m;
       // colour: "Each nonland permanent you control is all colors."
@@ -762,6 +769,8 @@ function parseStaticCard(g) {
   }
   return list;
 }
+let condStaticBusy = false;   // v0.99.103 a condition is never read while another one is being read (no loops through the statics)
+function condStaticOn(cnd, g) { if (condStaticBusy) return false; condStaticBusy = true; try { return evalCond(cnd, g) === true; } catch (e) { return false; } finally { condStaticBusy = false; } }
 function statics() {
   if (!state) return [];
   const sig = state.battlefield.map(c => c.id + ':' + c.name + ':' + (c.att || '') + (c.token && c.tk ? ':' + (c.tk.tx || '').length : '')).join('|') + '#' + (state.emblems || []).map(e => e.id).join(',');
@@ -1599,7 +1608,7 @@ function ayGet(name, text, id) { return state && state.ay ? state.ay[ayKey(name,
 const legalSig = (specs, srcId) => specs.map(sp => legalTargets(sp, { srcId }).map(t => String(t.id)).sort().join(',')).join('|');   // the set of things an ability could target right now
 function ayTargetsOk(tg) { return !tg || tg.every(t => t.kind === 'player' || t.kind === 'opp' || t.kind === 'spell' ? true : !!findCard(t.id)); }
 function askAlwaysYield(list, next) {
-  const t = list.find(x => !x.delayed && !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
+  const t = list.find(x => !x.delayed && !x.noYield && !ayGet(x.cardName, x._text || x.effect, x.cardId) && ayEligibleText(x._text || x.effect) && !(x._picked || []).some(p => p.kind === 'opp')); if (!t) { next(); return; }   // v0.99.76 an ability aimed at the opponent's (untracked) permanents is never yielded: you act on the real table each time
   state.ay = state.ay || {}; const key = ayKey(t.cardName, t._text || t.effect, t.cardId), tg = t._picked && t._picked.length ? t._picked : null;
   state.ay[key] = { auto: false, sig: (() => { try { const sp = parseTargetSpecs(t._text || t.effect); return sp.length ? legalSig(sp, t.cardId) : null; } catch (e) { return null; } })(), id: t.cardId, name: t.cardName, text: t._text || t.effect, targets: null, label: null };   // asked once per game
   const m = modal('Always yield?', { width: 520, sticky: true, noClose: true });
@@ -2347,7 +2356,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   delete c.dieExileTurn;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
   if (c.prepared) unprepare(c, 'it left the battlefield');   // CR 722.3c
-  delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
+  delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel; delete c.doors;   /* v0.99.103 a Room that comes back is a new object with both doors locked (CR 709.5e) */   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
     // CR 701.37b: monstrous lasts until it leaves the battlefield
   if (_mp) mutSpawnParts(c, dest);
   if (c.token) {   // a token that leaves the battlefield ceases to exist, but it did leave (and may have died)
@@ -4450,7 +4459,7 @@ function enterStep(i, quiet) {
     else if (dredgeOptions().length && teach('dredgePrompts')) { log('Draw step: you may dredge instead of drawing'); askDredge(1); }
     else log(drawCards(1) ? 'Draw' : 'Library is empty!');
   } else if (id === 'upkeep') {
-    if (state.gs && state.gs.init) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'At the beginning of your upkeep, venture into the Undercity.', effect: 'Venture into the Undercity.', special: null, optional: false, why: 'You have the initiative (rule 725.2). The app does not track the dungeon; move your marker by hand.' });
+    if (state.gs && state.gs.init) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'At the beginning of your upkeep, venture into Undercity.', effect: 'Venture into Undercity.', special: null, optional: false, why: 'You have the initiative (rule 725.2).' });
   } else if (id === 'main1') {
     runDelayed('main1');
     for (const c of state.battlefield.slice()) if (isSaga(c)) sagaAdvance(c, false);
@@ -5726,6 +5735,7 @@ function cardEl(c, zone) {
     !c.token && isLandName(c.name) && effectiveLandTypes(c).types.length && effectiveLandTypes(c).types.join('|') !== baseLandTypesOf(c.name).types.join('|') ? h('div', { class: 'land-effect-badge', text: effectiveLandTypes(c).types.map(t => t[0]).join(' '), title: `Effective land types: ${effectiveLandTypes(c).types.join(', ')}` }) : null,
     zone === 'battlefield' && !c.token && teach('gapBadges') && ruleGaps(c).length ? h('div', { class: 'gapbadge', text: '\u26a0', title: 'The app only reminds you of these rules (apply them by hand):\n' + ruleGaps(c).map(g => '\u2022 ' + g.text).join('\n') }) : null,
     zone === 'battlefield' && c.mutParts ? h('div', { class: 'fxbadge', text: '\u29c9 Mutated \u00d7' + c.mutParts.length, title: 'A merged permanent: ' + c.mutParts.map(x => x.name).join(' + ') + '. It has all of their abilities; the top card is ' + c.mutParts[0].name }) : null,
+    zone === 'battlefield' ? roomBadge(c) : null,
     zone === 'battlefield' && c.pairedWith ? h('div', { class: 'fxbadge', text: '\u26D3 Paired', title: 'Soulbond: paired with another creature for as long as you control both' }) : null,
     zone === 'battlefield' ? kwIconsOnTile(c) : null,
     zone === 'battlefield' && state && teach('durationHints') && fxOn(c).length ? h('div', { class: 'fxbadge', title: fxOn(c).map(e => `${e.kind === 'pt' ? sgnN(e.p) + '/' + sgnN(e.t) : e.kind === 'kw' ? e.kw : e.text} ${UNTIL_WORDS[e.until] || ''}`).join('\n'), text: '\u23F3' }) : null,
@@ -6252,7 +6262,7 @@ function renderInner() {
   if (state) { healHalves(); if (state.halfChosen) setTimeout(checkHalfAbandon, 80); }
   if (state && state.sagaWait && state.sagaWait.length) setTimeout(() => { try { sagaCheck(); } catch (e) { console.error(e); } }, 0);
   animCapture();
-  runToughnessSBA();
+  runToughnessSBA(); try { dungeonSBA(); } catch (e) { console.error(e); }
   document.body.classList.toggle('responding', !!state && state.phase === 'play' && state.stack.length > 0);
   document.body.classList.toggle('imgmode', showImages && (IMG.size > 0 || CUSTOM.size > 0));
   document.body.classList.toggle('castflight', castFlightOn()); document.body.classList.toggle('hand3d', animOn('hand3d')); document.body.classList.toggle('bffloat', animOn('bfFloat')); document.body.classList.toggle('handfloat', animOn('handFloat'));
@@ -6265,7 +6275,7 @@ function renderInner() {
   lifeFx('opp', $('#oppNum'), has ? (state.oppLife ?? 20) : 20);
   $('#oppBox').title = has && state.dmgHistory && state.dmgHistory.length ? 'Combat damage dealt so far: ' + state.dmgHistory.map(d => `turn ${d.turn}: ${d.dmg}`).join(', ') : 'Goldfish opponent life. Combat damage from your attackers is subtracted automatically.';
   const cbt = $('#btnCombat'); if (cbt) cbt.hidden = !(has && state.phase === 'play' && STEPS[state.step].id === 'attack' && !state.phasePause && !(state.combat && state.combat.declared));
-  renderManaPool(); drawStateIcons();
+  renderManaPool(); drawStateIcons(); try { drawDungeonBox(); } catch (e) { console.error(e); }
   for (const z of ['library', 'graveyard', 'exile', 'command']) { const n = has ? (state[z] || []).length : 0; const pc = $('#pcnt-' + z); if (!pc) continue; pc.textContent = n; pc.classList.toggle('zero', !n); }
   { const tb = $('#btnTokens'); if (tb) { const n = has ? deckTokenDefs().filter(d => !d.amassOnly || true).length : 0; tb.hidden = !n; $('#cnt-tokens').textContent = n; } }
   { const n = has ? state.library.length : 0; const ls = $('#libstack'); ls.dataset.thick = n > 40 ? 3 : n > 15 ? 2 : n > 0 ? 1 : 0; ls.title = teach('libraryMenu') ? 'Click for draw, look, scry, surveil, mill, search' : ''; }
@@ -6601,6 +6611,7 @@ function activatedAbilitiesFor(c){
     const pc=parseAbilityCost(cost,short);
     res.push({cost:boast?'Boast \u2014 '+cost:cost,effect,tap:pc.tap,selfSac:pc.selfSac,mana:pc.mana,removeN:pc.removeN,removeKind:pc.removeKind,life:pc.life,other:pc.byHand.join(', '),comps:pc.comps,ix:res.length});
   }
+  for(const u of roomUnlockAbilities(c,res.length)) res.push(u);   // v0.99.103 unlocking a Room's locked door (special action, CR 709.5)
   return res;
 }
 function activatedAbilityFor(c){ return activatedAbilitiesFor(c)[0]||null; }
@@ -6644,6 +6655,7 @@ function activateAbility(id, ack, ix, modes){ /* ack = restriction already ackno
     if(ab.removeN){ addCounter(c.id,-ab.removeN,ab.removeKind); log(`${c.name}: removed ${ab.removeN} counter${ab.removeN===1?'':'s'} as a cost`); }
     // Costs are paid as the ability is activated, so a sacrificed permanent is already gone when the ability resolves.
     if(ab.selfSac){ log(`${c.name}: sacrificed as a cost`); leaveBattlefield(c,'graveyard'); }
+    if(ab.unlock!==undefined){ render(); unlockDoor(c,ab.unlock); return; }   // v0.99.103 a special action: no stack, no priority (CR 116.2m)
     const obj={ability:true,id:state.nextId++,name:`${c.name} — ability`,sourceId:ab.selfSac?null:c.id,sourceName:c.name,cost:ab.cost,text:ab.effect,target,targets};
     // v0.86 rule 605.3b: a mana ability (no target, adds mana, not a loyalty ability) does not use the stack: it resolves the moment it is activated, so Black Lotus works.
     if(!targets && /^Add\b/i.test(String(ab.effect).trim())){
@@ -7138,8 +7150,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.102';
+const APP_VERSION = '0.99.103';
 const CHANGELOG = [
+  { v: '0.99.103', title: 'Rooms and dungeons', notes: ['ROOMS (Duskmourn): cast a Room one door at a time. The door you cast enters unlocked, and its "when you unlock this door" ability triggers. The card shows both doors as chips: an open padlock for an unlocked door, a closed one for a locked door. Click a locked door (or use the ability menu) to unlock it as a sorcery for its mana cost; unlocking does not use the stack. The Room has only the abilities of its unlocked doors. When both are open it is fully unlocked, and eerie abilities trigger. A Room put onto the battlefield without being cast has both doors locked.', 'DUNGEONS: "venture into the dungeon" is now played out. With no dungeon you choose one of the three, shown as maps. Each venture moves your marker one room down (at a fork you click the room you want on the map), and that room\'s ability goes on the stack and resolves. After the last room the dungeon is completed and leaves the command zone.', 'THE DUNGEON TRACKER: while you are in a dungeon, a Dungeon panel above the Stack shows the map with your marker, the path you took and how many dungeons you have completed. The Dungeon icon among the game-state icons opens the same map (on phones too), with buttons to venture by hand.', 'THE INITIATIVE: "you take the initiative" (or clicking the Initiative icon) ventures into Undercity, and so does each of your upkeeps while you have it. "You become the monarch" is now read too.', 'Conditions about dungeons are read: "if you\'ve completed a dungeon" (Gloom Stalker, Undermountain Adventurer), "as long as you\'ve completed a dungeon" for a whole group (Nadaar gives your other creatures +1/+1), "if you haven\'t completed Tomb of Annihilation" (Acererak). "Whenever you complete a dungeon" triggers, including Dungeon Crawler from your graveyard.', 'FIX: the puzzle bar stayed on screen over the Library; it now hides while the Library is open.', 'UPDATES FROM THE LIBRARY: the Library\'s top bar always shows the version. Click it to check for an update now; when one is out it reads "Update to v…" and installs it (the desktop app) or reloads into it (the web app on phones and computers).'] },
   { v: '0.99.102', title: 'Double-faced cards, read face by face', notes: ['FIX: a land on the back of a modal double-faced card (Soporific Springs, Emeria, Shatterskull, Fell Mire, Agadeem, Turntimber, Witch-Blessed Meadow ...) tapped for nothing. So did a transformed land (Azcanta, the Sunken Ruin; Temple of Civilization; Itlimoc). Each face now makes the mana its own text says.', 'FIX: a Pathway made both of its colours; each face now makes only its own (Hengegate W, Mistgate U).', 'A modal double-faced card in your hand asks which face when you use it: play the land face with your land drop, or cast the spell face. Pathways can be played as either face, and a card with two spell faces can be cast as its back face (Valki or Tibalt, Esika or The Prismatic Bridge). The face you cast is the permanent it becomes.', 'A modal back face has its own mana value (Tibalt 7, Soporific Springs 0); a transformed face keeps the front face\'s. The halves of split, adventure and flip cards have their own colours (Ice is blue, Stomp red).', 'Puzzles: their cards now load like a deck\'s. Card data is looked up from Scryfall before the puzzle starts, and the pictures fill in as you play (before, cards not in your decks showed as text placeholders).', 'The deck box: point at a card and it shows enlarged in a column beside the stacks, never over them.'] },
   { v: '0.99.101', title: 'The deck box', notes: ['The Library’s deck page shows the deck in a 3D deck box between its name and Begin goldfish. It floats, turns toward the pointer, and its lid lifts a little when you point at it.', 'Click the box: the lid opens and the cards come out the way your opening hand is dealt, one at a time, landing laid out on the screen by card type in mana-value order (one stack per card, its copies fanned down).', 'Click a card to see it large (click again, or Escape, to put it down). Close the box, press Escape or click the backdrop and the cards fly back in and the lid shuts.'] },
   { v: '0.99.100', title: 'The Library, redesigned: clean and simple', notes: ['NEW LIBRARY SCREEN: a top bar (Puzzles, Hand lab, Wishlist, Help, Settings, Back to the table), a sidebar with your collection, and a page for the deck you choose.', 'The sidebar: Add a deck, All decks and Favorites (star a deck on its page), Decks and Commander, the decks you opened recently, a search box and every deck with its colours. On a phone it sits above the deck page as a row of decks you swipe through.', 'The deck page: Begin goldfish (with I go first), Continue the game in progress, the deck profile (cards, sideboard, average mana value, lands, colours, last played), the mana curve, its featured cards, the Librarian\'s notes and recaps, and Sideboard, Hand lab, Card art & printings, Box art, Buy this deck and Delete.', 'FIX: v0.99.99 went out without this redesign (only the 3D room changes reached the release); this version carries it.', 'The 3D Library is shelved, not gone: turn on Settings → Library → Classic 3D Library to use it.'] },
@@ -9361,6 +9374,7 @@ const GS_ICON = {
   landfall: '<path d="M12 3v9M8.500 8.500 12 12l3.500-3.500M3 20l5-4.500 4 3 4-3 5 4.500z"/>',
   energy: '<rect x="3" y="7.500" width="15" height="9" rx="2"/><path d="M21 11v2M10.500 9.500l-2 3h3l-2 3"/>',
   poison: '<path d="M12 3s6 6.500 6 11a6 6 0 0 1-12 0c0-4.500 6-11 6-11z"/><path d="M9.500 15h5"/>',
+  dungeon: '<path d="M4 21V9l8-6 8 6v12"/><path d="M9 21v-6a3 3 0 0 1 6 0v6"/><path d="M4 13h3M17 13h3"/>',
   experience: '<path d="M12 3l2.600 5.600 6 .8-4.400 4.200 1.100 6L12 16.700 6.700 19.600l1.100-6L3.400 9.400l6-.8z"/>'
 };
 function gameStates() {
@@ -9372,6 +9386,8 @@ function gameStates() {
   add('storm', 'Storm', sc > 0, sc || '', `Spells cast this turn (yours and your opponent's): ${sc}. A spell with storm is copied once for each spell cast before it this turn (rule 702.40).`);
   add('monarch', 'Monarch', !!gs.monarch, '', 'You are the monarch (rule 724): you draw a card at the beginning of your end step (the app queues that trigger for you), and whoever deals combat damage to the monarch takes the crown. Click to take or lose it.', { manual: true });
   add('initiative', 'Initiative', !!gs.init, '', 'You have the initiative (rule 725): venture into the Undercity when you take it and at the beginning of your upkeep. Whoever deals combat damage to the player with the initiative takes it. Click to take or lose it.', { manual: true });
+  { const dg = state.dungeon, dn = Array.isArray(gs.dungeonsDone) ? gs.dungeonsDone.length : 0;   // v0.99.103 venture into the dungeon (CR 309): click for the map
+    add('dungeon', 'Dungeon', !!dg, dn || '', dg ? `In ${dg.name}: your venture marker is on ${dg.room}.${dn ? ` Dungeons completed: ${dn}.` : ''} Click to see the map.` : `No dungeon right now.${dn ? ` Dungeons completed: ${dn}.` : ''} Venturing into the dungeon puts one in the command zone (rule 309). Click to see the dungeons.`); }
   add('ascend', 'City’s blessing', !!gs.citys, gs.citys ? '' : (perms >= 1 ? perms + '/10' : ''), 'Ascend (rule 702.131): you get the city’s blessing the moment you control ten or more permanents, and you keep it for the rest of the game. The app checks this for you; click to set or clear it by hand.', { manual: true });
   add(gs.dn === 'night' ? 'night' : 'day', gs.dn === 'night' ? 'Night' : gs.dn === 'day' ? 'Day' : 'Day / night', !!gs.dn, '', 'Day and night (rule 726): once a daybound or nightbound permanent appears it becomes day. It becomes night if the active player cast no spells during their own previous turn, and day if they cast two or more. Click to cycle: not set, day, night.', { manual: true, gsKey: 'dn' });
   if (skipDrawSource()) add('skipdraw', 'Skip draws', !!gs.skipDraw, '', 'Necrodominance lets you skip any card you would draw. While this is on, every draw is skipped (your draw step too). Click to switch it on or off. Turn it off again when you want to draw.', { manual: true, functional: true });
@@ -9412,12 +9428,13 @@ function drawStateIcons() {
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('#gstates .sti'); if (!b || !state || !b._s) return;
   const s = b._s, gs = state.gs || (state.gs = {});
+  if (s.key === 'dungeon') { openDungeonMap(); return; }   // v0.99.103 the dungeon map
   if (s.counter) { snap(); gs[s.counter] = (gs[s.counter] || 0) + 1; log(`${s.label}: ${gs[s.counter]}`); if (s.counter === 'poison' && gs.poison >= 10) toast('Ten poison counters', 'A player with ten or more poison counters loses the game (rule 704.5c).'); render(); return; }
   if (s.manual) {
     snap();
     if (s.gsKey === 'dn') { gs.dn = !gs.dn ? 'day' : gs.dn === 'day' ? 'night' : ''; log(`It is now ${gs.dn || 'neither day nor night'}`); }
     else if (s.key === 'monarch') { gs.monarch = !gs.monarch; log(gs.monarch ? 'You are the monarch' : 'You are no longer the monarch'); }
-    else if (s.key === 'initiative') { gs.init = !gs.init; log(gs.init ? 'You have the initiative' : 'You no longer have the initiative'); }
+    else if (s.key === 'initiative') { if (!gs.init) { takeInitiative('You'); return; } gs.init = false; log('You no longer have the initiative'); }   // v0.99.103 taking it ventures into Undercity (rule 725.2)
     else if (s.key === 'skipdraw') { gs.skipDraw = !gs.skipDraw; log(gs.skipDraw ? 'Skip draws is ON: cards you would draw are skipped' : 'Skip draws is OFF: you draw normally'); }
     else if (s.key === 'ascend') { gs.citys = !gs.citys; log(gs.citys ? 'You have the city’s blessing' : 'City’s blessing cleared'); }
     render(); return;
@@ -10387,6 +10404,16 @@ function compileCardOne(c) {
     { const im = /^(.*\S) instead if (.+?)\.?$/i.exec(stripped) || /^If (.+?), (.+?) instead\.?$/i.exec(stripped);   // CR 614.1a: a conditional "instead" replaces the sentence before it while its condition holds
       if (im && lines.length) { const cnd = /^If /i.test(stripped) ? im[1] : im[2]; if (condSyntaxOk(cnd) || (state && evalCond(cnd) !== null)) { push(text, 'spell', 'ok', `Conditional "instead" (rule 614.1a): while "${cnd}" is true, this replaces the sentence before it; otherwise it is left out. The app checks the condition when the effect is read.`); continue; } } }
     let m;
+    // v0.99.103 Room doors (CR 709.5): their unlock and fully-unlock triggers are fired by the app when the door unlocks
+    if ((m = norml.match(/^When(?:ever)? you (?:fully )?unlock this (?:door|Room), (.+)$/i))) {
+      const eff = recognizedEffects(m[1].replace(nameRe, '~'));
+      push(text, 'trigger', eff.length ? 'ok' : 'part', `Room trigger (rule 709.5): it triggers when the door unlocks (casting that door counts; so does paying to unlock it)${/fully/i.test(norml) ? ', here when both doors are unlocked' : ''}.${eff.length ? ' The app applies: ' + eff.join('; ') + '.' : ' Apply the effect by hand.'}`);
+      continue;
+    }
+    if ((m = norml.replace(/^[A-Z][\w' ]+ \u2014 /, '').match(/^Whenever you complete a dungeon, (.+)$/i))) {   // v0.99.103 fired by the app when a dungeon is completed (rule 309.7)
+      const eff = /from your graveyard to your hand/i.test(m[1]) ? ['return it from your graveyard to your hand'] : recognizedEffects(m[1].replace(nameRe, '~'));
+      push(text, 'trigger', eff.length ? 'ok' : 'part', `Dungeon trigger: it triggers when you complete a dungeon (rule 309.7)${/graveyard to your hand/i.test(m[1]) ? ', from your graveyard' : ''}.${eff.length ? ' The app applies: ' + eff.join('; ') + '.' : ' Apply the effect by hand.'}`); continue;
+    }
     // loyalty ability
     if (/^[+−–-]?(?:\d+|X):|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
       const eff = recognizedEffects(stripped.replace(/^[^:]+:\s*/, '').replace(nameRe, '~'));
@@ -10539,11 +10566,11 @@ function compileCard(c) {
   if (!info || !info.fc || info.fi !== undefined) return compileCardOne(c);
   const ck = 'F|' + norm(info.name) + '|' + info.fc.map(f => f.tx.length).join(',');
   if (COMPILE_CACHE.has(ck)) return COMPILE_CACHE.get(ck);
-  const splitLike = info.kind === 'split' || info.kind === 'aftermath';
+  const splitLike = info.kind === 'split' || info.kind === 'aftermath' || info.kind === 'room';   // v0.99.103 a Room's doors are read one at a time
   const front = splitLike ? { name: info.name, type: info.t || '', mc: info.mc || '', pt: '', lines: [], counts: {} } : compileCardOne(c), lines = front.lines.slice();
   info.fc.forEach((fr, i) => { if (i < 1 && !splitLike) return; const b = compileCardOne({ name: fr.name }); if (!b) return;
     if (!b.lines.length) lines.push({ text: `(${fr.name}: no rules text)`, kind: 'reminder', status: 'info', note: `Back face (${fr.t}).`, face: fr.name });
-    for (const l of b.lines) lines.push({ ...l, note: `[Back face: ${fr.name}] ` + l.note, face: fr.name }); });
+    for (const l of b.lines) lines.push({ ...l, note: (splitLike ? `[${fr.name}] ` : `[Back face: ${fr.name}] `) + l.note, face: fr.name }); });
   const counts = { ok: 0, part: 0, unk: 0, info: 0 }; for (const l of lines) counts[l.status]++;
   const out = { ...front, name: info.name, lines, counts, type: info.t || front.type, faces: info.fc.map(f => f.name) };
   COMPILE_CACHE.set(ck, out); return out;
@@ -12730,7 +12757,8 @@ function evalCond(text, g) {
   if (!t) return null;
   { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
-  { const tc = turnCond(t, g); if (tc !== null) return tc; }   // v0.99.81 "this turn" conditions from the turn's record (src/88)
+  { const tc = turnCond(t, g); if (tc !== null) return tc; }
+  { const dc = dungeonCond(t); if (dc !== null) return dc; }   // v0.99.103 dungeons, the initiative, the monarch   // v0.99.81 "this turn" conditions from the turn's record (src/88)
   { const ik = IND_COND_KEY(t); if (ik) { const g = gameStates().find(x => x.key === ik); return g ? !!g.on : null; } }   // the top-bar game-state checks are the one source of truth (Metalcraft, Threshold, Delirium, Revolt, Morbid ...)
   if (/^(?:~|it|this (?:permanent|creature|card)) is a creature$/.test(t)) { if (!g || g.id < 0) return true; try { return permTypeInfo(g).types.has('creature'); } catch (e) { return null; } }   // v0.99.71 Triton Wavebreaker: "As long as this permanent is a creature, it has prowess" (off while bestowed)
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
@@ -15781,7 +15809,7 @@ function b5YouVersion(rest) {   // "creates two Map tokens" -> "Create two Map t
 }
 function batch5Options(t, sents, obj, src, out, drop) {
   if (!state) return;
-  const n0 = out.length; try { b5Read(t, sents, obj, src, out, drop); } finally { for (const o of out.slice(n0)) if (typeof o.then === 'function') { const th = o.then; o.fn = () => th(() => {}); } }
+  const n0 = out.length; try { b5Read(t, sents, obj, src, out, drop); dungeonOptions(t, sents, obj, src, out, drop); } finally { for (const o of out.slice(n0)) if (typeof o.then === 'function') { const th = o.then; o.fn = () => th(() => {}); } }
 }
 function b5Read(t, sents, obj, src, out, drop) {
   const esc = x => x.slice(0, 24).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -15883,9 +15911,14 @@ function b5Riddler(n) {
 // out for ten minutes and a phone still showed the old Resolving screen. sw.js carries the version number on its first line.
 function verNewer(a, b) { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; } return false; }
 let webUpdSeen = null;
+function webUpdFetch() {   // the newest published version, or null when it can't be read
+  if (window.desktop || typeof location === 'undefined' || !/^https?:$/.test(location.protocol) || typeof fetch !== 'function') return Promise.resolve(null);
+  return fetch('sw.js?t=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => { const m = /LOA_VERSION ([\d.]+)/.exec(t || ''); return m ? m[1] : null; }).catch(() => null);
+}
+function webUpdFound(v) { const was = window.__webUpd; window.__webUpd = v; webUpdBanner(v); if (was !== v) try { if (typeof hallOpen === 'function' && hallOpen()) drawHall(); } catch (e) {} }
 function webUpdCheck() {
-  if (window.desktop || typeof location === 'undefined' || location.protocol !== 'https:' || typeof fetch !== 'function') return;
-  fetch('sw.js?t=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => { const m = /LOA_VERSION ([\d.]+)/.exec(t || ''); if (m && verNewer(m[1], APP_VERSION)) webUpdBanner(m[1]); }).catch(() => {});   // v0.99.99 the version is written at the top of sw.js (always published with the site)
+  if (window.desktop || typeof location === 'undefined' || location.protocol !== 'https:') return;
+  webUpdFetch().then(v => { if (v && verNewer(v, APP_VERSION)) webUpdFound(v); });   // v0.99.99 the version is written at the top of sw.js (always published with the site)
 }
 function webUpdBanner(v) {
   if (webUpdSeen === v || document.getElementById('webUpd')) return; webUpdSeen = v;
@@ -15902,6 +15935,229 @@ async function webUpdReload() {
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   setTimeout(webUpdCheck, 4000); setInterval(webUpdCheck, 20 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') webUpdCheck(); });
+}
+
+// v0.99.103 the Library's version button: always there, so an update can be checked for and installed from the main screen
+function libUpdateBtn() {
+  const d = window.desktop, upd = d ? window.__updAvail && window.__updAvail.latest : window.__webUpd;
+  if (upd) return h('button', { class: 'lib-btn gold small lib-upd', text: `Update to v${upd}`, title: 'Read what changed and install it', onclick: () => d ? openUpdate(window.__updAvail) : webUpdReload() });
+  return h('button', { class: 'lib-btn ghost small lib-ver', text: `v${APP_VERSION}`, title: 'Check for updates', 'aria-label': `Version ${APP_VERSION}. Check for updates`, onclick: e => {
+    if (d) { openUpdate(); return; }
+    const b = e.currentTarget; b.textContent = 'Checking…'; b.disabled = true;
+    webUpdFetch().then(v => { b.disabled = false; b.textContent = `v${APP_VERSION}`;
+      if (v && verNewer(v, APP_VERSION)) { webUpdFound(v); return; }
+      if (!v) { toast('Could not check for updates', 'The version list could not be reached. Check your connection and try again; the app also checks by itself every 20 minutes.'); return; }
+      toast("You're up to date", `Version ${APP_VERSION} is the newest version.`); }); } });
+}
+// ---- v0.99.103 The dungeon tracker. The map is drawn from the dungeon's rooms: one row per depth, lines for the paths, the venture
+// marker on the current room, the rooms you passed through in gold, and (while you choose) the rooms you can move to lit up to click.
+// It is shown in the right column above the Stack whenever you are in a dungeon (or have completed one), and in a window from the
+// Dungeon icon among the game-state icons (that is the way on phones). Choosing a dungeon and choosing a branch use the same map.
+function dungeonMapEl(name, o = {}) {
+  const rooms = dungeonRooms(name), d = o.dungeon || null, path = new Set(d ? d.path : []), pick = new Set(o.pick || []);
+  const levels = []; for (const r of rooms) (levels[r.depth] = levels[r.depth] || []).push(r);
+  const RH = o.small ? 40 : 58, GAP = o.small ? 12 : 16, H = levels.length * RH + (levels.length - 1) * GAP;
+  const pos = new Map(); levels.forEach((row, y) => row.forEach((r, x) => pos.set(r.name, { x: (x + 0.5) / row.length * 100, y: y * (RH + GAP) + RH / 2 })));
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'dg-lines'); svg.setAttribute('viewBox', `0 0 100 ${H}`); svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('aria-hidden', 'true');
+  for (const r of rooms) for (const n of r.leads) { const a = pos.get(r.name), b = pos.get(n); if (!a || !b) continue;
+    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line'); ln.setAttribute('x1', a.x); ln.setAttribute('y1', a.y); ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y);
+    const walked = d && path.has(r.name) && path.has(n) && d.path.indexOf(n) === d.path.indexOf(r.name) + 1;
+    ln.setAttribute('class', walked ? 'walked' : pick.has(n) && d && r.name === d.room ? 'next' : ''); ln.setAttribute('vector-effect', 'non-scaling-stroke'); svg.append(ln); }
+  const wrap = h('div', { class: 'dg-map' + (o.small ? ' small' : ''), style: `height:${H}px` }, svg);
+  for (const r of rooms) { const p = pos.get(r.name), row = levels[r.depth], cur = d && d.room === r.name, can = pick.has(r.name);
+    const node = h(can ? 'button' : 'div', { class: 'dg-room' + (cur ? ' cur' : '') + (path.has(r.name) && !cur ? ' past' : '') + (can ? ' can' : '') + (!r.leads.length ? ' last' : ''), style: `left:${p.x}%;top:${p.y - RH / 2}px;height:${RH}px;width:calc(${100 / row.length}% - 8px)`, title: `${r.name} — ${r.effect}`, type: can ? 'button' : null },
+      h('b', {}, cur ? h('i', { class: 'dg-marker', 'aria-label': 'Your venture marker' }) : null, r.name), o.small ? null : h('span', { text: r.effect }));
+    if (can) node.addEventListener('click', () => o.onPick && o.onPick(r.name));
+    wrap.append(node); }
+  return wrap;
+}
+function dungeonPickNew(src) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (done) return; done = true; res(v); };
+    const m = modal(`${src}: venture into the dungeon`, { width: 980, sticky: true, onCancel: () => fin(null) });
+    m.body.append(h('div', { class: 'psub', text: 'You are not in a dungeon, so choose one: it goes to the command zone with your venture marker on its first room, and that room\'s ability triggers (rule 309.4). You can choose a dungeon you have already completed.' }));
+    const grid = h('div', { class: 'dg-choose' });
+    for (const nm of DUNGEONS_VENTURE) { const rooms = dungeonRooms(nm), depth = Math.max(0, ...rooms.map(r => r.depth)) + 1, done2 = dungeonsDone().filter(x => x === nm).length;
+      const card = h('button', { class: 'dg-pick', type: 'button' }, h('div', { class: 'dg-pick-h' }, h('b', { text: nm }), h('span', { text: `${depth} rooms deep${done2 ? ` · completed ${done2 > 1 ? done2 + ' times' : 'once'}` : ''}` })), dungeonMapEl(nm, { small: true }), h('div', { class: 'dg-pick-end', text: `Last room: ${rooms[rooms.length - 1].effect}` }));
+      card.addEventListener('click', () => { m.close(); fin(nm); }); grid.append(card); }
+    m.body.append(grid); m.foot.append(h('button', { text: 'Not now', onclick: () => { m.close(); fin(null); } }));
+  });
+}
+function dungeonPickRoom(d, leads, src) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (done) return; done = true; res(v); };
+    const m = modal(`${src}: venture — choose the next room`, { width: 560, sticky: true, onCancel: () => fin(leads[0]) });
+    m.body.append(h('div', { class: 'psub', text: `${d.name}: ${d.room} leads to ${leads.join(' or ')}. Click the room to move your venture marker into; its room ability triggers.` }),
+      dungeonMapEl(d.name, { dungeon: d, pick: leads, onPick: r => { m.close(); fin(r); } }));
+  });
+}
+function dungeonPanelBody(full) {
+  const d = state && state.dungeon, done = dungeonsDone();
+  const head = h('div', { class: 'dg-sub' }, d ? h('span', {}, 'Marker: ', h('b', { text: d.room })) : h('span', { text: 'Not in a dungeon.' }), done.length ? h('span', { class: 'dg-done', title: done.join(', '), text: `✓ ${done.length} completed` }) : null);
+  const body = [head];
+  if (d) body.push(dungeonMapEl(d.name, { dungeon: d, small: !full }));
+  else if (done.length) body.push(h('div', { class: 'muted small', text: `Completed: ${done.join(', ')}.` }));
+  if (full && state && state.phase === 'play') body.push(h('div', { class: 'dg-acts' },
+    h('button', { text: d ? 'Venture into the dungeon' : 'Venture: choose a dungeon', title: 'Do it yourself when a card the app does not read tells you to venture', onclick: () => { document.querySelectorAll('#modalRoot .modal').length && closeTopModal(); venture('dungeon', 'You'); } }),
+    !d ? h('button', { text: 'Venture into Undercity', onclick: () => { closeTopModal(); venture('undercity', 'You'); } }) : null,
+    d ? h('button', { class: 'danger', text: 'Remove the dungeon', title: 'For corrections: takes the dungeon away without completing it', onclick: () => { closeTopModal(); snap(); log(`${d.name} removed by hand`); state.dungeon = null; render(); } }) : null));
+  return body;
+}
+function closeTopModal() { const b = [...document.querySelectorAll('#modalRoot .backdrop')].pop(); if (b) b.remove(); }
+function openDungeonMap() {
+  if (!state) return; const d = state.dungeon;
+  const m = modal(d ? d.name : 'Dungeons', { width: 560 });
+  m.el.classList.add('dg-modal');
+  m.body.append(h('div', { class: 'psub', text: d ? 'Your dungeon is in the command zone. Each time you venture, the marker moves down one room and that room\'s ability triggers; when the last room\'s ability has resolved, the dungeon is completed (rule 309).' : 'Venturing into the dungeon puts a dungeon into the command zone (rule 309). Cards that say "venture into the dungeon" or "take the initiative" do it for you.' }), ...dungeonPanelBody(true));
+  m.foot.append(h('button', { text: 'Close', onclick: () => m.close() }));
+}
+// the panel in the right column (above the Stack)
+function drawDungeonBox() {
+  const right = document.getElementById('right'), stackBox = document.getElementById('stackBox'); if (!right) return;
+  let box = document.getElementById('dungeonBox');
+  const show = !!state && state.phase === 'play' && (state.dungeon || dungeonsDone().length);
+  if (!show) { if (box) box.remove(); return; }
+  if (!box) { box = h('div', { class: 'box', id: 'dungeonBox' }); right.insertBefore(box, stackBox || null); }
+  const d = state.dungeon, key = JSON.stringify([d, dungeonsDone()]); if (box._k === key) return; box._k = key;
+  box.replaceChildren(h('div', { class: 'boxhead' }, h('span', { text: d ? d.name : 'Dungeon' }), h('button', { class: 'dg-open', text: 'Map', title: 'Open the dungeon map', onclick: () => openDungeonMap() })), ...dungeonPanelBody(false));
+}
+// ---- v0.99.103 Dungeons (CR 309), venture into the dungeon (701.49) and the initiative (725).
+//  - Venturing with no dungeon: you choose a dungeon (Undercity only through "venture into Undercity" / the initiative, 309.2c) and put it
+//    into the command zone with your venture marker on its first room. Otherwise the marker moves to a room the current one leads to;
+//    with two exits you choose (by clicking the room on the map).
+//  - Moving into a room triggers its room ability (309.4c): it goes on the stack and resolves through the normal effect reader.
+//  - When the marker is on the bottom room and its room ability has left the stack, the dungeon is completed and removed (704.5t, 309.7).
+//    Completed dungeons are remembered for "if you've completed a dungeon" / "completed Tomb of Annihilation".
+//  - The initiative: taking it ventures into Undercity, and so does each of your upkeeps while you have it.
+// The rooms are read from the dungeon card's Oracle text ("Room — effect (Leads to: A, B)"). Dungeons are not in decks, so when the card
+// data has no record of them the app uses its own copy of the four dungeons' Oracle text.
+const DUNGEON_TEXT = {
+  'Tomb of Annihilation': "Trapped Entry — Each player loses 1 life. (Leads to: Veils of Fear, Oubliette)\nVeils of Fear — Each player loses 2 life unless they discard a card. (Leads to: Sandfall Cell)\nSandfall Cell — Each player loses 2 life unless they sacrifice a creature, artifact, or land of their choice. (Leads to: Cradle of the Death God)\nOubliette — Discard a card and sacrifice a creature, an artifact, and a land. (Leads to: Cradle of the Death God)\nCradle of the Death God — Create The Atropal, a legendary 4/4 black God Horror creature token with deathtouch.",
+  'Lost Mine of Phandelver': "Cave Entrance — Scry 1. (Leads to: Goblin Lair, Mine Tunnels)\nGoblin Lair — Create a 1/1 red Goblin creature token. (Leads to: Storeroom, Dark Pool)\nMine Tunnels — Create a Treasure token. (Leads to: Dark Pool, Fungi Cavern)\nStoreroom — Put a +1/+1 counter on target creature. (Leads to: Temple of Dumathoin)\nDark Pool — Each opponent loses 1 life and you gain 1 life. (Leads to: Temple of Dumathoin)\nFungi Cavern — Target creature gets -4/-0 until your next turn. (Leads to: Temple of Dumathoin)\nTemple of Dumathoin — Draw a card.",
+  'Dungeon of the Mad Mage': "Yawning Portal — You gain 1 life. (Leads to: Dungeon Level)\nDungeon Level — Scry 1. (Leads to: Goblin Bazaar, Twisted Caverns)\nGoblin Bazaar — Create a Treasure token. (Leads to: Lost Level)\nTwisted Caverns — Target creature can't attack until your next turn. (Leads to: Lost Level)\nLost Level — Scry 2. (Leads to: Runestone Caverns, Muiral's Graveyard)\nRunestone Caverns — Exile the top two cards of your library. You may play them. (Leads to: Deep Mines)\nMuiral's Graveyard — Create two 1/1 black Skeleton creature tokens. (Leads to: Deep Mines)\nDeep Mines — Scry 3. (Leads to: Mad Wizard's Lair)\nMad Wizard's Lair — Draw three cards and reveal them. You may cast one of them without paying its mana cost.",
+  'Undercity': "You can't enter this dungeon unless you \"venture into Undercity.\"\nSecret Entrance — Search your library for a basic land card, reveal it, put it into your hand, then shuffle. (Leads to: Forge, Lost Well)\nForge — Put two +1/+1 counters on target creature. (Leads to: Trap!, Arena)\nLost Well — Scry 2. (Leads to: Arena, Stash)\nTrap! — Target player loses 5 life. (Leads to: Archives)\nArena — Goad target creature. (Leads to: Archives, Catacombs)\nStash — Create a Treasure token. (Leads to: Catacombs)\nArchives — Draw a card. (Leads to: Throne of the Dead Three)\nCatacombs — Create a 4/1 black Skeleton creature token with menace. (Leads to: Throne of the Dead Three)\nThrone of the Dead Three — Reveal the top ten cards of your library. Put a creature card from among them onto the battlefield with three +1/+1 counters on it. It gains hexproof until your next turn. Then shuffle."
+};
+const DUNGEONS_VENTURE = ['Lost Mine of Phandelver', 'Dungeon of the Mad Mage', 'Tomb of Annihilation'];
+const DUNGEON_ROOMS = new Map();
+function dungeonText(name) { const i = cardInfo(name); return (i && /\bDungeon\b/.test(i.t || '') && i.tx) || DUNGEON_TEXT[name] || ''; }
+function dungeonRooms(name) {
+  const tx = dungeonText(name), key = name + '|' + tx.length; if (DUNGEON_ROOMS.has(key)) return DUNGEON_ROOMS.get(key);
+  const rooms = [];
+  for (const raw of tx.split('\n')) { const m = raw.trim().match(/^(.+?)\s+[—-]\s+(.+?)(?:\s*\(Leads to: (.+)\))?$/); if (!m || /^You can't enter/i.test(raw)) continue;
+    rooms.push({ name: m[1].trim(), effect: m[2].trim(), leads: m[3] ? m[3].split(/,\s*/).map(x => x.replace(/\.$/, '').trim()) : [] }); }
+  // depth = the longest path from the first room, so the last room is always at the bottom
+  const depth = new Map(rooms.length ? [[rooms[0].name, 0]] : []);
+  for (let pass = 0; pass < rooms.length; pass++) for (const r of rooms) if (depth.has(r.name)) for (const n of r.leads) depth.set(n, Math.max(depth.get(n) || 0, depth.get(r.name) + 1));
+  for (const r of rooms) r.depth = depth.get(r.name) || 0;
+  DUNGEON_ROOMS.set(key, rooms); return rooms;
+}
+const dungeonRoom = (name, room) => dungeonRooms(name).find(r => r.name === room) || null;
+function dungeonsDone() { const gs = state && state.gs; return gs && Array.isArray(gs.dungeonsDone) ? gs.dungeonsDone : []; }
+// ---- venturing
+function venture(kind, src) {
+  if (!state) return Promise.resolve();
+  const d = state.dungeon;
+  if (!d) {
+    if (kind === 'undercity') return Promise.resolve(dungeonEnter('Undercity', src, kind));
+    return dungeonPickNew(src).then(name => { if (name) dungeonEnter(name, src, kind); });
+  }
+  const cur = dungeonRoom(d.name, d.room); const leads = cur ? cur.leads : [];
+  if (!leads.length) { log(`${src}: venture — ${d.name} has no room after ${d.room}`); return Promise.resolve(); }
+  if (leads.length === 1) { dungeonMove(leads[0], src); return Promise.resolve(); }
+  return dungeonPickRoom(d, leads, src).then(room => dungeonMove(room || leads[0], src));
+}
+function dungeonEnter(name, src, kind) {
+  const rooms = dungeonRooms(name); if (!rooms.length) { toast('Dungeon unreadable', `No rooms could be read for ${name}.`); return; }
+  snap(); state.dungeon = { name, room: rooms[0].name, path: [rooms[0].name] };
+  log(`${src}: ${kind === 'undercity' ? 'venture into Undercity' : 'venture into the dungeon'} — ${name} goes to the command zone; your venture marker is on ${rooms[0].name} (rule 309.4)`);
+  dungeonRoomTrigger(); try { sfx('draw'); } catch (e) {}
+  render(); flushTriggers();
+}
+function dungeonMove(room, src) {
+  const d = state.dungeon; if (!d) return; snap();
+  d.room = room; d.path.push(room);
+  log(`${src}: venture — the marker moves to ${room} in ${d.name}`);
+  dungeonRoomTrigger(); render(); flushTriggers();
+}
+function dungeonRoomTrigger() {
+  const d = state.dungeon, r = d && dungeonRoom(d.name, d.room); if (!r) return;
+  if (!r.leads.length) d.final = true;   // the bottom room: completed once its room ability has left the stack (704.5t)
+  queueTrigger({ kind: 'ability', cardId: 0, cardName: d.name, text: `Room ability — ${r.name}: ${r.effect}`, effect: r.effect, special: null, optional: false, why: `Your venture marker moved into ${r.name} (rule 309.4c)`, dungeon: d.name, noYield: true });
+}
+// 704.5t: the dungeon is removed once the marker is on its bottom room and that room's ability is no longer waiting or on the stack
+function dungeonSBA() {
+  const d = state && state.dungeon; if (!d || !d.final || state.phase !== 'play') return;
+  const nm = d.name, mine = x => x && (x.dungeon === nm || x.cardName === nm || (x.sourceName === nm && !x.sourceId));
+  if (state.stack.some(mine)) { d.seen = true; return; }   // its room ability is on the stack
+  if ((state.pendingTriggers || []).some(mine) || mine(state.resolvingAb) || mine(state.resolving)) return;
+  // between leaving the waiting list and reaching the stack the ability is in the trigger window: until it has been seen on the stack,
+  // wait while any window is open (checked again shortly)
+  if (!d.seen && document.querySelector('#modalRoot .backdrop')) { clearTimeout(dungeonSBA.t); dungeonSBA.t = setTimeout(() => { try { dungeonSBA(); render(); } catch (e) {} }, 400); return; }
+  const gs = state.gs || (state.gs = {}); gs.dungeonsDone = dungeonsDone().concat(nm); state.dungeon = null;
+  log(`You completed ${nm}: it is removed from the game (rules 309.7 and 704.5t). Dungeons completed: ${gs.dungeonsDone.length}`);
+  toast('Dungeon completed', `${nm} is complete. You can venture again to enter a new dungeon.`);
+  for (const o of state.battlefield) for (const line of String((rulesInfo(o) || {}).tx || '').split('\n')) { const m = line.trim().replace(/^[A-Z][\w' ]+ \u2014 /, '').match(/^Whenever you complete a dungeon, (.+)$/i); if (m && !/from your graveyard to your hand/i.test(m[1])) queueTrigger({ kind: 'ability', cardId: o.id, cardName: o.name, text: line.trim(), effect: m[1], special: null, optional: false, why: `You completed ${nm}` }); }
+  for (const o of state.graveyard) for (const line of String((cardInfo(o.name) || {}).tx || '').split('\n')) { const m = stripAW(line.trim()).match(/^Whenever you complete a dungeon, (you may return this card from your graveyard to your hand\.?)$/i);   // Dungeon Crawler: it triggers from the graveyard
+    if (m) queueTrigger({ kind: 'ability', cardId: o.id, cardName: o.name, text: line.trim(), effect: m[1], special: null, optional: true, why: `You completed ${nm} (this card triggers from your graveyard)` }); }
+  flushTriggers();
+}
+// ---- the initiative (CR 725)
+function takeInitiative(src) {
+  const gs = state.gs || (state.gs = {}); gs.init = true;
+  log(`${src}: you take the initiative (rule 725)`);
+  queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'Whenever you take the initiative, venture into Undercity.', effect: 'Venture into Undercity.', special: null, optional: false, why: 'You took the initiative (rule 725.2)', noYield: true });
+  render(); flushTriggers();
+}
+// ---- reading the words: venture / initiative / monarch (called from the effect reader, src/98 rules batch 5)
+function dungeonOptions(t, sents, obj, src, out, drop) {
+  let m0;
+  for (const s of sents) {
+    const x = s.trim().replace(/\.$/, '');
+    if ((m0 = x.match(/^(.+?),? (?:and|then) venture into (the dungeon|undercity)$/i)) && !/^venture\b/i.test(m0[1])) {   // Acererak: "return Acererak to its owner's hand and venture into the dungeon"
+      const first = m0[1].replace(/^./, ch => ch.toUpperCase()) + '.', kind = /undercity/i.test(m0[2]) ? 'undercity' : 'dungeon';
+      out.push({ covers: [s], label: `${first.replace(/\.$/, '')}, then venture into ${kind === 'undercity' ? 'Undercity' : 'the dungeon'}`, then: done => { b4RunSentence(first, obj, src); venture(kind, src).then(done); } }); }
+    else if (/^venture into the dungeon$/i.test(x)) out.push({ covers: [s], label: 'Venture into the dungeon', then: done => { venture('dungeon', src).then(done); } });
+    else if (/^venture into (?:the )?undercity$/i.test(x)) out.push({ covers: [s], label: 'Venture into Undercity', then: done => { venture('undercity', src).then(done); } });
+    else if (/^you take the initiative$/i.test(x)) out.push({ covers: [s], label: 'You take the initiative', fn: () => takeInitiative(src) });
+    // the dungeon rooms' own wordings the general reader does not cover
+    else if ((m0 = x.match(/^each player loses (\w+) life$/i)) && numOf(m0[1])) { const n = numOf(m0[1]); out.push({ covers: [s], label: `Each player loses ${n} life`, fn: () => { snap(); state.life -= n; state.oppLife -= n; log(`${src}: each player loses ${n} life`); render(); } }); }
+    else if ((m0 = x.match(/^each player loses (\w+) life unless they (discard a card|sacrifice a creature, artifact, or land of their choice)$/i)) && numOf(m0[1])) {
+      const n = numOf(m0[1]), disc = /^discard/i.test(m0[2]);
+      out.push({ covers: [s], label: `Each player loses ${n} life unless they ${m0[2]}`, then: done => {
+        log(`${src}: your opponent loses ${n} life unless they ${m0[2].replace(/their/, 'their')} — their choice, at the real table`);
+        const kinds = disc ? (state.hand.length ? ['Discard a card'] : []) : ['creature', 'artifact', 'land'].filter(k => state.battlefield.some(c => { try { return permTypeInfo(c).types.has(k); } catch (e) { return false; } })).map(k => `Sacrifice ${k === 'artifact' ? 'an' : 'a'} ${k}`);
+        if (!kinds.length) { snap(); state.life -= n; log(`${src}: you have nothing to ${disc ? 'discard' : 'sacrifice'}, so you lose ${n} life`); render(); done(); return; }
+        appChoose(src, `Lose ${n} life, or ${m0[2].replace(/ of their choice/, '')}?`, [`Lose ${n} life`, ...kinds]).then(k => {
+          if (!k) { snap(); state.life -= n; log(`${src}: you lose ${n} life`); render(); }
+          else b4RunSentence(kinds[k - 1] + '.', obj, src);
+          done(); }); } });
+    }
+    else if (/^discard a card and sacrifice a creature, an artifact, and a land$/i.test(x)) out.push({ covers: [s], label: 'Discard a card and sacrifice a creature, an artifact, and a land', fn: () => { for (const one of ['Discard a card.', 'Sacrifice a creature.', 'Sacrifice an artifact.', 'Sacrifice a land.']) b4RunSentence(one, obj, src); } });
+    else if (/^goad target creature$/i.test(x)) out.push({ covers: [s], label: 'Goad target creature', fn: () => { log(`${src}: goad target creature (rule 701.38): it attacks each combat if able and attacks a player other than you if able — your opponent's creature, at the real table`); render(); } });
+    else if (/^reveal the top ten cards of your library$/i.test(x) && /^put a creature card from among them onto the battlefield with three \+1\/\+1 counters on it/i.test(sents[sents.indexOf(s) + 1] || '')) {
+      const rest = sents.slice(sents.indexOf(s) + 1); out.push({ covers: [s, ...rest], label: 'Reveal the top ten: a creature card onto the battlefield with three +1/+1 counters, hexproof until your next turn; then shuffle', then: done => {
+        const top = state.library.slice(0, 10), cre = top.filter(c => { const i = cardInfo(c.name); return /\bCreature\b/.test(String((i && i.t) || '').split(' // ')[0]); });
+        log(`${src}: revealed ${top.map(c => c.name).join(', ') || 'nothing'}`);
+        const fin = picked => { snap(); const c = picked && picked[0]; if (c) { const i = state.library.findIndex(x => x.id === c.id); if (i >= 0) { const [card] = state.library.splice(i, 1); enterBattlefield(card, { from: 'library', logMsg: `${src}: put ${card.name} onto the battlefield` }); addCounter(card.id, 3, 'plus'); addFx({ kind: 'kw', kw: 'hexproof', targetId: card.id, until: 'yourNextTurn', srcName: src }); } }
+          shuffleLibrary(); log(`${src}: shuffled your library`); render(); done(); };
+        if (!cre.length) { fin(null); return; }
+        openPickCards({ title: `${src}: put a creature card onto the battlefield`, note: 'It enters with three +1/+1 counters and gains hexproof until your next turn. The rest are shuffled back.', cards: cre, max: 1, min: 1, done: fin }); } });
+      for (const r of rest) drop.push(new RegExp('^' + r.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+    }
+    else if (/^you become the monarch$/i.test(x)) out.push({ covers: [s], label: 'You become the monarch', fn: () => { const gs = state.gs || (state.gs = {}); gs.monarch = true; log(`${src}: you become the monarch (rule 724)`); render(); } });
+  }
+}
+// conditions: "you've completed a dungeon", "you've completed Tomb of Annihilation", "you have the initiative", "you're the monarch"
+function dungeonCond(t) {
+  let m; const done = (state && state.gs && Array.isArray(state.gs.dungeonsDone)) ? state.gs.dungeonsDone : [];
+  if (/^you(?:'ve| have) completed (?:a|one or more) dungeons?$/.test(t)) return done.length > 0;
+  if (/^you(?:'ve| have)n'?t completed a dungeon$|^you have not completed a dungeon$/.test(t)) return done.length === 0;
+  if ((m = t.match(/^you(?:'ve| have) completed (.+)$/)) && DUNGEON_TEXT[Object.keys(DUNGEON_TEXT).find(k => k.toLowerCase() === m[1]) || '']) return done.some(n => n.toLowerCase() === m[1]);
+  if ((m = t.match(/^you(?:'ve| have)n'?t completed (.+)$|^you have not completed (.+)$/))) { const n = m[1] || m[2]; if (Object.keys(DUNGEON_TEXT).some(k => k.toLowerCase() === n)) return !done.some(x => x.toLowerCase() === n); }
+  if (/^you have the initiative$/.test(t)) return !!(state && state.gs && state.gs.init);
+  if (/^you(?:'re| are) the monarch$/.test(t)) return !!(state && state.gs && state.gs.monarch);
+  if (/^you(?:'re| are) in a dungeon$/.test(t)) return !!(state && state.dungeon);
+  return null;
 }
 // ---- v0.99.101 The deck box. The Library's deck page shows the deck in a 3D deck box between its name and Begin goldfish.
 // It floats and turns toward the pointer, and the lid lifts a little on hover. Clicking it opens the lid and the cards fly out
@@ -16061,7 +16317,7 @@ function drawLibraryScreen(el) {
       btn('Wishlist', () => openWishlist(), 'link', 'Cards you want, with the art you want'),
       btn('Help', helpMenu, 'link'),
       btn('Settings', () => openSettings(), 'link'),
-      window.desktop && window.__updAvail ? btn(`Update to v${window.__updAvail.latest}`, () => openUpdate(window.__updAvail), 'gold small lib-upd', 'Read what changed and install it') : null,
+      libUpdateBtn(),   // v0.99.103 always: the version (click to check) or "Update to v…"
       inGame ? btn('Back to the table', () => closeHall(true), 'ghost lib-close', 'Return to the game in progress (Esc)') : null));
   // sidebar
   const modeTab = (k, lab, n) => h('button', { class: 'lib-side-row' + (mode === k ? ' on' : ''), onclick: () => { if (mode === k) return; setGameMode(k); libSel = null; const first = decksInMode(loadDecks(), k).sort((x, y) => x.localeCompare(y))[0]; lsSet('mtgpt.current', first || ''); refreshDeckSelect(); redraw(); } }, h('span', { text: lab }), h('em', { text: String(n) }));
@@ -16140,6 +16396,67 @@ function drawLibraryScreen(el) {
   }
   el.replaceChildren(h('div', { class: 'lib-app' }, top, h('div', { class: 'lib-body' }, side, main)));
   try { const on = el.querySelector('.lib-decklist .lib-deck-row.on'); if (on) on.scrollIntoView({ block: 'nearest' }); } catch (e) { /* scrolling only */ }
+}
+// ---- v0.99.103 Room cards (Duskmourn), CR 709.5. A Room is a split card whose halves (doors) are enchantments.
+//  - Casting: you choose one door and cast it (the half chooser); when it resolves the Room enters with THAT door unlocked (709.5b), and its
+//    "When you unlock this door" ability triggers (the release notes: it triggers as the Room enters).
+//  - A Room that enters without being cast (returned, blinked, put onto the battlefield) has both doors locked (709.5e).
+//  - Unlocking: as a sorcery, pay a locked door's mana cost to unlock it. It is a special action: it does not use the stack (116.2m).
+//  - The permanent has only the abilities of its unlocked doors (709.5c); with both doors unlocked it is "fully unlocked", which
+//    triggers "whenever you fully unlock a Room" (eerie) and "when you fully unlock this Room".
+// The doors are shown on the card as two chips: an open padlock for an unlocked door, a closed one (click to unlock) for a locked door.
+function roomParent(c) { const p = c && !c.token ? cardInfo(c.faceOf || c.name) : null; return p && p.fc && p.kind === 'room' ? p : null; }
+function isRoomPerm(c) { return !!(state && c && !c.half && roomParent(c) && state.battlefield.includes(c)); }
+function roomDoors(c) { return Array.isArray(c.doors) ? c.doors : [false, false]; }
+// the rules text of a Room on the battlefield: its unlocked doors only (a fully locked Room has no abilities)
+function roomText(c, tx) {
+  if (!isRoomPerm(c)) return tx;
+  const p = roomParent(c), d = roomDoors(c);
+  return p.fc.filter((r, i) => d[i]).map(r => String(r.tx || '').split('\n').filter(l => !/^\(You may cast either half\b/i.test(l.trim())).join('\n')).join('\n');
+}
+// the door that was cast has resolved: the Room is the whole card again, with that door unlocked
+function roomResolved(c) {
+  const fi = c.face || 0; c.name = c.faceOf || c.name; delete c.faceOf; delete c.face; delete c.half;
+  const p = roomParent(c); c.doors = [fi === 0, fi === 1];
+  log(`${c.name} entered with ${p ? p.fc[fi].name : 'the door you cast'} unlocked (rule 709.5)`);
+  roomUnlocked(c, fi);
+}
+function unlockDoor(c, fi) {
+  const p = roomParent(c); if (!p || !p.fc[fi]) return;
+  const d = roomDoors(c).slice(); if (d[fi]) return; d[fi] = true; c.doors = d;
+  log(`Unlocked ${p.fc[fi].name} on ${c.name} — a special action: it does not use the stack (rule 116.2m)`);
+  roomUnlocked(c, fi); render(); flushTriggers();
+}
+function roomUnlocked(c, fi) {
+  const p = roomParent(c); if (!p) return; const door = p.fc[fi];
+  for (const line of String(door.tx || '').split('\n')) { const m = line.trim().match(/^When(?:ever)? you unlock this door, (.+)$/i);
+    if (m) queueTrigger({ kind: 'ability', cardId: c.id, cardName: c.name, text: line.trim(), effect: m[1], special: null, optional: false, why: `You unlocked ${door.name} (rule 709.5)`, noYield: true }); }
+  if (roomDoors(c).every(Boolean)) {   // fully unlocked
+    log(`${c.name} is fully unlocked`);
+    for (const line of String(roomText(c, '') || '').split('\n')) { const m = line.trim().match(/^When(?:ever)? you fully unlock this Room, (.+)$/i); if (m) queueTrigger({ kind: 'ability', cardId: c.id, cardName: c.name, text: line.trim(), effect: m[1], special: null, optional: false, why: `${c.name} is fully unlocked`, noYield: true }); }
+    for (const o of state.battlefield) { const tx = String((rulesInfo(o) || {}).tx || '');
+      for (const line of tx.split('\n')) { const m = line.match(/\bwhenever you fully unlock a Room, (.+)$/i); if (m) queueTrigger({ kind: 'ability', cardId: o.id, cardName: o.name, text: line.trim(), effect: m[1], special: null, optional: false, why: `You fully unlocked ${c.name} (eerie)` }); } }
+  }
+}
+// the unlock special action, offered like an ability (it shows in the ability menu and the door chip runs it)
+function roomUnlockAbilities(c, base) {
+  if (!isRoomPerm(c)) return [];
+  const p = roomParent(c), d = roomDoors(c), out = [];
+  p.fc.forEach((r, i) => { if (d[i] || !r.mc) return; const pc = parseAbilityCost(r.mc, c.name.split(' // ')[0]);
+    out.push({ cost: `${r.mc}: Unlock ${r.name}`, effect: `Unlock ${r.name}. Activate only as a sorcery.`, mana: pc.mana, comps: [], other: '', ix: base + out.length, unlock: i }); });
+  return out;
+}
+function roomBadge(c) {
+  if (!isRoomPerm(c)) return null;
+  const p = roomParent(c), d = roomDoors(c);
+  const stop = e => e.stopPropagation();
+  return h('div', { class: 'room-doors' }, p.fc.map((r, i) => {
+    const b = h('button', { class: 'room-door ' + (d[i] ? 'open' : 'locked'), type: 'button', title: d[i] ? `${r.name}: unlocked. Its abilities apply.` : `${r.name}: locked. Click to unlock it: pay ${r.mc} as a sorcery (a special action, rule 709.5).`, 'aria-label': `${r.name}, ${d[i] ? 'unlocked' : 'locked: unlock'}` },
+      h('span', { class: 'room-lock', 'aria-hidden': 'true', text: d[i] ? '\u{1F513}' : '\u{1F512}' }), h('span', { class: 'room-nm', text: r.name }), d[i] ? null : h('span', { class: 'room-mc' }, symbols(r.mc)));
+    b.addEventListener('pointerdown', stop); b.addEventListener('dblclick', stop);
+    b.addEventListener('click', e => { e.stopPropagation(); if (d[i]) return; const ab = activatedAbilitiesFor(c).find(a => a.unlock === i); if (ab) activateAbility(c.id, false, ab.ix); });
+    return b;
+  }));
 }
 init();
 

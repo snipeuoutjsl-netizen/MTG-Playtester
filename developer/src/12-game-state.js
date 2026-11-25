@@ -316,7 +316,7 @@ function enterStep(i, quiet) {
     else if (dredgeOptions().length && teach('dredgePrompts')) { log('Draw step: you may dredge instead of drawing'); askDredge(1); }
     else log(drawCards(1) ? 'Draw' : 'Library is empty!');
   } else if (id === 'upkeep') {
-    if (state.gs && state.gs.init) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'At the beginning of your upkeep, venture into the Undercity.', effect: 'Venture into the Undercity.', special: null, optional: false, why: 'You have the initiative (rule 725.2). The app does not track the dungeon; move your marker by hand.' });
+    if (state.gs && state.gs.init) queueTrigger({ kind: 'ability', cardId: 0, cardName: 'The initiative', text: 'At the beginning of your upkeep, venture into Undercity.', effect: 'Venture into Undercity.', special: null, optional: false, why: 'You have the initiative (rule 725.2).' });
   } else if (id === 'main1') {
     runDelayed('main1');
     for (const c of state.battlefield.slice()) if (isSaga(c)) sagaAdvance(c, false);

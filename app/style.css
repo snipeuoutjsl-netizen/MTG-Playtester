@@ -3230,3 +3230,43 @@ body.a11y-calm #hall.lib2 .lbx-float, body.a11y-calm #hall.lib2 .lbx-shadow { an
 #hall.lib2 .lbx-peek-idle { align-items: center; text-align: center; color: #8d8473; font: italic 14px/1.4 Georgia, serif; }
 #hall.lib2 .lbx-peek-blank { width: 100%; aspect-ratio: 63 / 88; border-radius: 14px; border: 1px dashed #4d3a30; background: repeating-linear-gradient(135deg, rgba(96,70,56,.08) 0 10px, transparent 10px 20px); }
 #hall.lib2 .lbx-ov.leaving .lbx-peek { opacity: 0; transition: opacity .25s; }
+/* ===== v0.99.103 Room doors on the card: open padlock = unlocked, closed = locked (click to unlock) ===== */
+.card .room-doors { position: absolute; left: 3px; right: 3px; bottom: 3px; z-index: 6; display: flex; flex-direction: column; gap: 2px; pointer-events: auto; }
+.card .room-door { display: flex; align-items: center; gap: 3px; min-width: 0; padding: 1px 4px; border-radius: 6px; font: 600 9px/1.25 system-ui, sans-serif; text-align: left; cursor: default; border: 1px solid rgba(0,0,0,.5); box-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.card .room-door.open { background: rgba(232, 214, 160, .94); color: #2a2010; }
+.card .room-door.locked { background: rgba(28, 24, 32, .92); color: #d8cdb8; cursor: pointer; border-color: rgba(227,194,122,.5); }
+.card .room-door.locked:hover { background: rgba(60, 46, 30, .96); border-color: #e3c27a; }
+.card .room-lock { flex: none; font-size: 9px; }
+.card .room-nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .room-mc { flex: none; display: inline-flex; } .card .room-mc img, .card .room-mc .ms { width: 9px; height: 9px; }
+body.hall-on #puzzleBar { display: none; }   /* v0.99.103 the puzzle bar belongs to the table: hidden while the Library is open */
+/* ===== v0.99.103 dungeons: the map (rooms by depth, paths, the venture marker) ===== */
+.dg-map { position: relative; margin: 6px 2px 4px; }
+.dg-map .dg-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dg-map .dg-lines line { stroke: rgba(200,180,140,.28); stroke-width: 2; }
+.dg-map .dg-lines line.walked { stroke: #e3c27a; stroke-width: 3; }
+.dg-map .dg-lines line.next { stroke: #7fb4ff; stroke-dasharray: 5 4; stroke-width: 2.5; }
+.dg-room { position: absolute; transform: translateX(-50%); box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 7px; border-radius: 9px; background: #211d26; border: 1px solid #4b3d34; color: #d9cfbd; text-align: center; overflow: hidden; font: inherit; }
+.dg-room b { display: flex; align-items: center; justify-content: center; gap: 5px; font: 600 12px/1.15 Georgia, serif; color: #efe2c4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dg-room span { font-size: 10.5px; line-height: 1.25; color: #aea38f; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dg-map.small .dg-room { padding: 3px 5px; } .dg-map.small .dg-room b { font-size: 11px; }
+.dg-room.past { border-color: rgba(227,194,122,.55); background: #2a2418; }
+.dg-room.cur { border-color: #e3c27a; background: linear-gradient(180deg, #3a2f1a, #2a2418); box-shadow: 0 0 0 1px #e3c27a, 0 0 14px rgba(227,194,122,.35); }
+.dg-room.last b::after { content: '♛'; margin-left: 2px; color: #c9a45c; font-size: 10px; }
+.dg-room.can { cursor: pointer; border: 1px dashed #7fb4ff; background: #1c2433; animation: dgPulse 1.4s ease-in-out infinite; }
+.dg-room.can:hover, .dg-room.can:focus-visible { background: #24314a; outline: none; border-style: solid; }
+@keyframes dgPulse { 50% { box-shadow: 0 0 12px rgba(127,180,255,.45); } }
+.dg-marker { flex: none; width: 9px; height: 9px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff4d0, #e3c27a 55%, #8a6a2c); box-shadow: 0 0 6px #e3c27a; }
+.dg-sub { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); }
+.dg-sub b { color: #efe2c4; } .dg-done { color: #8fdc9a; white-space: nowrap; }
+.dg-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+#dungeonBox .boxhead { display: flex; justify-content: space-between; align-items: center; }
+#dungeonBox .dg-open { padding: 2px 10px; font-size: 12px; }
+.dg-choose { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.dg-pick { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.03); cursor: pointer; text-align: left; color: inherit; font: inherit; }
+.dg-pick:hover, .dg-pick:focus-visible { border-color: #e3c27a; background: rgba(227,194,122,.07); outline: none; }
+.dg-pick-h { display: flex; flex-direction: column; gap: 1px; } .dg-pick-h b { font: 600 15px/1.2 Georgia, serif; color: #efe2c4; } .dg-pick-h span, .dg-pick-end { font-size: 11.5px; color: var(--muted); }
+.dg-pick .dg-room { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .dg-room.can { animation: none; } }
+#hall.lib2 .lib-ver { font-variant-numeric: tabular-nums; letter-spacing: .03em; opacity: .85; }
+#hall.lib2 .lib-ver:hover { opacity: 1; }

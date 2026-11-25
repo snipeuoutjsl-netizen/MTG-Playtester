@@ -123,6 +123,16 @@ function compileCardOne(c) {
     { const im = /^(.*\S) instead if (.+?)\.?$/i.exec(stripped) || /^If (.+?), (.+?) instead\.?$/i.exec(stripped);   // CR 614.1a: a conditional "instead" replaces the sentence before it while its condition holds
       if (im && lines.length) { const cnd = /^If /i.test(stripped) ? im[1] : im[2]; if (condSyntaxOk(cnd) || (state && evalCond(cnd) !== null)) { push(text, 'spell', 'ok', `Conditional "instead" (rule 614.1a): while "${cnd}" is true, this replaces the sentence before it; otherwise it is left out. The app checks the condition when the effect is read.`); continue; } } }
     let m;
+    // v0.99.103 Room doors (CR 709.5): their unlock and fully-unlock triggers are fired by the app when the door unlocks
+    if ((m = norml.match(/^When(?:ever)? you (?:fully )?unlock this (?:door|Room), (.+)$/i))) {
+      const eff = recognizedEffects(m[1].replace(nameRe, '~'));
+      push(text, 'trigger', eff.length ? 'ok' : 'part', `Room trigger (rule 709.5): it triggers when the door unlocks (casting that door counts; so does paying to unlock it)${/fully/i.test(norml) ? ', here when both doors are unlocked' : ''}.${eff.length ? ' The app applies: ' + eff.join('; ') + '.' : ' Apply the effect by hand.'}`);
+      continue;
+    }
+    if ((m = norml.replace(/^[A-Z][\w' ]+ \u2014 /, '').match(/^Whenever you complete a dungeon, (.+)$/i))) {   // v0.99.103 fired by the app when a dungeon is completed (rule 309.7)
+      const eff = /from your graveyard to your hand/i.test(m[1]) ? ['return it from your graveyard to your hand'] : recognizedEffects(m[1].replace(nameRe, '~'));
+      push(text, 'trigger', eff.length ? 'ok' : 'part', `Dungeon trigger: it triggers when you complete a dungeon (rule 309.7)${/graveyard to your hand/i.test(m[1]) ? ', from your graveyard' : ''}.${eff.length ? ' The app applies: ' + eff.join('; ') + '.' : ' Apply the effect by hand.'}`); continue;
+    }
     // loyalty ability
     if (/^[+−–-]?(?:\d+|X):|^0:/.test(stripped) && /\bPlaneswalker\b/.test(front)) {
       const eff = recognizedEffects(stripped.replace(/^[^:]+:\s*/, '').replace(nameRe, '~'));
@@ -275,11 +285,11 @@ function compileCard(c) {
   if (!info || !info.fc || info.fi !== undefined) return compileCardOne(c);
   const ck = 'F|' + norm(info.name) + '|' + info.fc.map(f => f.tx.length).join(',');
   if (COMPILE_CACHE.has(ck)) return COMPILE_CACHE.get(ck);
-  const splitLike = info.kind === 'split' || info.kind === 'aftermath';
+  const splitLike = info.kind === 'split' || info.kind === 'aftermath' || info.kind === 'room';   // v0.99.103 a Room's doors are read one at a time
   const front = splitLike ? { name: info.name, type: info.t || '', mc: info.mc || '', pt: '', lines: [], counts: {} } : compileCardOne(c), lines = front.lines.slice();
   info.fc.forEach((fr, i) => { if (i < 1 && !splitLike) return; const b = compileCardOne({ name: fr.name }); if (!b) return;
     if (!b.lines.length) lines.push({ text: `(${fr.name}: no rules text)`, kind: 'reminder', status: 'info', note: `Back face (${fr.t}).`, face: fr.name });
-    for (const l of b.lines) lines.push({ ...l, note: `[Back face: ${fr.name}] ` + l.note, face: fr.name }); });
+    for (const l of b.lines) lines.push({ ...l, note: (splitLike ? `[${fr.name}] ` : `[Back face: ${fr.name}] `) + l.note, face: fr.name }); });
   const counts = { ok: 0, part: 0, unk: 0, info: 0 }; for (const l of lines) counts[l.status]++;
   const out = { ...front, name: info.name, lines, counts, type: info.t || front.type, faces: info.fc.map(f => f.name) };
   COMPILE_CACHE.set(ck, out); return out;

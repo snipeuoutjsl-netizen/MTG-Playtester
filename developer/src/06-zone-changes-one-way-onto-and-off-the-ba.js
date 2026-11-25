@@ -63,7 +63,7 @@ function leaveBattlefield(c, dest = 'graveyard', o = {}) {
   delete c.dieExileTurn;
   if (c.exileInstead && dest !== 'exile') { log(`${c.name} would leave the battlefield, so it is exiled instead`); dest = 'exile'; }
   if (c.prepared) unprepare(c, 'it left the battlefield');   // CR 722.3c
-  delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel;   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
+  delete c.exileInstead; delete c.monstrous; delete c.exerted; delete c.classLevel; delete c.doors;   /* v0.99.103 a Room that comes back is a new object with both doors locked (CR 709.5e) */   // CR 400.7 + 716.3: a Class that returns is a new object at level 1
     // CR 701.37b: monstrous lasts until it leaves the battlefield
   if (_mp) mutSpawnParts(c, dest);
   if (c.token) {   // a token that leaves the battlefield ceases to exist, but it did leave (and may have died)

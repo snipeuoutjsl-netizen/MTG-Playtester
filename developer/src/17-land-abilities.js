@@ -311,6 +311,7 @@ function cardEl(c, zone) {
     !c.token && isLandName(c.name) && effectiveLandTypes(c).types.length && effectiveLandTypes(c).types.join('|') !== baseLandTypesOf(c.name).types.join('|') ? h('div', { class: 'land-effect-badge', text: effectiveLandTypes(c).types.map(t => t[0]).join(' '), title: `Effective land types: ${effectiveLandTypes(c).types.join(', ')}` }) : null,
     zone === 'battlefield' && !c.token && teach('gapBadges') && ruleGaps(c).length ? h('div', { class: 'gapbadge', text: '\u26a0', title: 'The app only reminds you of these rules (apply them by hand):\n' + ruleGaps(c).map(g => '\u2022 ' + g.text).join('\n') }) : null,
     zone === 'battlefield' && c.mutParts ? h('div', { class: 'fxbadge', text: '\u29c9 Mutated \u00d7' + c.mutParts.length, title: 'A merged permanent: ' + c.mutParts.map(x => x.name).join(' + ') + '. It has all of their abilities; the top card is ' + c.mutParts[0].name }) : null,
+    zone === 'battlefield' ? roomBadge(c) : null,
     zone === 'battlefield' && c.pairedWith ? h('div', { class: 'fxbadge', text: '\u26D3 Paired', title: 'Soulbond: paired with another creature for as long as you control both' }) : null,
     zone === 'battlefield' ? kwIconsOnTile(c) : null,
     zone === 'battlefield' && state && teach('durationHints') && fxOn(c).length ? h('div', { class: 'fxbadge', title: fxOn(c).map(e => `${e.kind === 'pt' ? sgnN(e.p) + '/' + sgnN(e.t) : e.kind === 'kw' ? e.kw : e.text} ${UNTIL_WORDS[e.until] || ''}`).join('\n'), text: '\u23F3' }) : null,

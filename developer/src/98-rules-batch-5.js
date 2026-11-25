@@ -26,7 +26,7 @@ function b5YouVersion(rest) {   // "creates two Map tokens" -> "Create two Map t
 }
 function batch5Options(t, sents, obj, src, out, drop) {
   if (!state) return;
-  const n0 = out.length; try { b5Read(t, sents, obj, src, out, drop); } finally { for (const o of out.slice(n0)) if (typeof o.then === 'function') { const th = o.then; o.fn = () => th(() => {}); } }
+  const n0 = out.length; try { b5Read(t, sents, obj, src, out, drop); dungeonOptions(t, sents, obj, src, out, drop); } finally { for (const o of out.slice(n0)) if (typeof o.then === 'function') { const th = o.then; o.fn = () => th(() => {}); } }
 }
 function b5Read(t, sents, obj, src, out, drop) {
   const esc = x => x.slice(0, 24).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

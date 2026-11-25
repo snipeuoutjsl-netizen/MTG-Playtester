@@ -45,7 +45,8 @@ function evalCond(text, g) {
   if (!t) return null;
   { const sp = t.match(/^(.+?),? and (.+)$/); if (sp && !/\band\b.*\bcards\b|instant and|creature and|artifact and|land and|and\/or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a && b; } }
   { const sp = t.match(/^(.+?),? or (?!more|less|greater|fewer|equal)(.+)$/); if (sp && !/instant or|creature or|artifact or|land or/.test(sp[1])) { const a = evalCond(sp[1], g), b = evalCond(sp[2], g); if (a !== null && b !== null) return a || b; } }
-  { const tc = turnCond(t, g); if (tc !== null) return tc; }   // v0.99.81 "this turn" conditions from the turn's record (src/88)
+  { const tc = turnCond(t, g); if (tc !== null) return tc; }
+  { const dc = dungeonCond(t); if (dc !== null) return dc; }   // v0.99.103 dungeons, the initiative, the monarch   // v0.99.81 "this turn" conditions from the turn's record (src/88)
   { const ik = IND_COND_KEY(t); if (ik) { const g = gameStates().find(x => x.key === ik); return g ? !!g.on : null; } }   // the top-bar game-state checks are the one source of truth (Metalcraft, Threshold, Delirium, Revolt, Morbid ...)
   if (/^(?:~|it|this (?:permanent|creature|card)) is a creature$/.test(t)) { if (!g || g.id < 0) return true; try { return permTypeInfo(g).types.has('creature'); } catch (e) { return null; } }   // v0.99.71 Triton Wavebreaker: "As long as this permanent is a creature, it has prowess" (off while bestowed)
   if (/^it(?:'s| is) your turn$/.test(t)) return true;                       // a goldfish game is only ever your turn (the opponent's turn is not played out)
