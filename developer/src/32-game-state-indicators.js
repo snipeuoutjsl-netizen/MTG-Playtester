@@ -2,7 +2,7 @@
 // Static pictures in the top bar that light up while a game state applies: things the app can see for itself (spells cast this turn, delirium,
 // threshold, metalcraft, revolt, morbid, landfall, the city's blessing) and things only you know (monarch, initiative, day/night, counters), which you set by clicking.
 function noteCast(c) {
-  if (!state) return; const sc = state.spellsCast; state.spellsCast = { turn: state.turn, n: (sc && sc.turn === state.turn ? sc.n : 0) + 1 };
+  if (!state) return; try { recapNote('cast', c && c.name); } catch (e) { /* recap only */ } const sc = state.spellsCast; state.spellsCast = { turn: state.turn, n: (sc && sc.turn === state.turn ? sc.n : 0) + 1 };
   // v0.94.4 remember each spell's type line this turn, for "the second creature spell you cast this turn" (Vengevine)
   const tl = state.castTypes && state.castTypes.turn === state.turn ? state.castTypes.list : [];
   state.castTypes = { turn: state.turn, list: tl.concat([{ id: c.id, t: frontType(c) || '' }]) };

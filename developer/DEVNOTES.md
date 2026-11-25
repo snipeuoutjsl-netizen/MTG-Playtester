@@ -1,5 +1,7 @@
 
 
+**v0.99.89** src/95-game-recap.js: state.recap via recapNote (hooks: noteCast, changeOppLife, playLand, changeLife), recapFinish in showGameEnd saves to deck notes .recaps (20), recapEl inked page with SVG chart, recapListEl in libraryNotesEl.
+
 **v0.99.88** src/94-hand-lab.js: hlRun (pure simulation, London mulligan via hlOpen, hlCanPay colored matching, hlRock rocks), openHandLab UI; Library contents entry.
 
 **v0.99.87** src/93-library-rooms.js: HALL_ROOMS presets (wall, desk), hallRoom/setHallRoom, roomDecorEl (SVG banners/torches/candles/vines + fireflies), room-<k> class on #hall (light via --room-glow/--room-vig1/2, shelf/plaque filters). developer/room-gen.py makes the wall tiles (--wall-castle/dungeon/night/moss in style.css). Look dialog: Room row first.

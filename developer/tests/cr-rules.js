@@ -450,7 +450,7 @@ const { setup } = require('./common.js');
     return { ok: r[0][0] === 'Roll a d20' && /^Roll 2 d6/.test(r[1][0]) && r[2] === 0, why: JSON.stringify(r) }; });
   await T('104.3a', 'a player with 0 or less life loses: the Next round screen appears with rematch, sideboard and keep playing', async () => { await reset();
     await ev(() => { window.__noGameEnd = false; __d.state.phase = 'play'; __d.changeOppLife(-20); }); await p.waitForTimeout(3000);
-    const r = await ev(() => { const b = document.querySelector('#gameEndBox'); return b ? { t: b.innerText.replace(/\n+/g, ' | ').slice(0, 220), win: b.classList.contains('ge-win') } : null; });
+    const r = await ev(() => { const b = document.querySelector('#gameEndBox'); return b ? { t: b.innerText.replace(/\n+/g, ' | ').slice(0, 3000), win: b.classList.contains('ge-win') } : null; });
     await ev(() => { window.__noGameEnd = true; document.querySelectorAll('.backdrop, .lethal').forEach(x => x.remove()); });
     return { ok: !!r && r.win && /Next round/.test(r.t) && /Keep playing/.test(r.t), why: JSON.stringify(r) }; });
 
@@ -1017,6 +1017,18 @@ const { setup } = require('./common.js');
       delete d['Lab deck']; localStorage.setItem('mtgpt.decks', JSON.stringify(d));
       return { zero: p(x.first7[0]), three: p(x.first7[3]), keep7: p(x.mulls[0]), mono: [1, 2, 3, 4, 5, 6, 7].every(t => x.castable[t] <= x.inHand[t]), t2: x.castable[2] / Math.max(1, x.inHand[2]), blue, red, two, shown: /lands in the first seven/i.test(txt) && /Keep 7/.test(txt) && /Lab deck/.test(txt), txt: txt.slice(0, 300) }; });
     return { ok: Math.abs(r.zero - 2.2) < 1 && Math.abs(r.three - 29.6) < 3 && r.keep7 > 80 && r.mono && r.t2 > .95 && !r.blue && r.red && !r.two && r.shown, why: JSON.stringify(r) }; });
+  await T('UI recap', 'Game recap: the lands played, spells cast and damage dealt each turn are written down as the game goes; when you win, the game-end window shows the inked recap (won on turn 3, damage chart, best turn, turn by turn) and the deck keeps it in its Librarian\'s notes to reopen later', async () => { await reset(); await toMain();
+    const r = await ev(async () => { const s = __d.state, W = ms => new Promise(r => setTimeout(r, ms)); document.getElementById('modalRoot').innerHTML = ''; s.recap = null; s.battlefield = []; s.stack.length = 0; s.oppLife = 20; s.turn = 1;
+      const dn = s.deckName; const notes0 = ((__d.deckNotes(dn) || {}).recaps || []).length;
+      for (let t = 0; t < 3; t++) { if (t) { s.combat = { attackers: [], declared: false }; s.hand.length = 0; __d.nextTurn(); await W(400); document.getElementById('modalRoot').innerHTML = ''; }
+        const m = Object.assign(__d.newCard('Mountain'), { id: s.nextId++ }); s.hand.push(m); __d.playLand(m.id);
+        const b = Object.assign(__d.newCard('Lightning Bolt'), { id: s.nextId++ }); __d.noteCast(b); __d.changeOppLife(t === 2 ? -14 : -3); }
+      const ng = window.__noGameEnd; window.__noGameEnd = false; __d.showGameEnd('opp'); window.__noGameEnd = ng; await W(200); const box = document.getElementById('gameEndBox'); const txt = box ? box.innerText : '';
+      const n1 = ((__d.deckNotes(dn) || {}).recaps || []); const last = n1[n1.length - 1] || {};
+      const links = __d.recapListEl(dn); document.getElementById('modalRoot').innerHTML = '';
+      __d.openRecap(last); await W(50); const re = ([...document.querySelectorAll('#modalRoot .recap-page')].pop() || {}).innerText || ''; document.getElementById('modalRoot').innerHTML = '';
+      return { txt: txt.replace(/\s+/g, ' ').slice(0, 400), saved: n1.length - notes0, turn: last.turn, won: last.won, t1: last.turns && last.turns[1], links: links ? links.textContent : '', reopened: /Won on turn 3/i.test(re), chart: !!(box && box.querySelector('.rc-chart svg rect')) }; });
+    return { ok: /Won on turn 3/i.test(r.txt) && /Best turn: turn 3, 14 damage/.test(r.txt) && r.chart && r.saved === 1 && r.won && r.turn === 3 && r.t1 && r.t1.lands[0] === 'Mountain' && r.t1.cast[0] === 'Lightning Bolt' && r.t1.dmg === 3 && /W T3/.test(r.links) && r.reopened, why: JSON.stringify(r) }; });
   await T('702.108', 'prowess (CR 702.108a/c): each instance triggers on YOUR noncreature spells only, never on creature spells; a card that merely mentions prowess has none; prowess given by another effect works; the trigger is a plain "+1/+1 until end of turn" with no special case (so Always yield and auto-resolve work)', async () => { await reset();
     const r = await ev(() => { const s = __d.state, mk = n => Object.assign(__d.newCard(n), { id: s.nextId++ }); const out = {};
       const fire = sp => { s.pendingTriggers.length = 0; document.querySelectorAll('.backdrop').forEach(x => x.remove()); __d.fireTrigger('cast', { card: sp }); const n = s.pendingTriggers.length; s.pendingTriggers.length = 0; document.querySelectorAll('.backdrop').forEach(x => x.remove()); return n; };

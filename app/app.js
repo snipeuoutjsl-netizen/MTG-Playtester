@@ -4949,6 +4949,7 @@ function addCounter(id,d,type='plus',manual) {
 }
 
 function changeLife(d, real) {   // real = life gained or lost by a card effect (manual +/- buttons do not trigger anything)
+  try { if (d) recapNote('life', d); } catch (e) { /* recap only */ }
   if (!state) return;
   if (real && d > 0 && lifeGainBlocked()) { log(`Life gain prevented: ${lifeGainBlocked().g.name} says a player who would gain life gains no life instead`); toast('No life gained', `${lifeGainBlocked().g.name}: if a player would gain life, that player gains no life instead.`); render(); return; }
   snap();
@@ -5255,7 +5256,7 @@ function playLand(id, fi) {
       'Lands can only be played during your main phase when the stack is empty.');
     return;
   }
-  snap(); const [c]=state.hand.splice(f.idx,1); state.landsPlayed=(state.landsPlayed||0)+1; state.landPlayedThisTurn=state.landsPlayed>=landDropsAllowed();
+  snap(); const [c]=state.hand.splice(f.idx,1); try { recapNote('land', c.name); } catch (e) { /* recap only */ } state.landsPlayed=(state.landsPlayed||0)+1; state.landPlayedThisTurn=state.landsPlayed>=landDropsAllowed();
   const front=c.name; if(fi) setFace(c,fi);
   enterBattlefield(c,{from:'hand',logMsg:fi?`Played land: ${c.name} (the back face of ${front})`:`Played land: ${c.name}`});
   render();
@@ -6394,7 +6395,7 @@ function dealCombatDamage(){
   noteCombatDealers(dealers); commanderDamage(dealers);
   for(const d of dealers) fireTrigger('combatdmg',{card:d, amount:powerOf(d).n});
 }
-function changeOppLife(d){ if(!state) return; if(d>0 && typeof oppGainBlocked==='function' && oppGainBlocked()){ log(`Opponent life gain prevented: ${oppGainBlocked().g.name}`); toast('No life gained',`${oppGainBlocked().g.name}: your opponent can't gain life this turn.`); return; } snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
+function changeOppLife(d){ if(!state) return; try { if (d < 0) recapNote('opp', d); } catch (e) { /* recap only */ } if(d>0 && typeof oppGainBlocked==='function' && oppGainBlocked()){ log(`Opponent life gain prevented: ${oppGainBlocked().g.name}`); toast('No life gained',`${oppGainBlocked().g.name}: your opponent can't gain life this turn.`); return; } snap(); state.oppLife=(state.oppLife??20)+d; mpOppLife(d); if(d<0) state.oppLifeLostTurn=state.turn; log(`Opponent life ${d>0?'+':''}${d} → ${state.oppLife}`); render(); }
 function promptSkipAttack(){
   const n=eligibleAttackers().length;
   const m=modal('Skip attacking?',{width:460,sticky:true});
@@ -7076,8 +7077,9 @@ function promptFirstBoot() {
 }
 
 // ---------------------------------------------------------------- version + changelog
-const APP_VERSION = '0.99.88';
+const APP_VERSION = '0.99.89';
 const CHANGELOG = [
+  { v: '0.99.89', title: 'Game recaps', notes: ['NEW: every game is written down as you play: the land you played, the spells you cast and the damage you dealt each turn. When the game ends, the Victory / Defeat window shows it as an inked page: the turn you won (or lost), a chart of the damage dealt each turn with your best turn marked, and a turn-by-turn list.', 'Each deck keeps its last 20 recaps in its Librarian\u2019s notes in the Library book (Recent games: W T5, W T6 …); click one to reopen it. Undo takes back what it undoes from the recap too.'] },
   { v: '0.99.88', title: 'Opening-hand lab', notes: ['NEW: Opening-hand lab (Library contents). Pick a deck and it draws 10,000 opening hands: how many lands the first seven hold, how often you keep 7, 6 or 5 with the London mulligan (you set the land range you keep), and how often you make every land drop through turn 5.', 'Pick a card to see, turn by turn on the play or on the draw, how often it is in your hand and how often you can cast it (lands played one a turn must make its colors; mana rocks like Mind Stone and Signets can be counted too). The on-curve turn is highlighted.', 'Sample hand shows one kept hand with its pictures, so you can get a feel for the deck.'] },
   { v: '0.99.87', title: 'Library rooms', notes: ['LIBRARY: choose a whole room in Library look (Room, at the top). Castle hall: cut-stone walls, stone ledges, an oak desk and red banners. Dungeon: rough dark stone, black wood and two flickering wall torches. Wizard\u2019s tower: a night sky painted on the walls, dark wood and floating candles. Elven grove: mossy stone, a pale birch desk, a garland of vines and drifting fireflies. The Library is the warm plaster and walnut room as before.', 'Each room has its own light (torchlight, moonlight, green shade), shelves and sign to match. Picking a room sets its wall and desk; you can still change either one after. The new walls (Castle stone, Dungeon stone, Night sky, Mossy stone) and the Birch desk can also be chosen on their own.', 'Everything is drawn by the app (no outside pictures), works upright on phones, and the movement (torch flames, banners, candles, fireflies) stops when motion is reduced.'] },
   { v: '0.99.86', title: 'No more Resolving window for understood abilities, The One Ring, and a gentler stack fade', notes: ['RESOLVING: an ability the app understands now always resolves by itself once it leaves the stack (and its target is chosen). A line beside it that the app cannot read no longer holds the window open with a checklist: it is named in the log and in a short note to do by hand. Territorial Kavu\u2019s "Discard a card. If you do, draw a card." goes straight to choosing the card to discard. An ability the app cannot apply at all is a note too, not a window. A window only appears for a real decision ("you may", modes, choose).', 'THE ONE RING: "if you cast it" is read, so casting it gives you protection from everything until your next turn: damage that would be dealt to you is prevented (put onto the battlefield without casting, it does not trigger). Its burden upkeep trigger is checked at the beginning of every upkeep, and the burden ability draws one card per counter.', 'UPKEEP: every "At the beginning of your upkeep" ability is checked each turn, and once it has resolved the turn carries on by itself to the draw and Main 1 (it used to stop in the upkeep, and Next turn from there skipped the rest of the turn).', 'RULES: "You gain protection from everything / hexproof until your next turn" (CR 702.16) for you as a player.', 'STACK: a resolved card just fades up off the top of the pile at its own size (it grew for a moment first).'] },
@@ -9246,7 +9248,7 @@ function graveReturnEffect(tx, src) {
 // Static pictures in the top bar that light up while a game state applies: things the app can see for itself (spells cast this turn, delirium,
 // threshold, metalcraft, revolt, morbid, landfall, the city's blessing) and things only you know (monarch, initiative, day/night, counters), which you set by clicking.
 function noteCast(c) {
-  if (!state) return; const sc = state.spellsCast; state.spellsCast = { turn: state.turn, n: (sc && sc.turn === state.turn ? sc.n : 0) + 1 };
+  if (!state) return; try { recapNote('cast', c && c.name); } catch (e) { /* recap only */ } const sc = state.spellsCast; state.spellsCast = { turn: state.turn, n: (sc && sc.turn === state.turn ? sc.n : 0) + 1 };
   // v0.94.4 remember each spell's type line this turn, for "the second creature spell you cast this turn" (Vengevine)
   const tl = state.castTypes && state.castTypes.turn === state.turn ? state.castTypes.list : [];
   state.castTypes = { turn: state.turn, list: tl.concat([{ id: c.id, t: frontType(c) || '' }]) };
@@ -11652,11 +11654,12 @@ function showGameEnd(which, title, sub) {
   if (!state || $("#gameEndBox") || window.__noGameEnd) return;
   clearPromptsForGameEnd();
   const won = which !== 'you'; won ? matchRecord.w++ : matchRecord.l++;
-  const name = currentDeckName();
-  const m = modal(won ? 'You won the game' : 'You lost the game', { width: 520, sticky: true });
+  const name = currentDeckName(); let rc = null; try { rc = recapFinish(won, title || ''); } catch (e) { rc = null; }   // v0.99.89 the game's recap page
+  const m = modal(won ? 'You won the game' : 'You lost the game', { width: 560, sticky: true });
   m.el.id = 'gameEndBox'; m.el.classList.add(won ? 'ge-win' : 'ge-loss');
   m.body.append(h('div', { class: 'ge-big', text: won ? 'Victory' : 'Defeat' }), h('div', { class: 'ge-sub', text: title ? title + (sub ? ': ' + sub : '') : (won ? 'The opponent is at 0 life.' : 'You are at 0 life.') }),
     h('div', { class: 'ge-rec', text: `This session: ${matchRecord.w} won, ${matchRecord.l} lost` }),
+    rc ? recapEl(rc) : null,
     h('div', { class: 'ge-btns' },
       h('button', { class: 'primary', text: 'Next round: same deck', title: 'Shuffle up and start a new game with the same list', onclick: () => { m.close(); startGame(); } }),
       name ? h('button', { text: 'Sideboard, then play', title: 'Swap cards between your main deck and sideboard, then start the next game', onclick: () => { m.close(); let started = false; openSideboarding(name, () => { if (!started) { started = true; startGame(); } }); } }) : null,
@@ -14144,7 +14147,8 @@ function libraryNotesEl(name) {
   return h('div', { class: 'lib-notes' }, h('div', { class: 'fhead', text: 'Librarian’s notes' }),
     h('div', { text: `Opened ${n.games} time${n.games === 1 ? '' : 's'}${ago === null ? '' : ago === 0 ? ', last today' : `, last ${ago} day${ago === 1 ? '' : 's'} ago`}.` }),
     n.keeps ? h('div', { text: `Kept hands: ${avg(n.lands, n.keeps)} lands on average; ${avg(n.mulls, n.keeps)} mulligans per game.` }) : null,
-    wt ? h('div', { text: `Goldfish kills: ${w.length}, on turn ${wt} on average (fastest turn ${Math.min(...w)}).` }) : null);
+    wt ? h('div', { text: `Goldfish kills: ${w.length}, on turn ${wt} on average (fastest turn ${Math.min(...w)}).` }) : null,
+    recapListEl(name));   // v0.99.89
 }
 // ---- the hall itself
 let hallHost = null;
@@ -15358,6 +15362,54 @@ function openHandLab(deckName0) {
   fillCards(); run();
 }
 function getDeckByName(n) { const all = loadDecks(); if (!all[n]) return null; const sb = all[n].sb; if (sb && Array.isArray(sb.main) && sb.main.length) return { name: n, main: sb.main.map(x => ({ ...x })), side: [] }; return { name: n, ...parseDeck(all[n].text) }; }
+// ---- v0.99.89 Game recap: each game is written down as it is played (state.recap, so Undo takes it back too), and when the game
+// ends it becomes an inked page: the kill turn, a chart of the damage dealt each turn, what you played each turn and your best turn.
+// The last 20 pages of each deck are kept with its Librarian's notes ('mtgpt.deckNotes'[deck].recaps) and can be reopened from its book.
+function recapNote(kind, v) {
+  if (!state || state.phase !== 'play') return;
+  const rc = state.recap || (state.recap = { onPlay: !!state.onPlay, mulls: state.mulls || 0, start: Date.now(), turns: {} });
+  const t = state.turn || 1, T = rc.turns[t] || (rc.turns[t] = { dmg: 0, lost: 0, gain: 0, cast: [], lands: [], opp: state.oppLife, life: state.life });
+  if (kind === 'opp' && v < 0) T.dmg += -v;
+  else if (kind === 'life') { if (v < 0) T.lost += -v; else T.gain += v; }
+  else if (kind === 'cast' && v) T.cast.push(v);
+  else if (kind === 'land' && v) T.lands.push(v);
+}
+function recapFinish(won, why) {
+  if (!state || !state.recap || state.recap.done) return state && state.recap;
+  const rc = state.recap; rc.done = true; rc.won = !!won; rc.turn = state.turn; rc.why = why || ''; rc.end = Date.now(); rc.deck = state.deckName || '';
+  rc.lifeEnd = state.life; rc.oppEnd = state.oppLife;
+  if (rc.deck) updateNotes(rc.deck, n => { n.recaps = n.recaps || []; n.recaps.push(rc); if (n.recaps.length > 20) n.recaps.shift(); });
+  return rc;
+}
+// the page itself
+function recapEl(rc) {
+  const turns = Object.keys(rc.turns || {}).map(Number).sort((a, b) => a - b), last = Math.max(rc.turn || 1, ...turns, 1);
+  const first = turns.length ? Math.min(...turns) : 1, rows = []; for (let t = first; t <= last; t++) rows.push(Object.assign({ t, dmg: 0, cast: [], lands: [] }, (rc.turns || {})[t] || {}));
+  const total = rows.reduce((a, r) => a + r.dmg, 0), best = rows.reduce((b, r) => r.dmg > (b ? b.dmg : 0) ? r : b, null);
+  const W = 460, H = 128, pad = 22, bw = Math.min(46, (W - pad * 2) / rows.length - 6), maxD = Math.max(1, ...rows.map(r => r.dmg));
+  let bars = '', labels = '';
+  rows.forEach((r, i) => { const x = pad + i * ((W - pad * 2) / rows.length) + 3, hgt = Math.round((H - 34) * r.dmg / maxD), y = H - 18 - hgt;
+    bars += `<rect x="${x.toFixed(1)}" y="${y}" width="${bw.toFixed(1)}" height="${hgt}" rx="2" fill="${best && r.t === best.t ? '#8e1f0b' : '#5b3a1e'}" opacity="${r.dmg ? .9 : .25}"/>`;
+    if (r.dmg) bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${y - 4}" text-anchor="middle" font-size="11" fill="#2b1a0c">${r.dmg}</text>`;
+    labels += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="10.5" fill="#5a4630">T${r.t}</text>`; });
+  const chart = h('div', { class: 'rc-chart' }); chart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Damage dealt each turn"><line x1="${pad}" y1="${H - 18}" x2="${W - pad}" y2="${H - 18}" stroke="#8a7350" stroke-width="1"/>${bars}${labels}</svg>`;
+  const head = rc.won ? `Won on turn ${rc.turn}` : rc.done ? `Lost on turn ${rc.turn}` : `Turn ${rc.turn || last}, still playing`;
+  return h('div', { class: 'recap-page' },
+    h('div', { class: 'rc-title', text: head }),
+    h('div', { class: 'rc-sub', text: `${rc.deck ? rc.deck + ' · ' : ''}${rc.onPlay ? 'on the play' : 'on the draw'} · ${rc.mulls ? 'mulliganed to ' + (7 - rc.mulls) : 'kept seven'}${rc.why ? ' · ' + rc.why : ''}` }),
+    h('div', { class: 'rc-h', text: `Damage to your opponent: ${total}` }), chart,
+    best && best.dmg ? h('div', { class: 'rc-best', text: `Best turn: turn ${best.t}, ${best.dmg} damage${best.cast.length ? ' (' + best.cast.join(', ') + ')' : ''}.` }) : null,
+    h('div', { class: 'rc-h', text: 'Turn by turn' }),
+    h('div', { class: 'rc-turns' }, ...rows.map(r => h('div', { class: 'rc-turn' }, h('b', { text: `T${r.t}` }),
+      h('span', { text: [r.lands.length ? r.lands.join(', ') : null, r.cast.length ? r.cast.join(', ') : null].filter(Boolean).join(' · ') || '—' }),
+      r.dmg ? h('i', { text: `${r.dmg} dmg` }) : h('i')))));
+}
+function openRecap(rc) { const m = modal('Game recap', { width: 560 }); m.body.append(recapEl(rc)); m.foot.append(h('button', { class: 'primary', text: 'Close', onclick: () => m.close() })); }
+// the deck's last games, as a line of small links for its Librarian's notes
+function recapListEl(name) {
+  const n = deckNotes(name), l = (n && n.recaps) || []; if (!l.length) return null;
+  return h('div', { class: 'rc-list' }, h('span', { text: 'Recent games: ' }), ...l.slice(-6).reverse().map(rc => h('button', { class: 'hall-btn hall-ink rc-link' + (rc.won ? ' won' : ''), title: 'Open the recap of this game', text: `${rc.won ? 'W' : 'L'} T${rc.turn}`, onclick: e => { e.stopPropagation(); openRecap(rc); } })));
+}
 init();
 
 })();
