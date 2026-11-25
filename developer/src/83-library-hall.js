@@ -257,6 +257,7 @@ function drawHall() {
     h('div', { class: 'tm-begin' }, ink(inGame ? 'Begin a new game' : `Begin with ${cur || 'a deck'}`, () => { if (cur) beginWith(cur); else toast('Choose a deck', 'Take a book from the shelves first.'); }, 'tm-go' + (inGame ? '' : ' primary'), 'Shuffle up and deal with the deck in hand')));
   const entries = [
     ['Import a deck', () => openDeckEditor(cmd ? { blank: true, text: 'Commander\n1 \n\nDeck\n' } : { blank: true }), 'Paste a list or load a file'],
+    ['Opening-hand lab', () => openHandLab(cur), 'Draw thousands of opening hands: lands, mulligans, when a card can be cast'],   // v0.99.88
     ['Card wishlist', () => openWishlist(), 'Cards you want, with the art you want, to buy in one go'],   // v0.99.85
     ['Scan all decks', () => saveDeckScanReport(), 'Reads every card in every deck and saves a report'],
     ['Settings', () => openSettings()],
