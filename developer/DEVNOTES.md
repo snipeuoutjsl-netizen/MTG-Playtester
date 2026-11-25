@@ -1,5 +1,12 @@
 
 
+## v0.99.92
+- openAbilityEffect no longer opens a Resolving window: resolveNoPanel (src/04) applies every understood effect in order (an option with .then waits for its own window, e.g. scry), asks only real choices with appChoose (src/89) or appAsk, and notes uncovered clauses as Do by hand. The res-panel modal option, its CSS and the stage docking code are removed.
+- drawStackStage0: a spell/ability still marked resolving with no window open is finished after 900ms; the Resolving stage is never drawn (hand picks still use the stage).
+- Upright phones: #handTab is the first child of #handWrap (full-width handle, tap or swipe); --tuck is set from the tray height. The floating timer-placed tab is gone.
+- src/98-polish.js: combatFx (arrows + numbers, called from dealCombatDamage), winConfetti + sfx('win') in lethalFx, sfx('hit'), room ambience ambStart/ambStop (settings.sound.ambience), deskObjectsEl per room (hidden in portrait).
+- Tests: 'UI polish' in cr-rules.js; mobile.js adds the hand handle and Kozilek's Command (no Resolving screen) checks.
+
 **v0.99.91** src/97-practice-opponent.js: practice() setting, practiceOppTurn (called first in beginNextTurn), practiceOnCast (from noteCast: opp Counterspell with oppFx on the stack, resolved by practiceResolve in resolveTopOfStack), practiceBlock (dealCombatDamage), practiceHud. dealCombatDamage now records recap damage.
 
 **v0.99.90** src/96-puzzles.js: PUZZLES (real cards), startPuzzle (fresh state, Main 1, state.puzzle), puzzleResult (showGameEnd and beginNextTurn defer to it; drawPuzzleBar also ends it when a life total reaches 0), savePuzzleFromGame ('mtgpt.puzzles'), openPuzzles; #puzzleBar.

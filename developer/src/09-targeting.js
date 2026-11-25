@@ -368,9 +368,9 @@ function stepResolveRun() {
   const run = RES_RUN; if (!run || !state) return;
   if (gameIsOver() || Date.now() - run.t0 > 10 * 60000) { RES_RUN = null; return; }
   { const ay = document.querySelector('#modalRoot .ay-offer'); const no = ay && [...ay.querySelectorAll('button')].find(b => b.textContent === 'Ask every time'); if (no) { no.click(); setTimeout(stepResolveRun, 60); return; } }   // you chose Resolve all: the Always yield offer is answered "not now"
-  const win = document.querySelector('#modalRoot .backdrop, #stackStage .res-panel');
+  const win = document.querySelector('#modalRoot .backdrop');
   if (!win && state.pendingTriggers.length && !state.resolving && !state.resolvingAb) flushTriggers();
-  const busy = state.resolving || state.resolvingAb || document.querySelector('#modalRoot .backdrop, #stackStage .res-panel') || state.pendingTriggers.length;
+  const busy = state.resolving || state.resolvingAb || document.querySelector('#modalRoot .backdrop') || state.pendingTriggers.length;
   if (busy) { setTimeout(stepResolveRun, 150); return; }   // waiting for you to answer a choice (or to order new triggers)
   const top = state.stack[state.stack.length - 1];
   if (!top || !top.ability || !top.trigger || top.opp || top.sourceId !== run.src) { RES_RUN = null; if (run.done) log(`Resolve all: ${run.done} of ${run.name}'s triggers resolved`); render(); return; }

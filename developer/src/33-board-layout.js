@@ -124,13 +124,17 @@ function stackKind(c) {
 function drawStackStage() { const old = skBeforeDraw(); drawStackStage0(); skAfterDraw(old); }   // v0.99.85 cards lift off the pile as they leave (src/91)
 function drawStackStage0() {
   const el = $('#stackStage'); if (!el) return;
-  const resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied
+  let resSpell = !!state && state.phase === 'play' && !state.stack.length && !!state.resolving;   // v0.90.11 spell still on the stack while its effect is applied
   const resPick = !!state && state.phase === 'play' && state.discarding > 0 && (layoutOn('pickCentre') || (!state.stack.length && !!handPick && !!handPick.res));   // v0.94.2 every hand choice, not only ones from a resolving ability
-  const resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
+  let resAb = !!state && state.phase === 'play' && !!state.resolvingAb && !resPick && !resSpell;   // v0.91.1 an ability whose effect is being applied
+  // v0.99.92 no Resolving screen: an effect that leaves the stack just happens. A spell or ability still marked as resolving is only
+  // waiting for a window of its own (scry, a search, one question); with no such window open it is finished here, so nothing is ever left hanging.
+  if ((resSpell || resAb) && !resPick) { const r0 = state.resolving, a0 = state.resolvingAb; clearTimeout(drawStackStage0.t);
+    if (!document.querySelector('#modalRoot .modal')) drawStackStage0.t = setTimeout(() => { if (!state || document.querySelector('#modalRoot .modal') || state.discarding > 0) return;
+      if (r0 && state.resolving === r0 && !state.stack.length) { log(`${r0.name}: finished resolving`); finishResolving(); } else if (a0 && state.resolvingAb === a0) { state.resolvingAb = null; state.resLines = []; render(); } }, 900); }
+  if ((resSpell || resAb) && !resPick) { const quiet = !state.stack.length; el.classList.remove('resolving'); document.body.classList.remove('res-stage'); if (quiet) { el.hidden = true; el.replaceChildren(); el.classList.remove('has-panel'); return; } resSpell = false; resAb = false; }
   const on = !!state && state.phase === 'play' && (state.stack.length > 0 || resPick || resSpell || resAb);
-  const panel = [...document.querySelectorAll('.modal.res-panel')].pop() || null;
-  const home = () => { if (panel && panel._home && panel.parentNode !== panel._home && panel._home.isConnected) panel._home.append(panel); };
-  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { home(); el.replaceChildren(); el.classList.remove('has-panel'); return; }
+  el.hidden = !on; el.classList.toggle('resolving', resPick || resSpell || resAb); document.body.classList.toggle('res-stage', !!on && (resPick || resSpell || resAb)); if (!on) { el.replaceChildren(); el.classList.remove('has-panel'); return; }
   el.classList.add('sk'); el.classList.toggle('min', stackMin && !resPick);
   const pickSrc = resPick ? pickSource() : null;
   const items = resPick ? [handPick && handPick.res ? (state.resolving || Object.assign({}, handPick.res, { id: 'res', ability: true })) : pickSrc] : resSpell ? [state.resolving] : resAb ? [state.resolvingAb, ...[...state.stack].reverse()] : [...state.stack].reverse();
@@ -187,12 +191,11 @@ function drawStackStage0() {
     h('span', { class: 'sk-sp' }),
     stackMin && main ? (() => { const b = main.cloneNode(true); b.onclick = main.onclick; b.disabled = main.disabled; b.classList.add('sk-mini'); return b; })() : null,
     h('button', { class: 'sk-fold', 'aria-label': stackMin ? 'Show the stack' : 'Fold the stack', title: stackMin ? 'Show the stack' : 'Fold the stack down to one line', text: stackMin ? '▾' : '▴', onclick: () => { stackMin = !stackMin; drawStackStage(); } }));
-  el.classList.toggle('has-panel', !!panel);
-  if (stackMin && !resPick && !panel) { el.replaceChildren(head); return; }
-  if (panel) { el.classList.remove('min'); if (resAb) { note = null; buttons = []; } }   // its own Done button finishes it   // the panel itself says what is resolving and holds its choices
+  el.classList.remove('has-panel');
+  if (stackMin && !resPick) { el.replaceChildren(head); return; }
   el.replaceChildren(head,
     list.length ? (list.some(c => c && c.pseudo) ? h('div', { class: 'sk-list' }, list.map(row)) : skPile(list, !!(resSpell || resAb || resPick))) : null,   // v0.99.85 a pile of cards (src/91)
-    note, panel, linesEl(),
+    note, linesEl(),
     h('div', { class: 'sk-foot ss-btns' }, ...buttons.filter(Boolean)), hint);
 }
 // kept for older callers: the docked panel needs no scaling

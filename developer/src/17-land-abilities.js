@@ -380,7 +380,7 @@ function onCardDbl(c, zone) {
   if (!state || state.phase !== 'play' || state.discarding || holdForTriggers()) return;
   // v0.99.62 one double tap = one action. Phones can deliver the double tap twice (the browser's own and the touch layer's), which opened a spell's choices twice.
   { const now = Date.now(); if (lastDblAct.id === c.id && now - lastDblAct.t < 600) return; lastDblAct = { id: c.id, t: now }; }
-  if (document.querySelector('#modalRoot .modal, #stackStage .modal.res-panel') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
+  if (document.querySelector('#modalRoot .modal') && zone === 'hand') return;   // a spell is already being cast (its choices are open)
   if (zone === 'battlefield') {
     if (isPlaneswalker(c)) openLoyalty(c);
     else if (isLandName(c.name) && fetchInfo(c) && !c.tapped) openFetch(c);

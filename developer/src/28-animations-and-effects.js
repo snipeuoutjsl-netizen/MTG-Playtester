@@ -179,6 +179,7 @@ function lethalFx(which, title, sub) {
   document.body.appendChild(o); const an = wa(o, [{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: 2600 });
   an.onfinish = () => o.remove(); setTimeout(() => o.remove(), (3200) * 3);
   sparks(innerWidth / 2, innerHeight / 2, you ? '#ff5a4f' : '#ffe27a', 40, 360, 1200);
+  if (!you) { try { winConfetti(); sfx('win'); } catch (e) {} }   // v0.99.92 a celebration
   setTimeout(() => { try { showGameEnd(which, title, sub); } catch (e) { /* the pop-up is a convenience */ } }, 2500);   // v0.96.21 the "Next round" screen
 }
 // ---- turn banner and phase flash

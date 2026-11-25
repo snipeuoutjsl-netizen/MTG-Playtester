@@ -9,3 +9,10 @@ function appAsk(title, text, okText, danger) {
 }
 function appNotice(title, text) { try { toast(title, text); } catch (e) { /* no table yet */ } try { log(`${title}: ${text}`); } catch (e) { /* no game */ } }
 function appAskNumber(title, note, def) { return new Promise(res => askNumber(title, note, def, v => res(v))); }
+// v0.99.92 one short question with a button for each answer (and "Neither"): the choice an effect leaves you, without a Resolving window
+function appChoose(title, text, labels) {
+  return new Promise(res => { const m = modal(title, { width: 440 }); let done = false; const end = v => { if (done) return; done = true; m.close(); res(v); };
+    m.body.append(h('div', { class: 'psub', text }), h('div', { class: 'choose-list' }, labels.map((l, i) => h('button', { class: 'choose-opt', text: l, onclick: () => end(i) }))));
+    m.foot.append(h('button', { text: 'Neither', onclick: () => end(null) }));
+    const obs = new MutationObserver(() => { if (!document.body.contains(m.el || m.body)) { obs.disconnect(); end(null); } }); try { obs.observe(document.body, { childList: true, subtree: true }); } catch (e) { /* no observer */ } });
+}

@@ -620,10 +620,12 @@ function dealCombatDamage(){
     total+=pw.n*mult; parts.push(`${f.card.name} ${pw.n*mult}${mult===2?' (double strike)':''}${pw.star?' (* power counted as 0: adjust the opponent life by hand)':''}`);
   }
   cb.dealt=true;
+  const fxHits=[]; for(const d of dealers){ if(d.id===blk) continue; const n=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(n>0) fxHits.push({id:d.id,dmg:n}); }
   { const fog=(state.fx||[]).find(e=>e.kind==='fog'); if(fog && total>0){ log(`Combat damage: ${parts.join(', ')} = ${total}, all prevented (${fog.srcName||'an effect'}: prevent all combat damage this turn)`); toast('Combat damage prevented',`${fog.srcName||'An effect'} prevents all combat damage this turn.`); return; } }   // v0.99.79 Fog (CR 615)
   // Lifelink: damage dealt by the creature also gains its controller that much life (rule 702.15).
   let lifeGain=0; const lifeParts=[];
   for(const d of dealers){ if(!hasKw(d,'lifelink')) continue; const g=powerOf(d).n*(hasKw(d,'double strike')?2:1); if(g>0){ lifeGain+=g; lifeParts.push(`${d.name} ${g}`); } }
+  try { if(total>0) combatFx(fxHits); } catch(e) { /* the arrows are decoration */ }   // v0.99.92
   const before=state.oppLife; state.oppLife-=total; mpOppLife(-total); if(total>0) state.oppLifeLostTurn=state.turn; try { if(total>0) recapNote('opp',-total); } catch(e) { /* recap only */ }   // v0.99.91 combat damage counts in the recap too
   state.dmgHistory=state.dmgHistory||[]; state.dmgHistory.push({turn:state.turn,dmg:total});
   log(`Combat damage: ${parts.join(', ')||'none'} = ${total}. Opponent life ${before} → ${state.oppLife}`);

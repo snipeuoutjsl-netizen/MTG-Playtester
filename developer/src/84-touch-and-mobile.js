@@ -20,7 +20,7 @@ const TOUCH = { dragPx: 10, holdMs: 480, dblMs: 320, dblPx: 26 };
     const src = e.target.closest && e.target.closest('[draggable="true"]');
     st = { x: e.clientX, y: e.clientY, src, target: e.target, drag: false, held: false, t: Date.now() };
     // v0.99.78 a button, a field or a choice in a window is never press-and-hold: a slow tap on "Pay and cast" or "Cast" must still click it
-    if (e.target.closest && e.target.closest('button, input, select, textarea, a, label, .mode-row, .tgl, #modalRoot .row, .res-panel .row')) { st.noHold = true; return; }
+    if (e.target.closest && e.target.closest('button, input, select, textarea, a, label, .mode-row, .tgl, #modalRoot .row')) { st.noHold = true; return; }
     st.timer = setTimeout(() => {   // press and hold = right-click (card menus, the library menu ...)
       if (!st || st.drag) return; st.held = true; swallowClick = Date.now();
       const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: st.x, clientY: st.y, button: 2 }); (under(st.x, st.y) || st.target).dispatchEvent(ev);
@@ -112,18 +112,25 @@ function swipeCue(label) {
   const el = h('div', { class: 'swipe-cue', 'aria-hidden': 'true' }, h('span', { text: '‹‹' }), h('b', { text: label || 'Next' }));
   mat.append(el); setTimeout(() => el.remove(), 700);
 }
-// v0.99.69 upright phones: the hand can be tucked down to a strip (tap the tab), giving the whole height to the table; tap again to raise it
+// v0.99.69 upright phones: the hand can be tucked down to a strip, giving the whole height to the table.
+// v0.99.92 the control is the hand tray's own handle, part of the tray (never floating over the table, a window or its buttons):
+// a full-width bar on top of the hand. Tap it, or swipe it down / up, to tuck or raise the hand; tucked, only the bar shows at the bottom.
 (function handTab() {
   if (typeof document === 'undefined') return;
   const mk = () => {
     const hw = document.getElementById('handWrap'); if (!hw || document.getElementById('handTab')) return;
     const b = document.createElement('button'); b.id = 'handTab'; b.className = 'hand-tab'; b.type = 'button';
-    const label = () => { const n = (state && state.hand) ? state.hand.length : 0, t = document.body.classList.contains('hand-tuck'); b.textContent = (t ? '▴ Hand' : '▾ Hand') + (n ? ` (${n})` : ''); b.setAttribute('aria-label', t ? 'Raise the hand' : 'Tuck the hand away'); };
-    b.addEventListener('click', e => { e.stopPropagation(); document.body.classList.toggle('hand-tuck'); label(); try { render(); } catch (er) { /* no game */ } setTimeout(() => window.__placeHandTab && window.__placeHandTab(), 260); });
-    document.body.append(b); label(); new MutationObserver(label).observe(document.getElementById('row-hand') || hw, { childList: true });
-    // the tab floats above everything (the table would otherwise take its taps), pinned to the top edge of the hand
-    const place = () => { if (!document.documentElement.classList.contains('portrait-ui')) return; const r = hw.getBoundingClientRect(); b.style.top = Math.max(0, Math.min(innerHeight - 40, r.top + 4)) + 'px'; };
-    window.__placeHandTab = place; hw.addEventListener('transitionend', place); addEventListener('resize', place); setInterval(place, 600); place();
+    const grip = document.createElement('i'); grip.className = 'ht-grip'; grip.setAttribute('aria-hidden', 'true'); const txt = document.createElement('span'); txt.className = 'ht-txt'; b.append(grip, txt);
+    const label = () => { const n = (state && state.hand) ? state.hand.length : 0, t = document.body.classList.contains('hand-tuck'); txt.textContent = (t ? 'Show hand' : 'Hide hand') + ` (${n})`; b.setAttribute('aria-label', t ? 'Raise the hand' : 'Tuck the hand away'); b.setAttribute('aria-expanded', String(!t)); };
+    const setTuck = on => { const r = hw.getBoundingClientRect(); document.documentElement.style.setProperty('--tuck', Math.max(0, Math.round(r.height - b.offsetHeight)) + 'px'); document.body.classList.toggle('hand-tuck', on); label(); try { render(); } catch (er) { /* no game */ } };
+    window.__handTuck = setTuck;
+    let y0 = null, moved = false;
+    b.addEventListener('pointerdown', e => { y0 = e.clientY; moved = false; });
+    b.addEventListener('pointermove', e => { if (y0 === null) return; const dy = e.clientY - y0; if (Math.abs(dy) > 24 && !moved) { moved = true; setTuck(dy > 0); } });
+    b.addEventListener('pointerup', () => { y0 = null; });
+    b.addEventListener('click', e => { e.stopPropagation(); if (moved) { moved = false; return; } setTuck(!document.body.classList.contains('hand-tuck')); });
+    hw.prepend(b); label(); new MutationObserver(label).observe(document.getElementById('row-hand') || hw, { childList: true, subtree: true });
+    window.__placeHandTab = () => {};   // the old floating tab was moved by a timer; the handle is part of the tray now
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mk); else mk();
 })();

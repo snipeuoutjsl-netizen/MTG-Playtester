@@ -81,7 +81,6 @@ let matchRecord = { w: 0, l: 0 };
 function gameIsOver() { return !!document.getElementById('gameEndBox'); }
 function clearPromptsForGameEnd() {   // v0.99.71 a trigger or choice that was open (Psychic Frog's draw after the lethal hit) must not sit over the result
   document.querySelectorAll('#modalRoot .backdrop').forEach(b => { if (!b.querySelector('#gameEndBox')) b.remove(); });
-  document.querySelectorAll('#stackStage .res-panel').forEach(x => x.remove());
 }
 function showGameEnd(which, title, sub) {
   if (state && state.puzzle) { puzzleResult(which !== 'you', title); return; }   // v0.99.90 a puzzle has its own ending

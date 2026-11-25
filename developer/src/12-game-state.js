@@ -573,7 +573,7 @@ let autoRunBusy = false;
 function autoResumeTurn() {
   if (!state || state.phase !== 'play' || state.autoRun !== state.turn || autoRunBusy) return;
   if (state.step >= MAIN1) { state.autoRun = 0; return; }
-  const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding || state.resolving || state.resolvingAb || state.phasePause || document.querySelector('#modalRoot .backdrop:not(.dock), #stackStage .res-panel');
+  const busy = () => state.pendingTriggers.length || state.stack.length || state.discarding || state.resolving || state.resolvingAb || state.phasePause || document.querySelector('#modalRoot .backdrop:not(.dock)');
   if (busy()) return;
   autoRunBusy = true;
   setTimeout(() => { autoRunBusy = false;
