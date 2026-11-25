@@ -405,6 +405,7 @@ function nextTurn() {
   beginNextTurn();
 }
 function beginNextTurn() {
+  if (state.puzzle && !state.puzzle.over) { puzzleResult(false, `${state.puzzle.title}: the turn ended and your opponent is at ${state.oppLife} life.`); return; }   // v0.99.90 a puzzle is one turn
   state.turn++;
   if (state.extraTurns > 0) { state.extraTurns--; log('Extra turn begins'); }
   startTurn();

@@ -2741,3 +2741,10 @@ html.portrait-ui .hl-cols { grid-template-columns: 1fr; }
 .recap-page .rc-turn b { color: #5a3c1c; } .recap-page .rc-turn i { color: #8e1f0b; font-size: 12px; }
 .rc-list { margin-top: 4px; font-size: 13px; } .rc-link { padding: 0 4px !important; font-size: 13px !important; } .rc-link.won { color: #2e5f2a !important; }
 .recap-page .rc-turn span { text-align: left; } .recap-page .rc-turn i { text-align: right; } .recap-page { text-align: left; } .recap-page .rc-title, .recap-page .rc-sub { text-align: center; }
+/* v0.99.90 puzzles */
+#puzzleBar { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 6px); transform: translateX(-50%); z-index: 300; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 999px;
+  background: rgba(30,20,10,.92); border: 1px solid rgba(227,185,92,.7); box-shadow: 0 6px 18px rgba(0,0,0,.5); color: #f3e6c6; font-size: 13px; max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center; }
+#puzzleBar b { color: #f0d48c; } #puzzleBar button { padding: 3px 10px; font-size: 12px; border-radius: 999px; }
+.pz-list { display: flex; flex-direction: column; gap: 6px; }
+.pz-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03); }
+.pz-row.done { border-color: rgba(120,200,130,.45); } .pz-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; } .pz-ok { color: #8fdc9a; font-size: 12.5px; }
